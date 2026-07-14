@@ -6,7 +6,7 @@
 
 **Architecture:** Keep one deployable Next.js App Router application. Routes compose CUJ-owned feature modules; shared UI lives in `src/components`; framework-free contracts live in `src/core`; shared immutable catalogs will live in `src/data` when real data exists.
 
-**Tech Stack:** Node.js 22, pnpm 11.4.0, Next.js 16.2.10, React 19.2.7, TypeScript 5.9.3, ESLint 10.7.0, Vitest 4.1.10, plain CSS.
+**Tech Stack:** Node.js 22, pnpm 11.4.0, Next.js 16.2.10, React 19.2.7, TypeScript 5.9.3, ESLint 9.39.5, Vitest 4.1.10, plain CSS.
 
 ## Global Constraints
 
@@ -75,7 +75,7 @@ Create `package.json` with these exact scripts and versions:
     "@types/node": "^22.14.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "eslint": "10.7.0",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.2.10",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
