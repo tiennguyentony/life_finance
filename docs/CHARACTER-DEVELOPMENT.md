@@ -2,7 +2,7 @@
 
 ## Version 1
 
-Landing page hero created.
+Landing page main character and money-gun assets created.
 
 ### Characteristics
 
@@ -15,7 +15,7 @@ Landing page hero created.
 
 ### Current Status
 
-Canonical hero completed.
+Canonical main character completed, with the money-gun variant preserved.
 
 ### Next Milestone
 

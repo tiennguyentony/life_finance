@@ -27,7 +27,7 @@ These rules cannot change between assets. Reject any future asset that changes t
 - Camera angle
 - Rendering style
 
-The canonical reference in `public/assets/characters/sprout/reference/hero.png` is the source of truth for these decisions.
+The canonical reference in `public/assets/characters/sprout/reference/sprout-main.png` is the source of truth for these decisions.
 
 ## Rendering Style
 
@@ -43,4 +43,4 @@ When animation is eventually introduced, movement should use squash, bounce, ant
 
 Every new image must be immediately recognizable as Sprout and preserve the same proportions, lighting, material, camera angle, and transparent background treatment. PNG masters may retain the approved source presentation; production exports should use transparency whenever the asset is intended to sit on UI or a scene.
 
-Do not overwrite the canonical hero. New assets derive from it and belong in the appropriate asset-library folder.
+Do not overwrite the canonical main character image. New assets derive from it and belong in the appropriate asset-library folder.

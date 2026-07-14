@@ -4,7 +4,7 @@ This directory is the source-of-truth home for the Life Finance mascot and its f
 
 ## Folder Guide
 
-- `reference/`: canonical source images and visual reference material. `hero.png` must never be overwritten.
+- `reference/`: canonical source images and visual reference material. `sprout-main.png` must never be overwritten.
 - `expressions/`: facial expressions and emotional variants.
 - `poses/`: body positions and action variants.
 - `props/`: reusable objects Sprout holds or wears.
