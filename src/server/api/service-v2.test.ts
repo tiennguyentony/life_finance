@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { sha256Canonical } from "../../core/canonical";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
+import { processMonthlyTurnV2 } from "../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
 import { setRecurringStrategy } from "../../core/recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
@@ -9,7 +11,12 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
-import { projectAnnualPretaxContributions } from "./service-v2";
+import { fingerprintAnnualTaxContext } from "../tax/context-cache";
+import {
+  buildTaxRequest,
+  projectAnnualPretaxContributions,
+  RunApiServiceV2,
+} from "./service-v2";
 
 function stateWithStrategy() {
   const resolvedScenario = resolveScenarioCatalogSelection(
@@ -93,5 +100,76 @@ describe("annual tax contribution projection", () => {
       hsaCents: 120_000,
     });
     expect(projectAnnualPretaxContributions(august)).toEqual(julyProjection);
+  });
+});
+
+describe("annual tax context cache", () => {
+  it("reuses persisted evidence without calling PolicyEngine", async () => {
+    let state = stateWithStrategy();
+    const commandId = "month.cached-tax";
+    const contextFingerprint = fingerprintAnnualTaxContext(
+      buildTaxRequest(state, commandId),
+    );
+    const cachedEvidence = {
+      schemaVersion: 1 as const,
+      traceId: "tax.previous-month",
+      contextFingerprint,
+      economicYear: 2026,
+      policyYear: 2026,
+      stateCode: "WA",
+      filingStatus: "single",
+      provider: "PolicyEngine US" as const,
+      bundleVersion: "4.21.0",
+      rulesVersion: "1.764.6",
+      projectedFromFrozenPolicy: false,
+      grossIncomeCents: moneyCents(1_000_000),
+      employee401kContributionCents: moneyCents(50_000),
+      employeeHsaContributionCents: moneyCents(20_000),
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: moneyCents(730_000),
+    };
+    const calculate = vi.fn();
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext: vi.fn(
+        async (_runId, _secret, fingerprint) => {
+          expect(fingerprint).toBe(contextFingerprint);
+          return cachedEvidence;
+        },
+      ),
+      loadCheckpointEvidenceV2: vi.fn(),
+      applyCommandV2: vi.fn(async (_runId, _secret, command) => {
+        if (command.type !== "process_month_v2") {
+          throw new Error("expected a monthly command");
+        }
+        expect(command.payload.taxEvidence.traceId).toBe(
+          `tax.cache.${commandId}`,
+        );
+        const applied = processMonthlyTurnV2(state, command);
+        state = applied.state;
+        return {
+          state,
+          stateChecksum: sha256Canonical(state),
+          idempotentReplay: false,
+          monthlyRecord: applied.record,
+        };
+      }),
+    };
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const response = await service.submitCommand("run-id", "secret", {
+      schemaVersion: 2,
+      id: commandId,
+      type: "process_month",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      payload: {},
+    });
+
+    expect(calculate).not.toHaveBeenCalled();
+    expect(response.state.revision).toBe(2);
+    expect(response.monthlyRecord?.taxTraceId).toBe(`tax.cache.${commandId}`);
   });
 });

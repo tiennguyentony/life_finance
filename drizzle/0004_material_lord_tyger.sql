@@ -1,0 +1,3 @@
+ALTER TABLE "monthly_tax_evidence" ADD COLUMN "tax_context_fingerprint" char(64);--> statement-breakpoint
+CREATE INDEX "monthly_tax_evidence_run_context_idx" ON "monthly_tax_evidence" USING btree ("run_id","tax_context_fingerprint","created_at");--> statement-breakpoint
+ALTER TABLE "monthly_tax_evidence" ADD CONSTRAINT "monthly_tax_evidence_context_fingerprint_format" CHECK ("monthly_tax_evidence"."tax_context_fingerprint" IS NULL OR "monthly_tax_evidence"."tax_context_fingerprint" ~ '^[0-9a-f]{64}$');

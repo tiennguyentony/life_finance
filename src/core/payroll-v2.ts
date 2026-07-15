@@ -16,6 +16,7 @@ import {
 export type MonthlyTaxEvidence = Readonly<{
   schemaVersion: 1;
   traceId: string;
+  contextFingerprint?: string;
   economicYear: number;
   policyYear: number;
   stateCode: string;
@@ -72,6 +73,8 @@ function validateEvidenceShape(evidence: MonthlyTaxEvidence): void {
   if (
     evidence.schemaVersion !== 1 ||
     !SAFE_ID.test(evidence.traceId) ||
+    (evidence.contextFingerprint !== undefined &&
+      !/^[0-9a-f]{64}$/.test(evidence.contextFingerprint)) ||
     !Number.isSafeInteger(evidence.economicYear) ||
     !Number.isSafeInteger(evidence.policyYear) ||
     evidence.provider !== "PolicyEngine US" ||

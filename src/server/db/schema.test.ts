@@ -7,6 +7,7 @@ import {
   gameRuns,
   ledgerPostings,
   ledgerTransactions,
+  monthlyTaxEvidence,
   runStateMigrations,
   runStateSnapshots,
   transactionalOutbox,
@@ -20,6 +21,7 @@ describe("authoritative persistence schema", () => {
     [acceptedCommands, "accepted_commands"],
     [ledgerTransactions, "ledger_transactions"],
     [ledgerPostings, "ledger_postings"],
+    [monthlyTaxEvidence, "monthly_tax_evidence"],
     [transactionalOutbox, "transactional_outbox"],
     [aiAuditRecords, "ai_audit_records"],
   ])("defines the %s table", (table, expectedName) => {
@@ -115,5 +117,19 @@ describe("authoritative persistence schema", () => {
           index.name === "transactional_outbox_idempotency_uidx",
       ),
     ).toBe(true);
+  });
+
+  it("indexes validated tax contexts for persisted annual reuse", () => {
+    const config = getTableConfig(monthlyTaxEvidence);
+
+    expect(
+      config.indexes.some(
+        ({ config: index }) =>
+          index.name === "monthly_tax_evidence_run_context_idx",
+      ),
+    ).toBe(true);
+    expect(config.checks.map(({ name }) => name)).toContain(
+      "monthly_tax_evidence_context_fingerprint_format",
+    );
   });
 });
