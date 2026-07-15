@@ -100,6 +100,13 @@ export type GameplayStateV2 = Readonly<{
   portfolio: PortfolioBreakdown;
   debts: DebtBreakdown;
   benefits: BenefitsSelection;
+  contributions: Readonly<{
+    policyYear: number | null;
+    employee401kCents: MoneyCents;
+    employer401kCents: MoneyCents;
+    iraCents: MoneyCents;
+    hsaCents: MoneyCents;
+  }>;
   insurance: Readonly<{
     policyYear: number | null;
     healthDeductiblePaidCents: MoneyCents;
@@ -570,6 +577,41 @@ export function validateGameStateV2(
       );
     }
   }
+  const contributions = state.gameplay.contributions;
+  validateMoneyRecord(
+    {
+      employee401kCents: contributions.employee401kCents,
+      employer401kCents: contributions.employer401kCents,
+      iraCents: contributions.iraCents,
+      hsaCents: contributions.hsaCents,
+    },
+    "gameplay.contributions",
+    violations,
+  );
+  if (
+    catalogSnapshot === null
+      ? contributions.policyYear !== null
+      : contributions.policyYear !==
+          catalogSnapshot.selected.benefitPolicy.policyYear ||
+        contributions.employee401kCents >
+          catalogSnapshot.selected.benefitPolicy
+            .employeeRetirementContributionLimitCents ||
+        contributions.iraCents >
+          catalogSnapshot.selected.benefitPolicy.iraContributionLimitCents ||
+        contributions.hsaCents >
+          (catalogSnapshot.derived.hsaAnnualContributionLimitCents ?? 0) ||
+        contributions.employee401kCents + contributions.employer401kCents >
+          catalogSnapshot.selected.benefitPolicy
+            .definedContributionAdditionLimitCents
+  ) {
+    violations.push(
+      violation(
+        "gameplay.contributions",
+        "contribution_limit_exceeded",
+        "year and contributions must satisfy the resolved benefit policy limits",
+      ),
+    );
+  }
   const insurance = state.gameplay.insurance;
   validateMoneyRecord(
     {
@@ -731,6 +773,13 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
         hsaEligible: null,
         employerRetirementPlanId: null,
         insuranceCoverageIds: [],
+      },
+      contributions: {
+        policyYear: null,
+        employee401kCents: 0 as MoneyCents,
+        employer401kCents: 0 as MoneyCents,
+        iraCents: 0 as MoneyCents,
+        hsaCents: 0 as MoneyCents,
       },
       insurance: {
         policyYear: null,
