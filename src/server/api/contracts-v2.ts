@@ -198,6 +198,23 @@ const detailedActionSchema = z.discriminatedUnion("type", [
       amountCents: nonNegativeCentsSchema.min(1),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("purchase_home"),
+      purchasePriceCents: nonNegativeCentsSchema.min(1),
+      downPaymentCents: nonNegativeCentsSchema,
+      mortgageAnnualInterestRatePpm: boundedRatePpmSchema.max(500_000),
+      mortgageTermMonths: z.int().min(12).max(480),
+    })
+    .strict(),
+  z.object({ type: z.literal("sell_home") }).strict(),
+  z
+    .object({
+      type: z.literal("refinance_home"),
+      mortgageAnnualInterestRatePpm: boundedRatePpmSchema.max(500_000),
+      mortgageTermMonths: z.int().min(12).max(480),
+    })
+    .strict(),
 ]);
 
 const setStrategyV2CommandSchema = v2Envelope

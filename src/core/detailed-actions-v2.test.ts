@@ -270,4 +270,76 @@ describe("detailed v2 financial commands", () => {
       expect.objectContaining({ accountId: "expense.living" }),
     );
   });
+
+  it("purchases, refinances, and sells a home without pre-committing equity", () => {
+    const initial = state();
+    const purchased = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.home.purchase", {
+        type: "purchase_home",
+        purchasePriceCents: moneyCents(2_000_000),
+        downPaymentCents: moneyCents(500_000),
+        mortgageAnnualInterestRatePpm: ratePpm(60_000),
+        mortgageTermMonths: 360,
+      }),
+    );
+    const mortgage = purchased.gameplay.debts.termDebts.find(
+      ({ kind }) => kind === "mortgage",
+    )!;
+    expect(purchased.finances).toMatchObject({
+      cashCents: 1_940_000,
+      homeValueCents: 2_000_000,
+      nonCreditLiabilitiesCents: 3_500_000,
+    });
+    expect(mortgage).toMatchObject({
+      principalCents: 1_500_000,
+      annualInterestRatePpm: 60_000,
+      remainingTermMonths: 360,
+    });
+    expect(mortgage.minimumPaymentCents).toBeGreaterThan(0);
+    expect(purchased.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents + mortgage.minimumPaymentCents,
+    );
+
+    const refinanced = reduceDetailedFinanceCommand(
+      purchased,
+      command(purchased, "cmd.home.refinance", {
+        type: "refinance_home",
+        mortgageAnnualInterestRatePpm: ratePpm(40_000),
+        mortgageTermMonths: 360,
+      }),
+    );
+    const refinancedMortgage = refinanced.gameplay.debts.termDebts.find(
+      ({ kind }) => kind === "mortgage",
+    )!;
+    expect(refinanced.finances.cashCents).toBe(1_910_000);
+    expect(refinancedMortgage.minimumPaymentCents).toBeLessThan(
+      mortgage.minimumPaymentCents,
+    );
+    expect(refinanced.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents +
+        refinancedMortgage.minimumPaymentCents,
+    );
+
+    const sold = reduceDetailedFinanceCommand(
+      refinanced,
+      command(refinanced, "cmd.home.sell", { type: "sell_home" }),
+    );
+    expect(sold.finances).toMatchObject({
+      cashCents: 2_290_000,
+      homeValueCents: 0,
+      nonCreditLiabilitiesCents: 2_000_000,
+      requiredObligationsCents: initial.finances.requiredObligationsCents,
+    });
+    expect(
+      sold.gameplay.debts.termDebts.some(({ kind }) => kind === "mortgage"),
+    ).toBe(false);
+    expect(validateGameStateV2(sold)).toEqual([]);
+    expect(() =>
+      reduceDetailedFinanceCommand(
+        sold,
+        command(sold, "cmd.home.sell.again", { type: "sell_home" }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "HOME_REQUIRED" }));
+  });
 });
