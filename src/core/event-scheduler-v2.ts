@@ -18,8 +18,8 @@ export type EventSchedulingPolicyV2 = Readonly<{
 export const DEFAULT_EVENT_SCHEDULING_POLICY_V2: EventSchedulingPolicyV2 =
   Object.freeze({
     version: "fairness-v1",
-    minimumChancePpm: 80_000,
-    maximumChancePpm: 300_000,
+    minimumChancePpm: 120_000,
+    maximumChancePpm: 350_000,
   });
 
 export type ScheduledPersonalEventV2 = Readonly<{
