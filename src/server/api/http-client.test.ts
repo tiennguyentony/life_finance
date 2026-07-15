@@ -246,4 +246,55 @@ describe("typed v2 client", () => {
       });
     expect(String(commandInit?.body)).not.toContain("taxEvidence");
   });
+
+  it("requests checkpoint evidence by validated revision with bearer auth", async () => {
+    const snapshot = {
+      month: "2026-07",
+      ageYears: 36,
+      cashCents: 0,
+      investableAssetsCents: 0,
+      liabilitiesCents: 0,
+      netWorthCents: 0,
+      annualLivingCostCents: 0,
+      financialIndependenceTargetCents: 0,
+      financialIndependenceProgressPpm: 1_000_000,
+      exposure: null,
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        evidence: {
+          evidenceVersion: "checkpoint-v2.1",
+          start: snapshot,
+          end: snapshot,
+          monthsProcessed: 0,
+          monthlyCommandIds: [],
+          taxTraceIds: [],
+          totalGrossIncomeCents: 0,
+          totalTaxCents: 0,
+          totalAfterTaxCashIncomeCents: 0,
+          totalRequiredCashCents: 0,
+          totalMarketValueChangeCents: 0,
+          totalInflationIncreaseCents: 0,
+          totalInsurancePlayerCostCents: 0,
+          totalDebtInterestCents: 0,
+          totalDebtPaymentsCents: 0,
+          totalLiquidationCostCents: 0,
+          netWorthChangeCents: 0,
+          investableAssetsChangeCents: 0,
+          liabilitiesChangeCents: 0,
+          eventChoices: [],
+        },
+      }),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+    await client.getCheckpointV2(runId, accessSecret, 3);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      `https://example.test/api/v2/runs/${runId}/checkpoint?fromRevision=3`,
+    );
+    expect(init?.headers).toMatchObject({ Authorization: `Bearer ${accessSecret}` });
+    await expect(client.getCheckpointV2(runId, accessSecret, -1)).rejects.toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, lte } from "drizzle-orm";
 
 import { canonicalJson, sha256Canonical } from "../../core/canonical";
+import {
+  buildCheckpointEvidenceV2,
+  type CheckpointEvidenceV2,
+} from "../../core/checkpoint-v2";
 import {
   reduceGameCommand,
   type GameCommand,
@@ -573,6 +577,77 @@ export class RunRepository {
       .limit(1);
     assertScenarioSnapshotRecord(state, catalogRow);
     return state;
+  }
+
+  async loadCheckpointEvidenceV2(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ): Promise<CheckpointEvidenceV2> {
+    if (!Number.isSafeInteger(fromRevision) || fromRevision < 0) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "checkpoint start revision must be a non-negative safe integer",
+      );
+    }
+    const endingState = await this.loadAuthorizedRunV2(runId, accessSecret);
+    if (fromRevision > endingState.revision) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "checkpoint start revision cannot exceed current revision",
+      );
+    }
+    const [startRow] = await this.#db
+      .select()
+      .from(runStateSnapshots)
+      .where(
+        and(
+          eq(runStateSnapshots.runId, runId),
+          eq(runStateSnapshots.revision, fromRevision),
+        ),
+      )
+      .limit(1);
+    if (!startRow) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "checkpoint start snapshot does not exist",
+      );
+    }
+    const startingState = requireV2State(
+      assertPersistedState(startRow.state, {
+        runId,
+        checksum: startRow.stateChecksum,
+        schemaVersion: startRow.stateSchemaVersion,
+        engineVersion: startRow.engineVersion,
+        revision: startRow.revision,
+      }),
+    );
+    const rows = await this.#db
+      .select()
+      .from(monthlyTurnRecords)
+      .where(
+        and(
+          eq(monthlyTurnRecords.runId, runId),
+          gt(monthlyTurnRecords.resultingRevision, fromRevision),
+          lte(monthlyTurnRecords.resultingRevision, endingState.revision),
+        ),
+      )
+      .orderBy(asc(monthlyTurnRecords.processedMonth));
+    const records = rows.map((row) => {
+      if (
+        sha256Canonical(row.record) !== row.recordChecksum ||
+        row.record.commandId !== row.commandId ||
+        row.record.processedMonth !== row.processedMonth ||
+        row.record.taxTraceId !== row.taxTraceId
+      ) {
+        throw new RunRepositoryError(
+          "CORRUPT_STATE",
+          "checkpoint monthly evidence failed checksum or identity validation",
+        );
+      }
+      return row.record;
+    });
+    return buildCheckpointEvidenceV2(startingState, endingState, records);
   }
 
   async loadMonthlyTaxEvidenceForCommand(

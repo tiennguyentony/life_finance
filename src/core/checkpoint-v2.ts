@@ -122,11 +122,12 @@ function validateRange(
   if (
     startingState.runId !== endingState.runId ||
     compareMonths(endingState.currentMonth, startingState.currentMonth) < 0 ||
+    records.length > 12 ||
     monthsBetween(startingState.currentMonth, endingState.currentMonth) !== records.length
   ) {
     throw new CheckpointV2Error(
       "INVALID_RANGE",
-      "checkpoint states and monthly record count must describe one run and exact range",
+      "checkpoint states and 0..12 monthly records must describe one run and exact range",
     );
   }
   let expectedMonth = startingState.currentMonth;
