@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "check:test-layout": "node scripts/check-test-layout.mjs",
+    "test": "pnpm check:test-layout && vitest run",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
