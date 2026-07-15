@@ -147,6 +147,7 @@ describe("generated OpenAPI", () => {
 
     expect(document.openapi).toBe("3.1.0");
     expect(Object.keys(document.paths ?? {})).toEqual([
+      "/api/v1/health",
       "/api/v1/runs",
       "/api/v1/runs/{runId}",
       "/api/v1/runs/{runId}/commands",
