@@ -236,7 +236,7 @@ Status meanings: **implemented** has production code and direct tests;
 | --- | --- | --- | --- |
 | Exact domain primitives, immutable state, seeded RNG | Implemented | `src/core/domain`, `src/core/game-state.ts` | Preserve through state v2 migration |
 | Balanced ledger and reconciliation | Implemented | `src/core/ledger.ts`, invariant tests | Add detailed v2 accounts and debt subledgers |
-| Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | `src/core/game-state.ts`, `src/core/outcomes.ts` | Reverify against detailed accounts |
+| Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | `src/core/game-state.ts`, `src/core/outcomes.ts`, `src/core/obligation-funding-v2.ts` | Reverify in complete v2 monthly journeys |
 | Monthly market processing | Partial | `src/core/market.ts`, `src/core/monthly-turn.ts` | Add asset classes, story state, orchestrator consumer |
 | Event templates and bounded choices | Partial | `src/core/events.ts`, `src/data/event-templates.ts` | Add scheduler, cooldowns, story state, insurance and behavioral events |
 | Explicit financial actions | Partial | `src/core/actions.ts`, `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts` | Apply recurring plan in turn orchestration; add claims, home/refi/upskill, and API |
