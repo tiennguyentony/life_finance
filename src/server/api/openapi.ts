@@ -2,7 +2,7 @@ import {
   OpenAPIRegistry,
   OpenApiGeneratorV31,
 } from "@asteasolutions/zod-to-openapi";
-import { z } from "zod";
+import { readinessResponseSchema } from "../health/readiness";
 
 import {
   apiErrorSchema,
@@ -40,6 +40,23 @@ const errorResponses = {
     content: { "application/json": { schema: apiErrorSchema } },
   },
 } as const;
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/health",
+  operationId: "getDeploymentReadiness",
+  summary: "Verify deployment configuration and required backend dependencies",
+  responses: {
+    200: {
+      description: "Deployment is ready",
+      content: { "application/json": { schema: readinessResponseSchema } },
+    },
+    503: {
+      description: "One or more required backend dependencies are unavailable",
+      content: { "application/json": { schema: readinessResponseSchema } },
+    },
+  },
+});
 
 registry.registerPath({
   method: "post",
@@ -95,8 +112,6 @@ registry.registerPath({
     ...errorResponses,
   },
 });
-
-registry.register("HealthResponse", z.object({ status: z.literal("ok") }).strict());
 
 export function generateOpenApiDocument() {
   return new OpenApiGeneratorV31(registry.definitions).generateDocument({
