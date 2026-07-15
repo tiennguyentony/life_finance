@@ -183,11 +183,17 @@ the required GPT-5.6 model.
 | `POST /api/v1/runs` | Create an authoritative run and return its one-time access secret |
 | `GET /api/v1/runs/{runId}` | Read a run using its bearer secret |
 | `POST /api/v1/runs/{runId}/commands` | Submit a player action with optimistic revision and idempotency ID |
+| `POST /api/v2/runs` | Create a native catalog-backed v2 run and return its one-time access secret |
+| `GET /api/v2/runs/{runId}` | Read an authorized detailed v2 state |
+| `POST /api/v2/runs/{runId}/commands` | Configure strategy, take a detailed action, or request server-owned monthly processing |
 
-Only player actions cross the public command boundary. Clients cannot submit
-raw journals, market returns, tax results, event effects, grades, or replacement
-state. The AI and audit runtimes are server-only; there is deliberately no
-public audit route.
+Only player-authored choices cross the public command boundary. A v2
+`process_month` request contains only its idempotency/revision/month envelope;
+the application service builds the annual household request, calls the pinned
+PolicyEngine adapter, derives monthly evidence, and commits it with the turn.
+Clients cannot submit raw journals, market returns, tax results, event effects,
+grades, or replacement state. The AI and audit runtimes are server-only; there
+is deliberately no public audit route.
 
 ## Verification
 
@@ -211,7 +217,7 @@ curl --fail https://life-finance-mu.vercel.app/api/v1/openapi.json >/dev/null
 ```
 
 Judges can use the public readiness and OpenAPI URLs without credentials. Full
-run creation/testing uses an access secret returned by `POST /api/v1/runs` and
+run creation/testing uses an access secret returned by `POST /api/v2/runs` and
 does not require a user account. The tax calculation endpoint is intentionally
 server-authenticated and should be exercised through the Next.js backend or a
 provided test credential, never by exposing its bearer in browser code.

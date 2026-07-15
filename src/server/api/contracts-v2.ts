@@ -1,0 +1,274 @@
+import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
+import { z } from "zod";
+
+import type { GameStateV2 } from "../../core/game-state-v2";
+import { decodePersistedGameState } from "../../core/persisted-game-state";
+import { US_2026_SCENARIO_CATALOG_VERSION } from "../../data/scenario-catalog";
+import {
+  boundedRatePpmSchema,
+  checksumSchema,
+  identifierSchema,
+  marketRegimeSchema,
+  nonNegativeCentsSchema,
+  runIdPathSchema,
+  simulationMonthSchema,
+} from "./contracts";
+
+extendZodWithOpenApi(z);
+
+const commandIdSchema = z
+  .string()
+  .min(1)
+  .max(96)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/);
+
+const rateGroupSchema = z
+  .object({
+    preTax401kSalaryRatePpm: boundedRatePpmSchema,
+    preTaxHsaSalaryRatePpm: boundedRatePpmSchema,
+    afterTaxBroadIndexRatePpm: boundedRatePpmSchema,
+    afterTaxSectorRatePpm: boundedRatePpmSchema,
+    afterTaxSpeculativeRatePpm: boundedRatePpmSchema,
+    afterTaxIraRatePpm: boundedRatePpmSchema,
+    afterTaxExtraDebtRatePpm: boundedRatePpmSchema,
+  })
+  .strict()
+  .superRefine((strategy, context) => {
+    if (
+      strategy.preTax401kSalaryRatePpm + strategy.preTaxHsaSalaryRatePpm >
+      1_000_000
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["preTax401kSalaryRatePpm"],
+        message: "pre-tax allocation rates cannot exceed 100% in total",
+      });
+    }
+    if (
+      strategy.afterTaxBroadIndexRatePpm +
+        strategy.afterTaxSectorRatePpm +
+        strategy.afterTaxSpeculativeRatePpm +
+        strategy.afterTaxIraRatePpm +
+        strategy.afterTaxExtraDebtRatePpm >
+      1_000_000
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["afterTaxBroadIndexRatePpm"],
+        message: "after-tax allocation rates cannot exceed 100% in total",
+      });
+    }
+  });
+
+const termDebtSchema = z
+  .object({
+    id: identifierSchema,
+    kind: z.enum(["mortgage", "student_loan", "auto_loan", "personal_loan"]),
+    principalCents: nonNegativeCentsSchema,
+    annualInterestRatePpm: boundedRatePpmSchema,
+    minimumPaymentCents: nonNegativeCentsSchema,
+    remainingTermMonths: z.int().min(1).max(1_200),
+  })
+  .strict();
+
+export const createRunV2RequestSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    startMonth: simulationMonthSchema,
+    birthMonth: simulationMonthSchema,
+    randomSeed: z.union([z.string().min(1).max(256), z.int()]),
+    catalogVersion: z.literal(US_2026_SCENARIO_CATALOG_VERSION),
+    locationId: identifierSchema,
+    careerId: identifierSchema,
+    householdId: identifierSchema,
+    benefitsPackageId: identifierSchema,
+    healthPlanId: identifierSchema,
+    retirementPlanId: identifierSchema,
+    insuranceCoverageIds: z.array(identifierSchema).max(16),
+    scenarioId: identifierSchema,
+    annualGrossSalaryCents: nonNegativeCentsSchema,
+    finances: z
+      .object({
+        cashCents: nonNegativeCentsSchema,
+        taxableBroadIndexCents: nonNegativeCentsSchema,
+        taxableSectorCents: nonNegativeCentsSchema,
+        taxableSpeculativeCents: nonNegativeCentsSchema,
+        retirement401kCents: nonNegativeCentsSchema,
+        retirementIraCents: nonNegativeCentsSchema,
+        hsaCents: nonNegativeCentsSchema,
+        homeValueCents: nonNegativeCentsSchema,
+        otherAssetsCents: nonNegativeCentsSchema,
+        termDebts: z.array(termDebtSchema).max(32),
+        revolvingCreditLimitCents: nonNegativeCentsSchema,
+        revolvingCreditUsedCents: nonNegativeCentsSchema,
+      })
+      .strict()
+      .refine(
+        (value) => value.revolvingCreditUsedCents <= value.revolvingCreditLimitCents,
+        {
+          path: ["revolvingCreditUsedCents"],
+          message: "used revolving credit cannot exceed its limit",
+        },
+      ),
+    wellbeing: z
+      .object({
+        burnoutPpm: boundedRatePpmSchema,
+        happinessPpm: boundedRatePpmSchema,
+      })
+      .strict(),
+    marketRegime: marketRegimeSchema.optional(),
+  })
+  .strict();
+
+export const gameStateV2WireSchema = z
+  .custom<GameStateV2>((value) => {
+    try {
+      return decodePersistedGameState(value).schemaVersion === 2;
+    } catch {
+      return false;
+    }
+  })
+  .openapi({
+    type: "object",
+    description:
+      "Strict schema-v2 authoritative game state; validated by the versioned engine decoder.",
+  });
+
+const v2Envelope = z.object({
+  schemaVersion: z.literal(2),
+  id: commandIdSchema,
+  expectedRevision: z.int().min(0),
+  effectiveMonth: simulationMonthSchema,
+});
+
+const detailedActionSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("invest_taxable"),
+      bucket: z.enum([
+        "taxableBroadIndexCents",
+        "taxableSectorCents",
+        "taxableSpeculativeCents",
+      ]),
+      amountCents: nonNegativeCentsSchema.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("liquidate_taxable"),
+      bucket: z.enum([
+        "taxableBroadIndexCents",
+        "taxableSectorCents",
+        "taxableSpeculativeCents",
+        "taxableLegacyUnclassifiedCents",
+      ]),
+      amountCents: nonNegativeCentsSchema.min(1),
+      liquidationCostRatePpm: boundedRatePpmSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal("contribute_ira"), amountCents: nonNegativeCentsSchema.min(1) }).strict(),
+  z.object({ type: z.literal("contribute_hsa"), amountCents: nonNegativeCentsSchema.min(1) }).strict(),
+  z
+    .object({
+      type: z.literal("pay_term_debt"),
+      debtId: identifierSchema,
+      amountCents: nonNegativeCentsSchema.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("pay_revolving_credit"),
+      amountCents: nonNegativeCentsSchema.min(1),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("draw_revolving_credit"),
+      amountCents: nonNegativeCentsSchema.min(1),
+    })
+    .strict(),
+]);
+
+const setStrategyV2CommandSchema = v2Envelope
+  .extend({
+    type: z.literal("set_recurring_strategy"),
+    payload: z.object({ strategy: rateGroupSchema }).strict(),
+  })
+  .strict();
+
+const detailedActionV2CommandSchema = v2Envelope
+  .extend({
+    type: z.literal("take_detailed_action"),
+    payload: z.object({ action: detailedActionSchema }).strict(),
+  })
+  .strict();
+
+const processMonthV2PublicCommandSchema = v2Envelope
+  .extend({ type: z.literal("process_month"), payload: z.object({}).strict() })
+  .strict();
+
+export const gameCommandV2PublicSchema = z.discriminatedUnion("type", [
+  setStrategyV2CommandSchema,
+  detailedActionV2CommandSchema,
+  processMonthV2PublicCommandSchema,
+]);
+
+const monthlyRecordSummarySchema = z
+  .object({
+    processedMonth: simulationMonthSchema,
+    nextMonth: simulationMonthSchema,
+    taxTraceId: identifierSchema,
+    market: z
+      .object({
+        modelVersion: z.literal("regime-v1"),
+        regime: marketRegimeSchema,
+        nextRegime: marketRegimeSchema,
+        equityReturnPpm: z.int(),
+        bondReturnPpm: z.int(),
+        cashReturnPpm: z.int(),
+        housingReturnPpm: z.int(),
+        inflationPpm: z.int(),
+        laborDemandChangePpm: z.int(),
+      })
+      .passthrough(),
+    marketValueChangeCents: z.int(),
+    annualInflationIncreaseCents: z.int(),
+    insurancePlayerCostCents: nonNegativeCentsSchema,
+    nonDebtObligationsPaidCents: nonNegativeCentsSchema,
+    outcome: z
+      .object({
+        kind: z.enum(["financial_independence", "retirement_age", "bankruptcy"]),
+        grade: z.enum(["S", "A", "B", "C", "D", "E", "F"]),
+        reachedMonth: simulationMonthSchema,
+        reasonCode: identifierSchema,
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export const getRunV2ResponseSchema = z
+  .object({ state: gameStateV2WireSchema, stateChecksum: checksumSchema })
+  .strict();
+
+export const createRunV2ResponseSchema = getRunV2ResponseSchema
+  .extend({
+    runId: z.uuid(),
+    accessSecret: z.string().regex(/^lf_run_[A-Za-z0-9_-]{43}$/),
+  })
+  .strict();
+
+export const commandV2ResponseSchema = getRunV2ResponseSchema
+  .extend({
+    idempotentReplay: z.boolean(),
+    monthlyRecord: monthlyRecordSummarySchema.nullable(),
+  })
+  .strict();
+
+export { runIdPathSchema as runIdV2PathSchema };
+
+export type CreateRunV2Request = z.infer<typeof createRunV2RequestSchema>;
+export type CreateRunV2Response = z.infer<typeof createRunV2ResponseSchema>;
+export type GameCommandV2Public = z.infer<typeof gameCommandV2PublicSchema>;
+export type GetRunV2Response = z.infer<typeof getRunV2ResponseSchema>;
+export type CommandV2Response = z.infer<typeof commandV2ResponseSchema>;
