@@ -1,13 +1,13 @@
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
-import { databaseConnectionFromEnvironment } from "../db/client";
 import { RunRepository } from "../db/run-repository";
+import { getDatabaseConnection } from "../db/runtime";
 import { RunApiService } from "./service";
 
 let service: RunApiService | undefined;
 
 export function getRunApiService(): RunApiService {
   if (!service) {
-    const connection = databaseConnectionFromEnvironment();
+    const connection = getDatabaseConnection();
     const repository = new RunRepository(
       connection.db,
       runSecretCodecFromEnvironment(),
