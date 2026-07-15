@@ -40,7 +40,13 @@ Contains immutable shared catalogs such as locations, careers, event templates, 
 
 ## State and persistence
 
-The future authoritative state is a versioned `GameState`. The first persistence adapter will use browser storage and JSON export or import. Storage is an adapter around state, not part of financial calculation.
+Supabase PostgreSQL is authoritative. Each accepted command stores the versioned
+`GameState`, canonical checksum, immutable revision snapshot, append-only ledger
+delta, command envelope, and outbox event in one transaction. Native schema-v2
+runs additionally store their resolved scenario snapshot once. Monthly turns
+store checksum-protected tax evidence and a checksum-protected result record
+linked to the accepted command and resulting state revision. Persistence remains
+an adapter around deterministic core transitions; it never recalculates money.
 
 ## AI boundary
 
