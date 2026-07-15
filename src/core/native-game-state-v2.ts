@@ -270,6 +270,13 @@ export function createNativeGameStateV2(
           ({ id }) => id,
         ),
       },
+      contributions: {
+        policyYear: snapshot.selected.benefitPolicy.policyYear,
+        employee401kCents: moneyCents(0),
+        employer401kCents: moneyCents(0),
+        iraCents: moneyCents(0),
+        hsaCents: moneyCents(0),
+      },
       insurance: {
         policyYear: snapshot.selected.benefitPolicy.policyYear,
         healthDeductiblePaidCents: moneyCents(0),

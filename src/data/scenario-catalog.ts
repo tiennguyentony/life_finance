@@ -4,7 +4,7 @@ import {
   type ScenarioCatalog,
 } from "../core/scenario-catalog";
 
-export const US_2026_SCENARIO_CATALOG_VERSION = "us-2026.1" as const;
+export const US_2026_SCENARIO_CATALOG_VERSION = "us-2026.2" as const;
 
 const rawCatalog = {
   schemaVersion: 1,
@@ -53,6 +53,7 @@ const rawCatalog = {
     id: "benefit-policy.2026",
     policyYear: 2026,
     employeeRetirementContributionLimitCents: moneyCents(2_450_000),
+    iraContributionLimitCents: moneyCents(750_000),
     definedContributionAdditionLimitCents: moneyCents(7_200_000),
     hsaContributionLimitSelfCents: moneyCents(440_000),
     hsaContributionLimitFamilyCents: moneyCents(875_000),
