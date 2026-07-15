@@ -196,11 +196,18 @@ function monthlyRecordSummary(record: MonthlyTurnV2Record) {
     processedMonth: record.processedMonth,
     nextMonth: record.nextMonth,
     taxTraceId: record.taxTraceId,
+    grossIncomeCents: record.grossIncomeCents,
+    totalTaxCents: record.totalTaxCents,
+    afterTaxCashIncomeCents: record.afterTaxCashIncomeCents,
     market: record.market,
     marketValueChangeCents: record.marketValueChangeCents,
     annualInflationIncreaseCents: record.annualInflationIncreaseCents,
     insurancePlayerCostCents: record.insurancePlayerCostCents,
+    requiredCashCents: record.requiredCashCents,
     nonDebtObligationsPaidCents: record.nonDebtObligationsPaidCents,
+    debtService: record.debtService,
+    funding: record.funding,
+    recurringAllocations: record.recurringAllocations,
     outcome: record.outcome,
   };
 }
