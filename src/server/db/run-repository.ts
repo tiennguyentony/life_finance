@@ -573,6 +573,7 @@ export class RunRepository {
 
       if (currentState.schemaVersion === 2) {
         if (
+          currentState.migration === null ||
           !existingMigration ||
           existingMigration.sourceSchemaVersion !==
             currentState.migration.sourceSchemaVersion ||
