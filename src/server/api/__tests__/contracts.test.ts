@@ -236,6 +236,7 @@ describe("generated OpenAPI", () => {
       "/api/v2/runs",
       "/api/v2/runs/{runId}",
       "/api/v2/runs/{runId}/ai/explanation",
+      "/api/v2/runs/{runId}/ai/debrief",
       "/api/v2/runs/{runId}/ai/world-event",
       "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
