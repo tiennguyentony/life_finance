@@ -17,6 +17,7 @@ import {
 } from "./decision-panels";
 import { EventPanel } from "./event-panel";
 import { OnboardingPanel } from "./onboarding-panel";
+import { selectionForPreset } from "./onboarding-model";
 import { OverviewPanel } from "./overview-panel";
 import {
   buildCreateRequest,
@@ -45,7 +46,9 @@ import type {
 import { RunControls } from "./run-controls";
 
 const DEFAULT_ONBOARDING: OnboardingDraft = {
+  setupMode: "quick",
   presetId: "software",
+  selection: selectionForPreset("software"),
   salary: 120_000,
   cash: 25_000,
   studentDebt: 15_000,
@@ -153,6 +156,7 @@ export function PlayConsole() {
           studentDebtPaymentDollars: onboarding.studentDebtPayment,
           healthPlanId: onboarding.healthPlanId,
           insuranceCoverageIds: onboarding.coverageIds,
+          selection: onboarding.selection,
           financialGoal: {
             desiredAnnualSpendingDollars:
               onboarding.desiredAnnualFiSpending,

@@ -6,6 +6,7 @@ import {
   dollarsToCents,
   percentToPpm,
 } from "../play-model";
+import { selectionForPreset } from "../onboarding-model";
 
 describe("developer play UI model", () => {
   it("builds a catalog-compatible starter request", () => {
@@ -91,6 +92,32 @@ describe("developer play UI model", () => {
       safeWithdrawalRatePpm: 35_000,
       targetAgeYears: 52,
       source: "player_selected",
+    });
+  });
+
+  it("uses custom life selections instead of locking the chosen persona", () => {
+    const selection = {
+      ...selectionForPreset("teacher"),
+      birthMonth: "1980-06",
+      locationId: "location.atlanta",
+      householdId: "household.single_parent_one_child",
+      healthPlanId: null,
+    };
+    const request = buildCreateRequest("software", 60_000, 10_000, "custom", {
+      selection,
+      healthPlanId: null,
+      insuranceCoverageIds: [],
+    });
+
+    expect(request).toMatchObject({
+      birthMonth: "1980-06",
+      locationId: "location.atlanta",
+      careerId: "career.teacher",
+      householdId: "household.single_parent_one_child",
+      benefitsPackageId: "benefits.public_service",
+      healthPlanId: null,
+      retirementPlanId: "retirement.403b_public",
+      insuranceCoverageIds: [],
     });
   });
 });
