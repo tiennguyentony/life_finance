@@ -257,6 +257,48 @@ describe("atomic v2 monthly turn", () => {
     });
   });
 
+  it("applies a persisted macro story on the following monthly market draw", () => {
+    const initial = configuredState();
+    const first = processMonthlyTurnV2(initial, command(initial), {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+      macroStoryPolicy: {
+        version: "macro-story-v1",
+        monthlyChancePpm: 1_000_000,
+        minimumDurationMonths: 2,
+        maximumDurationMonths: 2,
+      },
+    });
+    const story = first.state.gameplay.eventLifecycle.macroStories[0]!;
+    expect(story.startedMonth).toBe("2026-08");
+    const second = processMonthlyTurnV2(
+      first.state,
+      command(first.state),
+      {
+        eventSchedulingPolicy: {
+          version: "fairness-v1",
+          minimumChancePpm: 0,
+          maximumChancePpm: 0,
+        },
+        macroStoryPolicy: {
+          version: "macro-story-v1",
+          monthlyChancePpm: 0,
+          minimumDurationMonths: 2,
+          maximumDurationMonths: 2,
+        },
+      },
+    );
+    expect(second.record.market.appliedReturnModifiersPpm).toEqual(
+      story.returnModifiersPpm,
+    );
+    expect(second.state.gameplay.eventLifecycle.macroStories[0]?.storyId).toBe(
+      story.storyId,
+    );
+  });
+
   it("adjudicates a covered health claim and commits its accumulator with payment", () => {
     const initial = configuredState();
     const result = processMonthlyTurnV2(

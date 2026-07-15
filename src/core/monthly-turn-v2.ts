@@ -35,6 +35,11 @@ import {
   type MarketMonth,
 } from "./market";
 import {
+  activeMacroReturnModifiersV2,
+  advanceMacroStoriesV2,
+  type MacroStoryPolicyV2,
+} from "./macro-story-v2";
+import {
   assessV2Liquidity,
   prepareV2ObligationCash,
   type V2FundingRecord,
@@ -211,6 +216,7 @@ function applyMarketMonthV2(
       state.random,
       state.gameplay.market.monthsInRegime,
     ),
+    activeMacroReturnModifiersV2(state),
   );
   const month = simulation.month;
   const portfolio = state.gameplay.portfolio;
@@ -553,6 +559,7 @@ export function processMonthlyTurnV2(
   command: ProcessMonthV2Command,
   dependencies: Readonly<{
     eventSchedulingPolicy?: EventSchedulingPolicyV2;
+    macroStoryPolicy?: MacroStoryPolicyV2;
   }> = {},
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
@@ -698,6 +705,10 @@ export function processMonthlyTurnV2(
     );
     let nextState = finalizeGameStateV2({ ...beforeOutcome, outcome });
     if (outcome === null) {
+      nextState = advanceMacroStoriesV2(
+        nextState,
+        dependencies.macroStoryPolicy,
+      );
       const schedule = schedulePersonalEventV2(
         nextState,
         dependencies.eventSchedulingPolicy,

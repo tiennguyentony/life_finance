@@ -7,7 +7,11 @@ import {
   type StateInvariantViolation,
 } from "./game-state";
 import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
-import type { EventTier, EventWeakness } from "./events";
+import type {
+  EventTier,
+  EventWeakness,
+  MarketAssetClass,
+} from "./events";
 
 export const GAME_STATE_V2_SCHEMA_VERSION = 2 as const;
 export const ENGINE_V2_VERSION = "4.1.0" as const;
@@ -159,6 +163,15 @@ export type GameplayStateV2 = Readonly<{
     pending: PendingEventV2 | null;
     history: readonly ResolvedEventEvidenceV2[];
     activeStoryIds: readonly string[];
+    macroStories: readonly Readonly<{
+      storyId: string;
+      templateId: string;
+      templateVersion: number;
+      parameters: Readonly<Record<string, number>>;
+      startedMonth: SimulationMonth;
+      expiresMonth: SimulationMonth;
+      returnModifiersPpm: Readonly<Record<MarketAssetClass, RatePpm>>;
+    }>[];
     cooldowns: readonly Readonly<{
       templateId: string;
       eligibleAgainMonth: SimulationMonth;
@@ -955,6 +968,55 @@ export function validateGameStateV2(
       violation("gameplay.eventLifecycle.activeStoryIds", "duplicate_story", "active story ids must be unique"),
     );
   }
+  const storyIds = state.gameplay.eventLifecycle.macroStories.map(
+    ({ storyId }) => storyId,
+  );
+  if (
+    new Set(storyIds).size !== storyIds.length ||
+    sha256Canonical(storyIds.toSorted()) !==
+      sha256Canonical([...state.gameplay.eventLifecycle.activeStoryIds].toSorted())
+  ) {
+    violations.push(
+      violation(
+        "gameplay.eventLifecycle.macroStories",
+        "story_identity_mismatch",
+        "active story ids must exactly identify persisted macro stories",
+      ),
+    );
+  }
+  state.gameplay.eventLifecycle.macroStories.forEach((story, index) => {
+    try {
+      simulationMonth(story.startedMonth);
+      simulationMonth(story.expiresMonth);
+      const modifiers = Object.values(story.returnModifiersPpm);
+      if (
+        story.storyId.length === 0 ||
+        story.templateId.length === 0 ||
+        !Number.isSafeInteger(story.templateVersion) ||
+        story.templateVersion < 1 ||
+        compareMonths(story.startedMonth, state.currentMonth) > 0 ||
+        compareMonths(story.expiresMonth, state.currentMonth) < 0 ||
+        compareMonths(story.expiresMonth, story.startedMonth) < 0 ||
+        modifiers.length !== 4 ||
+        modifiers.some(
+          (modifier) =>
+            !Number.isSafeInteger(modifier) ||
+            modifier < -500_000 ||
+            modifier > 500_000,
+        )
+      ) {
+        throw new RangeError("invalid macro story");
+      }
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.eventLifecycle.macroStories.${index}`,
+          "invalid_macro_story",
+          "macro stories must be current, bounded, and chronological",
+        ),
+      );
+    }
+  });
   const cooldownTemplateIds = state.gameplay.eventLifecycle.cooldowns.map(
     ({ templateId }) => templateId,
   );
@@ -1135,6 +1197,7 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
         pending: null,
         history: [],
         activeStoryIds: [],
+        macroStories: [],
         cooldowns: [],
       },
       careerDevelopment: { pending: [], history: [] },
