@@ -164,6 +164,24 @@ export type GameplayStateV2 = Readonly<{
       eligibleAgainMonth: SimulationMonth;
     }>[];
   }>;
+  careerDevelopment: Readonly<{
+    pending: readonly Readonly<{
+      commandId: string;
+      programId: string;
+      catalogVersion: string;
+      startedMonth: SimulationMonth;
+      completesMonth: SimulationMonth;
+      annualSalaryIncreaseCents: MoneyCents;
+    }>[];
+    history: readonly Readonly<{
+      commandId: string;
+      programId: string;
+      catalogVersion: string;
+      startedMonth: SimulationMonth;
+      completedMonth: SimulationMonth;
+      annualSalaryIncreaseCents: MoneyCents;
+    }>[];
+  }>;
 }>;
 
 export type StateMigrationRecord = Readonly<{
@@ -959,6 +977,65 @@ export function validateGameStateV2(
       );
     }
   });
+  const development = state.gameplay.careerDevelopment;
+  const developmentCommands = [
+    ...development.pending.map(({ commandId }) => commandId),
+    ...development.history.map(({ commandId }) => commandId),
+  ];
+  if (new Set(developmentCommands).size !== developmentCommands.length) {
+    violations.push(
+      violation(
+        "gameplay.careerDevelopment",
+        "duplicate_upskill",
+        "upskill command ids must be unique across pending and history",
+      ),
+    );
+  }
+  development.pending.forEach((entry, index) => {
+    try {
+      simulationMonth(entry.startedMonth);
+      simulationMonth(entry.completesMonth);
+      if (
+        entry.commandId.length === 0 ||
+        entry.programId.length === 0 ||
+        entry.catalogVersion.length === 0 ||
+        entry.annualSalaryIncreaseCents <= 0 ||
+        compareMonths(entry.completesMonth, state.currentMonth) <= 0 ||
+        compareMonths(entry.completesMonth, entry.startedMonth) <= 0
+      ) {
+        throw new RangeError("invalid pending upskill");
+      }
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.careerDevelopment.pending.${index}`,
+          "invalid_upskill",
+          "pending upskill must have valid evidence and a future completion",
+        ),
+      );
+    }
+  });
+  development.history.forEach((entry, index) => {
+    try {
+      simulationMonth(entry.startedMonth);
+      simulationMonth(entry.completedMonth);
+      if (
+        entry.annualSalaryIncreaseCents <= 0 ||
+        compareMonths(entry.completedMonth, entry.startedMonth) <= 0 ||
+        compareMonths(entry.completedMonth, state.currentMonth) > 0
+      ) {
+        throw new RangeError("invalid completed upskill");
+      }
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.careerDevelopment.history.${index}`,
+          "invalid_upskill",
+          "completed upskill must be chronological and financially bounded",
+        ),
+      );
+    }
+  });
 
   return violations;
 }
@@ -1060,6 +1137,7 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
         activeStoryIds: [],
         cooldowns: [],
       },
+      careerDevelopment: { pending: [], history: [] },
     },
     migration: {
       sourceSchemaVersion: 1,

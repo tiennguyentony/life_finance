@@ -1,4 +1,5 @@
 import { safeBigIntToNumber } from "./domain/integer";
+import { completeCareerDevelopmentV2 } from "./detailed-actions-v2";
 import {
   addMoney,
   allocateMoney,
@@ -615,7 +616,7 @@ export function processMonthlyTurnV2(
         reasonCode: "required_obligations_exceed_automatic_liquidity",
       });
       const nextState = recordExposureSnapshotV2(
-        finalizeGameStateV2({
+        completeCareerDevelopmentV2({
           ...working,
           currentMonth: nextMonth,
           revision: state.revision + 1,
@@ -678,7 +679,7 @@ export function processMonthlyTurnV2(
     });
     working = applyAfterTaxPlan(working, command.id, recurringAllocations);
     const beforeOutcome = recordExposureSnapshotV2(
-      finalizeGameStateV2({
+      completeCareerDevelopmentV2({
         ...working,
         currentMonth: nextMonth,
         revision: state.revision + 1,

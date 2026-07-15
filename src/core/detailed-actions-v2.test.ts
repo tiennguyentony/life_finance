@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  completeCareerDevelopmentV2,
   reduceDetailedFinanceCommand,
   type DetailedFinanceCommand,
   type DetailedFinancialAction,
@@ -341,5 +342,59 @@ describe("detailed v2 financial commands", () => {
         command(sold, "cmd.home.sell.again", { type: "sell_home" }),
       ),
     ).toThrow(expect.objectContaining({ code: "HOME_REQUIRED" }));
+  });
+
+  it("applies lifestyle plans and completes catalog-owned upskill effects on schedule", () => {
+    const initial = state();
+    const lifestyle = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.lifestyle.reduce", {
+        type: "change_lifestyle",
+        annualLivingCostDeltaCents: moneyCents(-1_200_000),
+      }),
+    );
+    expect(lifestyle.finances.annualLivingCostCents).toBe(
+      initial.finances.annualLivingCostCents - 1_200_000,
+    );
+    expect(lifestyle.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents - 100_000,
+    );
+    expect(lifestyle.ledger).toEqual(initial.ledger);
+
+    const started = reduceDetailedFinanceCommand(
+      lifestyle,
+      command(lifestyle, "cmd.upskill.certificate", {
+        type: "start_upskill",
+        programId: "upskill.certificate",
+      }),
+    );
+    expect(started.finances.cashCents).toBe(lifestyle.finances.cashCents - 200_000);
+    expect(started.gameplay.careerDevelopment.pending[0]).toMatchObject({
+      commandId: "cmd.upskill.certificate",
+      programId: "upskill.certificate",
+      catalogVersion: "upskill-2026.1",
+      startedMonth: "2026-07",
+      completesMonth: "2026-10",
+      annualSalaryIncreaseCents: 300_000,
+    });
+    const beforeCompletion = completeCareerDevelopmentV2({
+      ...started,
+      currentMonth: simulationMonth("2026-09"),
+    });
+    expect(beforeCompletion.gameplay.careerDevelopment.pending).toHaveLength(1);
+    const completed = completeCareerDevelopmentV2({
+      ...beforeCompletion,
+      currentMonth: simulationMonth("2026-10"),
+    });
+    expect(completed.gameplay.careerDevelopment.pending).toEqual([]);
+    expect(completed.gameplay.careerDevelopment.history[0]).toMatchObject({
+      completedMonth: "2026-10",
+      annualSalaryIncreaseCents: 300_000,
+    });
+    expect(completed.gameplay.employment).toMatchObject({
+      status: "employed",
+      annualGrossSalaryCents: 12_300_000,
+    });
+    expect(validateGameStateV2(completed)).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import {
   addMoney,
+  allocateMoney,
   moneyCents,
   multiplyMoneyByRate,
   subtractMoney,
@@ -10,7 +11,12 @@ import {
   divideRoundHalfAwayFromZero,
   safeBigIntToNumber,
 } from "./domain/integer";
-import { monthsBetween, simulationMonth, type SimulationMonth } from "./domain/month";
+import {
+  addMonths,
+  monthsBetween,
+  simulationMonth,
+  type SimulationMonth,
+} from "./domain/month";
 import { reconcileFinancesWithLedger } from "./game-state";
 import {
   finalizeGameStateV2,
@@ -18,6 +24,7 @@ import {
   type PortfolioBreakdown,
 } from "./game-state-v2";
 import { appendTransaction, type JournalPosting } from "./ledger";
+import { getUpskillProgram } from "../data/upskill-programs";
 
 export const DETAILED_FINANCE_COMMAND_SCHEMA_VERSION = 2 as const;
 
@@ -71,6 +78,14 @@ export type DetailedFinancialAction =
       type: "refinance_home";
       mortgageAnnualInterestRatePpm: RatePpm;
       mortgageTermMonths: number;
+    }>
+  | Readonly<{
+      type: "change_lifestyle";
+      annualLivingCostDeltaCents: MoneyCents;
+    }>
+  | Readonly<{
+      type: "start_upskill";
+      programId: "upskill.certificate" | "upskill.bootcamp" | "upskill.degree";
     }>;
 
 export type DetailedFinanceCommand = Readonly<{
@@ -100,7 +115,10 @@ export class DetailedFinanceError extends Error {
     | "HOME_ALREADY_OWNED"
     | "HOME_REQUIRED"
     | "INVALID_TERM"
-    | "MORTGAGE_CONFLICT";
+    | "MORTGAGE_CONFLICT"
+    | "LIFESTYLE_OUT_OF_RANGE"
+    | "UNKNOWN_PROGRAM"
+    | "EMPLOYMENT_REQUIRED";
 
   constructor(code: DetailedFinanceError["code"], message: string) {
     super(message);
@@ -786,6 +804,142 @@ function applyHomeRefinance(
   });
 }
 
+function applyLifestyleChange(
+  state: GameStateV2,
+  command: DetailedFinanceCommand,
+  action: Extract<DetailedFinancialAction, { type: "change_lifestyle" }>,
+): GameStateV2 {
+  const delta = action.annualLivingCostDeltaCents;
+  if (!Number.isSafeInteger(delta) || delta === 0) {
+    throw new DetailedFinanceError(
+      "INVALID_AMOUNT",
+      "lifestyle delta must be a non-zero safe integer number of cents",
+    );
+  }
+  const annual = state.finances.annualLivingCostCents + delta;
+  const monthlyDelta = allocateMoney(delta, 1, 12);
+  const required = state.finances.requiredObligationsCents + monthlyDelta;
+  if (!Number.isSafeInteger(annual) || annual < 0 || required < 0) {
+    throw new DetailedFinanceError(
+      "LIFESTYLE_OUT_OF_RANGE",
+      "lifestyle change cannot make living cost or obligations negative",
+    );
+  }
+  return accept(state, command, {
+    finances: {
+      ...state.finances,
+      annualLivingCostCents: moneyCents(annual),
+      requiredObligationsCents: moneyCents(required),
+    },
+  });
+}
+
+function applyStartUpskill(
+  state: GameStateV2,
+  command: DetailedFinanceCommand,
+  action: Extract<DetailedFinancialAction, { type: "start_upskill" }>,
+): GameStateV2 {
+  const program = getUpskillProgram(action.programId);
+  if (!program) {
+    throw new DetailedFinanceError("UNKNOWN_PROGRAM", "upskill program is unknown");
+  }
+  if (state.gameplay.employment.status !== "employed") {
+    throw new DetailedFinanceError(
+      "EMPLOYMENT_REQUIRED",
+      "upskill salary effect requires active employment",
+    );
+  }
+  if (
+    state.gameplay.careerDevelopment.pending.some(
+      ({ programId }) => programId === program.id,
+    )
+  ) {
+    throw new DetailedFinanceError(
+      "INVALID_COMMAND",
+      "the selected upskill program is already pending",
+    );
+  }
+  requireCash(state, program.costCents);
+  const aggregate = appendAction(
+    state,
+    command,
+    "start_upskill_v2",
+    `Start engine-owned upskill program ${program.id}`,
+    [debit("expense.living", program.costCents), credit("asset.cash", program.costCents)],
+  );
+  return accept(state, command, {
+    ...aggregate,
+    gameplay: {
+      ...state.gameplay,
+      careerDevelopment: {
+        ...state.gameplay.careerDevelopment,
+        pending: [
+          ...state.gameplay.careerDevelopment.pending,
+          {
+            commandId: command.id,
+            programId: program.id,
+            catalogVersion: program.version,
+            startedMonth: state.currentMonth,
+            completesMonth: addMonths(state.currentMonth, program.durationMonths),
+            annualSalaryIncreaseCents: program.annualSalaryIncreaseCents,
+          },
+        ],
+      },
+    },
+  });
+}
+
+export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
+  const completed = state.gameplay.careerDevelopment.pending.filter(
+    ({ completesMonth }) => completesMonth === state.currentMonth,
+  );
+  if (completed.length === 0) return finalizeGameStateV2(state);
+  if (state.gameplay.employment.status !== "employed") {
+    throw new DetailedFinanceError(
+      "EMPLOYMENT_REQUIRED",
+      "pending salary effect cannot complete without active employment",
+    );
+  }
+  const salaryIncrease = moneyCents(
+    safeBigIntToNumber(
+      completed.reduce(
+        (total, entry) => total + BigInt(entry.annualSalaryIncreaseCents),
+        BigInt(0),
+      ),
+      "completed upskill salary increase",
+    ),
+  );
+  return finalizeGameStateV2({
+    ...state,
+    gameplay: {
+      ...state.gameplay,
+      employment: {
+        ...state.gameplay.employment,
+        annualGrossSalaryCents: addMoney(
+          state.gameplay.employment.annualGrossSalaryCents,
+          salaryIncrease,
+        ),
+      },
+      careerDevelopment: {
+        pending: state.gameplay.careerDevelopment.pending.filter(
+          ({ completesMonth }) => completesMonth !== state.currentMonth,
+        ),
+        history: [
+          ...state.gameplay.careerDevelopment.history,
+          ...completed.map((entry) => ({
+            commandId: entry.commandId,
+            programId: entry.programId,
+            catalogVersion: entry.catalogVersion,
+            startedMonth: entry.startedMonth,
+            completedMonth: state.currentMonth,
+            annualSalaryIncreaseCents: entry.annualSalaryIncreaseCents,
+          })),
+        ],
+      },
+    },
+  });
+}
+
 export function reduceDetailedFinanceCommand(
   state: GameStateV2,
   command: DetailedFinanceCommand,
@@ -812,5 +966,9 @@ export function reduceDetailedFinanceCommand(
       return applyHomeSale(state, command);
     case "refinance_home":
       return applyHomeRefinance(state, command, command.payload.action);
+    case "change_lifestyle":
+      return applyLifestyleChange(state, command, command.payload.action);
+    case "start_upskill":
+      return applyStartUpskill(state, command, command.payload.action);
   }
 }

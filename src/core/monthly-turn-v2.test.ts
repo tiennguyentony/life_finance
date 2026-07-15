@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "./canonical";
 import { buildCheckpointEvidenceV2 } from "./checkpoint-v2";
+import { reduceDetailedFinanceCommand } from "./detailed-actions-v2";
 import { moneyCents, ratePpm } from "./domain/money";
 import { simulationMonth } from "./domain/month";
 import { validateGameStateV2 } from "./game-state-v2";
@@ -91,17 +92,18 @@ function configuredState() {
 function command(
   state = configuredState(),
   overrides: Partial<ProcessMonthV2Command["payload"]> = {},
+  id = `cmd.month.${state.currentMonth}`,
 ): ProcessMonthV2Command {
   return {
     schemaVersion: 2,
-    id: "cmd.month.2026-07",
+    id,
     type: "process_month_v2",
     expectedRevision: state.revision,
     effectiveMonth: state.currentMonth,
     payload: {
       taxEvidence: {
         schemaVersion: 1,
-        traceId: "tax.monthly-v2.2026-07",
+        traceId: `tax.${id}`,
         economicYear: 2026,
         policyYear: 2026,
         stateCode: "WA",
@@ -136,7 +138,7 @@ describe("atomic v2 monthly turn", () => {
     expect(result.record).toMatchObject({
       processedMonth: "2026-07",
       nextMonth: "2026-08",
-      taxTraceId: "tax.monthly-v2.2026-07",
+      taxTraceId: "tax.cmd.month.2026-07",
       insurancePlayerCostCents: 0,
       outcome: null,
     });
@@ -203,7 +205,7 @@ describe("atomic v2 monthly turn", () => {
       evidenceVersion: "checkpoint-v2.1",
       monthsProcessed: 1,
       monthlyCommandIds: ["cmd.month.2026-07"],
-      taxTraceIds: ["tax.monthly-v2.2026-07"],
+      taxTraceIds: ["tax.cmd.month.2026-07"],
       totalGrossIncomeCents: 1_000_000,
       totalTaxCents: 200_000,
       totalAfterTaxCashIncomeCents: 730_000,
@@ -218,6 +220,41 @@ describe("atomic v2 monthly turn", () => {
         { ...result.record, processedMonth: simulationMonth("2026-06") },
       ]),
     ).toThrow(expect.objectContaining({ code: "RECORD_GAP" }));
+  });
+
+  it("materializes a completed upskill before the following month's tax context", () => {
+    let current = configuredState();
+    current = reduceDetailedFinanceCommand(current, {
+      schemaVersion: 2,
+      id: "cmd.upskill.monthly",
+      type: "take_detailed_action",
+      expectedRevision: current.revision,
+      effectiveMonth: current.currentMonth,
+      payload: {
+        action: { type: "start_upskill", programId: "upskill.certificate" },
+      },
+    });
+    const noEvents = {
+      eventSchedulingPolicy: {
+        version: "fairness-v1" as const,
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+    };
+    for (let index = 0; index < 3; index += 1) {
+      current = processMonthlyTurnV2(
+        current,
+        command(current, {}, `cmd.upskill.month.${current.currentMonth}`),
+        noEvents,
+      ).state;
+    }
+
+    expect(current.currentMonth).toBe("2026-10");
+    expect(current.gameplay.careerDevelopment.pending).toEqual([]);
+    expect(current.gameplay.careerDevelopment.history).toHaveLength(1);
+    expect(current.gameplay.employment).toMatchObject({
+      annualGrossSalaryCents: 12_300_000,
+    });
   });
 
   it("adjudicates a covered health claim and commits its accumulator with payment", () => {
