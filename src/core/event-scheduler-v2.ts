@@ -1,10 +1,13 @@
 import { nextInt, type RandomState } from "./domain/rng";
-import { compareMonths } from "./domain/month";
+import { compareMonths, monthsBetween } from "./domain/month";
 import type { GameState } from "./game-state";
 import type { EventProposal, EventTemplate, EventWeakness } from "./events";
 import { eventApplicabilityReasons } from "./events";
 import type { GameStateV2 } from "./game-state-v2";
 import { EVENT_TEMPLATES } from "../data/event-templates";
+import { personalEventFamily } from "../data/event-experience";
+
+export const EVENT_FAMILY_RECENCY_MONTHS = 9;
 
 export type EventSchedulingPolicyV2 = Readonly<{
   version: "fairness-v1";
@@ -86,10 +89,24 @@ export function eligiblePersonalEventTemplatesV2(
       template.kind === "personal_shock" &&
       template.targetsWeaknesses.some((weakness) => weaknesses.has(weakness)) &&
       isOffCooldown(state, template.id) &&
+      isOutsideFamilyRecencyWindow(state, template.id) &&
       eventApplicabilityReasons(template, projection).length === 0 &&
       (template.tier !== "catastrophe" ||
         (state.gameplay.exposure.current?.scorePpm ?? 0) >= 2_400_000),
   ).toSorted((left, right) => left.id.localeCompare(right.id)));
+}
+
+function isOutsideFamilyRecencyWindow(state: GameStateV2, templateId: string): boolean {
+  const family = personalEventFamily(templateId);
+  if (!family) return true;
+  return !state.gameplay.eventLifecycle.history.some((event) => {
+    const elapsed = monthsBetween(event.resolvedMonth, state.currentMonth);
+    return (
+      elapsed >= 0 &&
+      elapsed < EVENT_FAMILY_RECENCY_MONTHS &&
+      personalEventFamily(event.templateId) === family
+    );
+  });
 }
 
 function isOffCooldown(state: GameStateV2, templateId: string): boolean {
