@@ -7,11 +7,13 @@ import { RunApiServiceV2 } from "./service-v2";
 import { AiEducationService } from "../ai/education-service";
 import { getAiRoleClient } from "../ai/runtime";
 import { AiWorldDirectorService } from "../ai/world-director-service";
+import { AiDebriefService } from "../ai/debrief-service";
 
 let service: RunApiService | undefined;
 let serviceV2: RunApiServiceV2 | undefined;
 let aiEducationService: AiEducationService | undefined;
 let aiWorldDirectorService: AiWorldDirectorService | undefined;
+let aiDebriefService: AiDebriefService | undefined;
 
 export function getRunApiService(): RunApiService {
   if (!service) {
@@ -53,6 +55,15 @@ export function getAiWorldDirectorService(): AiWorldDirectorService {
     );
   }
   return aiWorldDirectorService;
+}
+
+export function getAiDebriefService(): AiDebriefService {
+  if (!aiDebriefService) {
+    const connection = getDatabaseConnection();
+    const repository = new RunRepository(connection.db, runSecretCodecFromEnvironment());
+    aiDebriefService = new AiDebriefService(repository, (runId) => getAiRoleClient(runId));
+  }
+  return aiDebriefService;
 }
 
 export function getRunApiServiceV2(): RunApiServiceV2 {
