@@ -1,4 +1,5 @@
 import { addMonths, simulationMonth, type SimulationMonth } from "./domain/month";
+import { applyFinancialAction, type FinancialAction } from "./actions";
 import {
   finalizeGameState,
   reconcileFinancesWithLedger,
@@ -9,6 +10,7 @@ import {
   type JournalPosting,
   type JournalTransaction,
 } from "./ledger";
+import { processMonthlyTurn, type MonthlyTurnInput } from "./monthly-turn";
 
 export const GAME_COMMAND_SCHEMA_VERSION = 1 as const;
 
@@ -37,7 +39,23 @@ export type PostTransactionCommand = CommandEnvelope &
     }>;
   }>;
 
-export type GameCommand = AdvanceMonthCommand | PostTransactionCommand;
+export type TakeActionCommand = CommandEnvelope &
+  Readonly<{
+    type: "take_action";
+    payload: Readonly<{ action: FinancialAction }>;
+  }>;
+
+export type ProcessMonthCommand = CommandEnvelope &
+  Readonly<{
+    type: "process_month";
+    payload: MonthlyTurnInput;
+  }>;
+
+export type GameCommand =
+  | AdvanceMonthCommand
+  | PostTransactionCommand
+  | TakeActionCommand
+  | ProcessMonthCommand;
 
 export type CommandErrorCode =
   | "UNSUPPORTED_COMMAND_SCHEMA"
@@ -179,6 +197,17 @@ export function reduceGameCommand(
         });
       case "post_transaction":
         return postTransaction(state, command);
+      case "take_action": {
+        const application = applyFinancialAction(
+          state,
+          command.id,
+          command.effectiveMonth,
+          command.payload.action,
+        );
+        return acceptCommand(state, command.id, application);
+      }
+      case "process_month":
+        return processMonthlyTurn(state, command.id, command.payload).state;
       default: {
         const exhaustive: never = command;
         throw new GameCommandError(
