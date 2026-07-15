@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
 from threading import Lock
+from types import ModuleType
 from typing import Any
-
-import policyengine as pe
 
 from tax_service.models import (
     AnnualDeductions,
@@ -31,6 +30,25 @@ EXTRA_VARIABLES = [
     "taxable_income",
 ]
 _CALCULATION_LOCK = Lock()
+_POLICYENGINE_MODULE: ModuleType | None = None
+
+
+def policyengine_module() -> ModuleType:
+    """Load the large rules engine only for an authenticated calculation.
+
+    Importing PolicyEngine initializes its full rules bundle. Keeping that work
+    out of module import allows the unauthenticated health endpoint to answer
+    during a serverless cold start without loading hundreds of megabytes of tax
+    dependencies. Python's import cache and this module reference make the load
+    a one-time operation per warm function instance.
+    """
+
+    global _POLICYENGINE_MODULE
+    if _POLICYENGINE_MODULE is None:
+        import policyengine
+
+        _POLICYENGINE_MODULE = policyengine
+    return _POLICYENGINE_MODULE
 
 
 def cents_to_dollars(value: int) -> float:
@@ -154,6 +172,7 @@ def gross_income_cents(request: TaxCalculationRequest) -> int:
 
 
 def calculate_tax(request: TaxCalculationRequest) -> TaxCalculationResult:
+    policyengine = policyengine_module()
     primary = next(person for person in request.people if person.role == "primary")
     people = [
         person_to_policyengine(
@@ -170,7 +189,7 @@ def calculate_tax(request: TaxCalculationRequest) -> TaxCalculationResult:
     }
 
     with _CALCULATION_LOCK:
-        result = pe.us.calculate_household(
+        result = policyengine.us.calculate_household(
             people=people,
             tax_unit=tax_unit,
             household={"state_code": request.state_code},
