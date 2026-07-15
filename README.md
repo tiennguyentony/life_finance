@@ -85,13 +85,14 @@ annual tax context use persisted evidence and expose a `tax.cache.*` trace.
 ## Repository layout
 
 ```text
-src/core/             Framework-free deterministic financial engine
+src/core/             Framework-free engine, contracts, handlers, and invariants
 src/server/api/       REST contracts, handlers, OpenAPI, and typed client
-src/server/db/        Drizzle schema, runtime, and atomic repositories
+src/server/db/        Drizzle schema, repository contracts, invariants, and transactions
 src/server/tax/       Server-only resilient PolicyEngine client
 src/server/ai/        GPT role contracts, privacy, transport, and audit runtime
-src/app/api/v1/       Next.js route adapters and readiness endpoint
-src/features/play/    Developer gameplay UI and presentation-model tests
+src/app/api/          Thin v1/v2 Next.js route adapters and readiness endpoint
+src/features/play/    Gameplay controller, focused panels, models, and actions
+src/**/__tests__/      Tests separated from production module directories
 src/data/education-content.ts  Versioned finance education catalog
 services/tax/         Independently deployable FastAPI/PolicyEngine service
 drizzle/              Reviewed PostgreSQL migrations
@@ -191,7 +192,7 @@ GPT-5.6 submission path.
 ```sh
 ollama pull gpt-oss:20b
 ollama list
-RUN_OLLAMA_INTEGRATION=1 pnpm test -- src/server/ai/ollama-transport.integration.test.ts
+RUN_OLLAMA_INTEGRATION=1 pnpm test -- src/server/ai/__tests__/ollama-transport.integration.test.ts
 ```
 
 Set the following in the uncommitted `.env.local` file:
