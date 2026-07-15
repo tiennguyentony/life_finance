@@ -239,7 +239,7 @@ Status meanings: **implemented** has production code and direct tests;
 | Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | `src/core/game-state.ts`, `src/core/outcomes.ts` | Reverify against detailed accounts |
 | Monthly market processing | Partial | `src/core/market.ts`, `src/core/monthly-turn.ts` | Add asset classes, story state, orchestrator consumer |
 | Event templates and bounded choices | Partial | `src/core/events.ts`, `src/data/event-templates.ts` | Add scheduler, cooldowns, story state, insurance and behavioral events |
-| Explicit financial actions | Partial | `src/core/actions.ts`, `src/core/detailed-actions-v2.ts` | Add recurring strategy, insurance claims, home/refi/upskill, and gameplay API |
+| Explicit financial actions | Partial | `src/core/actions.ts`, `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts` | Apply recurring plan in turn orchestration; add claims, home/refi/upskill, and API |
 | Elastic checkpoints | Partial | `src/core/checkpoints.ts` | Integrate decisions/events and persist monthly records |
 | Versioned commands and concurrency | Partial | `src/core/commands.ts`, repository transaction tests | Expose process-turn command and replay contract |
 | Tax adapter | Partial | `src/server/tax` | Call from turn service and persist result before core application |
