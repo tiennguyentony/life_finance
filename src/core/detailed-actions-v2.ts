@@ -6,7 +6,7 @@ import {
   type MoneyCents,
   type RatePpm,
 } from "./domain/money";
-import { simulationMonth, type SimulationMonth } from "./domain/month";
+import { monthsBetween, simulationMonth, type SimulationMonth } from "./domain/month";
 import { reconcileFinancesWithLedger } from "./game-state";
 import {
   finalizeGameStateV2,
@@ -46,7 +46,15 @@ export type DetailedFinancialAction =
       amountCents: MoneyCents;
     }>
   | Readonly<{ type: "pay_revolving_credit"; amountCents: MoneyCents }>
-  | Readonly<{ type: "draw_revolving_credit"; amountCents: MoneyCents }>;
+  | Readonly<{ type: "draw_revolving_credit"; amountCents: MoneyCents }>
+  | Readonly<{
+      type: "withdraw_retirement";
+      bucket:
+        | "retirement401kCents"
+        | "retirementIraCents"
+        | "retirementLegacyUnclassifiedCents";
+      amountCents: MoneyCents;
+    }>;
 
 export type DetailedFinanceCommand = Readonly<{
   schemaVersion: typeof DETAILED_FINANCE_COMMAND_SCHEMA_VERSION;
@@ -443,6 +451,57 @@ function applyRevolvingCredit(
   });
 }
 
+function applyRetirementWithdrawal(
+  state: GameStateV2,
+  command: DetailedFinanceCommand,
+  action: Extract<DetailedFinancialAction, { type: "withdraw_retirement" }>,
+): GameStateV2 {
+  assertPositive(action.amountCents);
+  const balance = state.gameplay.portfolio[action.bucket];
+  if (action.amountCents > balance) {
+    throw new DetailedFinanceError(
+      "INSUFFICIENT_BALANCE",
+      "withdrawal exceeds the selected retirement bucket",
+    );
+  }
+  const withholding = multiplyMoneyByRate(
+    action.amountCents,
+    200_000 as RatePpm,
+  );
+  const ageMonths = monthsBetween(state.player.birthMonth, state.currentMonth);
+  const penalty =
+    ageMonths < 714
+      ? multiplyMoneyByRate(action.amountCents, 100_000 as RatePpm)
+      : moneyCents(0);
+  const proceeds = subtractMoney(
+    subtractMoney(action.amountCents, withholding),
+    penalty,
+  );
+  const postings: JournalPosting[] = [
+    credit("asset.retirement", action.amountCents),
+    debit("asset.cash", proceeds),
+  ];
+  if (withholding > 0) postings.push(debit("expense.tax", withholding));
+  if (penalty > 0) postings.push(debit("expense.living", penalty));
+  const aggregate = appendAction(
+    state,
+    command,
+    "withdraw_retirement_v2",
+    `Withdraw retirement from ${action.bucket}; 20% withholding${penalty > 0 ? " and 10% early penalty" : ""}`,
+    postings,
+  );
+  return accept(state, command, {
+    ...aggregate,
+    gameplay: {
+      ...state.gameplay,
+      portfolio: {
+        ...state.gameplay.portfolio,
+        [action.bucket]: subtractMoney(balance, action.amountCents),
+      },
+    },
+  });
+}
+
 export function reduceDetailedFinanceCommand(
   state: GameStateV2,
   command: DetailedFinanceCommand,
@@ -461,5 +520,7 @@ export function reduceDetailedFinanceCommand(
     case "pay_revolving_credit":
     case "draw_revolving_credit":
       return applyRevolvingCredit(state, command, command.payload.action);
+    case "withdraw_retirement":
+      return applyRetirementWithdrawal(state, command, command.payload.action);
   }
 }
