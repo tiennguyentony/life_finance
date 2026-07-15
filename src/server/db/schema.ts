@@ -3,6 +3,7 @@ import {
   bigint,
   char,
   check,
+  customType,
   foreignKey,
   index,
   integer,
@@ -27,6 +28,12 @@ export const outboxStatus = pgEnum("outbox_status", [
   "delivered",
   "failed",
 ]);
+
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 const createdAt = timestamp("created_at", {
   withTimezone: true,
@@ -261,6 +268,54 @@ export const transactionalOutbox = pgTable(
   ],
 ).enableRLS();
 
+export const aiAuditRecords = pgTable(
+  "ai_audit_records",
+  {
+    invocationId: uuid("invocation_id").primaryKey(),
+    runId: uuid("run_id").references(() => gameRuns.id, { onDelete: "restrict" }),
+    contractVersion: smallint("contract_version").notNull(),
+    role: varchar("role", { length: 32 }).notNull(),
+    model: varchar("model", { length: 64 }).notNull(),
+    outcome: varchar("outcome", { length: 16 }).notNull(),
+    attemptCount: smallint("attempt_count").notNull(),
+    keyVersion: smallint("key_version").notNull(),
+    initializationVector: bytea("initialization_vector").notNull(),
+    authenticationTag: bytea("authentication_tag").notNull(),
+    ciphertext: bytea("ciphertext").notNull(),
+    createdAt,
+  },
+  (table) => [
+    index("ai_audit_records_run_created_idx").on(table.runId, table.createdAt),
+    index("ai_audit_records_role_created_idx").on(table.role, table.createdAt),
+    check("ai_audit_records_contract_version_positive", sql`${table.contractVersion} > 0`),
+    check(
+      "ai_audit_records_role_valid",
+      sql`${table.role} IN ('hostile_fed', 'teacher', 'onboarding', 'explanation')`,
+    ),
+    check(
+      "ai_audit_records_outcome_valid",
+      sql`${table.outcome} IN ('success', 'failure')`,
+    ),
+    check(
+      "ai_audit_records_attempt_count_bounded",
+      sql`${table.attemptCount} BETWEEN 1 AND 8`,
+    ),
+    check("ai_audit_records_key_version_positive", sql`${table.keyVersion} > 0`),
+    check(
+      "ai_audit_records_iv_length",
+      sql`octet_length(${table.initializationVector}) = 12`,
+    ),
+    check(
+      "ai_audit_records_tag_length",
+      sql`octet_length(${table.authenticationTag}) = 16`,
+    ),
+    check(
+      "ai_audit_records_ciphertext_length",
+      sql`octet_length(${table.ciphertext}) BETWEEN 1 AND 2097152`,
+    ),
+  ],
+).enableRLS();
+
 export type GameRunRow = typeof gameRuns.$inferSelect;
 export type NewGameRunRow = typeof gameRuns.$inferInsert;
 export type RunStateSnapshotRow = typeof runStateSnapshots.$inferSelect;
@@ -268,3 +323,4 @@ export type AcceptedCommandRow = typeof acceptedCommands.$inferSelect;
 export type LedgerTransactionRow = typeof ledgerTransactions.$inferSelect;
 export type LedgerPostingRow = typeof ledgerPostings.$inferSelect;
 export type TransactionalOutboxRow = typeof transactionalOutbox.$inferSelect;
+export type AiAuditRecordRow = typeof aiAuditRecords.$inferSelect;
