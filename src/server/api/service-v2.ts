@@ -239,17 +239,38 @@ function internalPlayerCommand(
     };
   }
   const publicAction = command.payload.action;
-  const action = {
-    ...publicAction,
-    amountCents: moneyCents(publicAction.amountCents),
-    ...(publicAction.type === "liquidate_taxable"
-      ? {
-          liquidationCostRatePpm: ratePpm(
-            publicAction.liquidationCostRatePpm,
-          ),
-        }
-      : {}),
-  } as DetailedFinancialAction;
+  let action: DetailedFinancialAction;
+  if (publicAction.type === "purchase_home") {
+    action = {
+      ...publicAction,
+      purchasePriceCents: moneyCents(publicAction.purchasePriceCents),
+      downPaymentCents: moneyCents(publicAction.downPaymentCents),
+      mortgageAnnualInterestRatePpm: ratePpm(
+        publicAction.mortgageAnnualInterestRatePpm,
+      ),
+    };
+  } else if (publicAction.type === "refinance_home") {
+    action = {
+      ...publicAction,
+      mortgageAnnualInterestRatePpm: ratePpm(
+        publicAction.mortgageAnnualInterestRatePpm,
+      ),
+    };
+  } else if (publicAction.type === "sell_home") {
+    action = publicAction;
+  } else {
+    action = {
+      ...publicAction,
+      amountCents: moneyCents(publicAction.amountCents),
+      ...(publicAction.type === "liquidate_taxable"
+        ? {
+            liquidationCostRatePpm: ratePpm(
+              publicAction.liquidationCostRatePpm,
+            ),
+          }
+        : {}),
+    } as DetailedFinancialAction;
+  }
   return {
     ...command,
     effectiveMonth: simulationMonth(command.effectiveMonth),
