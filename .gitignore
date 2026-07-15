@@ -23,3 +23,6 @@ Thumbs.db
 # Logs
 *.log
 pnpm-debug.log*
+
+# Isolated Codex worktrees
+.worktrees/
