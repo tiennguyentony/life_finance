@@ -169,6 +169,19 @@ Prompt and response bodies are minimized, redacted, encrypted with AES-256-GCM,
 and stored in an administrator-only audit trail. They are never written to normal
 application logs.
 
+## Verified multi-turn journey
+
+On 2026-07-15 the native v2 HTTP flow completed six consecutive months against
+the pinned local PolicyEngine service and a fresh PostgreSQL 17 database. The
+journey created a run, configured strategy, started a cataloged upskill, bought
+a mortgaged home, processed and persisted six tax-backed monthly turns, resolved
+a server-scheduled personal choice, materialized the salary increase in the
+completion month, and built a six-month checkpoint. The final state was active
+at 2027-01 with salary increased from 12,000,000 to 12,300,000 cents. Database
+counts reconciled to 6 monthly records, 6 tax-evidence rows, 10 commands, 11
+snapshots, and 11 outbox rows. A separate high-leverage journey reached
+bankruptcy and correctly rejected later progression with HTTP 409.
+
 ## Persistence and API
 
 Supabase Postgres is authoritative. Drizzle repositories execute each accepted
