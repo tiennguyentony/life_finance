@@ -237,16 +237,17 @@ Status meanings: **implemented** has production code and direct tests;
 | Exact domain primitives, immutable state, seeded RNG | Implemented | `src/core/domain`, `src/core/game-state.ts` | Preserve through state v2 migration |
 | Balanced ledger and reconciliation | Implemented | `src/core/ledger.ts`, invariant tests | Add detailed v2 accounts and debt subledgers |
 | Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | `src/core/game-state.ts`, `src/core/outcomes.ts`, `src/core/obligation-funding-v2.ts` | Reverify in complete v2 monthly journeys |
-| Monthly market processing | Partial | `src/core/market.ts`, `src/core/monthly-turn.ts` | Add asset classes, story state, orchestrator consumer |
+| Monthly market processing | Partial | `src/core/market.ts`, `src/core/monthly-turn-v2.ts` | Add macro modifiers and story state |
 | Event templates and bounded choices | Partial | `src/core/events.ts`, `src/data/event-templates.ts` | Add scheduler, cooldowns, story state, insurance and behavioral events |
-| Explicit financial actions | Partial | `src/core/actions.ts`, `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts` | Apply recurring plan in turn orchestration; add claims, home/refi/upskill, and API |
+| Explicit financial actions | Partial | `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts`, `src/core/monthly-turn-v2.ts` | Add home/refi/upskill and API commands |
 | Elastic checkpoints | Partial | `src/core/checkpoints.ts` | Integrate decisions/events and persist monthly records |
-| Versioned commands and concurrency | Partial | `src/core/commands.ts`, repository transaction tests | Expose process-turn command and replay contract |
-| Tax adapter | Partial | `src/server/tax`, `src/core/payroll-v2.ts` | Build/persist evidence in turn service before atomic core application |
+| Versioned commands and concurrency | Partial | `src/core/monthly-turn-v2.ts`, repository transaction tests | Persist and expose the process-turn replay contract |
+| Atomic monthly turn composition | Implemented | `src/core/monthly-turn-v2.ts`, orchestration and rollback tests | Connect the reducer to persistence and API application services |
+| Tax adapter | Partial | `src/server/tax`, `src/core/payroll-v2.ts`, `src/core/monthly-turn-v2.ts` | Build and persist evidence in the turn service before core application |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Partial | `src/server/db`, `src/server/api` | Add gameplay application service, queries, outbox dispatcher |
 | Location/career/benefits catalogs | Partial | `src/core/scenario-catalog.ts`, `src/data/scenario-catalog.ts` | Persist resolved catalog snapshots during native v2 run creation |
-| Detailed portfolio, debt, insurance, HSA | Partial | `src/core/game-state-v2.ts`, `src/core/detailed-actions-v2.ts`, `src/core/debt-service-v2.ts`, `src/core/insurance-v2.ts` | Apply these subsystems in atomic turns and repository commands |
+| Detailed portfolio, debt, insurance, HSA | Partial | `src/core/game-state-v2.ts`, `src/core/debt-service-v2.ts`, `src/core/insurance-v2.ts`, `src/core/monthly-turn-v2.ts` | Persist and expose these transitions through repository commands |
 | Exposure and Hostile Fed targeting | Missing | — | Implement metrics, fairness policy, scheduler, audit breakdown |
 | Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
 | Teacher evidence/debrief pipeline | Missing | — | Build deterministic evidence first, AI narrative second |
