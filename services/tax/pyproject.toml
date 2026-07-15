@@ -1,0 +1,37 @@
+[project]
+name = "life-finance-tax-service"
+version = "0.1.0"
+description = "Pinned PolicyEngine US tax calculation service for Life Finance"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.139.0",
+  "policyengine[us]==4.21.0",
+  "uvicorn==0.51.0",
+]
+
+[dependency-groups]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.3.0",
+  "pytest==8.4.2",
+  "ruff==0.15.21",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
