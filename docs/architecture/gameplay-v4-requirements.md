@@ -234,24 +234,24 @@ Status meanings: **implemented** has production code and direct tests;
 
 | Requirement | Status | Current evidence | Required next work |
 | --- | --- | --- | --- |
-| Exact domain primitives, immutable state, seeded RNG | Implemented | `src/core/domain`, `src/core/game-state.ts` | Preserve through state v2 migration |
-| Balanced ledger and reconciliation | Implemented | `src/core/ledger.ts`, invariant tests | Add detailed v2 accounts and debt subledgers |
+| Exact domain primitives, immutable state, seeded RNG | Implemented | `src/core/domain`, schema-v2 state/migration, deterministic replay tests | Preserve compatibility at future engine upgrade boundaries |
+| Balanced ledger and reconciliation | Implemented | `src/core/ledger.ts`, detailed v2 actions, payroll/market/debt/funding journals | Add accounts only when a new economic domain requires them |
 | Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | `src/core/game-state.ts`, `src/core/outcomes.ts`, `src/core/obligation-funding-v2.ts` | Reverify in complete v2 monthly journeys |
-| Monthly market processing | Partial | `src/core/market.ts`, `src/core/monthly-turn-v2.ts` | Add macro modifiers and story state |
-| Event templates and bounded choices | Partial | `src/core/events.ts`, `src/data/event-templates.ts` | Add scheduler, cooldowns, story state, insurance and behavioral events |
-| Explicit financial actions | Partial | `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts`, `src/core/monthly-turn-v2.ts` | Add home/refi/upskill and API commands |
-| Elastic checkpoints | Partial | `src/core/checkpoints.ts` | Integrate decisions/events and persist monthly records |
-| Versioned commands and concurrency | Implemented | v2 core/repository/API contracts and PostgreSQL HTTP tests | Extend the same envelope to future event-choice commands |
-| Atomic monthly turn composition | Implemented | core reducer, repository transaction, `RunApiServiceV2`, rollback/replay tests | Extend with scheduled event and checkpoint consumers |
-| Tax adapter | Partial | pinned adapter plus server-owned v2 request/evidence flow | Pass a live multi-month PolicyEngine deployment E2E |
+| Monthly market processing | Implemented | `src/core/market.ts`, bounded persisted macro stories, integrated monthly records | Add new macro templates only through versioned catalogs |
+| Event templates and bounded choices | Partial | fair scheduler, persisted pending/choice/cooldown evidence, exact medical insurance | Add employment recovery and homeowner-specific catastrophe coverage |
+| Explicit financial actions | Implemented | detailed REST commands for trades, debt, contributions, retirement withdrawal, home lifecycle, lifestyle, and cataloged upskill | Add future actions only with balanced/evidence-backed transitions |
+| Elastic checkpoints | Implemented | checksum-validated v2 snapshots/monthly records and authorized checkpoint API | Add player-facing presentation outside backend scope |
+| Versioned commands and concurrency | Implemented | v2 action/strategy/month/event envelopes, replay and PostgreSQL concurrency tests | Preserve envelope for future actions |
+| Atomic monthly turn composition | Implemented | market/macro, tax/payroll, insurance, funding, debt, strategy, exposure, events, career completion, outcomes | Preserve order as replay-critical |
+| Tax adapter | Implemented | pinned PolicyEngine 4.21.0 / rules 1.764.6 plus six-month live HTTP/PostgreSQL journey | Repeat against deployed tax service during smoke test |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
-| Run persistence and REST API | Partial | v2 repository, REST/OpenAPI/typed client, PostgreSQL HTTP journeys | Add outbox dispatcher and event/checkpoint routes |
+| Run persistence and REST API | Implemented | v2 repository, strict REST/OpenAPI/client, event/checkpoint routes, leased outbox dispatcher | Wire an external outbox consumer when one is selected |
 | Location/career/benefits catalogs | Implemented | catalog resolver, normalized snapshots, strict v2 creation endpoint | Add future catalog versions without mutating 2026.2 |
-| Detailed portfolio, debt, insurance, HSA | Partial | v2 reducers plus authorized REST/typed-client commands | Add home/refi/upskill actions and scheduled claims |
-| Exposure and Hostile Fed targeting | Partial | exposure history plus `src/core/event-scheduler-v2.ts` fairness policy | Persist pending choices/resolutions and connect optional bounded AI selection |
-| Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
-| Teacher evidence/debrief pipeline | Missing | — | Build deterministic evidence first, AI narrative second |
-| Gameplay API integration and multi-turn E2E | Partial | create → configure → process/replay PostgreSQL HTTP journey | Add choose → checkpoint → terminal and deployment smoke journeys |
+| Detailed portfolio, debt, insurance, HSA | Implemented | reconciled detailed balances, exact claims, retirement/home/career commands | Add homeowner coverage through a future immutable catalog version |
+| Exposure and Hostile Fed targeting | Implemented | explainable exposure, fairness-v1 targeting, bounded proposals, cooldowns and recovery windows | Optional AI may choose only among the same eligible templates |
+| Psychology traps and multi-month macro story | Partial | lifestyle/concentration templates and persisted bounded 2–4 month macro modifiers | Add explicit behavioral debrief labels and employment recovery story |
+| Teacher evidence/debrief pipeline | Partial | deterministic checkpoint, command/ledger/event/alternative evidence | Connect optional GPT narrative after project quota is available |
+| Gameplay API integration and multi-turn E2E | Partial | live six-month PolicyEngine/PostgreSQL create → actions → months → choose → checkpoint journey plus terminal guard | Apply production migrations, deploy, and run public smoke journey |
 
 ## State evolution requirements
 
