@@ -702,6 +702,7 @@ export function processMonthlyTurnV2(
     const outcome = evaluateTerminalOutcome(
       outcomeProjection,
       command.payload.taxableLiquidationCostRatePpm,
+      beforeOutcome.gameplay.financialGoal,
     );
     let nextState = finalizeGameStateV2({ ...beforeOutcome, outcome });
     if (outcome === null) {

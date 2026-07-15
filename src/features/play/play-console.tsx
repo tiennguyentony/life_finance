@@ -52,6 +52,9 @@ const DEFAULT_ONBOARDING: OnboardingDraft = {
   studentDebtPayment: 250,
   healthPlanId: "health.hdhp_hsa",
   coverageIds: ["insurance.renters"],
+  desiredAnnualFiSpending: 65_000,
+  safeWithdrawalRate: 4,
+  targetAgeYears: 50,
 };
 
 const DEFAULT_STRATEGY: StrategyDraft = {
@@ -145,10 +148,18 @@ export function PlayConsole() {
         onboarding.salary,
         onboarding.cash,
         `browser-${crypto.randomUUID()}`,
-        onboarding.studentDebt,
-        onboarding.studentDebtPayment,
-        onboarding.healthPlanId,
-        onboarding.coverageIds,
+        {
+          studentDebtDollars: onboarding.studentDebt,
+          studentDebtPaymentDollars: onboarding.studentDebtPayment,
+          healthPlanId: onboarding.healthPlanId,
+          insuranceCoverageIds: onboarding.coverageIds,
+          financialGoal: {
+            desiredAnnualSpendingDollars:
+              onboarding.desiredAnnualFiSpending,
+            safeWithdrawalRatePercent: onboarding.safeWithdrawalRate,
+            targetAgeYears: onboarding.targetAgeYears,
+          },
+        },
       );
       const result = await apiRequest<RunResponse & RunCredential>("/api/v2/runs", {
         method: "POST",

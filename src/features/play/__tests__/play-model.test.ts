@@ -35,8 +35,10 @@ describe("developer play UI model", () => {
       125_000,
       75_000,
       "established-seed",
-      20_000,
-      300,
+      {
+        studentDebtDollars: 20_000,
+        studentDebtPaymentDollars: 300,
+      },
     );
 
     expect(request).toMatchObject({
@@ -56,6 +58,7 @@ describe("developer play UI model", () => {
 
   it("keeps home equity outside the financial-independence numerator", () => {
     const state = {
+      gameplay: {},
       finances: {
         cashCents: 100,
         taxableInvestmentsCents: 200,
@@ -70,6 +73,24 @@ describe("developer play UI model", () => {
       investableAssetsCents: 1_000,
       targetCents: 1_000,
       progressPpm: 1_000_000,
+    });
+  });
+
+  it("sends a player-owned FI goal in exact engine units", () => {
+    const request = buildCreateRequest("software", 120_000, 25_000, "goal", {
+      financialGoal: {
+        desiredAnnualSpendingDollars: 60_000,
+        safeWithdrawalRatePercent: 3.5,
+        targetAgeYears: 52,
+      },
+    });
+
+    expect(request.financialGoal).toEqual({
+      version: "financial-goal-v1",
+      desiredAnnualSpendingCents: 6_000_000,
+      safeWithdrawalRatePpm: 35_000,
+      targetAgeYears: 52,
+      source: "player_selected",
     });
   });
 });

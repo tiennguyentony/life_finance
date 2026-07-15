@@ -7,7 +7,7 @@ import {
   type MoneyCents,
   type RatePpm,
 } from "./domain/money";
-import type { SimulationMonth } from "./domain/month";
+import { monthsBetween, type SimulationMonth } from "./domain/month";
 import { createInitialGameState, type MarketRegime } from "./game-state";
 import {
   ENGINE_V2_VERSION,
@@ -17,6 +17,11 @@ import {
   type GameStateV2,
 } from "./game-state-v2";
 import type { ResolvedScenario } from "./scenario-catalog";
+import {
+  defaultFinancialGoal,
+  validateFinancialGoal,
+  type FinancialGoalV1,
+} from "./financial-goals-v2";
 
 export type NativeGameStateV2Input = Readonly<{
   runId: string;
@@ -26,6 +31,7 @@ export type NativeGameStateV2Input = Readonly<{
   randomSeed: string;
   resolvedScenario: ResolvedScenario;
   annualGrossSalaryCents: MoneyCents;
+  financialGoal?: FinancialGoalV1;
   finances: Readonly<{
     cashCents: MoneyCents;
     taxableBroadIndexCents: MoneyCents;
@@ -54,7 +60,8 @@ export class NativeGameStateV2Error extends Error {
     | "STARTING_CASH_OUT_OF_RANGE"
     | "HSA_INELIGIBLE"
     | "SCENARIO_CONSTRAINT"
-    | "INVALID_OPENING_DEBT";
+    | "INVALID_OPENING_DEBT"
+    | "INVALID_FINANCIAL_GOAL";
 
   constructor(code: NativeGameStateV2Error["code"], message: string) {
     super(message);
@@ -74,6 +81,25 @@ function sumMoney(values: readonly MoneyCents[], label: string): MoneyCents {
 
 function assertNativeInput(input: NativeGameStateV2Input): void {
   const { snapshot, snapshotChecksum } = input.resolvedScenario;
+  if (input.financialGoal) {
+    try {
+      validateFinancialGoal(input.financialGoal);
+    } catch (error) {
+      throw new NativeGameStateV2Error(
+        "INVALID_FINANCIAL_GOAL",
+        error instanceof Error ? error.message : "financial goal is invalid",
+      );
+    }
+    const startingAgeYears = Math.floor(
+      monthsBetween(input.birthMonth, input.startMonth) / 12,
+    );
+    if (input.financialGoal.targetAgeYears <= startingAgeYears) {
+      throw new NativeGameStateV2Error(
+        "INVALID_FINANCIAL_GOAL",
+        "FI target age must be later than the player's starting age",
+      );
+    }
+  }
   if (sha256Canonical(snapshot) !== snapshotChecksum) {
     throw new NativeGameStateV2Error(
       "CATALOG_CHECKSUM_MISMATCH",
@@ -214,6 +240,9 @@ export function createNativeGameStateV2(
     engineVersion: ENGINE_V2_VERSION,
     migration: null,
     gameplay: {
+      financialGoal:
+        input.financialGoal ??
+        defaultFinancialGoal(snapshot.derived.annualLivingCostCents),
       catalogs: {
         location: {
           id: snapshot.selected.location.id,

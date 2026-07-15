@@ -87,6 +87,16 @@ export const createRunV2RequestSchema = z
     insuranceCoverageIds: z.array(identifierSchema).max(16),
     scenarioId: identifierSchema,
     annualGrossSalaryCents: nonNegativeCentsSchema,
+    financialGoal: z
+      .object({
+        version: z.literal("financial-goal-v1"),
+        desiredAnnualSpendingCents: nonNegativeCentsSchema.min(1),
+        safeWithdrawalRatePpm: z.int().min(20_000).max(60_000),
+        targetAgeYears: z.int().min(18).max(80),
+        source: z.literal("player_selected"),
+      })
+      .strict()
+      .optional(),
     finances: z
       .object({
         cashCents: nonNegativeCentsSchema,

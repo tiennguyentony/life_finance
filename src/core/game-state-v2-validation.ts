@@ -13,6 +13,7 @@ import {
 import type { GameStateV2 } from "./game-state-v2";
 import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-validation";
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
+import { validateFinancialGoal } from "./financial-goals-v2";
 
 export class InvalidGameStateV2Error extends Error {
   readonly violations: readonly StateInvariantViolation[];
@@ -76,6 +77,20 @@ export function validateGameStateV2(
   state: GameStateV2,
 ): readonly StateInvariantViolation[] {
   const violations: StateInvariantViolation[] = [];
+
+  if (state.gameplay.financialGoal !== undefined) {
+    try {
+      validateFinancialGoal(state.gameplay.financialGoal);
+    } catch {
+      violations.push(
+        violation(
+          "gameplay.financialGoal",
+          "invalid_financial_goal",
+          "FI goal must use goals-v1 with bounded spending, withdrawal rate, and age",
+        ),
+      );
+    }
+  }
 
   if (state.schemaVersion !== GAME_STATE_V2_SCHEMA_VERSION) {
     violations.push(
