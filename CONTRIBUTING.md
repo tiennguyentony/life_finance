@@ -3,18 +3,20 @@
 ## Before changing code
 
 1. Read `docs/architecture/repository.md`.
-2. Keep the change inside one CUJ when possible.
+2. Keep the change inside one authority boundary when possible.
 3. Add financial behavior to `src/core` only when it is deterministic and framework-free.
 4. Run `corepack pnpm verify` before opening a pull request.
 
 ## Folder ownership
 
 - `src/app` owns route files and page composition. It does not own game rules.
-- `src/features/<feature>` owns code specific to one CUJ.
+- `src/features/<feature>` owns one user-facing capability and keeps controller
+  orchestration separate from presentation components.
 - `src/components` contains presentation shared by at least two real consumers.
-- `src/core` contains domain contracts and future pure simulation behavior. It cannot import React or Next.js.
+- `src/core` contains the deterministic simulation and its contracts. It cannot import React or Next.js.
 - `src/data` contains immutable shared catalogs. It never contains mutable player state.
-- Repository-level tests belong in `tests` only when behavior crosses feature boundaries. Unit tests stay beside their module.
+- Tests live in an adjacent `__tests__` directory. The automated layout check
+  rejects test files mixed into production directories.
 
 ## Adding a vertical slice
 

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     default: "Life Finance",
     template: "%s | Life Finance",
   },
-  description: "A browser-first financial life simulation repository shell.",
+  description: "A deterministic financial life simulation.",
 };
 
 export default function RootLayout({
@@ -27,7 +27,7 @@ export default function RootLayout({
         </main>
         <footer className="site-footer">
           <div>Life Finance</div>
-          <div>Localhost repository shell</div>
+          <div>Developer play interface</div>
         </footer>
       </body>
     </html>
