@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   acceptedCommands,
+  aiAuditRecords,
   gameRuns,
   ledgerPostings,
   ledgerTransactions,
@@ -18,10 +19,37 @@ describe("authoritative persistence schema", () => {
     [ledgerTransactions, "ledger_transactions"],
     [ledgerPostings, "ledger_postings"],
     [transactionalOutbox, "transactional_outbox"],
+    [aiAuditRecords, "ai_audit_records"],
   ])("defines the %s table", (table, expectedName) => {
     const config = getTableConfig(table);
     expect(config.name).toBe(expectedName);
     expect(config.enableRLS).toBe(true);
+  });
+
+  it("stores AI audit content only as an authenticated encrypted envelope", () => {
+    const config = getTableConfig(aiAuditRecords);
+    const columnNames = config.columns.map(({ name }) => name);
+
+    expect(columnNames).toEqual(
+      expect.arrayContaining([
+        "key_version",
+        "initialization_vector",
+        "authentication_tag",
+        "ciphertext",
+      ]),
+    );
+    expect(columnNames).not.toEqual(
+      expect.arrayContaining(["prompt", "request", "response", "output"]),
+    );
+    expect(config.foreignKeys[0]?.onDelete).toBe("restrict");
+    expect(config.checks.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "ai_audit_records_role_valid",
+        "ai_audit_records_iv_length",
+        "ai_audit_records_tag_length",
+        "ai_audit_records_ciphertext_length",
+      ]),
+    );
   });
 
   it("stores only a secret hash and keeps the authoritative state checksum", () => {

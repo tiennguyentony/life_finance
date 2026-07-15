@@ -8,6 +8,13 @@
       "when": 1784088667650,
       "tag": "0000_initial_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784090221247,
+      "tag": "0001_dizzy_maverick",
+      "breakpoints": true
     }
   ]
 }
