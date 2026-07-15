@@ -15,6 +15,7 @@ import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-valid
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
 import { validateFinancialGoal } from "./financial-goals-v2";
 import { validateLifeMilestoneState } from "./life-milestones-v2";
+import { validateAiLearningMemory } from "./ai-learning-memory-v2";
 
 export class InvalidGameStateV2Error extends Error {
   readonly violations: readonly StateInvariantViolation[];
@@ -101,6 +102,19 @@ export function validateGameStateV2(
           "gameplay.lifeMilestones",
           "invalid_life_milestones",
           "life milestones must be versioned, bounded, unique, and internally reconciled",
+        ),
+      );
+    }
+  }
+  if (state.gameplay.aiLearningMemory !== undefined) {
+    try {
+      validateAiLearningMemory(state.gameplay.aiLearningMemory);
+    } catch {
+      violations.push(
+        violation(
+          "gameplay.aiLearningMemory",
+          "invalid_ai_learning_memory",
+          "AI learning memory must remain versioned, bounded, unique, and structured",
         ),
       );
     }

@@ -13,9 +13,9 @@ const concepts = [
     id: "financial_independence",
     title: "Financial independence (FI)",
     shortDefinition:
-      "FI means your invested assets can support your annual spending without a paycheck. This simulation uses the 4% rule, so the target is 25 times annual living cost.",
+      "FI means your investable assets can support your chosen annual spending without a paycheck. The simulation derives your target from the withdrawal rate you select; 4% is equivalent to 25 times annual spending.",
     whyItMatters:
-      "Every lifestyle increase raises the target, while investing and lowering recurring costs move you closer.",
+      "Your finish line is player-owned. Spending goals, withdrawal-rate assumptions, investing, and recurring costs all change how achievable it is.",
     decisionTradeoff:
       "Building FI requires saving for tomorrow without leaving too little cash for today.",
   },
@@ -178,4 +178,3 @@ export const EDUCATION_CONCEPTS: readonly EducationConcept[] = Object.freeze(
 export function getEducationConcept(id: string): EducationConcept | undefined {
   return EDUCATION_CONCEPTS.find((concept) => concept.id === id);
 }
-
