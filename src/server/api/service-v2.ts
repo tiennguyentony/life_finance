@@ -37,6 +37,7 @@ import {
   FROZEN_POLICY_YEAR,
   taxCalculationRequestSchema,
 } from "../tax/contracts";
+import { fingerprintAnnualTaxContext } from "../tax/context-cache";
 import {
   commandV2ResponseSchema,
   createRunV2ResponseSchema,
@@ -72,6 +73,7 @@ type V2Repository = Pick<
   | "loadAuthorizedRunV2"
   | "applyCommandV2"
   | "loadMonthlyTaxEvidenceForCommand"
+  | "loadMonthlyTaxEvidenceForContext"
   | "loadCheckpointEvidenceV2"
 >;
 
@@ -484,24 +486,22 @@ export class RunApiServiceV2 {
 
     let evidence = replayEvidence;
     if (!evidence) {
-      const request = buildTaxRequest(current, command.id);
-      const result = await this.#taxCalculator.calculate(request);
-      if (
-        result.traceId !== request.traceId ||
-        result.economicYear !== request.economicYear ||
-        result.policyYear !== request.policyYear ||
-        result.stateCode !== request.stateCode ||
-        result.filingStatus !== request.filingStatus ||
-        result.annualGrossIncomeCents !==
-          current.gameplay.employment.annualGrossSalaryCents
-      ) {
+      const employment = current.gameplay.employment;
+      if (employment.status !== "employed") {
         throw new RunApiV2Error(
           "TAX_CONTEXT_MISMATCH",
-          "tax result does not match the authoritative run context",
+          "monthly processing requires native employment",
         );
       }
+      const request = buildTaxRequest(current, command.id);
+      const contextFingerprint = fingerprintAnnualTaxContext(request);
+      const cached = await this.#repository.loadMonthlyTaxEvidenceForContext(
+        runId,
+        accessSecret,
+        contextFingerprint,
+      );
       const monthlyGross = allocateMoney(
-        current.gameplay.employment.annualGrossSalaryCents,
+        employment.annualGrossSalaryCents,
         1,
         12,
       );
@@ -510,7 +510,75 @@ export class RunApiServiceV2 {
         monthlyGross,
         moneyCents(0),
       );
-      const monthlyTax = allocateMoney(moneyCents(result.totalTaxCents), 1, 12);
+      let taxMetadata: Readonly<{
+        traceId: string;
+        economicYear: number;
+        policyYear: number;
+        stateCode: string;
+        filingStatus: string;
+        provider: "PolicyEngine US";
+        bundleVersion: string;
+        rulesVersion: string;
+        projectedFromFrozenPolicy: boolean;
+      }>;
+      let monthlyTax: number;
+      if (cached) {
+        if (
+          cached.economicYear !== request.economicYear ||
+          cached.policyYear !== request.policyYear ||
+          cached.stateCode !== request.stateCode ||
+          cached.filingStatus !== request.filingStatus ||
+          cached.grossIncomeCents !== monthlyGross ||
+          cached.employee401kContributionCents !==
+            monthlyPlan.preTax.employee401kCents ||
+          cached.employeeHsaContributionCents !== monthlyPlan.preTax.hsaCents
+        ) {
+          throw new RunApiV2Error(
+            "TAX_CONTEXT_MISMATCH",
+            "cached tax evidence does not match the authoritative run context",
+          );
+        }
+        taxMetadata = {
+          traceId: `tax.cache.${command.id}`,
+          economicYear: cached.economicYear,
+          policyYear: cached.policyYear,
+          stateCode: cached.stateCode,
+          filingStatus: cached.filingStatus,
+          provider: cached.provider,
+          bundleVersion: cached.bundleVersion,
+          rulesVersion: cached.rulesVersion,
+          projectedFromFrozenPolicy: cached.projectedFromFrozenPolicy,
+        };
+        monthlyTax = cached.totalTaxCents;
+      } else {
+        const result = await this.#taxCalculator.calculate(request);
+        if (
+          result.traceId !== request.traceId ||
+          result.economicYear !== request.economicYear ||
+          result.policyYear !== request.policyYear ||
+          result.stateCode !== request.stateCode ||
+          result.filingStatus !== request.filingStatus ||
+          result.annualGrossIncomeCents !==
+            employment.annualGrossSalaryCents
+        ) {
+          throw new RunApiV2Error(
+            "TAX_CONTEXT_MISMATCH",
+            "tax result does not match the authoritative run context",
+          );
+        }
+        taxMetadata = {
+          traceId: result.traceId,
+          economicYear: result.economicYear,
+          policyYear: result.policyYear,
+          stateCode: result.stateCode,
+          filingStatus: result.filingStatus,
+          provider: result.model.provider,
+          bundleVersion: result.model.bundleVersion,
+          rulesVersion: result.model.rulesVersion,
+          projectedFromFrozenPolicy: result.model.projectedFromFrozenPolicy,
+        };
+        monthlyTax = allocateMoney(moneyCents(result.totalTaxCents), 1, 12);
+      }
       const afterTaxCash = safeBigIntToNumber(
         BigInt(monthlyGross) -
           BigInt(monthlyPlan.preTax.employee401kCents) -
@@ -526,15 +594,8 @@ export class RunApiServiceV2 {
       }
       evidence = {
         schemaVersion: 1,
-        traceId: result.traceId,
-        economicYear: result.economicYear,
-        policyYear: result.policyYear,
-        stateCode: result.stateCode,
-        filingStatus: result.filingStatus,
-        provider: result.model.provider,
-        bundleVersion: result.model.bundleVersion,
-        rulesVersion: result.model.rulesVersion,
-        projectedFromFrozenPolicy: result.model.projectedFromFrozenPolicy,
+        ...taxMetadata,
+        contextFingerprint,
         grossIncomeCents: monthlyGross,
         employee401kContributionCents:
           monthlyPlan.preTax.employee401kCents,
