@@ -21,6 +21,8 @@ import {
 import type { RunApiService } from "./service";
 import {
   commandV2ResponseSchema,
+  checkpointV2QuerySchema,
+  checkpointV2ResponseSchema,
   createRunV2RequestSchema,
   createRunV2ResponseSchema,
   gameCommandV2PublicSchema,
@@ -267,6 +269,29 @@ export async function handleSubmitCommandV2(
     return jsonResponse(
       commandV2ResponseSchema.parse(
         await service.submitCommand(path.runId, secret, command),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleGetCheckpointV2(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const url = new URL(request.url);
+    const query = checkpointV2QuerySchema.parse({
+      fromRevision: url.searchParams.get("fromRevision"),
+    });
+    return jsonResponse(
+      checkpointV2ResponseSchema.parse(
+        await service.getCheckpoint(path.runId, secret, query.fromRevision),
       ),
       200,
     );

@@ -35,6 +35,7 @@ import { migrateDatabase } from "./migrate";
 import { RunRepository } from "./run-repository";
 import {
   handleCreateRunV2,
+  handleGetCheckpointV2,
   handleGetRunV2,
   handleSubmitCommandV2,
 } from "../api/http";
@@ -1012,6 +1013,27 @@ databaseDescribe("Postgres run repository", () => {
           }),
         }),
       ],
+    });
+
+    const checkpointResponse = await handleGetCheckpointV2(
+      new Request(
+        `https://example.test/api/v2/runs/${created.runId}/checkpoint?fromRevision=1`,
+        { headers: { Authorization: `Bearer ${created.accessSecret}` } },
+      ),
+      created.runId,
+      api,
+    );
+    expect(checkpointResponse.status).toBe(200);
+    await expect(checkpointResponse.json()).resolves.toMatchObject({
+      evidence: {
+        evidenceVersion: "checkpoint-v2.1",
+        monthsProcessed: 1,
+        monthlyCommandIds: ["cmd.api-v2.month.2026-07"],
+        taxTraceIds: ["tax.cmd.api-v2.month.2026-07"],
+        totalGrossIncomeCents: 1_000_000,
+        totalTaxCents: 200_000,
+        totalAfterTaxCashIncomeCents: 730_000,
+      },
     });
 
     const loadedResponse = await handleGetRunV2(

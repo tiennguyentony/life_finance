@@ -15,12 +15,15 @@ import {
 import { isRunSecret } from "../auth/run-secret";
 import {
   commandV2ResponseSchema,
+  checkpointV2QuerySchema,
+  checkpointV2ResponseSchema,
   createRunV2RequestSchema,
   createRunV2ResponseSchema,
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   runIdV2PathSchema,
   type CommandV2Response,
+  type CheckpointV2Response,
   type CreateRunV2Request,
   type CreateRunV2Response,
   type GameCommandV2Public,
@@ -195,6 +198,20 @@ export class LifeFinanceApiClient {
         },
         body: JSON.stringify(body),
       },
+    );
+  }
+
+  async getCheckpointV2(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ): Promise<CheckpointV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    const query = checkpointV2QuerySchema.parse({ fromRevision });
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}/checkpoint?fromRevision=${query.fromRevision}`,
+      checkpointV2ResponseSchema,
+      { method: "GET", headers: this.#authorization(accessSecret) },
     );
   }
 }

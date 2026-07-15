@@ -15,6 +15,8 @@ import {
 } from "./contracts";
 import {
   commandV2ResponseSchema,
+  checkpointV2QuerySchema,
+  checkpointV2ResponseSchema,
   createRunV2RequestSchema,
   createRunV2ResponseSchema,
   gameCommandV2PublicSchema,
@@ -80,6 +82,27 @@ registry.registerPath({
       content: { "application/json": { schema: createRunV2ResponseSchema } },
     },
     400: errorResponses[400],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v2/runs/{runId}/checkpoint",
+  operationId: "getCheckpointV2",
+  summary: "Build reconciled checkpoint evidence from immutable monthly records",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    query: checkpointV2QuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Deterministic checkpoint evidence",
+      content: { "application/json": { schema: checkpointV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
     500: errorResponses[500],
   },
 });
