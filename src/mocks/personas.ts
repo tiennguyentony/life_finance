@@ -1,0 +1,40 @@
+import type { Persona } from "@/types/game";
+
+export const MOCK_PERSONAS = [
+  {
+    id: "junior-developer",
+    name: "Burnt-out Junior Developer",
+    eyebrow: "Difficulty: spicy",
+    description: "Good paycheck. Bad sleep. Seven subscriptions you forgot about.",
+    career: "Junior developer",
+    location: "Seattle, WA",
+    age: 24,
+    stat: "$82K",
+    statLabel: "salary",
+    tone: "lime",
+  },
+  {
+    id: "educator",
+    name: "Debt-free Educator",
+    eyebrow: "Difficulty: steady",
+    description: "No debt, a real emergency fund, and elite packed-lunch discipline.",
+    career: "Middle school teacher",
+    location: "Portland, OR",
+    age: 28,
+    stat: "$12K",
+    statLabel: "cash buffer",
+    tone: "gold",
+  },
+  {
+    id: "city-survivor",
+    name: "Big-city Survivor",
+    eyebrow: "Difficulty: rent",
+    description: "A tiny apartment, huge ambition, and a landlord who knows it.",
+    career: "Brand coordinator",
+    location: "New York, NY",
+    age: 29,
+    stat: "48%",
+    statLabel: "rent bite",
+    tone: "coral",
+  },
+] as const satisfies readonly Persona[];
