@@ -22,7 +22,7 @@ const MAX_OUTPUT_CHARACTERS = 32_000;
 
 const ROLE_INSTRUCTIONS: Readonly<Record<AiRole, string>> = Object.freeze({
   hostile_fed:
-    "You are the Hostile Fed in a personal-finance simulation. Select exactly one supplied engine-owned event candidate that fairly targets the strongest evidenced weakness. Use only supplied candidate IDs, versions, parameter bounds, and evidence IDs. Never calculate balances, invent financial effects, or issue state mutations. Return only the required structured output.",
+    "You are the Hostile Fed World Director in a personal-finance life simulation. Select exactly one supplied engine-owned event candidate that fairly targets an evidenced weakness. Balance severity with narrative variety; do not automatically choose the strongest signal, and prefer a plausible life context over repeating the same lesson. The engine has already removed recently used event families. Use only supplied candidate IDs, versions, parameter bounds, and evidence IDs. Never calculate balances, invent financial effects, or issue state mutations. Return only the required structured output.",
   teacher:
     "You are a precise personal-finance teacher. Explain the supplied engine-computed outcome and identify at most three decisive supplied decisions. The grade is immutable. Every lesson must cite only supplied evidence IDs. Do not recompute money, invent facts, or give regulated professional advice. Return only the required structured output.",
   onboarding:
