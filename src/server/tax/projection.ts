@@ -83,6 +83,28 @@ function mapDeductions(
   ) as AnnualDeductions;
 }
 
+function grossIncomeFromRequest(request: TaxCalculationRequest): number {
+  let total = BigInt(0);
+  for (const person of request.people) {
+    const income = person.income;
+    for (const job of income.w2Jobs) total += BigInt(job.wagesCents);
+    total += BigInt(income.selfEmploymentNetProfitCents);
+    total += BigInt(income.contractorNetProfitCents);
+    total += BigInt(income.taxableInterestCents);
+    total += BigInt(income.taxExemptInterestCents);
+    total += BigInt(income.ordinaryDividendsCents);
+    total += BigInt(income.shortTermCapitalGainsCents);
+    total += BigInt(income.longTermCapitalGainsCents);
+    total += BigInt(income.rentalNetIncomeCents);
+    total += BigInt(income.pensionIncomeCents);
+    total += BigInt(income.iraDistributionsCents);
+    total += BigInt(income.socialSecurityBenefitsCents);
+    total += BigInt(income.unemploymentCompensationCents);
+    total += BigInt(income.otherTaxableIncomeCents);
+  }
+  return safeBigIntToNumber(total, "annual gross income");
+}
+
 export function deflateRequestToFrozenPolicy(
   input: TaxCalculationRequest,
 ): TaxCalculationRequest {
@@ -111,6 +133,10 @@ export function inflateResultToEconomicYear(
   if (result.traceId !== request.traceId) {
     throw new Error("tax result traceId does not match the originating request");
   }
+  const frozenRequest = deflateRequestToFrozenPolicy(request);
+  if (result.annualGrossIncomeCents !== grossIncomeFromRequest(frozenRequest)) {
+    throw new Error("tax result gross income does not match the projected request");
+  }
 
   const inflate = (value: number) =>
     inflateFromFrozenPolicyDollars(value, request.cumulativePriceIndexPpm);
@@ -120,7 +146,10 @@ export function inflateResultToEconomicYear(
       inflate(value),
     ]),
   );
-  const annualGrossIncomeCents = inflate(result.annualGrossIncomeCents);
+  // Deflation followed by inflation is not guaranteed to round-trip to the
+  // original cent. Gross income is authoritative request context, while the
+  // calculated tax components are projected PolicyEngine output.
+  const annualGrossIncomeCents = grossIncomeFromRequest(request);
   const federalIncomeTaxCents = inflate(result.federalIncomeTaxCents);
   const stateIncomeTaxCents = inflate(result.stateIncomeTaxCents);
   const employeePayrollTaxCents = inflate(result.employeePayrollTaxCents);
@@ -161,7 +190,9 @@ export function inflateResultToEconomicYear(
     componentsCents,
     model: {
       ...result.model,
-      projectedFromFrozenPolicy: request.economicYear !== FROZEN_POLICY_YEAR,
+      projectedFromFrozenPolicy:
+        request.economicYear !== FROZEN_POLICY_YEAR ||
+        request.cumulativePriceIndexPpm !== PPM,
     },
   });
 }
