@@ -162,6 +162,7 @@ describe("terminal outcomes", () => {
     [4_999_99, "E"],
   ])("grades age-65 progress at exact boundaries", (investable, grade) => {
     const snapshot = finances({
+      cashCents: moneyCents(0),
       taxableInvestmentsCents: moneyCents(investable),
       annualLivingCostCents: moneyCents(1_000_00),
     });

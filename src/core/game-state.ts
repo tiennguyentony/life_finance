@@ -541,6 +541,7 @@ export function calculateInvestableAssets(
   finances: FinancialSnapshot,
 ): MoneyCents {
   const investable =
+    BigInt(finances.cashCents) +
     BigInt(finances.taxableInvestmentsCents) +
     BigInt(finances.retirementCents) +
     BigInt(finances.otherInvestableAssetsCents);
