@@ -4,12 +4,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type PostTransactionCommand } from "../../core/commands";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
+import type { DetailedFinanceCommand } from "../../core/detailed-actions-v2";
 import { createInitialGameState } from "../../core/game-state";
 import {
   migrateGameStateV1ToV2,
   V1_TO_V2_MIGRATION_VERSION,
 } from "../../core/game-state-v2";
 import { sha256Canonical } from "../../core/canonical";
+import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
+import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
+import type { SetRecurringStrategyCommand } from "../../core/recurring-strategy-v2";
+import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
+import {
+  US_2026_SCENARIO_CATALOG,
+  US_2026_SCENARIO_CATALOG_VERSION,
+} from "../../data/scenario-catalog";
 import { RunSecretCodec } from "../auth/run-secret";
 import { AiAuditCipher } from "../ai/audit-crypto";
 import {
@@ -27,6 +36,9 @@ import {
   aiAuditRecords,
   gameRuns,
   ledgerTransactions,
+  monthlyTaxEvidence,
+  monthlyTurnRecords,
+  runScenarioSnapshots,
   runStateMigrations,
   runStateSnapshots,
   transactionalOutbox,
@@ -94,6 +106,110 @@ function incomeCommand(id: string, amount = 1_000_00): PostTransactionCommand {
   };
 }
 
+function nativeStateV2(runId: string) {
+  const resolvedScenario = resolveScenarioCatalogSelection(
+    US_2026_SCENARIO_CATALOG,
+    {
+      catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
+      locationId: "location.seattle",
+      careerId: "career.software",
+      householdId: "household.single",
+      benefitsPackageId: "benefits.corporate_flex",
+      healthPlanId: "health.hdhp_hsa",
+      retirementPlanId: "retirement.401k_standard",
+      insuranceCoverageIds: ["insurance.renters"],
+      scenarioId: "scenario.fresh_start",
+    },
+  );
+  return createNativeGameStateV2({
+    runId,
+    playerId: "player.repository-v2",
+    birthMonth: simulationMonth("1995-01"),
+    startMonth: simulationMonth("2026-07"),
+    randomSeed: "repository-v2",
+    resolvedScenario,
+    annualGrossSalaryCents: moneyCents(12_000_000),
+    finances: {
+      cashCents: moneyCents(1_000_000),
+      taxableBroadIndexCents: moneyCents(1_000_000),
+      taxableSectorCents: moneyCents(200_000),
+      taxableSpeculativeCents: moneyCents(100_000),
+      retirement401kCents: moneyCents(500_000),
+      retirementIraCents: moneyCents(100_000),
+      hsaCents: moneyCents(50_000),
+      homeValueCents: moneyCents(0),
+      otherAssetsCents: moneyCents(0),
+      termDebts: [
+        {
+          id: "debt.student.repository-v2",
+          kind: "student_loan",
+          principalCents: moneyCents(120_000),
+          annualInterestRatePpm: ratePpm(120_000),
+          minimumPaymentCents: moneyCents(11_000),
+          remainingTermMonths: 12,
+        },
+      ],
+      revolvingCreditLimitCents: moneyCents(1_000_000),
+      revolvingCreditUsedCents: moneyCents(0),
+    },
+    wellbeing: {
+      burnoutPpm: ratePpm(100_000),
+      happinessPpm: ratePpm(900_000),
+    },
+  });
+}
+
+function strategyCommandV2(): SetRecurringStrategyCommand {
+  return {
+    schemaVersion: 2,
+    id: "cmd.repository-v2.strategy",
+    type: "set_recurring_strategy",
+    expectedRevision: 0,
+    effectiveMonth: simulationMonth("2026-07"),
+    payload: {
+      strategy: {
+        preTax401kSalaryRatePpm: ratePpm(50_000),
+        preTaxHsaSalaryRatePpm: ratePpm(20_000),
+        afterTaxBroadIndexRatePpm: ratePpm(200_000),
+        afterTaxSectorRatePpm: ratePpm(0),
+        afterTaxSpeculativeRatePpm: ratePpm(0),
+        afterTaxIraRatePpm: ratePpm(100_000),
+        afterTaxExtraDebtRatePpm: ratePpm(200_000),
+      },
+    },
+  };
+}
+
+function monthCommandV2(id = "cmd.repository-v2.month"): ProcessMonthV2Command {
+  return {
+    schemaVersion: 2,
+    id,
+    type: "process_month_v2",
+    expectedRevision: 1,
+    effectiveMonth: simulationMonth("2026-07"),
+    payload: {
+      taxEvidence: {
+        schemaVersion: 1,
+        traceId: `tax.${id}`,
+        economicYear: 2026,
+        policyYear: 2026,
+        stateCode: "WA",
+        filingStatus: "single",
+        provider: "PolicyEngine US",
+        bundleVersion: "4.21.0",
+        rulesVersion: "1.764.6",
+        projectedFromFrozenPolicy: false,
+        grossIncomeCents: moneyCents(1_000_000),
+        employee401kContributionCents: moneyCents(50_000),
+        employeeHsaContributionCents: moneyCents(20_000),
+        totalTaxCents: 200_000,
+        afterTaxCashIncomeCents: moneyCents(730_000),
+      },
+      taxableLiquidationCostRatePpm: ratePpm(10_000),
+    },
+  };
+}
+
 databaseDescribe("Postgres run repository", () => {
   let connection: DatabaseConnection;
   let repository: RunRepository;
@@ -108,6 +224,9 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000008",
     "10000000-0000-4000-8000-000000000009",
     "10000000-0000-4000-8000-000000000010",
+    "10000000-0000-4000-8000-000000000011",
+    "10000000-0000-4000-8000-000000000012",
+    "10000000-0000-4000-8000-000000000013",
   ];
   let runIndex = 0;
 
@@ -456,5 +575,171 @@ databaseDescribe("Postgres run repository", () => {
     await expect(
       repository.migrateRunStateToV2(created.runId, created.accessSecret),
     ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("creates a native v2 run and atomically persists strategy, tax evidence, and its monthly record", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    const strategy = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      strategyCommandV2(),
+    );
+    const command = monthCommandV2();
+    const processed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    const replayed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+
+    expect(strategy).toMatchObject({
+      idempotentReplay: false,
+      state: { revision: 1 },
+      monthlyRecord: null,
+    });
+    expect(processed).toMatchObject({
+      idempotentReplay: false,
+      state: { revision: 2, currentMonth: "2026-08" },
+      monthlyRecord: {
+        processedMonth: "2026-07",
+        nextMonth: "2026-08",
+        taxTraceId: "tax.cmd.repository-v2.month",
+      },
+    });
+    expect(replayed).toEqual({ ...processed, idempotentReplay: true });
+    expect(
+      await repository.loadAuthorizedRunV2(created.runId, created.accessSecret),
+    ).toEqual(processed.state);
+
+    const [scenarioCount] = await connection.db
+      .select({ value: count() })
+      .from(runScenarioSnapshots)
+      .where(eq(runScenarioSnapshots.runId, created.runId));
+    const [evidenceCount] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTaxEvidence)
+      .where(eq(monthlyTaxEvidence.runId, created.runId));
+    const [recordCount] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTurnRecords)
+      .where(eq(monthlyTurnRecords.runId, created.runId));
+    const [commandCount] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    const [snapshotCount] = await connection.db
+      .select({ value: count() })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    const [outboxCount] = await connection.db
+      .select({ value: count() })
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.runId, created.runId));
+    expect(scenarioCount.value).toBe(1);
+    expect(evidenceCount.value).toBe(1);
+    expect(recordCount.value).toBe(1);
+    expect(commandCount.value).toBe(2);
+    expect(snapshotCount.value).toBe(3);
+    expect(outboxCount.value).toBe(3);
+
+    await connection.db
+      .update(monthlyTaxEvidence)
+      .set({ evidenceChecksum: "0".repeat(64) })
+      .where(eq(monthlyTaxEvidence.runId, created.runId));
+    await expect(
+      repository.applyCommandV2(created.runId, created.accessSecret, command),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+
+    await connection.db
+      .update(runScenarioSnapshots)
+      .set({ snapshotChecksum: "0".repeat(64) })
+      .where(eq(runScenarioSnapshots.runId, created.runId));
+    await expect(
+      repository.loadAuthorizedRunV2(created.runId, created.accessSecret),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("rolls back v2 state, evidence, record, and command when the outbox write fails", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      strategyCommandV2(),
+    );
+    const command = monthCommandV2("cmd.repository-v2.rollback");
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.collision",
+      idempotencyKey: `${created.runId}:v2:${command.id}`,
+      payload: { test: true },
+      status: "pending",
+      availableAt: new Date("2026-07-14T12:00:00.000Z"),
+      createdAt: new Date("2026-07-14T12:00:00.000Z"),
+    });
+
+    await expect(
+      repository.applyCommandV2(created.runId, created.accessSecret, command),
+    ).rejects.toBeTruthy();
+    const loaded = await repository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const [evidenceCount] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTaxEvidence)
+      .where(eq(monthlyTaxEvidence.runId, created.runId));
+    const [recordCount] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTurnRecords)
+      .where(eq(monthlyTurnRecords.runId, created.runId));
+    const [commandCount] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    expect(loaded).toMatchObject({ revision: 1, currentMonth: "2026-07" });
+    expect(evidenceCount.value).toBe(0);
+    expect(recordCount.value).toBe(0);
+    expect(commandCount.value).toBe(1);
+  });
+
+  it("serializes concurrent v2 commands at the same expected revision", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    const action = (id: string, bucket: "taxableBroadIndexCents" | "taxableSectorCents"):
+      DetailedFinanceCommand => ({
+        schemaVersion: 2,
+        id,
+        type: "take_detailed_action",
+        expectedRevision: 0,
+        effectiveMonth: simulationMonth("2026-07"),
+        payload: {
+          action: {
+            type: "invest_taxable",
+            bucket,
+            amountCents: moneyCents(10_000),
+          },
+        },
+      });
+    const results = await Promise.allSettled([
+      repository.applyCommandV2(
+        created.runId,
+        created.accessSecret,
+        action("cmd.repository-v2.concurrent.a", "taxableBroadIndexCents"),
+      ),
+      repository.applyCommandV2(
+        created.runId,
+        created.accessSecret,
+        action("cmd.repository-v2.concurrent.b", "taxableSectorCents"),
+      ),
+    ]);
+
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(results.find(({ status }) => status === "rejected")).toMatchObject({
+      status: "rejected",
+      reason: expect.objectContaining({ code: "OPTIMISTIC_CONFLICT" }),
+    });
   });
 });
