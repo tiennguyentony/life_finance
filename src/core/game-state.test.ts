@@ -149,4 +149,19 @@ describe("financial invariants", () => {
       ),
     ).toBe(true);
   });
+
+  it("counts liquid cash toward FI while continuing to exclude home equity", () => {
+    expect(
+      hasReachedFinancialIndependence(
+        finances({
+          cashCents: moneyCents(25_000_00),
+          taxableInvestmentsCents: moneyCents(0),
+          retirementCents: moneyCents(0),
+          otherInvestableAssetsCents: moneyCents(0),
+          homeValueCents: moneyCents(10_000_000_00),
+          annualLivingCostCents: moneyCents(1_000_00),
+        }),
+      ),
+    ).toBe(true);
+  });
 });
