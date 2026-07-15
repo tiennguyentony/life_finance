@@ -1,5 +1,6 @@
 import { GameCommandError } from "../../core/commands";
 import { DetailedFinanceError } from "../../core/detailed-actions-v2";
+import { EventLifecycleV2Error } from "../../core/event-lifecycle-v2";
 import { InvalidGameStateError } from "../../core/game-state";
 import { MonthlyTurnV2Error } from "../../core/monthly-turn-v2";
 import { NativeGameStateV2Error } from "../../core/native-game-state-v2";
@@ -116,11 +117,21 @@ function errorResponse(error: unknown): Response {
     message = error.message;
   } else if (
     error instanceof DetailedFinanceError ||
+    error instanceof EventLifecycleV2Error ||
     error instanceof RecurringStrategyError ||
     error instanceof MonthlyTurnV2Error
   ) {
     code = error.code;
-    status = ["DUPLICATE_COMMAND", "STALE_REVISION", "RUN_TERMINAL"].includes(
+    status = [
+      "DUPLICATE_COMMAND",
+      "STALE_REVISION",
+      "RUN_TERMINAL",
+      "PENDING_EVENT",
+      "PENDING_EVENT_EXISTS",
+      "PENDING_EVENT_UNRESOLVED",
+      "EVENT_MISMATCH",
+      "NO_PENDING_EVENT",
+    ].includes(
       error.code,
     )
       ? 409
@@ -135,7 +146,12 @@ function errorResponse(error: unknown): Response {
     message = error.message;
   } else if (error instanceof RunApiV2Error) {
     code = error.code;
-    status = ["STALE_REVISION", "INVALID_EFFECTIVE_MONTH", "RUN_TERMINAL"].includes(
+    status = [
+      "STALE_REVISION",
+      "INVALID_EFFECTIVE_MONTH",
+      "RUN_TERMINAL",
+      "PENDING_EVENT",
+    ].includes(
       error.code,
     )
       ? 409

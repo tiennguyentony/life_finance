@@ -5,6 +5,7 @@ import { type PostTransactionCommand } from "../../core/commands";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
 import type { DetailedFinanceCommand } from "../../core/detailed-actions-v2";
+import { queueScheduledPersonalEventV2 } from "../../core/event-lifecycle-v2";
 import { createInitialGameState } from "../../core/game-state";
 import {
   migrateGameStateV1ToV2,
@@ -19,6 +20,7 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
+import { getEventTemplate } from "../../data/event-templates";
 import { RunSecretCodec } from "../auth/run-secret";
 import { AiAuditCipher } from "../ai/audit-crypto";
 import {
@@ -306,6 +308,7 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000013",
     "10000000-0000-4000-8000-000000000014",
     "10000000-0000-4000-8000-000000000015",
+    "10000000-0000-4000-8000-000000000016",
   ];
   let runIndex = 0;
 
@@ -819,6 +822,77 @@ databaseDescribe("Postgres run repository", () => {
     expect(results.find(({ status }) => status === "rejected")).toMatchObject({
       status: "rejected",
       reason: expect.objectContaining({ code: "OPTIMISTIC_CONFLICT" }),
+    });
+  });
+
+  it("persists and idempotently replays a server-owned event choice", async () => {
+    const template = getEventTemplate("personal.medical_bill");
+    const created = await repository.createRunV2((runId) =>
+      queueScheduledPersonalEventV2(nativeStateV2(runId), {
+        proposal: {
+          eventId: "evt.2026-07.personal.medical_bill",
+          templateId: template.id,
+          templateVersion: template.version,
+          parameters: { gross_bill_cents: 1_000_000 },
+        },
+        template,
+        targetedWeakness: "low_emergency_fund",
+      }),
+    );
+    const blockedAction: DetailedFinanceCommand = {
+      schemaVersion: 2,
+      id: "cmd.repository-v2.blocked-action",
+      type: "take_detailed_action",
+      expectedRevision: 0,
+      effectiveMonth: simulationMonth("2026-07"),
+      payload: {
+        action: {
+          type: "invest_taxable",
+          bucket: "taxableBroadIndexCents",
+          amountCents: moneyCents(1),
+        },
+      },
+    };
+    await expect(
+      repository.applyCommandV2(
+        created.runId,
+        created.accessSecret,
+        blockedAction,
+      ),
+    ).rejects.toMatchObject({ code: "PENDING_EVENT_UNRESOLVED" });
+
+    const choice = {
+      schemaVersion: 2 as const,
+      id: "cmd.repository-v2.event-choice",
+      type: "resolve_event_choice" as const,
+      expectedRevision: 0,
+      effectiveMonth: simulationMonth("2026-07"),
+      payload: {
+        eventId: "evt.2026-07.personal.medical_bill",
+        choiceId: "use_insurance",
+      },
+    };
+    const applied = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      choice,
+    );
+    const replayed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      choice,
+    );
+
+    expect(applied.idempotentReplay).toBe(false);
+    expect(applied.state.gameplay.eventLifecycle.pending).toBeNull();
+    expect(applied.state.gameplay.eventLifecycle.history[0]).toMatchObject({
+      choiceId: "use_insurance",
+      playerCostCents: 344_000,
+      insurerCostCents: 656_000,
+    });
+    expect(replayed).toMatchObject({
+      idempotentReplay: true,
+      stateChecksum: applied.stateChecksum,
     });
   });
 

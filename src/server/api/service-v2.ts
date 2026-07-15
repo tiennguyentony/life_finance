@@ -17,6 +17,7 @@ import {
 } from "../../core/domain/money";
 import { monthsBetween, simulationMonth } from "../../core/domain/month";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
+import type { ResolveEventChoiceV2Command } from "../../core/event-lifecycle-v2";
 import type {
   MonthlyTurnV2Record,
   ProcessMonthV2Command,
@@ -54,6 +55,7 @@ export class RunApiV2Error extends Error {
     | "STALE_REVISION"
     | "INVALID_EFFECTIVE_MONTH"
     | "RUN_TERMINAL"
+    | "PENDING_EVENT"
     | "TAX_CONTEXT_MISMATCH"
     | "TAX_RESULT_UNUSABLE";
 
@@ -204,7 +206,7 @@ function monthlyRecordSummary(record: MonthlyTurnV2Record) {
 
 function internalPlayerCommand(
   command: Exclude<GameCommandV2Public, { type: "process_month" }>,
-): DetailedFinanceCommand | SetRecurringStrategyCommand {
+): DetailedFinanceCommand | SetRecurringStrategyCommand | ResolveEventChoiceV2Command {
   if (command.type === "set_recurring_strategy") {
     const strategy = command.payload.strategy;
     return {
@@ -227,6 +229,12 @@ function internalPlayerCommand(
           ),
         },
       },
+    };
+  }
+  if (command.type === "resolve_event_choice") {
+    return {
+      ...command,
+      effectiveMonth: simulationMonth(command.effectiveMonth),
     };
   }
   const publicAction = command.payload.action;
@@ -365,6 +373,12 @@ export class RunApiServiceV2 {
       : null;
     if (current.outcome && !replayEvidence) {
       throw new RunApiV2Error("RUN_TERMINAL", "terminal runs reject monthly commands");
+    }
+    if (current.gameplay.eventLifecycle.pending && !replayEvidence) {
+      throw new RunApiV2Error(
+        "PENDING_EVENT",
+        "pending event choice must be resolved before monthly progression",
+      );
     }
     if (!replayEvidence && command.expectedRevision !== current.revision) {
       throw new RunApiV2Error("STALE_REVISION", "monthly command revision is stale");
