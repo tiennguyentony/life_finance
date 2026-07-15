@@ -138,6 +138,14 @@ fund 30%, DTI 20%, revolving utilization 15%, insurance gap 10%, concentration
 neutral 500,000 risk; unknown job correlation contributes zero. The score and
 all components are retained together for fairness audits and debrief evidence.
 
+Personal-event scheduling uses versioned `fairness-v1`. The monthly probability
+scales linearly from 8% at a 1,000,000 exposure score to 30% at 3,000,000. The
+scheduler consumes persisted RNG in a fixed frequency → sorted-template →
+parameter order. It considers only engine-owned, deterministically eligible
+personal templates that target a demonstrated metric weakness and are off
+cooldown. Catastrophes additionally require score 2,400,000 or higher. A
+terminal run or pending player choice schedules nothing and consumes no RNG.
+
 ## External ports
 
 ### Tax
