@@ -689,16 +689,14 @@ a:focus-visible {
   display: none;
 }
 
-.site-nav a,
-.back-link {
+.site-nav a {
   color: var(--muted);
   font-size: 0.875rem;
   font-weight: 650;
   transition: color 160ms ease;
 }
 
-.site-nav a:hover,
-.back-link:hover {
+.site-nav a:hover {
   color: var(--text);
 }
 
@@ -719,8 +717,7 @@ a:focus-visible {
   max-width: 690px;
 }
 
-.hero-kicker,
-.journey-label {
+.hero-kicker {
   margin: 0 0 1rem;
   color: var(--accent);
   font-size: 0.76rem;
@@ -730,7 +727,6 @@ a:focus-visible {
 }
 
 .hero h1,
-.feature-intro h1,
 .not-found h1 {
   max-width: 15ch;
   margin: 0;
@@ -741,7 +737,6 @@ a:focus-visible {
 }
 
 .hero-copy > p:not(.hero-kicker),
-.lede,
 .not-found > p {
   max-width: 58ch;
   margin: 1.5rem 0 0;
@@ -777,16 +772,14 @@ a:focus-visible {
 }
 
 .scope-panel h2,
-.journeys h2,
-.ownership-panel h2 {
+.capabilities h2 {
   margin: 0;
   font-size: clamp(1.4rem, 3vw, 2rem);
   letter-spacing: -0.035em;
   line-height: 1.1;
 }
 
-.scope-panel > p,
-.ownership-panel > p {
+.scope-panel > p {
   margin: 1rem 0 0;
   color: var(--muted);
 }
@@ -808,23 +801,23 @@ a:focus-visible {
   text-align: right;
 }
 
-.journeys {
+.capabilities {
   padding-block: clamp(4rem, 9vw, 8rem);
 }
 
-.journeys > h2 {
+.capabilities > h2 {
   max-width: 18ch;
   font-size: clamp(2rem, 5vw, 4rem);
 }
 
-.journey-grid {
+.capability-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-top: 3rem;
 }
 
-.journey-card {
+.capability-card {
   display: flex;
   min-height: 260px;
   flex-direction: column;
@@ -837,18 +830,18 @@ a:focus-visible {
   transition: transform 180ms ease, border-color 180ms ease;
 }
 
-.journey-card:hover {
+.capability-card:hover {
   border-color: var(--accent);
   transform: translateY(-3px);
 }
 
-.journey-card > span {
+.capability-card > span {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 750;
 }
 
-.journey-card h3 {
+.capability-card h3 {
   max-width: 18ch;
   margin: 1.3rem 0 0;
   font-size: clamp(1.35rem, 3vw, 2rem);
@@ -856,88 +849,10 @@ a:focus-visible {
   line-height: 1.08;
 }
 
-.journey-card p {
+.capability-card p {
   max-width: 42ch;
   margin: 0.9rem 0 0;
   color: var(--muted);
-}
-
-.journey-card > strong {
-  margin-top: auto;
-  padding-top: 2rem;
-  color: var(--accent);
-  font-size: 0.9rem;
-}
-
-.feature-shell {
-  display: grid;
-  min-height: calc(100dvh - 144px);
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  align-items: center;
-  gap: clamp(3rem, 8vw, 8rem);
-  padding-block: clamp(3rem, 8vw, 6rem);
-}
-
-.back-link {
-  display: inline-block;
-  margin-bottom: 3.5rem;
-}
-
-.feature-intro h1 {
-  font-size: clamp(2.5rem, 6vw, 5rem);
-}
-
-.status-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 580px;
-  gap: 1rem;
-  margin: 2.5rem 0 0;
-}
-
-.status-pair > div {
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-
-.status-pair dt {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.status-pair dd {
-  margin: 0.35rem 0 0;
-  font-size: 1rem;
-  font-weight: 750;
-}
-
-.ownership-panel {
-  padding: clamp(1.5rem, 4vw, 2.5rem);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 18px 50px var(--shadow);
-}
-
-.ownership-panel ul {
-  margin: 2rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ownership-panel li {
-  padding: 1rem 0;
-  font-weight: 680;
-}
-
-.ownership-panel li + li {
-  border-top: 1px solid var(--line);
-}
-
-.ownership-panel > p {
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-  font-size: 0.9rem;
 }
 
 .not-found {
@@ -974,7 +889,6 @@ a:focus-visible {
   }
 
   .hero,
-  .feature-shell,
   .play-start {
     min-height: auto;
     grid-template-columns: 1fr;
@@ -988,7 +902,7 @@ a:focus-visible {
     border-left: 0;
   }
 
-  .journey-grid {
+  .capability-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1012,12 +926,8 @@ a:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .journey-card {
+  .capability-card {
     min-height: 230px;
-  }
-
-  .back-link {
-    margin-bottom: 2.5rem;
   }
 }
 
@@ -1035,13 +945,8 @@ a:focus-visible {
   }
 
   .hero h1,
-  .feature-intro h1,
   .not-found h1 {
     letter-spacing: -0.05em;
-  }
-
-  .status-pair {
-    grid-template-columns: 1fr;
   }
 
   .play-titlebar {
