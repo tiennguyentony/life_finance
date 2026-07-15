@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
+import { AI_CONTENT_SOURCES } from "../../core/ai-source";
 
 export const aiWorldEventApiRequestSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
@@ -9,7 +10,7 @@ export const aiWorldEventApiRequestSchema = z.object({
 }).strict();
 
 export const aiWorldEventApiResponseSchema = z.object({
-  source: z.enum(["openai", "local_oss", "deterministic_fallback"]),
+  source: z.enum(AI_CONTENT_SOURCES),
   eventId: z.string(),
   memory: z.object({
     targetedWeaknessId: z.string(),

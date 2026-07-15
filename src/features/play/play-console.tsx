@@ -11,6 +11,7 @@ import type {
 import type { AiExplanationApiResponse } from "@/server/ai/education-contracts";
 import type { AiWorldEventApiResponse } from "@/server/ai/world-director-contracts";
 import type { AiDebriefApiResponse } from "@/server/ai/debrief-contracts";
+import { AI_PRIVACY_NOTICE_VERSION } from "@/server/ai/privacy-notice";
 
 import { buildDetailedAction } from "./action-builder";
 import {
@@ -391,7 +392,7 @@ export function PlayConsole() {
           body: JSON.stringify({
             conceptId: activeConceptId,
             expectedRevision: state.revision,
-            privacyNoticeVersion: 1,
+            privacyNoticeVersion: AI_PRIVACY_NOTICE_VERSION,
             dataUseAccepted: true,
           }),
         },
@@ -424,7 +425,7 @@ export function PlayConsole() {
           headers: authHeaders(credential.accessSecret),
           body: JSON.stringify({
             expectedRevision: state.revision,
-            privacyNoticeVersion: 1,
+            privacyNoticeVersion: AI_PRIVACY_NOTICE_VERSION,
             dataUseAccepted: true,
           }),
         },
@@ -452,7 +453,7 @@ export function PlayConsole() {
           headers: authHeaders(credential.accessSecret),
           body: JSON.stringify({
             expectedRevision: state.revision,
-            privacyNoticeVersion: 1,
+            privacyNoticeVersion: AI_PRIVACY_NOTICE_VERSION,
             dataUseAccepted: true,
           }),
         },

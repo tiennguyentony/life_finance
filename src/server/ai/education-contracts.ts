@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
+import { AI_CONTENT_SOURCES } from "../../core/ai-source";
 
 export const aiExplanationApiRequestSchema = z.object({
   conceptId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/),
@@ -10,7 +11,7 @@ export const aiExplanationApiRequestSchema = z.object({
 }).strict();
 
 export const aiExplanationApiResponseSchema = z.object({
-  source: z.enum(["openai", "local_oss", "deterministic_fallback"]),
+  source: z.enum(AI_CONTENT_SOURCES),
   explanation: z.object({
     title: z.string().min(1).max(240),
     explanation: z.string().min(1).max(2_000),

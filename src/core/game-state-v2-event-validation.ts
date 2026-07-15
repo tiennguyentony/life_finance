@@ -1,4 +1,5 @@
 import { sha256Canonical } from "./canonical";
+import { isAiContentSource } from "./ai-source";
 import { compareMonths, simulationMonth } from "./domain/month";
 import type { StateInvariantViolation } from "./game-state";
 import type { GameStateV2 } from "./game-state-v2";
@@ -28,7 +29,8 @@ export function validateEventAndCareerStateV2(
       new Set(pending.choiceIds).size !== pending.choiceIds.length ||
       pending.choiceIds.some((choiceId) => choiceId.length === 0) ||
       (pending.aiNarrative !== undefined &&
-        (pending.aiNarrative.headline.trim().length < 1 ||
+        (!isAiContentSource(pending.aiNarrative.source) ||
+          pending.aiNarrative.headline.trim().length < 1 ||
           pending.aiNarrative.headline.length > 240 ||
           pending.aiNarrative.narrative.trim().length < 1 ||
           pending.aiNarrative.narrative.length > 2_000 ||

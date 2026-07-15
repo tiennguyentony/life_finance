@@ -36,7 +36,7 @@ describe("AI final debrief service", () => {
 
     const result = await service.createDebrief("run", "secret", {
       expectedRevision: 0,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
     });
 
@@ -50,7 +50,7 @@ describe("AI final debrief service", () => {
     const service = new AiDebriefService(repository, () => ({ generate: async () => { throw new Error("unused"); } }) as never);
     await expect(service.createDebrief("run", "secret", {
       expectedRevision: 0,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
     })).rejects.toMatchObject({ code: "RUN_NOT_TERMINAL" });
   });

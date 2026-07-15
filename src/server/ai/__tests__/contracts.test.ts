@@ -24,7 +24,7 @@ describe("AI role contracts", () => {
   it("accepts only bounded engine-owned Hostile Fed candidates", () => {
     const request = hostileFedRequestSchema.parse({
       contractVersion: 1,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "hostile_fed",
       simulationMonth: "2026-07",
@@ -62,7 +62,7 @@ describe("AI role contracts", () => {
     expect(AI_PRIVACY_NOTICE.disclosures.join(" ")).toContain("retained indefinitely");
     const valid = {
       contractVersion: 1,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "explanation",
       conceptId: "emergency_fund",
@@ -74,7 +74,7 @@ describe("AI role contracts", () => {
     expect(() =>
       explanationRequestSchema.parse({
         contractVersion: 1,
-        privacyNoticeVersion: 1,
+        privacyNoticeVersion: 2,
         role: "explanation",
         conceptId: "emergency_fund",
         audienceLevel: "beginner",
