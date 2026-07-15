@@ -7,21 +7,48 @@ service, and GPT-5.6 is restricted to structured educational and narrative
 roles. The deterministic engine—not the model—owns money, state transitions,
 events, grades, and outcomes.
 
-The non-UI V4 backend is implemented and independently runnable. Existing UI
-routes remain a separate integration surface and may still use feature-local
-mock services while that work is in progress.
+The V4 backend is implemented and independently runnable. A deliberately plain
+developer play UI now exercises the authoritative v2 API end to end: onboarding,
+benefits, strategy, detailed actions, monthly turns, taxes, events, outcomes,
+checkpoints, and contextual financial education. It is a testable product
+surface, not the final visual design.
 
 ## Production services
 
 | Service | URL | Purpose |
 | --- | --- | --- |
-| Next.js web/API | <https://life-finance-mu.vercel.app> | UI shell, versioned REST API, engine, and persistence |
+| Developer play UI | <https://life-finance-mu.vercel.app/play> | Runnable educational game backed by the authoritative v2 API |
+| Next.js web/API | <https://life-finance-mu.vercel.app> | Versioned REST API, engine, persistence, and application routes |
 | API readiness | <https://life-finance-mu.vercel.app/api/v1/health> | Safe configuration, PostgreSQL, and tax-policy checks |
 | PolicyEngine tax | <https://life-finance-tax.vercel.app> | Authenticated frozen-2026 US tax calculations |
 | Tax readiness | <https://life-finance-tax.vercel.app/healthz> | Public pinned policy-version check |
 
 The production database is a Supabase PostgreSQL project in `us-west-1`. The
 web/API and tax service are intentionally separate Vercel projects.
+
+## Try the game
+
+Open <https://life-finance-mu.vercel.app/play> and select **Start over** to see
+the current onboarding. The developer UI exposes rather than hides the model:
+
+- Customize salary, cash, student debt, health plan, and optional insurance.
+- Allocate pre-tax 401(k)/HSA contributions and after-tax IRA, investments, or
+  extra debt payments, with eligibility and affordability validation.
+- Use detailed one-time actions for investing, liquidation, retirement
+  accounts, debt, credit, housing, lifestyle, and education/upskilling.
+- Inspect gross income, payroll deductions, modeled tax, take-home cash,
+  obligations, employer match, debt interest, market return, asset funding, and
+  credit funding after every processed month.
+- Review FI progress, balance sheet, liabilities, benefits, exposure, macro
+  conditions, event alternatives, decision consequences, and checkpoint
+  evidence.
+- Open contextual concepts such as 401(k), employer match, HSA, tax estimates,
+  debt-to-income, liquidity, diversification, and compounding. Definitions,
+  relevance, and tradeoffs come from a versioned education catalog.
+
+Fast-forward stops at required decisions and terminal outcomes. A fully cold
+first PolicyEngine calculation can take up to roughly two minutes; duplicate
+submissions remain disabled while it completes.
 
 ## Implemented backend
 
@@ -58,6 +85,8 @@ src/server/db/        Drizzle schema, runtime, and atomic repositories
 src/server/tax/       Server-only resilient PolicyEngine client
 src/server/ai/        GPT role contracts, privacy, transport, and audit runtime
 src/app/api/v1/       Next.js route adapters and readiness endpoint
+src/features/play/    Developer gameplay UI and presentation-model tests
+src/data/education-content.ts  Versioned finance education catalog
 services/tax/         Independently deployable FastAPI/PolicyEngine service
 drizzle/              Reviewed PostgreSQL migrations
 docs/architecture/    Architecture contracts and repository boundaries
@@ -173,6 +202,12 @@ from audit output, and records the actual model as `ollama/gpt-oss:20b`.
 Production Vercel configuration rejects the Ollama provider. Before submission,
 restore `AI_PROVIDER=openai` and pass a real encrypted-audit success path using
 the required GPT-5.6 model.
+
+The bounded role contracts, privacy controls, transports, failure handling, and
+encrypted audit path are implemented. A successful production GPT-5.6 call is
+still dependent on the configured OpenAI project's model entitlement and quota;
+the local `gpt-oss:20b` path is development evidence only and must not be
+presented as GPT-5.6 submission evidence.
 
 ## API surface
 
