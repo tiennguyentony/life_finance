@@ -240,18 +240,19 @@ Status meanings: **implemented** has production code and direct tests;
 | Monthly market processing | Implemented | `src/core/market.ts`, bounded persisted macro stories, integrated monthly records | Add new macro templates only through versioned catalogs |
 | Event templates and bounded choices | Partial | fair scheduler, persisted pending/choice/cooldown evidence, exact medical insurance | Add employment recovery and homeowner-specific catastrophe coverage |
 | Explicit financial actions | Implemented | detailed REST commands for trades, debt, contributions, retirement withdrawal, home lifecycle, lifestyle, and cataloged upskill | Add future actions only with balanced/evidence-backed transitions |
-| Elastic checkpoints | Implemented | checksum-validated v2 snapshots/monthly records and authorized checkpoint API | Add player-facing presentation outside backend scope |
+| Elastic checkpoints | Implemented | checksum-validated v2 snapshots/monthly records, authorized API, and player-facing recap/intervention UI | Extend presentation only when new checkpoint evidence is added |
 | Versioned commands and concurrency | Implemented | v2 action/strategy/month/event envelopes, replay and PostgreSQL concurrency tests | Preserve envelope for future actions |
 | Atomic monthly turn composition | Implemented | market/macro, tax/payroll, insurance, funding, debt, strategy, exposure, events, career completion, outcomes | Preserve order as replay-critical |
-| Tax adapter | Implemented | pinned PolicyEngine 4.21.0 / rules 1.764.6 plus six-month live HTTP/PostgreSQL journey | Repeat against deployed tax service during smoke test |
+| Tax adapter | Implemented | pinned PolicyEngine 4.21.0 / rules 1.764.6, live HTTP/PostgreSQL journey, deployed paycheck evidence, and cold-start-tolerant client | Preserve pinned-policy and deployed smoke gates |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Implemented | v2 repository, strict REST/OpenAPI/client, event/checkpoint routes, leased outbox dispatcher | Wire an external outbox consumer when one is selected |
 | Location/career/benefits catalogs | Implemented | catalog resolver, normalized snapshots, strict v2 creation endpoint | Add future catalog versions without mutating 2026.2 |
+| Versioned educational content | Implemented | `education.en-US.2026.1` catalog plus contextual definitions, relevance, and tradeoffs in the play UI | Add or revise concepts only through a new immutable catalog version |
 | Detailed portfolio, debt, insurance, HSA | Implemented | reconciled detailed balances, exact claims, retirement/home/career commands | Add homeowner coverage through a future immutable catalog version |
 | Exposure and Hostile Fed targeting | Implemented | explainable exposure, fairness-v1 targeting, bounded proposals, cooldowns and recovery windows | Optional AI may choose only among the same eligible templates |
 | Psychology traps and multi-month macro story | Partial | lifestyle/concentration templates and persisted bounded 2–4 month macro modifiers | Add explicit behavioral debrief labels and employment recovery story |
 | Teacher evidence/debrief pipeline | Partial | deterministic checkpoint, command/ledger/event/alternative evidence | Connect optional GPT narrative after project quota is available |
-| Gameplay API integration and multi-turn E2E | Partial | live six-month PolicyEngine/PostgreSQL create → actions → months → choose → checkpoint journey plus terminal guard | Apply production migrations, deploy, and run public smoke journey |
+| Gameplay API integration and multi-turn E2E | Implemented | production migrations, live PolicyEngine/PostgreSQL journeys, and public browser create → strategy → month → event smoke flow | Keep browser smoke evidence current for submission releases |
 
 ## State evolution requirements
 
