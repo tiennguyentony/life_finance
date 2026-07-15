@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
