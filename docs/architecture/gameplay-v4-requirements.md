@@ -246,7 +246,7 @@ Status meanings: **implemented** has production code and direct tests;
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Partial | `src/server/db`, `src/server/api` | Add gameplay application service, queries, outbox dispatcher |
 | Location/career/benefits catalogs | Missing | — | Define versioned schemas, sources, fixtures, validation |
-| Detailed portfolio, debt, insurance, HSA | Missing | — | Introduce versioned state v2 and v1 migration |
+| Detailed portfolio, debt, insurance, HSA | Partial | `src/core/game-state-v2.ts`, `src/core/persisted-game-state.ts`, `src/server/db/run-repository.ts` | Implement v2 reducers and reconcile detailed accounts to the ledger |
 | Exposure and Hostile Fed targeting | Missing | — | Implement metrics, fairness policy, scheduler, audit breakdown |
 | Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
 | Teacher evidence/debrief pipeline | Missing | — | Build deterministic evidence first, AI narrative second |
@@ -270,6 +270,21 @@ work must include all of the following in one stable subsystem:
    processing cannot overwrite a newer revision.
 6. Rollback safety: old persisted snapshots remain recoverable until migrated
    runs and fresh v2 runs pass integration and production smoke tests.
+
+The v1-to-v2 persistence boundary uses an immutable `run_state_migrations`
+journal rather than a command snapshot. Schema migration does not represent a
+player command, so it preserves the authoritative revision, month, status,
+command history, and ledger while recording both canonical state checksums. The
+repository locks the run, validates row metadata against the decoded state, and
+updates it with compare-and-swap conditions in the same transaction as the
+migration journal and outbox event. Replaying the migration validates the saved
+target and returns it idempotently.
+
+This migration is deliberately not exposed through the public gameplay API yet.
+Existing command and query paths reject schema v2 until v2 reducers and response
+contracts are enabled; this prevents a partially upgraded run from being
+processed by schema-v1 logic. Production invocation remains gated on the later
+v2 gameplay integration and smoke-test slices.
 
 ## Required edge-case suites
 
