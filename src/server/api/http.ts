@@ -33,6 +33,8 @@ import type { RunApiServiceV2 } from "./service-v2";
 import { RunApiV2Error } from "./v2/errors";
 import { AiEducationError, AiEducationService } from "../ai/education-service";
 import { aiExplanationApiRequestSchema } from "../ai/education-contracts";
+import { AiWorldDirectorError, AiWorldDirectorService } from "../ai/world-director-service";
+import { aiWorldEventApiRequestSchema } from "../ai/world-director-contracts";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
@@ -166,6 +168,10 @@ function errorResponse(error: unknown): Response {
     code = error.code;
     status = error.code === "STALE_REVISION" ? 409 : 400;
     message = error.message;
+  } else if (error instanceof AiWorldDirectorError) {
+    code = error.code;
+    status = 409;
+    message = error.message;
   } else if (error instanceof TaxServiceError) {
     code = `TAX_${error.code}`;
     status = error.retryable ? 503 : error.code === "INVALID_CONFIGURATION" ? 500 : 502;
@@ -190,6 +196,21 @@ export async function handleAiExplanationV2(
     const secret = extractRunSecret(request.headers.get("authorization"));
     const input = aiExplanationApiRequestSchema.parse(await readJson(request));
     return jsonResponse(await service.explain(path.runId, secret, input), 200);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleAiWorldEventV2(
+  request: Request,
+  runId: string,
+  service: AiWorldDirectorService,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const input = aiWorldEventApiRequestSchema.parse(await readJson(request));
+    return jsonResponse(await service.createEvent(path.runId, secret, input), 200);
   } catch (error) {
     return errorResponse(error);
   }
