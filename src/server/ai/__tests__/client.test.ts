@@ -11,7 +11,7 @@ import type { ExplanationRequest, HostileFedRequest, TeacherRequest } from "../c
 
 const hostileRequest: HostileFedRequest = {
   contractVersion: 1,
-  privacyNoticeVersion: 1,
+  privacyNoticeVersion: 2,
   dataUseAccepted: true,
   role: "hostile_fed",
   simulationMonth: "2026-07",
@@ -202,7 +202,7 @@ describe("AiRoleClient", () => {
   it("prevents the teacher from changing the deterministic grade", async () => {
     const request: TeacherRequest = {
       contractVersion: 1,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "teacher",
       outcome: { kind: "retirement_age", grade: "B", reasonCode: "age_65" },
@@ -227,7 +227,7 @@ describe("AiRoleClient", () => {
   it("uses Terra for explanations and rejects invented evidence IDs", async () => {
     const request: ExplanationRequest = {
       contractVersion: 1,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "explanation",
       conceptId: "emergency_fund",
@@ -250,7 +250,7 @@ describe("AiRoleClient", () => {
   it("rejects sensitive input before transport or audit", async () => {
     const request: ExplanationRequest = {
       contractVersion: 1,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "explanation",
       conceptId: "emergency_fund",

@@ -40,7 +40,7 @@ describe("AI World Director service", () => {
 
     const result = await service.createEvent("run", "secret", {
       expectedRevision: 0,
-      privacyNoticeVersion: 1,
+      privacyNoticeVersion: 2,
       dataUseAccepted: true,
     });
 

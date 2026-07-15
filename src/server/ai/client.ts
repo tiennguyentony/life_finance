@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import type { z } from "zod";
 
+import type { AiModelSource } from "../../core/ai-source";
 import {
   AI_ROLE_MODELS,
   aiRequestSchema,
@@ -47,6 +48,7 @@ export type AiTransportResult = Readonly<{
 
 export interface AiResponsesTransport {
   auditModel?(requestedModel: AiTransportRequest["model"]): string;
+  responseSource?(): AiModelSource;
   create(request: AiTransportRequest): Promise<AiTransportResult>;
 }
 
@@ -238,6 +240,10 @@ export class OpenAiResponsesTransport implements AiResponsesTransport {
     });
   }
 
+  responseSource(): AiModelSource {
+    return "openai";
+  }
+
   async create(request: AiTransportRequest): Promise<AiTransportResult> {
     const response = await this.client.responses.create({
       model: request.model,
@@ -264,6 +270,10 @@ export class AiRoleClient {
       invocationId?: () => string;
     }> = {},
   ) {}
+
+  responseSource(): AiModelSource {
+    return this.transport.responseSource?.() ?? "openai";
+  }
 
   async generate<R extends AiRole>(
     request: AiRoleRequestMap[R],

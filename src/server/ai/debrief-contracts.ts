@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
+import { AI_CONTENT_SOURCES } from "../../core/ai-source";
 
 export const aiDebriefApiRequestSchema = z.object({
   expectedRevision: z.number().int().nonnegative(),
@@ -9,7 +10,7 @@ export const aiDebriefApiRequestSchema = z.object({
 }).strict();
 
 export const aiDebriefApiResponseSchema = z.object({
-  source: z.enum(["openai", "local_oss", "deterministic_fallback"]),
+  source: z.enum(AI_CONTENT_SOURCES),
   debrief: z.object({
     grade: z.enum(["S", "A", "B", "C", "D", "E", "F"]),
     title: z.string(),

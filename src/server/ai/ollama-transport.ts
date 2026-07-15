@@ -7,6 +7,7 @@ import type {
   AiTransportRequest,
   AiTransportResult,
 } from "./client";
+import type { AiModelSource } from "../../core/ai-source";
 
 export const OLLAMA_GPT_OSS_MODEL = "gpt-oss:20b" as const;
 export const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434" as const;
@@ -140,6 +141,10 @@ export class OllamaGptOssTransport implements AiResponsesTransport {
 
   auditModel(): string {
     return `ollama/${OLLAMA_GPT_OSS_MODEL}`;
+  }
+
+  responseSource(): AiModelSource {
+    return "local_oss";
   }
 
   async create(request: AiTransportRequest): Promise<AiTransportResult> {

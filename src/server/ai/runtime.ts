@@ -11,6 +11,7 @@ import {
   type AiResponsesTransport,
 } from "./client";
 import { OllamaGptOssTransport } from "./ollama-transport";
+import { GroqGptOssTransport } from "./groq-transport";
 
 type AiRuntimeDependencies = Readonly<{
   transport: AiResponsesTransport;
@@ -33,7 +34,10 @@ export function aiTransportFromEnvironment(
     }
     return new OllamaGptOssTransport({ baseUrl: environment.OLLAMA_BASE_URL });
   }
-  throw new Error("AI_PROVIDER must be openai or ollama");
+  if (provider === "groq") {
+    return new GroqGptOssTransport({ apiKey: environment.GROQ_API_KEY });
+  }
+  throw new Error("AI_PROVIDER must be openai, groq, or ollama");
 }
 
 function getAiRuntimeDependencies(): AiRuntimeDependencies {

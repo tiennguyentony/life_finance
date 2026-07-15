@@ -20,7 +20,8 @@ export class AiDebriefError extends Error {
   }
 }
 
-type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate">;
+type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate"> &
+  Partial<Pick<AiRoleClient, "responseSource">>;
 
 function decisions(state: GameStateV2, evidenceIds: readonly string[]): TeacherRequest["decisions"] {
   const eventDecisions = state.gameplay.eventLifecycle.history.slice(-10).map((event, index) => ({
@@ -78,7 +79,8 @@ export class AiDebriefService {
     let source: AiDebriefApiResponse["source"] = "deterministic_fallback";
     let debrief = fallback(state, requestDecisions, evidence.map(({ id }) => id));
     try {
-      debrief = await this.clientFactory(runId).generate<"teacher">({
+      const client = this.clientFactory(runId);
+      debrief = await client.generate<"teacher">({
         contractVersion: AI_CONTRACT_VERSION,
         privacyNoticeVersion: request.privacyNoticeVersion,
         dataUseAccepted: request.dataUseAccepted,
@@ -91,7 +93,7 @@ export class AiDebriefService {
         evidence,
         decisions: requestDecisions,
       });
-      source = process.env.AI_PROVIDER === "ollama" ? "local_oss" : "openai";
+      source = client.responseSource?.() ?? "openai";
     } catch {
       // Preserve the deterministic grade and evidence when AI is unavailable.
     }

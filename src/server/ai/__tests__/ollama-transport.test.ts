@@ -62,6 +62,7 @@ describe("Ollama gpt-oss transport", () => {
       },
     });
     expect(transport.auditModel()).toBe("ollama/gpt-oss:20b");
+    expect(transport.responseSource()).toBe("local_oss");
     expect(fetchFunction).toHaveBeenCalledTimes(1);
     const [url, init] = fetchFunction.mock.calls[0] ?? [];
     expect(url?.toString()).toBe("http://127.0.0.1:11434/api/chat");
