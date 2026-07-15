@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
+
 export const AI_CONTRACT_VERSION = 1 as const;
 
 export const AI_ROLE_MODELS = Object.freeze({
@@ -20,6 +22,10 @@ const narrativeText = z.string().trim().min(1).max(2_000);
 const shortText = z.string().trim().min(1).max(240);
 const safeInteger = z.number().int().safe();
 const ratePpm = safeInteger.min(0).max(1_000_000);
+const privacyConsentFields = {
+  privacyNoticeVersion: z.literal(AI_PRIVACY_NOTICE_VERSION),
+  dataUseAccepted: z.literal(true),
+} as const;
 
 export const aiEvidenceFactSchema = z
   .object({
@@ -32,6 +38,7 @@ export const aiEvidenceFactSchema = z
 export const hostileFedRequestSchema = z
   .object({
     contractVersion: z.literal(AI_CONTRACT_VERSION),
+    ...privacyConsentFields,
     role: z.literal("hostile_fed"),
     simulationMonth: z.string().regex(/^[0-9]{4}-(0[1-9]|1[0-2])$/),
     marketRegime: z.enum(["expansion", "inflation", "recession", "recovery"]),
@@ -94,6 +101,7 @@ export const hostileFedResponseSchema = z
 export const teacherRequestSchema = z
   .object({
     contractVersion: z.literal(AI_CONTRACT_VERSION),
+    ...privacyConsentFields,
     role: z.literal("teacher"),
     outcome: z
       .object({
@@ -144,6 +152,7 @@ const optionalExtractedText = z.string().trim().min(1).max(120).nullable();
 export const onboardingRequestSchema = z
   .object({
     contractVersion: z.literal(AI_CONTRACT_VERSION),
+    ...privacyConsentFields,
     role: z.literal("onboarding"),
     sanitizedFreeText: z.string().trim().min(1).max(4_000),
     allowedLocationIds: z.array(safeIdentifier).min(1).max(256),
@@ -194,6 +203,7 @@ export const onboardingResponseSchema = z
 export const explanationRequestSchema = z
   .object({
     contractVersion: z.literal(AI_CONTRACT_VERSION),
+    ...privacyConsentFields,
     role: z.literal("explanation"),
     conceptId: safeIdentifier,
     audienceLevel: z.enum(["beginner", "intermediate"]),
