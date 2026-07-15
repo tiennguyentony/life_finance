@@ -15,8 +15,14 @@ import type { FinancialSnapshot, GameState } from "./game-state";
 import {
   finalizeGameStateV2,
   type GameStateV2,
+  type PendingEventV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import { queueScheduledPersonalEventV2 } from "./event-lifecycle-v2";
+import {
+  schedulePersonalEventV2,
+  type EventSchedulingPolicyV2,
+} from "./event-scheduler-v2";
 import {
   adjudicateCoverageClaim,
   adjudicateHealthClaim,
@@ -78,6 +84,7 @@ export type MonthlyTurnV2Record = Readonly<{
   debtService: ReturnType<typeof planMonthlyDebtService>;
   funding: V2FundingRecord | null;
   recurringAllocations: RecurringAllocationPlan | null;
+  scheduledEvent: PendingEventV2 | null;
   outcome: GameStateV2["outcome"];
 }>;
 
@@ -92,6 +99,7 @@ export class MonthlyTurnV2Error extends Error {
     | "DUPLICATE_COMMAND"
     | "STALE_REVISION"
     | "RUN_TERMINAL"
+    | "PENDING_EVENT"
     | "INVALID_LIQUIDATION_RATE"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
@@ -155,6 +163,12 @@ function validateCommand(
   }
   if (state.outcome !== null) {
     throw new MonthlyTurnV2Error("RUN_TERMINAL", "terminal runs reject monthly turns");
+  }
+  if (state.gameplay.eventLifecycle.pending !== null) {
+    throw new MonthlyTurnV2Error(
+      "PENDING_EVENT",
+      "pending event choice must be resolved before monthly progression",
+    );
   }
   const rate = command.payload.taxableLiquidationCostRatePpm;
   if (!Number.isSafeInteger(rate) || rate < 0 || rate > 1_000_000) {
@@ -531,6 +545,9 @@ function applyAfterTaxPlan(
 export function processMonthlyTurnV2(
   state: GameStateV2,
   command: ProcessMonthV2Command,
+  dependencies: Readonly<{
+    eventSchedulingPolicy?: EventSchedulingPolicyV2;
+  }> = {},
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   try {
@@ -616,6 +633,7 @@ export function processMonthlyTurnV2(
           debtService: debtPlan,
           funding: null,
           recurringAllocations: null,
+          scheduledEvent: null,
           outcome,
         }),
       });
@@ -666,7 +684,20 @@ export function processMonthlyTurnV2(
       outcomeProjection,
       command.payload.taxableLiquidationCostRatePpm,
     );
-    const nextState = finalizeGameStateV2({ ...beforeOutcome, outcome });
+    let nextState = finalizeGameStateV2({ ...beforeOutcome, outcome });
+    if (outcome === null) {
+      const schedule = schedulePersonalEventV2(
+        nextState,
+        dependencies.eventSchedulingPolicy,
+      );
+      nextState = finalizeGameStateV2({
+        ...nextState,
+        random: schedule.nextRandom,
+      });
+      if (schedule.event) {
+        nextState = queueScheduledPersonalEventV2(nextState, schedule.event);
+      }
+    }
     return Object.freeze({
       state: nextState,
       record: Object.freeze({
@@ -681,6 +712,7 @@ export function processMonthlyTurnV2(
         debtService: debtPlan,
         funding: funding.funding,
         recurringAllocations,
+        scheduledEvent: nextState.gameplay.eventLifecycle.pending,
         outcome,
       }),
     });
