@@ -10,6 +10,8 @@ import {
 } from "./projection";
 
 const MAX_RESPONSE_BYTES = 1_000_000;
+export const DEFAULT_TAX_TIMEOUT_MS = 120_000;
+export const DEFAULT_TAX_MAX_ATTEMPTS = 2;
 
 export interface TaxCalculator {
   calculate(request: TaxCalculationRequest): Promise<TaxCalculationResult>;
@@ -93,8 +95,8 @@ function validateOptions(options: TaxServiceClientOptions): {
     );
   }
 
-  const timeoutMs = options.timeoutMs ?? 30_000;
-  const maxAttempts = options.maxAttempts ?? 3;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TAX_TIMEOUT_MS;
+  const maxAttempts = options.maxAttempts ?? DEFAULT_TAX_MAX_ATTEMPTS;
   const retryDelayMs = options.retryDelayMs ?? 100;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
     throw new TaxServiceError(

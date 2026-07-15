@@ -2,6 +2,7 @@ import { handleSubmitCommandV2 } from "@/server/api/http";
 import { getRunApiServiceV2 } from "@/server/api/runtime";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(
   request: Request,

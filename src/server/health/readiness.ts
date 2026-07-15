@@ -8,7 +8,7 @@ import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { getDatabaseConnection } from "../db/runtime";
 import { createTaxClientFromEnvironment } from "../tax/client";
 
-const TAX_HEALTH_TIMEOUT_MS = 10_000;
+const TAX_HEALTH_TIMEOUT_MS = 45_000;
 const MAX_HEALTH_RESPONSE_BYTES = 4_096;
 
 export const readinessResponseSchema = z
