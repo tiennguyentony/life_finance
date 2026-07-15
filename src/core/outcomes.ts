@@ -207,6 +207,7 @@ export function fundRequiredObligations(
   commandId: string,
   effectiveMonth: SimulationMonth,
   taxableLiquidationCostRatePpm: RatePpm,
+  transactionId = `txn.${commandId}`,
 ): ObligationFunding {
   const assessment = assessRequiredObligationLiquidity(
     state.finances,
@@ -271,7 +272,7 @@ export function fundRequiredObligations(
   }
 
   const ledger = appendTransaction(state.ledger, {
-    id: `txn.${commandId}`,
+    id: transactionId,
     commandId,
     effectiveMonth,
     reasonCode: "fund_required_obligations",
