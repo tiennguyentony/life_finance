@@ -12,11 +12,11 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 import { fingerprintAnnualTaxContext } from "../tax/context-cache";
+import { RunApiServiceV2 } from "./service-v2";
 import {
   buildTaxRequest,
   projectAnnualPretaxContributions,
-  RunApiServiceV2,
-} from "./service-v2";
+} from "./v2/tax-orchestrator";
 
 function stateWithStrategy() {
   const resolvedScenario = resolveScenarioCatalogSelection(
