@@ -110,6 +110,13 @@ export type PendingEventV2 = Readonly<{
   choiceIds: readonly string[];
   scheduledMonth: SimulationMonth;
   expiresMonth: SimulationMonth;
+  aiNarrative?: Readonly<{
+    source: "openai" | "local_oss" | "deterministic_fallback";
+    headline: string;
+    narrative: string;
+    rationale: string;
+    citedEvidenceIds: readonly string[];
+  }>;
 }>;
 
 export type ResolvedEventEvidenceV2 = Readonly<{

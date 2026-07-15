@@ -31,7 +31,7 @@ export type EventScheduleResultV2 = Readonly<{
   eligibleTemplateIds: readonly string[];
 }>;
 
-function demonstratedWeaknesses(state: GameStateV2): ReadonlySet<EventWeakness> {
+export function demonstratedWeaknessesV2(state: GameStateV2): ReadonlySet<EventWeakness> {
   const exposure = state.gameplay.exposure.current;
   if (!exposure) return new Set();
   const weaknesses = new Set<EventWeakness>();
@@ -76,6 +76,22 @@ function demonstratedWeaknesses(state: GameStateV2): ReadonlySet<EventWeakness> 
   return weaknesses;
 }
 
+export function eligiblePersonalEventTemplatesV2(
+  state: GameStateV2,
+): readonly EventTemplate[] {
+  const weaknesses = demonstratedWeaknessesV2(state);
+  const projection = v1Projection(state);
+  return Object.freeze(EVENT_TEMPLATES.filter(
+    (template) =>
+      template.kind === "personal_shock" &&
+      template.targetsWeaknesses.some((weakness) => weaknesses.has(weakness)) &&
+      isOffCooldown(state, template.id) &&
+      eventApplicabilityReasons(template, projection).length === 0 &&
+      (template.tier !== "catastrophe" ||
+        (state.gameplay.exposure.current?.scorePpm ?? 0) >= 2_400_000),
+  ).toSorted((left, right) => left.id.localeCompare(right.id)));
+}
+
 function isOffCooldown(state: GameStateV2, templateId: string): boolean {
   const cooldown = state.gameplay.eventLifecycle.cooldowns.find(
     (entry) => entry.templateId === templateId,
@@ -113,17 +129,8 @@ export function schedulePersonalEventV2(
   if (state.outcome || state.gameplay.eventLifecycle.pending) {
     return Object.freeze({ event: null, nextRandom: state.random, eligibleTemplateIds: [] });
   }
-  const weaknesses = demonstratedWeaknesses(state);
-  const projection = v1Projection(state);
-  const eligible = EVENT_TEMPLATES.filter(
-    (template) =>
-      template.kind === "personal_shock" &&
-      template.targetsWeaknesses.some((weakness) => weaknesses.has(weakness)) &&
-      isOffCooldown(state, template.id) &&
-      eventApplicabilityReasons(template, projection).length === 0 &&
-      (template.tier !== "catastrophe" ||
-        (state.gameplay.exposure.current?.scorePpm ?? 0) >= 2_400_000),
-  ).toSorted((left, right) => left.id.localeCompare(right.id));
+  const weaknesses = demonstratedWeaknessesV2(state);
+  const eligible = eligiblePersonalEventTemplatesV2(state);
   const frequency = nextInt(state.random, 1, 1_000_000);
   if (eligible.length === 0 || frequency.value > chancePpm(state, policy)) {
     return Object.freeze({

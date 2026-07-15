@@ -9,6 +9,7 @@ import type {
   GameCommandV2Public,
 } from "@/server/api/contracts-v2";
 import type { AiExplanationApiResponse } from "@/server/ai/education-contracts";
+import type { AiWorldEventApiResponse } from "@/server/ai/world-director-contracts";
 
 import { buildDetailedAction } from "./action-builder";
 import {
@@ -48,6 +49,7 @@ import type {
   StrategyDraft,
 } from "./play-types";
 import { RunControls } from "./run-controls";
+import { WorldDirectorPanel } from "./world-director-panel";
 
 const DEFAULT_ONBOARDING: OnboardingDraft = {
   setupMode: "quick",
@@ -406,6 +408,34 @@ export function PlayConsole() {
     }
   };
 
+  const createAiWorldEvent = async () => {
+    if (!state || !credential || !aiConsent) return;
+    setBusy(true);
+    setBusyLabel("AI World Director is selecting a bounded fair event…");
+    setError(null);
+    try {
+      const result = await apiRequest<AiWorldEventApiResponse>(
+        `/api/v2/runs/${credential.runId}/ai/world-event`,
+        {
+          method: "POST",
+          headers: authHeaders(credential.accessSecret),
+          body: JSON.stringify({
+            expectedRevision: state.revision,
+            privacyNoticeVersion: 1,
+            dataUseAccepted: true,
+          }),
+        },
+      );
+      setState(result.state as GameStateV2);
+      addActivity(`World Director queued ${result.source} event targeting ${result.memory.targetedWeaknessId.replaceAll("_", " ")}.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "World Director failed");
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  };
+
   const loadCheckpoint = async () => {
     if (!state || !credential) return;
     setBusy(true);
@@ -501,6 +531,15 @@ export function PlayConsole() {
 
       {pending ? (
         <EventPanel pending={pending} busy={busy} onChoice={resolveChoice} />
+      ) : null}
+      {!pending ? (
+        <WorldDirectorPanel
+          state={state}
+          busy={busy}
+          consented={aiConsent}
+          onConsentChange={setAiConsent}
+          onCreateEvent={() => void createAiWorldEvent()}
+        />
       ) : null}
       {tab === "overview" ? (
         <OverviewPanel

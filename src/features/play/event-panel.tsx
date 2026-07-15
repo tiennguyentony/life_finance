@@ -27,7 +27,13 @@ export function EventPanel({
   return (
     <section className="play-panel play-event">
       <p className="hero-kicker">Personal shock · {pending.tier}</p>
-      <h2>{titleFromId(pending.templateId)}</h2>
+      <h2>{pending.aiNarrative?.headline ?? titleFromId(pending.templateId)}</h2>
+      {pending.aiNarrative ? (
+        <>
+          <p>{pending.aiNarrative.narrative}</p>
+          <p className="play-note">Why this event: {pending.aiNarrative.rationale}</p>
+        </>
+      ) : null}
       <p>
         {template?.teachingPrinciple ??
           `This event targets ${pending.targetedWeakness.replaceAll("_", " ")}.`}
