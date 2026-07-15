@@ -108,6 +108,25 @@ describe("AiRoleClient", () => {
     ]);
   });
 
+  it("records the actual local provider model instead of the requested production model", async () => {
+    const audits: AiAuditRecord[] = [];
+    const transport: AiResponsesTransport = {
+      auditModel: () => "ollama/gpt-oss:20b",
+      async create() {
+        return completed(hostileOutput);
+      },
+    };
+    const client = new AiRoleClient(transport, {
+      async record(record) {
+        audits.push(record);
+      },
+    });
+
+    await client.generate(hostileRequest);
+
+    expect(audits[0]?.model).toBe("ollama/gpt-oss:20b");
+  });
+
   it("retries transient transport errors exactly twice with bounded backoff", async () => {
     const first = Object.assign(new Error("rate limited"), { status: 429 });
     const second = Object.assign(new Error("server unavailable"), { status: 503 });
