@@ -18,6 +18,7 @@ coverage/
 .env
 .env.*
 !.env.example
+.vercel/
 
 # Editors and operating systems
 .DS_Store
