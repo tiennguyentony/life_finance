@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { US_2026_SCENARIO_CATALOG, US_2026_SCENARIO_CATALOG_VERSION } from "../data/scenario-catalog";
 import { getEventTemplate } from "../data/event-templates";
+import { buildCheckpointEvidenceV2 } from "./checkpoint-v2";
 import { moneyCents, ratePpm } from "./domain/money";
 import { simulationMonth } from "./domain/month";
 import {
@@ -102,13 +103,19 @@ describe("v2 event lifecycle", () => {
       initial.finances.requiredObligationsCents + 80_000,
     );
     expect(resolved.gameplay.eventLifecycle.history[0]).toMatchObject({
+      commandId: "cmd.choice.negotiate_repair",
+      resultingRevision: 1,
       choiceId: "negotiate_repair",
+      availableChoiceIds: ["repair_now", "negotiate_repair"],
       playerCostCents: 80_000,
       insurerCostCents: 0,
     });
     expect(resolved.gameplay.eventLifecycle.cooldowns).toEqual([
       { templateId: "personal.unexpected_repair", eligibleAgainMonth: "2026-10" },
     ]);
+    expect(buildCheckpointEvidenceV2(initial, resolved, []).eventChoices).toEqual(
+      resolved.gameplay.eventLifecycle.history,
+    );
   });
 
   it("rejects client-selected event ids and undeclared choices without mutation", () => {

@@ -73,13 +73,18 @@ export type ProcessMonthV2Command = Readonly<{
 }>;
 
 export type MonthlyTurnV2Record = Readonly<{
+  commandId: string;
   processedMonth: SimulationMonth;
   nextMonth: SimulationMonth;
   taxTraceId: string;
+  grossIncomeCents: MoneyCents;
+  totalTaxCents: MoneyCents;
+  afterTaxCashIncomeCents: MoneyCents;
   market: MarketMonth;
   marketValueChangeCents: MoneyCents;
   annualInflationIncreaseCents: MoneyCents;
   insurancePlayerCostCents: MoneyCents;
+  requiredCashCents: MoneyCents;
   nonDebtObligationsPaidCents: MoneyCents;
   debtService: ReturnType<typeof planMonthlyDebtService>;
   funding: V2FundingRecord | null;
@@ -622,13 +627,19 @@ export function processMonthlyTurnV2(
       return Object.freeze({
         state: nextState,
         record: Object.freeze({
+          commandId: command.id,
           processedMonth: state.currentMonth,
           nextMonth,
           taxTraceId: command.payload.taxEvidence.traceId,
+          grossIncomeCents: command.payload.taxEvidence.grossIncomeCents,
+          totalTaxCents: moneyCents(command.payload.taxEvidence.totalTaxCents),
+          afterTaxCashIncomeCents:
+            command.payload.taxEvidence.afterTaxCashIncomeCents,
           market: market.month,
           marketValueChangeCents: market.marketValueChangeCents,
           annualInflationIncreaseCents,
           insurancePlayerCostCents: claim.playerCostCents,
+          requiredCashCents: requiredCash,
           nonDebtObligationsPaidCents: ZERO,
           debtService: debtPlan,
           funding: null,
@@ -701,13 +712,19 @@ export function processMonthlyTurnV2(
     return Object.freeze({
       state: nextState,
       record: Object.freeze({
+        commandId: command.id,
         processedMonth: state.currentMonth,
         nextMonth,
         taxTraceId: command.payload.taxEvidence.traceId,
+        grossIncomeCents: command.payload.taxEvidence.grossIncomeCents,
+        totalTaxCents: moneyCents(command.payload.taxEvidence.totalTaxCents),
+        afterTaxCashIncomeCents:
+          command.payload.taxEvidence.afterTaxCashIncomeCents,
         market: market.month,
         marketValueChangeCents: market.marketValueChangeCents,
         annualInflationIncreaseCents,
         insurancePlayerCostCents: claim.playerCostCents,
+        requiredCashCents: requiredCash,
         nonDebtObligationsPaidCents: nonDebtObligations,
         debtService: debtPlan,
         funding: funding.funding,

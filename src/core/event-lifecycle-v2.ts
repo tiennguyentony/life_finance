@@ -204,6 +204,8 @@ export function resolveEventChoiceV2(
         history: [
           ...state.gameplay.eventLifecycle.history,
           {
+            commandId: command.id,
+            resultingRevision: state.revision + 1,
             eventId: pending.eventId,
             templateId: pending.templateId,
             templateVersion: pending.templateVersion,
@@ -211,6 +213,7 @@ export function resolveEventChoiceV2(
             targetedWeakness: pending.targetedWeakness,
             parameters: { ...pending.parameters },
             choiceId: command.payload.choiceId,
+            availableChoiceIds: [...pending.choiceIds],
             scheduledMonth: pending.scheduledMonth,
             resolvedMonth: state.currentMonth,
             playerCostCents,

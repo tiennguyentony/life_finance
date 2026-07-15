@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "./canonical";
+import { buildCheckpointEvidenceV2 } from "./checkpoint-v2";
 import { moneyCents, ratePpm } from "./domain/money";
 import { simulationMonth } from "./domain/month";
 import { validateGameStateV2 } from "./game-state-v2";
@@ -185,6 +186,38 @@ describe("atomic v2 monthly turn", () => {
     expect(() => processMonthlyTurnV2(left.state, command(leftInitial))).toThrow(
       expect.objectContaining({ code: "DUPLICATE_COMMAND" }),
     );
+  });
+
+  it("builds reconciled checkpoint evidence from exact monthly records", () => {
+    const initial = configuredState();
+    const result = processMonthlyTurnV2(initial, command(initial), {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+    });
+    const checkpoint = buildCheckpointEvidenceV2(initial, result.state, [result.record]);
+
+    expect(checkpoint).toMatchObject({
+      evidenceVersion: "checkpoint-v2.1",
+      monthsProcessed: 1,
+      monthlyCommandIds: ["cmd.month.2026-07"],
+      taxTraceIds: ["tax.monthly-v2.2026-07"],
+      totalGrossIncomeCents: 1_000_000,
+      totalTaxCents: 200_000,
+      totalAfterTaxCashIncomeCents: 730_000,
+    });
+    expect(checkpoint.totalRequiredCashCents).toBe(result.record.requiredCashCents);
+    expect(checkpoint.totalDebtInterestCents).toBe(
+      result.record.debtService.totalInterestCents,
+    );
+    expect(checkpoint.end.exposure).toMatchObject({ month: "2026-08" });
+    expect(() =>
+      buildCheckpointEvidenceV2(initial, result.state, [
+        { ...result.record, processedMonth: simulationMonth("2026-06") },
+      ]),
+    ).toThrow(expect.objectContaining({ code: "RECORD_GAP" }));
   });
 
   it("adjudicates a covered health claim and commits its accumulator with payment", () => {
