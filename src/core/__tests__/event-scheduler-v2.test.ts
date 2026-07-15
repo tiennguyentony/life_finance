@@ -124,6 +124,42 @@ describe("fair v2 personal-event scheduling", () => {
     });
   });
 
+  it("suppresses a recently resolved event family while leaving other life events eligible", () => {
+    const base = exposedState();
+    const withRecentLifestyleEvent = finalizeGameStateV2({
+      ...base,
+      revision: 1,
+      acceptedCommandIds: ["cmd.resolve.lifestyle"],
+      gameplay: {
+        ...base.gameplay,
+        eventLifecycle: {
+          ...base.gameplay.eventLifecycle,
+          history: [{
+            commandId: "cmd.resolve.lifestyle",
+            resultingRevision: 1,
+            eventId: "evt.recent.lifestyle",
+            templateId: "personal.lifestyle_upgrade",
+            templateVersion: 1,
+            tier: "medium",
+            targetedWeakness: "lifestyle_fragility",
+            parameters: { annual_cost_increase_cents: 120_000 },
+            choiceId: "keep_current_lifestyle",
+            availableChoiceIds: ["accept_upgrade", "keep_current_lifestyle"],
+            scheduledMonth: simulationMonth("2026-07"),
+            resolvedMonth: simulationMonth("2026-07"),
+            playerCostCents: moneyCents(0),
+            insurerCostCents: moneyCents(0),
+          }],
+        },
+      },
+    });
+
+    const result = schedulePersonalEventV2(withRecentLifestyleEvent, ALWAYS);
+    expect(result.eligibleTemplateIds).not.toContain("personal.lifestyle_upgrade");
+    expect(result.eligibleTemplateIds).toContain("personal.wedding_invitation");
+    expect(result.eligibleTemplateIds).toContain("personal.transport_breakdown");
+  });
+
   it("does not target a player without a recorded demonstrated weakness", () => {
     const state = exposedState();
     const disciplined = finalizeGameStateV2({
