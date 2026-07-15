@@ -11,6 +11,10 @@ import {
   aiWorldEventApiRequestSchema,
   aiWorldEventApiResponseSchema,
 } from "../ai/world-director-contracts";
+import {
+  aiDebriefApiRequestSchema,
+  aiDebriefApiResponseSchema,
+} from "../ai/debrief-contracts";
 
 import {
   apiErrorSchema,
@@ -202,6 +206,26 @@ registry.registerPath({
     401: errorResponses[401],
     409: errorResponses[409],
     500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/ai/debrief",
+  operationId: "createAiDebriefV2",
+  summary: "Explain the immutable final grade using bounded run evidence",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: { content: { "application/json": { schema: aiDebriefApiRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: "Grounded final debrief with deterministic fallback",
+      content: { "application/json": { schema: aiDebriefApiResponseSchema } },
+    },
+    400: errorResponses[400], 401: errorResponses[401],
+    409: errorResponses[409], 500: errorResponses[500],
   },
 });
 

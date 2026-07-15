@@ -35,6 +35,8 @@ import { AiEducationError, AiEducationService } from "../ai/education-service";
 import { aiExplanationApiRequestSchema } from "../ai/education-contracts";
 import { AiWorldDirectorError, AiWorldDirectorService } from "../ai/world-director-service";
 import { aiWorldEventApiRequestSchema } from "../ai/world-director-contracts";
+import { AiDebriefError, AiDebriefService } from "../ai/debrief-service";
+import { aiDebriefApiRequestSchema } from "../ai/debrief-contracts";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
@@ -172,6 +174,10 @@ function errorResponse(error: unknown): Response {
     code = error.code;
     status = 409;
     message = error.message;
+  } else if (error instanceof AiDebriefError) {
+    code = error.code;
+    status = 409;
+    message = error.message;
   } else if (error instanceof TaxServiceError) {
     code = `TAX_${error.code}`;
     status = error.retryable ? 503 : error.code === "INVALID_CONFIGURATION" ? 500 : 502;
@@ -211,6 +217,21 @@ export async function handleAiWorldEventV2(
     const secret = extractRunSecret(request.headers.get("authorization"));
     const input = aiWorldEventApiRequestSchema.parse(await readJson(request));
     return jsonResponse(await service.createEvent(path.runId, secret, input), 200);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleAiDebriefV2(
+  request: Request,
+  runId: string,
+  service: AiDebriefService,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const input = aiDebriefApiRequestSchema.parse(await readJson(request));
+    return jsonResponse(await service.createDebrief(path.runId, secret, input), 200);
   } catch (error) {
     return errorResponse(error);
   }
