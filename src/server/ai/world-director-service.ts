@@ -73,14 +73,21 @@ function weaknessSignal(
 }
 
 function fallbackSelection(
+  state: GameStateV2,
   candidates: ReturnType<typeof eligiblePersonalEventTemplatesV2>,
   weaknesses: readonly ReturnType<typeof buildWeaknesses>[number][],
 ): HostileFedResponse {
-  const strongest = [...weaknesses].toSorted((left, right) =>
-    right.severityPpm - left.severityPpm || left.id.localeCompare(right.id),
-  )[0]!;
-  const candidate = candidates.find(({ targetsWeaknesses }) => targetsWeaknesses.includes(strongest.id)) ?? candidates[0]!;
-  const targeted = candidate.targetsWeaknesses.find((id) => weaknesses.some((weakness) => weakness.id === id))!;
+  const rotationKey = sha256Canonical({
+    runId: state.runId,
+    month: state.currentMonth,
+    revision: state.revision,
+    resolvedEventCount: state.gameplay.eventLifecycle.history.length,
+    candidateIds: candidates.map(({ id }) => id),
+  });
+  const candidate = candidates[Number.parseInt(rotationKey.slice(0, 8), 16) % candidates.length]!;
+  const targeted = weaknesses
+    .filter(({ id }) => candidate.targetsWeaknesses.includes(id))
+    .toSorted((left, right) => right.severityPpm - left.severityPpm || left.id.localeCompare(right.id))[0]!.id;
   return {
     templateId: candidate.id,
     templateVersion: candidate.version,
@@ -91,7 +98,7 @@ function fallbackSelection(
     })),
     headline: "Your financial plan meets a real-life stress test",
     narrative: `A bounded ${candidate.tier} event now tests ${targeted.replaceAll("_", " ")}. Choose how to respond before time advances.`,
-    rationale: `Selected the strongest demonstrated weakness using deterministic exposure evidence and engine-owned event bounds.`,
+    rationale: `Selected a deterministic, non-recent event family that targets demonstrated exposure while preserving scenario variety.`,
     citedEvidenceIds: [`weakness.${targeted}`],
   };
 }
@@ -116,7 +123,7 @@ export class AiWorldDirectorService {
       throw new AiWorldDirectorError("WORLD_EVENT_NOT_READY", "process at least one month and demonstrate an eligible financial weakness first");
     }
     let source: AiWorldEventApiResponse["source"] = "deterministic_fallback";
-    let selected = fallbackSelection(candidates, weaknesses);
+    let selected = fallbackSelection(state, candidates, weaknesses);
     try {
       const client = this.clientFactory(runId);
       selected = await client.generate<"hostile_fed">({
