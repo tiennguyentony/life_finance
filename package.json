@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -13,7 +15,10 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "9.0.0",
+    "drizzle-orm": "0.45.2",
     "next": "16.2.10",
+    "postgres": "3.4.9",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "zod": "4.4.3"
@@ -22,6 +27,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "drizzle-kit": "0.31.10",
     "eslint": "9.39.5",
     "eslint-config-next": "16.2.10",
     "typescript": "5.9.3",
