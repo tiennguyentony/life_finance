@@ -59,7 +59,7 @@ export type PlayerPresetId = keyof typeof PLAYER_PRESETS;
 export type BuildCreateRequestOptions = Readonly<{
   studentDebtDollars?: number;
   studentDebtPaymentDollars?: number;
-  healthPlanId?: string;
+  healthPlanId?: string | null;
   insuranceCoverageIds?: readonly string[];
   financialGoal?: Readonly<{
     desiredAnnualSpendingDollars: number;
@@ -156,7 +156,10 @@ export function buildCreateRequest(
     careerId: preset.careerId,
     householdId: preset.householdId,
     benefitsPackageId: preset.benefitsPackageId,
-    healthPlanId: options.healthPlanId ?? preset.healthPlanId,
+    healthPlanId:
+      options.healthPlanId === undefined
+        ? preset.healthPlanId
+        : options.healthPlanId,
     retirementPlanId: preset.retirementPlanId,
     insuranceCoverageIds: [
       ...(options.insuranceCoverageIds ?? ["insurance.renters"]),

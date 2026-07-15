@@ -124,7 +124,7 @@ function assertNativeInput(input: NativeGameStateV2Input): void {
       "starting cash must remain inside the selected scenario bounds",
     );
   }
-  if (input.finances.hsaCents > 0 && !snapshot.selected.healthPlan.hsaEligible) {
+  if (input.finances.hsaCents > 0 && snapshot.selected.healthPlan?.hsaEligible !== true) {
     throw new NativeGameStateV2Error(
       "HSA_INELIGIBLE",
       "opening HSA balance requires an HSA-eligible health plan",
@@ -292,8 +292,8 @@ export function createNativeGameStateV2(
       },
       benefits: {
         status: "selected",
-        healthPlanId: snapshot.selected.healthPlan.id,
-        hsaEligible: snapshot.selected.healthPlan.hsaEligible,
+        healthPlanId: snapshot.selected.healthPlan?.id ?? null,
+        hsaEligible: snapshot.selected.healthPlan?.hsaEligible ?? false,
         employerRetirementPlanId: snapshot.selected.retirementPlan.id,
         insuranceCoverageIds: snapshot.selected.insuranceCoverages.map(
           ({ id }) => id,

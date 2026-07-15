@@ -16,7 +16,7 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function resolved(healthPlanId = "health.hdhp_hsa") {
+function resolved(healthPlanId: string | null = "health.hdhp_hsa") {
   return resolveScenarioCatalogSelection(US_2026_SCENARIO_CATALOG, {
     catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
     locationId: "location.seattle",
@@ -181,6 +181,26 @@ describe("native game state v2 creation", () => {
         }),
       ),
     ).toThrow(expect.objectContaining({ code: "INVALID_FINANCIAL_GOAL" }));
+  });
+
+  it("supports explicitly waiving health coverage without inventing HSA eligibility", () => {
+    const waived = createNativeGameStateV2(
+      input({
+        resolvedScenario: resolved(null),
+        finances: { ...input().finances, hsaCents: moneyCents(0) },
+      }),
+    );
+
+    expect(waived.gameplay.benefits).toMatchObject({
+      healthPlanId: null,
+      hsaEligible: false,
+    });
+    expect(waived.gameplay.catalogSnapshot?.selected.healthPlan).toBeNull();
+    expect(waived.gameplay.catalogSnapshot?.derived).toMatchObject({
+      monthlyHealthPremiumCents: 0,
+      hsaAnnualContributionLimitCents: null,
+    });
+    expect(validateGameStateV2(waived)).toEqual([]);
   });
 
   it("detects later catalog snapshot or selected-benefit drift", () => {
