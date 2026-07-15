@@ -78,3 +78,10 @@ export type ActionDraft = Readonly<{
   mortgageTerm: number;
   upskillProgram: UpskillProgramId;
 }>;
+
+export type MilestoneDraft = Readonly<{
+  kind: "move" | "vehicle" | "wedding" | "child" | "education" | "travel" | "caregiving" | "custom";
+  label: string;
+  targetMonth: string;
+  estimatedCost: number;
+}>;
