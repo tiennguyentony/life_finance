@@ -11,6 +11,10 @@ export function AppHeader() {
   const { dashboard, resetGame } = useGame();
   const inGame = pathname.startsWith("/game");
 
+  if (pathname === "/") {
+    return null;
+  }
+
   function handleReset() {
     resetGame();
     router.push("/start");
