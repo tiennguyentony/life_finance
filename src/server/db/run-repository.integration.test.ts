@@ -5,6 +5,11 @@ import { type PostTransactionCommand } from "../../core/commands";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
 import { createInitialGameState } from "../../core/game-state";
+import {
+  migrateGameStateV1ToV2,
+  V1_TO_V2_MIGRATION_VERSION,
+} from "../../core/game-state-v2";
+import { sha256Canonical } from "../../core/canonical";
 import { RunSecretCodec } from "../auth/run-secret";
 import { AiAuditCipher } from "../ai/audit-crypto";
 import {
@@ -22,6 +27,7 @@ import {
   aiAuditRecords,
   gameRuns,
   ledgerTransactions,
+  runStateMigrations,
   runStateSnapshots,
   transactionalOutbox,
 } from "./schema";
@@ -96,6 +102,12 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000002",
     "10000000-0000-4000-8000-000000000003",
     "10000000-0000-4000-8000-000000000004",
+    "10000000-0000-4000-8000-000000000005",
+    "10000000-0000-4000-8000-000000000006",
+    "10000000-0000-4000-8000-000000000007",
+    "10000000-0000-4000-8000-000000000008",
+    "10000000-0000-4000-8000-000000000009",
+    "10000000-0000-4000-8000-000000000010",
   ];
   let runIndex = 0;
 
@@ -285,5 +297,164 @@ databaseDescribe("Postgres run repository", () => {
       limit: 1,
     });
     expect(retained[0]?.metadata).toMatchObject({ invocationId, runId: created.runId });
+  });
+
+  it("atomically migrates v1 to v2 without rewriting revision, commands, or ledger history", async () => {
+    const created = await repository.createRun(initialState);
+    const migrated = await repository.migrateRunStateToV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const replayed = await repository.migrateRunStateToV2(
+      created.runId,
+      created.accessSecret,
+    );
+
+    expect(migrated.idempotentReplay).toBe(false);
+    expect(migrated.state.schemaVersion).toBe(2);
+    expect(migrated.state.engineVersion).toBe("4.1.0");
+    expect(migrated.state.revision).toBe(created.state.revision);
+    expect(migrated.state.ledger).toEqual(created.state.ledger);
+    expect(migrated.state.acceptedCommandIds).toEqual([]);
+    expect(replayed).toEqual({ ...migrated, idempotentReplay: true });
+    await expect(
+      repository.loadAuthorizedRun(created.runId, created.accessSecret),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_STATE_SCHEMA" });
+
+    const [run] = await connection.db
+      .select()
+      .from(gameRuns)
+      .where(eq(gameRuns.id, created.runId));
+    const [migrationCount] = await connection.db
+      .select({ value: count() })
+      .from(runStateMigrations)
+      .where(eq(runStateMigrations.runId, created.runId));
+    const [snapshotCount] = await connection.db
+      .select({ value: count() })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    const [commandCount] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    const [ledgerCount] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    const [outboxCount] = await connection.db
+      .select({ value: count() })
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.runId, created.runId));
+    expect(run).toMatchObject({
+      stateSchemaVersion: 2,
+      engineVersion: "4.1.0",
+      currentRevision: 0,
+      currentStateChecksum: migrated.stateChecksum,
+    });
+    expect(migrationCount.value).toBe(1);
+    expect(snapshotCount.value).toBe(1);
+    expect(commandCount.value).toBe(0);
+    expect(ledgerCount.value).toBe(1);
+    expect(outboxCount.value).toBe(2);
+  });
+
+  it("serializes concurrent migration attempts into one commit and one replay", async () => {
+    const created = await repository.createRun(initialState);
+    const results = await Promise.all([
+      repository.migrateRunStateToV2(created.runId, created.accessSecret),
+      repository.migrateRunStateToV2(created.runId, created.accessSecret),
+    ]);
+
+    expect(results.map(({ idempotentReplay }) => idempotentReplay).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(results[0]?.stateChecksum).toBe(results[1]?.stateChecksum);
+    const [migrationCount] = await connection.db
+      .select({ value: count() })
+      .from(runStateMigrations)
+      .where(eq(runStateMigrations.runId, created.runId));
+    expect(migrationCount.value).toBe(1);
+  });
+
+  it("rejects a corrupted source checksum before writing a migration", async () => {
+    const created = await repository.createRun(initialState);
+    await connection.db
+      .update(gameRuns)
+      .set({ currentStateChecksum: "0".repeat(64) })
+      .where(eq(gameRuns.id, created.runId));
+
+    await expect(
+      repository.migrateRunStateToV2(created.runId, created.accessSecret),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+    const [migrationCount] = await connection.db
+      .select({ value: count() })
+      .from(runStateMigrations)
+      .where(eq(runStateMigrations.runId, created.runId));
+    expect(migrationCount.value).toBe(0);
+  });
+
+  it("rolls back the authoritative state when the migration outbox cannot insert", async () => {
+    const created = await repository.createRun(initialState);
+    const collisionKey = `${created.runId}:${V1_TO_V2_MIGRATION_VERSION}`;
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.collision",
+      idempotencyKey: collisionKey,
+      payload: { test: true },
+      status: "pending",
+      availableAt: new Date("2026-07-14T12:00:00.000Z"),
+      createdAt: new Date("2026-07-14T12:00:00.000Z"),
+    });
+
+    await expect(
+      repository.migrateRunStateToV2(created.runId, created.accessSecret),
+    ).rejects.toBeTruthy();
+    const [run] = await connection.db
+      .select()
+      .from(gameRuns)
+      .where(eq(gameRuns.id, created.runId));
+    const [migrationCount] = await connection.db
+      .select({ value: count() })
+      .from(runStateMigrations)
+      .where(eq(runStateMigrations.runId, created.runId));
+    expect(run).toMatchObject({
+      stateSchemaVersion: 1,
+      engineVersion: "4.0.0",
+      currentRevision: 0,
+      currentStateChecksum: created.stateChecksum,
+    });
+    expect(migrationCount.value).toBe(0);
+  });
+
+  it("rejects an unjournaled v2 state even when its checksum is internally valid", async () => {
+    const created = await repository.createRun(initialState);
+    const target = migrateGameStateV1ToV2(created.state);
+    await connection.db
+      .update(gameRuns)
+      .set({
+        stateSchemaVersion: target.schemaVersion,
+        engineVersion: target.engineVersion,
+        currentState: target,
+        currentStateChecksum: sha256Canonical(target),
+      })
+      .where(eq(gameRuns.id, created.runId));
+
+    await expect(
+      repository.migrateRunStateToV2(created.runId, created.accessSecret),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("rejects a v2 state whose migration evidence no longer matches", async () => {
+    const created = await repository.createRun(initialState);
+    await repository.migrateRunStateToV2(created.runId, created.accessSecret);
+    await connection.db
+      .update(runStateMigrations)
+      .set({ sourceRevision: 1 })
+      .where(eq(runStateMigrations.runId, created.runId));
+
+    await expect(
+      repository.migrateRunStateToV2(created.runId, created.accessSecret),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
   });
 });
