@@ -83,6 +83,15 @@ and a versioned payload. A command is rejected when its identifier was already
 accepted, its expected revision is stale, its month is invalid, or its payload
 violates an invariant. State is never partially mutated.
 
+The schema-v2 monthly reducer uses one stable order: validate the command and
+external tax evidence; adjudicate the optional insurance claim; apply the
+persisted market draw and inflation; apply payroll, withholding, benefits, and
+employer match; calculate debt service and all non-debt obligations; assess and
+prepare automatic liquidity; pay mandatory items; apply the bounded recurring
+strategy; then advance time, accept the command, and evaluate terminal outcomes.
+If total automatic liquidity cannot cover mandatory items, the reducer records
+bankruptcy without making partial obligation or strategy payments.
+
 Canonical serialization sorts object keys and preserves array order. A SHA-256
 checksum covers all replay-relevant state. Checksums are evidence of accidental
 or unauthorized changes, not a substitute for authorization.

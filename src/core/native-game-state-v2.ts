@@ -286,6 +286,7 @@ export function createNativeGameStateV2(
           usedCents: moneyCents(0),
         })),
       },
+      market: { modelVersion: "regime-v1", monthsInRegime: 0 },
       recurringStrategy: {
         effectiveMonth: input.startMonth,
         preTax401kSalaryRatePpm: 0 as RatePpm,
