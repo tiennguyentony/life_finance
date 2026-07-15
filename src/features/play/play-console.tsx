@@ -18,6 +18,8 @@ import {
 import { EventPanel } from "./event-panel";
 import { OnboardingPanel } from "./onboarding-panel";
 import { selectionForPreset } from "./onboarding-model";
+import { MilestonePanel } from "./milestone-panel";
+import { dueLifeMilestones } from "../../core/life-milestones-v2";
 import { OverviewPanel } from "./overview-panel";
 import {
   buildCreateRequest,
@@ -37,6 +39,7 @@ import {
 import type {
   ActionDraft,
   MonthlyRecap,
+  MilestoneDraft,
   OnboardingDraft,
   PlayTab,
   RunCredential,
@@ -79,12 +82,20 @@ const DEFAULT_ACTION: ActionDraft = {
   upskillProgram: "upskill.certificate",
 };
 
+const DEFAULT_MILESTONE: MilestoneDraft = {
+  kind: "travel",
+  label: "Major life goal",
+  targetMonth: "2027-01",
+  estimatedCost: 5_000,
+};
+
 export function PlayConsole() {
   const [credential, setCredential] = useState<RunCredential | null>(null);
   const [state, setState] = useState<GameStateV2 | null>(null);
   const [onboarding, setOnboarding] = useState(DEFAULT_ONBOARDING);
   const [strategy, setStrategy] = useState(DEFAULT_STRATEGY);
   const [actionDraft, setActionDraft] = useState(DEFAULT_ACTION);
+  const [milestoneDraft, setMilestoneDraft] = useState(DEFAULT_MILESTONE);
   const [checkpoint, setCheckpoint] = useState<CheckpointV2Response | null>(null);
   const [turnHistory, setTurnHistory] = useState<MonthlyRecap[]>(() => {
     if (typeof window === "undefined") return [];
@@ -249,7 +260,11 @@ export function PlayConsole() {
     const recaps: MonthlyRecap[] = [];
     try {
       for (let index = 0; index < count; index += 1) {
-        if (working.outcome || working.gameplay.eventLifecycle.pending) break;
+        if (
+          working.outcome ||
+          working.gameplay.eventLifecycle.pending ||
+          dueLifeMilestones(working).length > 0
+        ) break;
         setBusyLabel(`Simulating ${working.currentMonth} · ${index + 1}/${count}…`);
         const result = await apiRequest<CommandV2Response>(
           `/api/v2/runs/${credential.runId}/commands`,
@@ -319,6 +334,40 @@ export function PlayConsole() {
     );
   };
 
+  const scheduleMilestone = () => {
+    if (!state) return;
+    void submit({
+      schemaVersion: 2,
+      id: commandId("milestone"),
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      type: "manage_life_milestone",
+      payload: {
+        action: "schedule",
+        milestoneId: `milestone.${crypto.randomUUID()}`,
+        kind: milestoneDraft.kind,
+        label: milestoneDraft.label,
+        targetMonth: milestoneDraft.targetMonth,
+        estimatedCostCents: Math.round(milestoneDraft.estimatedCost * 100),
+      },
+    }, `Milestone scheduled for ${milestoneDraft.targetMonth}.`);
+  };
+
+  const resolveMilestone = (
+    milestoneId: string,
+    resolution: "pay_cash" | "postpone_6_months" | "cancel",
+  ) => {
+    if (!state) return;
+    void submit({
+      schemaVersion: 2,
+      id: commandId("milestone"),
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      type: "manage_life_milestone",
+      payload: { action: "resolve", milestoneId, resolution },
+    }, `Milestone decision accepted: ${resolution.replaceAll("_", " ")}.`);
+  };
+
   const loadCheckpoint = async () => {
     if (!state || !credential) return;
     setBusy(true);
@@ -365,7 +414,8 @@ export function PlayConsole() {
   }
 
   const pending = state.gameplay.eventLifecycle.pending;
-  const blocked = Boolean(pending || state.outcome);
+  const dueMilestone = dueLifeMilestones(state).length > 0;
+  const blocked = Boolean(pending || dueMilestone || state.outcome);
   const age = calculateAgeYears(state.player.birthMonth, state.currentMonth);
 
   return (
@@ -431,17 +481,25 @@ export function PlayConsole() {
         />
       ) : null}
       {tab === "actions" ? (
-        <ActionPanel
-          state={state}
-          draft={actionDraft}
-          busy={busy}
-          blocked={blocked}
-          onChange={(patch) =>
-            setActionDraft((current) => ({ ...current, ...patch }))
-          }
-          onApply={takeAction}
-          onSelectConcept={selectConcept}
-        />
+        <>
+          <ActionPanel
+            state={state}
+            draft={actionDraft}
+            busy={busy}
+            blocked={blocked}
+            onChange={(patch) => setActionDraft((current) => ({ ...current, ...patch }))}
+            onApply={takeAction}
+            onSelectConcept={selectConcept}
+          />
+          <MilestonePanel
+            state={state}
+            draft={milestoneDraft}
+            busy={busy}
+            onChange={(patch) => setMilestoneDraft((current) => ({ ...current, ...patch }))}
+            onSchedule={scheduleMilestone}
+            onResolve={resolveMilestone}
+          />
+        </>
       ) : null}
       {tab === "learn" ? (
         <EducationPanel
