@@ -4,7 +4,7 @@ import {
   getDecisionOptions,
   getNextEvent,
   submitDecision,
-} from "./event.service";
+} from "../event.service";
 
 describe("event service", () => {
   it("returns four strategic decisions", async () => {

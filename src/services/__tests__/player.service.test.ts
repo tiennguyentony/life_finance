@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generatePlayer, getPersonas } from "./player.service";
+import { generatePlayer, getPersonas } from "../player.service";
 
 describe("player service", () => {
   it("returns the three playable personas through the async boundary", async () => {
