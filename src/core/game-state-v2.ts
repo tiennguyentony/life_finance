@@ -632,6 +632,29 @@ export function validateGameStateV2(
       ),
     );
   }
+  if (catalogSnapshot !== null) {
+    const family =
+      catalogSnapshot.selected.household.healthCoverageTier === "family";
+    const healthPlan = catalogSnapshot.selected.healthPlan;
+    const deductible = family
+      ? healthPlan.annualDeductibleFamilyCents
+      : healthPlan.annualDeductibleSelfCents;
+    const outOfPocketMaximum = family
+      ? healthPlan.annualOutOfPocketMaximumFamilyCents
+      : healthPlan.annualOutOfPocketMaximumSelfCents;
+    if (
+      insurance.healthDeductiblePaidCents > deductible ||
+      insurance.healthOutOfPocketPaidCents > outOfPocketMaximum
+    ) {
+      violations.push(
+        violation(
+          "gameplay.insurance",
+          "health_accumulator_exceeded",
+          "health accumulators cannot exceed selected plan bounds",
+        ),
+      );
+    }
+  }
   if (
     catalogSnapshot === null
       ? insurance.policyYear !== null || insurance.coverageUsage.length > 0
@@ -656,9 +679,14 @@ export function validateGameStateV2(
     );
   }
   for (const [index, usage] of insurance.coverageUsage.entries()) {
+    const selectedCoverage = catalogSnapshot?.selected.insuranceCoverages.find(
+      ({ id }) => id === usage.coverageId,
+    );
     if (
       !isNonNegativeSafeInteger(usage.usedCents) ||
-      !benefits.insuranceCoverageIds.includes(usage.coverageId)
+      !benefits.insuranceCoverageIds.includes(usage.coverageId) ||
+      !selectedCoverage ||
+      usage.usedCents > selectedCoverage.coverageLimitCents
     ) {
       violations.push(
         violation(
