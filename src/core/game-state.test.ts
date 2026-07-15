@@ -60,6 +60,7 @@ describe("GameState", () => {
     expect(Object.isFrozen(state)).toBe(true);
     expect(Object.isFrozen(state.finances)).toBe(true);
     expect(Object.isFrozen(state.acceptedCommandIds)).toBe(true);
+    expect(state.ledger.transactions).toHaveLength(1);
   });
 
   it("rejects invalid money, credit, dates, and wellbeing together", () => {
