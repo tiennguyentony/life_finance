@@ -7,6 +7,10 @@ import {
   aiExplanationApiRequestSchema,
   aiExplanationApiResponseSchema,
 } from "../ai/education-contracts";
+import {
+  aiWorldEventApiRequestSchema,
+  aiWorldEventApiResponseSchema,
+} from "../ai/world-director-contracts";
 
 import {
   apiErrorSchema,
@@ -171,6 +175,28 @@ registry.registerPath({
     200: {
       description: "Structured lesson and authoritative state with updated learning memory",
       content: { "application/json": { schema: aiExplanationApiResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    409: errorResponses[409],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/ai/world-event",
+  operationId: "createAiWorldEventV2",
+  summary: "Select one fair bounded event targeting demonstrated exposure",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: { content: { "application/json": { schema: aiWorldEventApiRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: "Engine-validated event queued with AI or deterministic narrative",
+      content: { "application/json": { schema: aiWorldEventApiResponseSchema } },
     },
     400: errorResponses[400],
     401: errorResponses[401],

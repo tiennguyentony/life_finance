@@ -9,6 +9,7 @@ import type {
 import type { SetRecurringStrategyCommand } from "../../core/recurring-strategy-v2";
 import type { ManageLifeMilestoneV2Command } from "../../core/life-milestones-v2";
 import type { RecordLearningInteractionV2Command } from "../../core/learning-interaction-v2";
+import type { QueueAiWorldEventV2Command } from "../../core/ai-world-event-v2";
 
 export type CreatedRun = Readonly<{
   runId: string;
@@ -36,6 +37,7 @@ export type GameCommandV2 =
   | ResolveEventChoiceV2Command
   | ManageLifeMilestoneV2Command
   | RecordLearningInteractionV2Command
+  | QueueAiWorldEventV2Command
   | ProcessMonthV2Command;
 
 export type AppliedCommandV2 = Readonly<{

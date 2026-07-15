@@ -6,10 +6,12 @@ import { createTaxClientFromEnvironment } from "../tax/client";
 import { RunApiServiceV2 } from "./service-v2";
 import { AiEducationService } from "../ai/education-service";
 import { getAiRoleClient } from "../ai/runtime";
+import { AiWorldDirectorService } from "../ai/world-director-service";
 
 let service: RunApiService | undefined;
 let serviceV2: RunApiServiceV2 | undefined;
 let aiEducationService: AiEducationService | undefined;
+let aiWorldDirectorService: AiWorldDirectorService | undefined;
 
 export function getRunApiService(): RunApiService {
   if (!service) {
@@ -36,6 +38,21 @@ export function getAiEducationService(): AiEducationService {
     );
   }
   return aiEducationService;
+}
+
+export function getAiWorldDirectorService(): AiWorldDirectorService {
+  if (!aiWorldDirectorService) {
+    const connection = getDatabaseConnection();
+    const repository = new RunRepository(
+      connection.db,
+      runSecretCodecFromEnvironment(),
+    );
+    aiWorldDirectorService = new AiWorldDirectorService(
+      repository,
+      (runId) => getAiRoleClient(runId),
+    );
+  }
+  return aiWorldDirectorService;
 }
 
 export function getRunApiServiceV2(): RunApiServiceV2 {

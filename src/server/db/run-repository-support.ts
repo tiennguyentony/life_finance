@@ -22,6 +22,7 @@ import {
   manageLifeMilestoneV2,
 } from "../../core/life-milestones-v2";
 import { recordLearningInteractionV2 } from "../../core/learning-interaction-v2";
+import { queueAiWorldEventV2 } from "../../core/ai-world-event-v2";
 import {
   RUN_SECRET_HASH_VERSION,
   RunSecretCodec,
@@ -240,6 +241,9 @@ export function reduceGameCommandV2(
   }
   if (command.type === "record_learning_interaction_v2") {
     return { state: recordLearningInteractionV2(state, command), monthlyRecord: null };
+  }
+  if (command.type === "queue_ai_world_event_v2") {
+    return { state: queueAiWorldEventV2(state, command), monthlyRecord: null };
   }
   assertNoDueLifeMilestone(state);
   const result = processMonthlyTurnV2(state, command);

@@ -27,6 +27,15 @@ export function validateEventAndCareerStateV2(
       pending.choiceIds.length === 0 ||
       new Set(pending.choiceIds).size !== pending.choiceIds.length ||
       pending.choiceIds.some((choiceId) => choiceId.length === 0) ||
+      (pending.aiNarrative !== undefined &&
+        (pending.aiNarrative.headline.trim().length < 1 ||
+          pending.aiNarrative.headline.length > 240 ||
+          pending.aiNarrative.narrative.trim().length < 1 ||
+          pending.aiNarrative.narrative.length > 2_000 ||
+          pending.aiNarrative.rationale.trim().length < 1 ||
+          pending.aiNarrative.rationale.length > 800 ||
+          new Set(pending.aiNarrative.citedEvidenceIds).size !==
+            pending.aiNarrative.citedEvidenceIds.length)) ||
       Object.entries(pending.parameters).some(
         ([id, value]) =>
           id.length === 0 || !Number.isSafeInteger(value),
