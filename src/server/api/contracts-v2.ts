@@ -272,6 +272,9 @@ const monthlyRecordSummarySchema = z
     processedMonth: simulationMonthSchema,
     nextMonth: simulationMonthSchema,
     taxTraceId: identifierSchema,
+    grossIncomeCents: nonNegativeCentsSchema,
+    totalTaxCents: z.int(),
+    afterTaxCashIncomeCents: nonNegativeCentsSchema,
     market: z
       .object({
         modelVersion: z.literal("regime-v1"),
@@ -288,7 +291,54 @@ const monthlyRecordSummarySchema = z
     marketValueChangeCents: z.int(),
     annualInflationIncreaseCents: z.int(),
     insurancePlayerCostCents: nonNegativeCentsSchema,
+    requiredCashCents: nonNegativeCentsSchema,
     nonDebtObligationsPaidCents: nonNegativeCentsSchema,
+    debtService: z
+      .object({
+        totalInterestCents: nonNegativeCentsSchema,
+        totalScheduledPaymentCents: nonNegativeCentsSchema,
+      })
+      .passthrough(),
+    funding: z
+      .object({
+        grossLiquidationCents: nonNegativeCentsSchema,
+        liquidationCostCents: nonNegativeCentsSchema,
+        netLiquidationProceedsCents: nonNegativeCentsSchema,
+        creditDrawnCents: nonNegativeCentsSchema,
+      })
+      .passthrough()
+      .nullable(),
+    recurringAllocations: z
+      .object({
+        grossSalaryCents: nonNegativeCentsSchema,
+        afterTaxDiscretionaryCents: nonNegativeCentsSchema,
+        preTax: z
+          .object({
+            employee401kCents: nonNegativeCentsSchema,
+            employer401kMatchCents: nonNegativeCentsSchema,
+            hsaCents: nonNegativeCentsSchema,
+          })
+          .strict(),
+        afterTax: z
+          .object({
+            broadIndexCents: nonNegativeCentsSchema,
+            sectorCents: nonNegativeCentsSchema,
+            speculativeCents: nonNegativeCentsSchema,
+            iraCents: nonNegativeCentsSchema,
+            extraDebtPayments: z.array(
+              z
+                .object({
+                  debtId: identifierSchema,
+                  amountCents: nonNegativeCentsSchema,
+                })
+                .strict(),
+            ),
+          })
+          .strict(),
+        unallocatedAfterTaxCents: nonNegativeCentsSchema,
+      })
+      .strict()
+      .nullable(),
     outcome: z
       .object({
         kind: z.enum(["financial_independence", "retirement_age", "bankruptcy"]),

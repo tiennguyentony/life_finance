@@ -1091,7 +1091,25 @@ databaseDescribe("Postgres run repository", () => {
     const replayedResponse = await process();
     const processed = (await processedResponse.json()) as {
       state: { revision: number; currentMonth: string };
-      monthlyRecord: { processedMonth: string; taxTraceId: string };
+      monthlyRecord: {
+        processedMonth: string;
+        taxTraceId: string;
+        grossIncomeCents: number;
+        totalTaxCents: number;
+        afterTaxCashIncomeCents: number;
+        requiredCashCents: number;
+        debtService: {
+          totalInterestCents: number;
+          totalScheduledPaymentCents: number;
+        };
+        recurringAllocations: {
+          preTax: {
+            employee401kCents: number;
+            employer401kMatchCents: number;
+            hsaCents: number;
+          };
+        } | null;
+      };
       idempotentReplay: boolean;
     };
     const replayed = (await replayedResponse.json()) as typeof processed;
@@ -1102,6 +1120,21 @@ databaseDescribe("Postgres run repository", () => {
       monthlyRecord: {
         processedMonth: "2026-07",
         taxTraceId: "tax.cmd.api-v2.month.2026-07",
+        grossIncomeCents: 1_000_000,
+        totalTaxCents: 200_000,
+        afterTaxCashIncomeCents: 730_000,
+        requiredCashCents: expect.any(Number),
+        debtService: {
+          totalInterestCents: expect.any(Number),
+          totalScheduledPaymentCents: expect.any(Number),
+        },
+        recurringAllocations: {
+          preTax: {
+            employee401kCents: 50_000,
+            employer401kMatchCents: 40_000,
+            hsaCents: 20_000,
+          },
+        },
       },
       idempotentReplay: false,
     });
