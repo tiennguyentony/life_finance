@@ -103,7 +103,17 @@ describe("fair v2 personal-event scheduling", () => {
         ...cooled.gameplay,
         eventLifecycle: {
           ...cooled.gameplay.eventLifecycle,
-          pendingEventId: "evt.pending",
+          pending: {
+            eventId: "evt.pending",
+            templateId: "personal.unexpected_repair",
+            templateVersion: 1,
+            tier: "micro",
+            targetedWeakness: "low_emergency_fund",
+            parameters: { repair_cost_cents: 25_000 },
+            choiceIds: ["repair_now", "negotiate_repair"],
+            scheduledMonth: simulationMonth("2026-07"),
+            expiresMonth: simulationMonth("2026-08"),
+          },
         },
       },
     });

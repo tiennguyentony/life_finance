@@ -110,7 +110,7 @@ export function schedulePersonalEventV2(
   ) {
     throw new RangeError("event scheduling policy must use bounded PPM chance");
   }
-  if (state.outcome || state.gameplay.eventLifecycle.pendingEventId) {
+  if (state.outcome || state.gameplay.eventLifecycle.pending) {
     return Object.freeze({ event: null, nextRandom: state.random, eligibleTemplateIds: [] });
   }
   const weaknesses = demonstratedWeaknesses(state);
