@@ -143,6 +143,7 @@ export type MarketMonth = Readonly<{
   housingReturnPpm: RatePpm;
   inflationPpm: RatePpm;
   laborDemandChangePpm: RatePpm;
+  appliedReturnModifiersPpm: MarketReturnModifiers;
   shocks: Readonly<{
     macro: -2 | -1 | 0 | 1 | 2;
     equityIdiosyncratic: -2 | -1 | 0 | 1 | 2;
@@ -150,6 +151,20 @@ export type MarketMonth = Readonly<{
     housingIdiosyncratic: -2 | -1 | 0 | 1 | 2;
   }>;
 }>;
+
+export type MarketReturnModifiers = Readonly<{
+  equity: RatePpm;
+  bonds: RatePpm;
+  cash: RatePpm;
+  housing: RatePpm;
+}>;
+
+const ZERO_MODIFIERS: MarketReturnModifiers = Object.freeze({
+  equity: ratePpm(0),
+  bonds: ratePpm(0),
+  cash: ratePpm(0),
+  housing: ratePpm(0),
+});
 
 export type MarketSimulationResult = Readonly<{
   month: MarketMonth;
@@ -227,11 +242,22 @@ function transitionRegime(
 
 export function simulateMarketMonth(
   state: MarketSimulationState,
+  modifiers: MarketReturnModifiers = ZERO_MODIFIERS,
 ): MarketSimulationResult {
   if (state.modelVersion !== MARKET_MODEL_VERSION) {
     throw new MarketDomainError(`unsupported market model ${state.modelVersion}`);
   }
   marketSimulationState(state.regime, state.random, state.monthsInRegime);
+  if (
+    Object.values(modifiers).some(
+      (modifier) =>
+        !Number.isSafeInteger(modifier) ||
+        modifier < -500_000 ||
+        modifier > 500_000,
+    )
+  ) {
+    throw new MarketDomainError("market return modifiers must remain within bounds");
+  }
 
   // Draw order is replay-critical: macro, equity, bond, housing, transition.
   const macro = drawBinomialShock(state.random);
@@ -249,18 +275,20 @@ export function simulateMarketMonth(
     equityReturnPpm: clampRate(
       parameters.equityMeanPpm +
         macro.shock * parameters.equityMacroSensitivityPpm +
-        equity.shock * parameters.equityIdiosyncraticPpm,
+        equity.shock * parameters.equityIdiosyncraticPpm +
+        modifiers.equity,
     ),
     bondReturnPpm: clampRate(
       parameters.bondMeanPpm +
         macro.shock * parameters.bondMacroSensitivityPpm +
-        bond.shock * parameters.bondIdiosyncraticPpm,
+        bond.shock * parameters.bondIdiosyncraticPpm + modifiers.bonds,
     ),
-    cashReturnPpm: clampRate(parameters.cashMeanPpm),
+    cashReturnPpm: clampRate(parameters.cashMeanPpm + modifiers.cash),
     housingReturnPpm: clampRate(
       parameters.housingMeanPpm +
         macro.shock * parameters.housingMacroSensitivityPpm +
-        housing.shock * parameters.housingIdiosyncraticPpm,
+        housing.shock * parameters.housingIdiosyncraticPpm +
+        modifiers.housing,
     ),
     inflationPpm: clampRate(
       parameters.inflationMeanPpm +
@@ -270,6 +298,7 @@ export function simulateMarketMonth(
       parameters.laborDemandMeanPpm +
         macro.shock * parameters.laborMacroSensitivityPpm,
     ),
+    appliedReturnModifiersPpm: Object.freeze({ ...modifiers }),
     shocks: Object.freeze({
       macro: macro.shock,
       equityIdiosyncratic: equity.shock,
