@@ -31,7 +31,9 @@ web/API and tax service are intentionally separate Vercel projects.
 Open <https://life-finance-mu.vercel.app/play> and select **Start over** to see
 the current onboarding. The developer UI exposes rather than hides the model:
 
-- Customize salary, cash, student debt, health plan, and optional insurance.
+- Choose a quick start or customize age, location, career, household, salary,
+  cash, student debt, benefits, optional insurance, and a personal FI finish
+  line. Health coverage can be explicitly waived rather than silently assumed.
 - Allocate pre-tax 401(k)/HSA contributions and after-tax IRA, investments, or
   extra debt payments, with eligibility and affordability validation.
 - Use detailed one-time actions for investing, liquidation, retirement
@@ -42,9 +44,16 @@ the current onboarding. The developer UI exposes rather than hides the model:
 - Review FI progress, balance sheet, liabilities, benefits, exposure, macro
   conditions, event alternatives, decision consequences, and checkpoint
   evidence.
+- Plan real-life expenses such as moving, a vehicle, a wedding, a child,
+  education, travel, or caregiving; when due, pay, postpone, or cancel them
+  through an evidence-backed lifecycle.
 - Open contextual concepts such as 401(k), employer match, HSA, tax estimates,
   debt-to-income, liquidity, diversification, and compounding. Definitions,
   relevance, and tradeoffs come from a versioned education catalog.
+- With explicit consent, request a state-grounded adaptive lesson, let the World
+  Director select one already-eligible engine event, and receive a final
+  evidence-grounded debrief. A deterministic fallback keeps every surface
+  usable when the configured model is unavailable.
 
 Fast-forward stops at required decisions and terminal outcomes. A fully cold
 first PolicyEngine calculation can take up to roughly two minutes; duplicate
@@ -75,9 +84,11 @@ annual tax context use persisted evidence and expose a `tax.cache.*` trace.
   peppered HMAC digest.
 - Strict REST/Zod contracts, OpenAPI 3.1, response-validating TypeScript client,
   request-size limits, and safe public errors.
-- GPT-5.6 Sol for Hostile Fed and Teacher roles; GPT-5.6 Terra for onboarding
-  extraction and explanations. Responses use strict structured output and
-  cannot directly mutate authoritative state.
+- A bounded AI context assembled from authoritative state, capped learning
+  memory, and three structured gameplay surfaces: adaptive explanations,
+  eligible-template World Director events, and immutable-grade final debriefs.
+  Responses use strict structured output and cannot calculate money, invent an
+  event effect, alter a grade, or directly mutate authoritative state.
 - Mandatory AI privacy consent, prompt minimization, identifier blocking and
   redaction, `store: false`, and append-only AES-256-GCM encrypted audits with a
   versioned keyring and administrator-only decryption.
@@ -228,6 +239,9 @@ presented as GPT-5.6 submission evidence.
 | `POST /api/v2/runs` | Create a native catalog-backed v2 run and return its one-time access secret |
 | `GET /api/v2/runs/{runId}` | Read an authorized detailed v2 state |
 | `POST /api/v2/runs/{runId}/commands` | Configure strategy, take a detailed action, or request server-owned monthly processing |
+| `POST /api/v2/runs/{runId}/ai/explanation` | Generate an adaptive evidence-grounded lesson and update bounded learning memory |
+| `POST /api/v2/runs/{runId}/ai/world-event` | Select and queue one engine-eligible event without delegating financial authority |
+| `POST /api/v2/runs/{runId}/ai/debrief` | Explain a terminal run without changing its engine-owned outcome or grade |
 
 Only player-authored choices cross the public command boundary. A v2
 `process_month` request contains only its idempotency/revision/month envelope;

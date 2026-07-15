@@ -47,7 +47,10 @@ Do not silently choose whichever behavior is easiest to code.
 - Bankruptcy occurs only when required obligations cannot be covered by all
   automatic liquidity sources. A negative net worth alone is not bankruptcy.
 - Financial independence ends the run immediately with grade S when yielding or
-  investable assets reach 25 times annual living cost. Home equity is excluded.
+  investable assets reach the player's versioned target: desired annual
+  spending divided by their selected safe-withdrawal rate. Home equity is
+  excluded. The target is explicit at onboarding rather than inferred from the
+  current lifestyle budget.
 - At age 65, non-FI progress is graded A at 80%, B at 60%, C at 40%, D at 20%,
   and E below 20% of the current FI target. Bankruptcy is F.
 - Exposure must not change the final grade until a separate product decision
@@ -244,14 +247,16 @@ Status meanings: **implemented** has production code and direct tests;
 | Versioned commands and concurrency | Implemented | v2 action/strategy/month/event envelopes, replay and PostgreSQL concurrency tests | Preserve envelope for future actions |
 | Atomic monthly turn composition | Implemented | market/macro, tax/payroll, insurance, funding, debt, strategy, exposure, events, career completion, outcomes | Preserve order as replay-critical |
 | Tax adapter | Implemented | pinned PolicyEngine 4.21.0 / rules 1.764.6, stable year-end contribution projection, persisted annual-context cache, live HTTP/PostgreSQL journey, deployed paycheck evidence, and cold-start-tolerant client | Preserve pinned-policy, cache-invalidation, and deployed smoke gates |
-| AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
+| AI contracts, privacy, encrypted audit | Implemented | bounded state context, capped learning memory, strict structured outputs, consent, redaction, encrypted audit, deterministic fallback | Preserve authority boundaries and version prompts/contracts when semantics change |
 | Run persistence and REST API | Implemented | v2 repository, strict REST/OpenAPI/client, event/checkpoint routes, leased outbox dispatcher | Wire an external outbox consumer when one is selected |
 | Location/career/benefits catalogs | Implemented | catalog resolver, normalized snapshots, strict v2 creation endpoint | Add future catalog versions without mutating 2026.2 |
 | Versioned educational content | Implemented | `education.en-US.2026.1` catalog plus contextual definitions, relevance, and tradeoffs in the play UI | Add or revise concepts only through a new immutable catalog version |
 | Detailed portfolio, debt, insurance, HSA | Implemented | reconciled detailed balances, exact claims, retirement/home/career commands | Add homeowner coverage through a future immutable catalog version |
 | Exposure and Hostile Fed targeting | Implemented | explainable exposure, fairness-v1 targeting, bounded proposals, cooldowns and recovery windows | Optional AI may choose only among the same eligible templates |
 | Psychology traps and multi-month macro story | Partial | lifestyle/concentration templates and persisted bounded 2–4 month macro modifiers | Add explicit behavioral debrief labels and employment recovery story |
-| Teacher evidence/debrief pipeline | Partial | deterministic checkpoint, command/ledger/event/alternative evidence | Connect optional GPT narrative after project quota is available |
+| Teacher evidence/debrief pipeline | Implemented | state-grounded adaptive lessons and terminal debrief API; immutable engine grade; bounded decision/evidence inputs; semantic validation and deterministic fallback | Expand the versioned concept catalog and evaluation fixtures without exposing full histories |
+| World Director pipeline | Implemented | AI can select only an engine-eligible template after exposure, provide bounded parameters, and add narrative; core revalidates eligibility before queuing | Add future templates through versioned engine catalogs, never free-form monetary effects |
+| Planned life milestones | Implemented | schedule, due-state blocking, ledger-backed payment, six-month postponement, cancellation, and UI for seven milestone categories | Extend categories only with explicit funding and evidence semantics |
 | Gameplay API integration and multi-turn E2E | Implemented | production migrations, live PolicyEngine/PostgreSQL journeys, and public browser create → strategy → month → event smoke flow | Keep browser smoke evidence current for submission releases |
 
 ## State evolution requirements

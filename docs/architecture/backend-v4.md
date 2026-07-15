@@ -117,8 +117,10 @@ entries are never edited or deleted.
   obligations for the period.
 - Home equity and retirement assets do not supply automatic bankruptcy liquidity;
   they require explicit sale or withdrawal commands.
-- Financial independence is reached when investable/yielding assets are at least
-  25 times annual living cost. It ends the run immediately with grade S.
+- Financial independence is reached when investable/yielding assets meet the
+  player's versioned finish line: desired annual spending divided by the
+  selected safe-withdrawal rate. Home equity is excluded. It ends the run
+  immediately with grade S.
 - At age 65, non-FI grades use goal progress: A at 0.8, B at 0.6, C at 0.4, D at
   0.2, and E below 0.2. Bankruptcy is F.
 
