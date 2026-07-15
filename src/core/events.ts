@@ -40,6 +40,7 @@ export type EventParameterDefinition = Readonly<{
 
 export type EventEligibilityRule =
   | Readonly<{ type: "minimum_home_value"; amountCents: MoneyCents }>
+  | Readonly<{ type: "maximum_home_value"; amountCents: MoneyCents }>
   | Readonly<{ type: "maximum_emergency_fund_months"; months: number }>
   | Readonly<{ type: "minimum_credit_utilization"; utilizationPpm: RatePpm }>
   | Readonly<{ type: "market_regime"; regimes: readonly MarketRegime[] }>
@@ -378,7 +379,10 @@ export function validateEventTemplate(
 
   for (const [index, rule] of template.eligibility.entries()) {
     const path = `eligibility.${index}`;
-    if (rule.type === "minimum_home_value" && rule.amountCents < 0) {
+    if (
+      (rule.type === "minimum_home_value" || rule.type === "maximum_home_value") &&
+      rule.amountCents < 0
+    ) {
       violations.push(
         violation(`${path}.amountCents`, "invalid_amount", "must be non-negative"),
       );
@@ -529,6 +533,11 @@ export function eventApplicabilityReasons(
       case "minimum_home_value":
         if (state.finances.homeValueCents < rule.amountCents) {
           reasons.push("minimum_home_value");
+        }
+        break;
+      case "maximum_home_value":
+        if (state.finances.homeValueCents > rule.amountCents) {
+          reasons.push("maximum_home_value");
         }
         break;
       case "maximum_emergency_fund_months":
