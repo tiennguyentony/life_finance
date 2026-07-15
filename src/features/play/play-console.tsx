@@ -29,6 +29,7 @@ import {
 } from "./play-model";
 
 const SESSION_KEY = "life-finance.developer-run.v1";
+const RECAP_SESSION_KEY = "life-finance.developer-recaps.v1";
 
 type RunCredential = Readonly<{ runId: string; accessSecret: string }>;
 type RunResponse = Readonly<{ state: GameStateV2; stateChecksum: string }>;
@@ -194,7 +195,14 @@ export function PlayConsole() {
     "upskill.certificate" | "upskill.bootcamp" | "upskill.degree"
   >("upskill.certificate");
   const [checkpoint, setCheckpoint] = useState<CheckpointV2Response | null>(null);
-  const [turnHistory, setTurnHistory] = useState<MonthlyRecap[]>([]);
+  const [turnHistory, setTurnHistory] = useState<MonthlyRecap[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(sessionStorage.getItem(RECAP_SESSION_KEY) ?? "[]") as MonthlyRecap[];
+    } catch {
+      return [];
+    }
+  });
   const [activeConceptId, setActiveConceptId] = useState("financial_independence");
   const [tab, setTab] = useState<PlayTab>("overview");
   const [busy, setBusy] = useState(false);
@@ -234,6 +242,10 @@ export function PlayConsole() {
     };
   }, []);
 
+  useEffect(() => {
+    sessionStorage.setItem(RECAP_SESSION_KEY, JSON.stringify(turnHistory));
+  }, [turnHistory]);
+
   const createGame = async () => {
     setBusy(true);
     setBusyLabel("Creating your balance sheet…");
@@ -260,6 +272,7 @@ export function PlayConsole() {
       setState(result.state);
       setCheckpoint(null);
       setTurnHistory([]);
+      sessionStorage.removeItem(RECAP_SESSION_KEY);
       setActivity([`Created ${PLAYER_PRESETS[presetId].label} run.`]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create game");
@@ -483,6 +496,7 @@ export function PlayConsole() {
 
   const forgetGame = () => {
     sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(RECAP_SESSION_KEY);
     setCredential(null);
     setState(null);
     setCheckpoint(null);
@@ -502,6 +516,7 @@ export function PlayConsole() {
   }, [pending]);
   const activeConcept = getEducationConcept(activeConceptId) ?? EDUCATION_CONCEPTS[0]!;
   const latestTurn = turnHistory[0] ?? null;
+  const latestEvent = state?.gameplay.eventLifecycle.history.at(-1) ?? null;
 
   if (!state) {
     const preset = PLAYER_PRESETS[presetId];
@@ -764,6 +779,19 @@ export function PlayConsole() {
               return <article className="macro-item" key={story.storyId}><strong>{titleFromId(story.templateId)}</strong><span>{template.teachingPrinciple}</span><small>{story.startedMonth} → {story.expiresMonth}</small></article>;
             }) : <p className="play-note">No active macro story. The market still moves each month under the current {state.marketRegime} regime.</p>}
           </section>
+
+          {latestEvent ? (
+            <section className="play-panel resolved-event">
+              <div><p className="hero-kicker">Decision consequence · {latestEvent.resolvedMonth}</p><h2>{titleFromId(latestEvent.templateId)}</h2></div>
+              <p>{getEventTemplate(latestEvent.templateId, latestEvent.templateVersion).teachingPrinciple}</p>
+              <div className="cashflow-grid">
+                <div><span>Your choice</span><strong>{latestEvent.choiceId.replaceAll("_", " ")}</strong></div>
+                <div><span>Your cost</span><strong>{formatMoney(latestEvent.playerCostCents)}</strong></div>
+                <div><span>Insurer paid</span><strong>{formatMoney(latestEvent.insurerCostCents)}</strong></div>
+              </div>
+              <p className="play-note">Alternatives available at the time: {latestEvent.availableChoiceIds.map((id) => id.replaceAll("_", " ")).join(" · ")}</p>
+            </section>
+          ) : null}
         </>
       ) : null}
 
@@ -791,7 +819,7 @@ export function PlayConsole() {
           <div className={`allocation-check ${preTaxTotal > 100 || afterTaxTotal > 100 ? "invalid" : ""}`}>
             <span>Pre-tax total: {preTaxTotal}%</span><span>After-tax total: {afterTaxTotal}%</span>
           </div>
-          <button disabled={busy || Boolean(state.outcome) || preTaxTotal > 100 || afterTaxTotal > 100} onClick={saveStrategy} type="button">Save recurring strategy</button>
+          <button disabled={busy || Boolean(pending) || Boolean(state.outcome) || preTaxTotal > 100 || afterTaxTotal > 100} onClick={saveStrategy} type="button">Save recurring strategy</button>
         </section>
       ) : null}
 
@@ -828,7 +856,7 @@ export function PlayConsole() {
           {action === "purchase_home" ? <label>Down payment (USD)<input min="0" step="1000" type="number" value={secondaryAmount} onChange={(event) => setSecondaryAmount(event.target.valueAsNumber)} /></label> : null}
           {action === "purchase_home" || action === "refinance_home" ? <div className="play-inline-fields"><label>Mortgage rate %<input min="0" max="50" step="0.1" type="number" value={mortgageRate} onChange={(event) => setMortgageRate(event.target.valueAsNumber)} /></label><label>Term in months<input min="12" max="480" step="12" type="number" value={mortgageTerm} onChange={(event) => setMortgageTerm(event.target.valueAsNumber)} /></label></div> : null}
           {action === "start_upskill" ? <label>Program<select value={upskillProgram} onChange={(event) => setUpskillProgram(event.target.value as typeof upskillProgram)}><option value="upskill.certificate">Certificate · short / lower cost</option><option value="upskill.bootcamp">Bootcamp · medium duration / raise</option><option value="upskill.degree">Degree · long / highest raise</option></select></label> : null}
-          <button disabled={busy || Boolean(state.outcome)} onClick={takeAction} type="button">Apply action</button>
+          <button disabled={busy || Boolean(pending) || Boolean(state.outcome)} onClick={takeAction} type="button">Apply action</button>
         </section>
       ) : null}
 
