@@ -6,9 +6,76 @@ import {
   type SimulationMonth,
 } from "./domain/month";
 import { randomState, type RandomState } from "./domain/rng";
+import {
+  appendTransaction,
+  calculateAccountBalance,
+  createLedger,
+  validateLedger,
+  type JournalPosting,
+  type Ledger,
+  type LedgerAccount,
+} from "./ledger";
 
 export const GAME_STATE_SCHEMA_VERSION = 1 as const;
 export const ENGINE_VERSION = "4.0.0" as const;
+
+const FINANCIAL_ACCOUNT_IDS = {
+  cashCents: "asset.cash",
+  taxableInvestmentsCents: "asset.taxable_investments",
+  retirementCents: "asset.retirement",
+  homeValueCents: "asset.home",
+  otherInvestableAssetsCents: "asset.other_investable",
+  otherAssetsCents: "asset.other",
+  nonCreditLiabilitiesCents: "liability.non_credit",
+  creditUsedCents: "liability.credit",
+} as const satisfies Partial<Record<keyof FinancialSnapshot, string>>;
+
+const INITIAL_LEDGER_ACCOUNTS: readonly LedgerAccount[] = [
+  { id: "asset.cash", name: "Cash", category: "asset", normalBalance: "debit" },
+  {
+    id: "asset.taxable_investments",
+    name: "Taxable investments",
+    category: "asset",
+    normalBalance: "debit",
+  },
+  {
+    id: "asset.retirement",
+    name: "Retirement assets",
+    category: "asset",
+    normalBalance: "debit",
+  },
+  { id: "asset.home", name: "Home", category: "asset", normalBalance: "debit" },
+  {
+    id: "asset.other_investable",
+    name: "Other investable assets",
+    category: "asset",
+    normalBalance: "debit",
+  },
+  {
+    id: "asset.other",
+    name: "Other assets",
+    category: "asset",
+    normalBalance: "debit",
+  },
+  {
+    id: "liability.non_credit",
+    name: "Non-credit liabilities",
+    category: "liability",
+    normalBalance: "credit",
+  },
+  {
+    id: "liability.credit",
+    name: "Credit used",
+    category: "liability",
+    normalBalance: "credit",
+  },
+  {
+    id: "equity.opening",
+    name: "Opening equity",
+    category: "equity",
+    normalBalance: "credit",
+  },
+];
 
 export type MarketRegime =
   | "expansion"
@@ -69,6 +136,7 @@ export type GameState = Readonly<{
   wellbeing: WellbeingSnapshot;
   marketRegime: MarketRegime;
   random: RandomState;
+  ledger: Ledger;
   acceptedCommandIds: readonly string[];
   outcome: GameOutcome | null;
 }>;
@@ -234,6 +302,43 @@ export function validateGameState(
     }
   }
 
+  for (const ledgerViolation of validateLedger(state.ledger)) {
+    violations.push(
+      violation(
+        `ledger.${ledgerViolation.path}`,
+        ledgerViolation.code,
+        ledgerViolation.message,
+      ),
+    );
+  }
+  for (const [financeKey, accountId] of Object.entries(FINANCIAL_ACCOUNT_IDS) as [
+    keyof typeof FINANCIAL_ACCOUNT_IDS,
+    string,
+  ][]) {
+    try {
+      if (
+        calculateAccountBalance(state.ledger, accountId) !==
+        state.finances[financeKey]
+      ) {
+        violations.push(
+          violation(
+            `finances.${financeKey}`,
+            "ledger_mismatch",
+            `must reconcile with ledger account ${accountId}`,
+          ),
+        );
+      }
+    } catch {
+      violations.push(
+        violation(
+          `ledger.accounts.${accountId}`,
+          "missing_financial_account",
+          `must exist to support finances.${financeKey}`,
+        ),
+      );
+    }
+  }
+
   if (state.outcome) {
     if (compareMonths(state.outcome.reachedMonth, state.currentMonth) > 0) {
       violations.push(
@@ -268,6 +373,7 @@ export function assertValidGameState(state: GameState): void {
 
 export function createInitialGameState(input: InitialGameStateInput): GameState {
   const startMonth = simulationMonth(input.startMonth);
+  const ledger = createOpeningLedger(input.finances, startMonth);
   const state: GameState = {
     schemaVersion: GAME_STATE_SCHEMA_VERSION,
     engineVersion: ENGINE_VERSION,
@@ -283,12 +389,79 @@ export function createInitialGameState(input: InitialGameStateInput): GameState 
     wellbeing: { ...input.wellbeing },
     marketRegime: input.marketRegime ?? "expansion",
     random: randomState(input.randomSeed),
+    ledger,
     acceptedCommandIds: [],
     outcome: null,
   };
 
   assertValidGameState(state);
   return deepFreeze(state) as GameState;
+}
+
+function createOpeningLedger(
+  finances: FinancialSnapshot,
+  startMonth: SimulationMonth,
+): Ledger {
+  const emptyLedger = createLedger(INITIAL_LEDGER_ACCOUNTS);
+  const postings: JournalPosting[] = Object.entries(FINANCIAL_ACCOUNT_IDS)
+    .filter(([, accountId]) => !accountId.startsWith("liability."))
+    .map(([financeKey, accountId]) => ({
+      accountId,
+      debitCents: finances[financeKey as keyof typeof FINANCIAL_ACCOUNT_IDS],
+      creditCents: moneyCents(0),
+    }))
+    .concat(
+      Object.entries(FINANCIAL_ACCOUNT_IDS)
+        .filter(([, accountId]) => accountId.startsWith("liability."))
+        .map(([financeKey, accountId]) => ({
+          accountId,
+          debitCents: moneyCents(0),
+          creditCents: finances[financeKey as keyof typeof FINANCIAL_ACCOUNT_IDS],
+        })),
+    )
+    .filter(
+      ({ debitCents, creditCents }) => debitCents > 0 || creditCents > 0,
+    );
+
+  if (postings.length === 0) {
+    return emptyLedger;
+  }
+
+  const debitTotal = postings.reduce(
+    (total, posting) => total + BigInt(posting.debitCents),
+    BigInt(0),
+  );
+  const creditTotal = postings.reduce(
+    (total, posting) => total + BigInt(posting.creditCents),
+    BigInt(0),
+  );
+  const openingEquity = debitTotal - creditTotal;
+  if (openingEquity !== BigInt(0)) {
+    postings.push({
+      accountId: "equity.opening",
+      debitCents: moneyCents(
+        safeBigIntToNumber(
+          openingEquity < 0 ? -openingEquity : BigInt(0),
+          "opening debit",
+        ),
+      ),
+      creditCents: moneyCents(
+        safeBigIntToNumber(
+          openingEquity > 0 ? openingEquity : BigInt(0),
+          "opening credit",
+        ),
+      ),
+    });
+  }
+
+  return appendTransaction(emptyLedger, {
+    id: "txn.opening",
+    commandId: "system.initialize",
+    effectiveMonth: startMonth,
+    reasonCode: "opening_balances",
+    description: "Record the player's opening financial balances",
+    postings,
+  });
 }
 
 export function calculateNetWorth(finances: FinancialSnapshot): MoneyCents {
