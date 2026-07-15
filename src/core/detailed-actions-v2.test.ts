@@ -7,7 +7,11 @@ import {
 } from "./detailed-actions-v2";
 import { moneyCents, ratePpm } from "./domain/money";
 import { simulationMonth } from "./domain/month";
-import { validateGameStateV2, type GameStateV2 } from "./game-state-v2";
+import {
+  finalizeGameStateV2,
+  validateGameStateV2,
+  type GameStateV2,
+} from "./game-state-v2";
 import { createNativeGameStateV2 } from "./native-game-state-v2";
 import { resolveScenarioCatalogSelection } from "./scenario-catalog";
 import {
@@ -208,5 +212,62 @@ describe("detailed v2 financial commands", () => {
       expect.objectContaining({ code: "STALE_REVISION" }),
     );
     expect(validateGameStateV2(drawn)).toEqual([]);
+  });
+
+  it("withdraws retirement with authoritative withholding and early penalty", () => {
+    const initial = state();
+    const contributed = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.retirement.deposit", {
+        type: "contribute_ira",
+        amountCents: moneyCents(750_000),
+      }),
+    );
+    const withdrawn = reduceDetailedFinanceCommand(
+      contributed,
+      command(contributed, "cmd.retirement.withdraw", {
+        type: "withdraw_retirement",
+        bucket: "retirementIraCents",
+        amountCents: moneyCents(500_000),
+      }),
+    );
+
+    expect(withdrawn.gameplay.portfolio.retirementIraCents).toBe(250_000);
+    expect(withdrawn.finances.retirementCents).toBe(250_000);
+    expect(withdrawn.finances.cashCents).toBe(2_100_000);
+    expect(withdrawn.ledger.transactions.at(-1)).toMatchObject({
+      reasonCode: "withdraw_retirement_v2",
+      postings: [
+        { accountId: "asset.retirement", debitCents: 0, creditCents: 500_000 },
+        { accountId: "asset.cash", debitCents: 350_000, creditCents: 0 },
+        { accountId: "expense.tax", debitCents: 100_000, creditCents: 0 },
+        { accountId: "expense.living", debitCents: 50_000, creditCents: 0 },
+      ],
+    });
+    expect(validateGameStateV2(withdrawn)).toEqual([]);
+
+    const eligible = finalizeGameStateV2({
+      ...initial,
+      player: { ...initial.player, birthMonth: simulationMonth("1967-01") },
+    });
+    const eligibleDeposit = reduceDetailedFinanceCommand(
+      eligible,
+      command(eligible, "cmd.retirement.eligible.deposit", {
+        type: "contribute_ira",
+        amountCents: moneyCents(500_000),
+      }),
+    );
+    const eligibleWithdrawal = reduceDetailedFinanceCommand(
+      eligibleDeposit,
+      command(eligibleDeposit, "cmd.retirement.eligible.withdraw", {
+        type: "withdraw_retirement",
+        bucket: "retirementIraCents",
+        amountCents: moneyCents(500_000),
+      }),
+    );
+    expect(eligibleWithdrawal.finances.cashCents).toBe(2_400_000);
+    expect(eligibleWithdrawal.ledger.transactions.at(-1)?.postings).not.toContainEqual(
+      expect.objectContaining({ accountId: "expense.living" }),
+    );
   });
 });

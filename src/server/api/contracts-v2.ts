@@ -187,6 +187,17 @@ const detailedActionSchema = z.discriminatedUnion("type", [
       amountCents: nonNegativeCentsSchema.min(1),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("withdraw_retirement"),
+      bucket: z.enum([
+        "retirement401kCents",
+        "retirementIraCents",
+        "retirementLegacyUnclassifiedCents",
+      ]),
+      amountCents: nonNegativeCentsSchema.min(1),
+    })
+    .strict(),
 ]);
 
 const setStrategyV2CommandSchema = v2Envelope
