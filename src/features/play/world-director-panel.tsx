@@ -19,21 +19,22 @@ export function WorldDirectorPanel({
     <section className="play-panel play-form">
       <div className="section-heading">
         <div>
-          <p className="hero-kicker">AI World Director</p>
-          <h2>Stress-test what your decisions exposed</h2>
+          <p className="hero-kicker">Optional AI stress lab</p>
+          <h2>Ask the World Director for an extra scenario</h2>
         </div>
       </div>
       <p className="play-note">
-        The model may choose only from currently eligible engine templates,
-        demonstrated weaknesses, and fixed parameter bounds. It cannot invent
-        money effects or mutate your balance sheet.
+        Normal surprise events already appear automatically when you advance a month.
+        This optional lab asks AI for an additional personalized stress scenario from
+        eligible, non-recent engine templates. AI cannot invent money effects or mutate
+        your balance sheet.
       </p>
       <label>
         <input checked={consented} onChange={(event) => onConsentChange(event.target.checked)} type="checkbox" />
         I agree to send the minimized, redacted exposure context for this event.
       </label>
       <button disabled={busy || !consented || !ready} onClick={onCreateEvent} type="button">
-        {ready ? "Generate a fair personalized stress test" : "Process one month to measure exposure"}
+        {ready ? "Run an optional AI stress scenario" : "Process one month to measure exposure"}
       </button>
     </section>
   );

@@ -574,7 +574,7 @@ export function PlayConsole() {
           onCreate={() => void createAiDebrief()}
         />
       ) : null}
-      {!pending ? (
+      {!pending && tab === "learn" ? (
         <WorldDirectorPanel
           state={state}
           busy={busy}
