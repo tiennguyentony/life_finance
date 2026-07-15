@@ -196,6 +196,54 @@ describe("frozen 2026 tax projection", () => {
     expect(projected.model.projectedFromFrozenPolicy).toBe(true);
   });
 
+  it("preserves authoritative nominal gross income across cent-rounding loss", () => {
+    const original = taxCalculationRequestSchema.parse({
+      ...request(),
+      economicYear: 2026,
+      cumulativePriceIndexPpm: 1_001_234,
+      people: [
+        {
+          id: "person.primary",
+          role: "primary",
+          ageYears: 40,
+          income: { w2Jobs: [{ id: "job.main", wagesCents: 12_000_001 }] },
+        },
+      ],
+      deductions: {},
+    });
+    const frozenGross =
+      deflateRequestToFrozenPolicy(original).people[0].income.w2Jobs[0]
+        .wagesCents;
+    const frozen = taxCalculationResultSchema.parse({
+      ...result(),
+      economicYear: 2026,
+      annualGrossIncomeCents: frozenGross,
+      federalIncomeTaxCents: 0,
+      stateIncomeTaxCents: 0,
+      employeePayrollTaxCents: 0,
+      selfEmploymentTaxCents: 0,
+      totalTaxCents: 0,
+      afterTaxIncomeCents: frozenGross,
+      effectiveTaxRatePpm: 0,
+      componentsCents: {},
+    });
+
+    const projected = inflateResultToEconomicYear(frozen, original);
+
+    expect(projected.annualGrossIncomeCents).toBe(12_000_001);
+    expect(projected.afterTaxIncomeCents).toBe(12_000_001);
+    expect(projected.model.projectedFromFrozenPolicy).toBe(true);
+  });
+
+  it("rejects a gross-income response from a different projected request", () => {
+    expect(() =>
+      inflateResultToEconomicYear(
+        { ...result(), annualGrossIncomeCents: 13_499_999, afterTaxIncomeCents: 9_699_999 },
+        request(),
+      ),
+    ).toThrow(/gross income/);
+  });
+
   it("rejects a response from a different trace", () => {
     const mismatched = { ...result(), traceId: "tax.other" };
     expect(() => inflateResultToEconomicYear(mismatched, request())).toThrow(
