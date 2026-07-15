@@ -1,4 +1,5 @@
 import { addMonths, simulationMonth, type SimulationMonth } from "./domain/month";
+import { applyFinancialAction, type FinancialAction } from "./actions";
 import {
   finalizeGameState,
   reconcileFinancesWithLedger,
@@ -37,7 +38,16 @@ export type PostTransactionCommand = CommandEnvelope &
     }>;
   }>;
 
-export type GameCommand = AdvanceMonthCommand | PostTransactionCommand;
+export type TakeActionCommand = CommandEnvelope &
+  Readonly<{
+    type: "take_action";
+    payload: Readonly<{ action: FinancialAction }>;
+  }>;
+
+export type GameCommand =
+  | AdvanceMonthCommand
+  | PostTransactionCommand
+  | TakeActionCommand;
 
 export type CommandErrorCode =
   | "UNSUPPORTED_COMMAND_SCHEMA"
@@ -179,6 +189,15 @@ export function reduceGameCommand(
         });
       case "post_transaction":
         return postTransaction(state, command);
+      case "take_action": {
+        const application = applyFinancialAction(
+          state,
+          command.id,
+          command.effectiveMonth,
+          command.payload.action,
+        );
+        return acceptCommand(state, command.id, application);
+      }
       default: {
         const exhaustive: never = command;
         throw new GameCommandError(
