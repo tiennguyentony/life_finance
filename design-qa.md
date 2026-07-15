@@ -1,67 +1,74 @@
-# Layered Landing Screen Design QA
+# Cohesive Sprout Landing Design QA
 
 ## Comparison Target
 
 - Source visual truth: `/var/folders/bb/qf25my3d1bs5ntj5m4w4h3bw0000gn/T/clipboard-2026-07-14-230447-811AABBC.png`
 - Primary implementation screenshot: `/private/tmp/life-finance-landing.png`
-- Animation screenshots: `/private/tmp/life-finance-landing-frame-2.png`, `/private/tmp/life-finance-landing-frame-3.png`, and `/private/tmp/life-finance-landing-frame-4.png`
+- Stable action screenshots: `/private/tmp/life-finance-landing-frame-2.png`, `/private/tmp/life-finance-landing-frame-3.png`, and `/private/tmp/life-finance-landing-frame-4.png`
+- Handoff screenshot: `/private/tmp/life-finance-landing-transition.png`
+- Large desktop screenshot: `/private/tmp/life-finance-landing-2048.png`
 - Viewport: 1536 x 1024 CSS pixels
-- State: initial landing screen before Play is selected
+- State: landing screen before Play is selected
 
 ## Full-view Comparison Evidence
 
-The source and implementation were opened together at the same 1536 x 1024 viewport. The implementation follows the source composition with a warm rounded stage, top-left Life Finance identity, top-right account actions, left navigation rail, oversized central Sprout, lower Play action, character selector, and lower-right challenge card.
+The source and implementation were opened together at the same 1536 x 1024 viewport. The implementation retains the warm rounded scene, top-left identity, top-right actions, left navigation, central Sprout, and lower Play action.
 
-The supplied clean background and four transparent Sprout images are rendered as independent layers. This intentionally replaces the prior single-image title screen so the character can animate and respond to hover.
+The latest user direction intentionally removes the lower character strip and challenge card from the source composition. Their removal gives Sprout and Play one clear focal hierarchy and eliminates the carousel metaphor.
 
-## Required Fidelity Surfaces
-
-- Fonts and typography: passed. The implementation uses the existing rounded display stack, heavy dark title text, compact uppercase utility labels, and large Play lettering aligned with the reference hierarchy.
-- Spacing and layout rhythm: passed. The outer frame, top actions, central character, Play action, lower widgets, and side rail preserve the reference proportions at the desktop target viewport.
-- Colors and visual tokens: passed. The supplied warm background defines the palette, while cream controls, dark navy actions, yellow Play, and purple challenge accents align with the reference.
-- Image quality and asset fidelity: passed. The supplied 1535 x 1024 background and all four transparent Sprout PNGs are used directly without recompression or synthetic substitutes.
-- Copy and content: passed. Life Finance, Log in, Start, Play, challenge copy, month target, and navigation labels are concise and consistent with the reference.
+The 2048 x 1280 capture matching the user's reported desktop size keeps the full Play button inside the viewport and preserves the same character-to-background scale.
 
 ## Focused Region Comparison Evidence
 
-The central character region was checked across all four animation captures. Every supplied Sprout pose remains fully visible, grounded above the Play button, and clear of the top controls. The Play button retains a large accessible target and visible hover, focus, and pressed states.
+All four stable action captures and the midpoint handoff capture were reviewed. The source PNGs have different canvas sizes, alpha bounds, visual centers, and foot positions. Per-pose translation and scale corrections now keep Sprout's face near one anchor and feet on one table plane across the loop.
 
-The supplied Sprout animation frames do not include the reference sunglasses or a held money bag. The clean background supplies the money bag, while the animation intentionally uses the approved transparent poses as provided.
+At the measured handoff point, adjacent actions each render at 0.5 opacity and total character opacity remains 1. The face, torso, feet, and money gun overlap closely enough that the 72 ms handoff reads as one animated performance rather than a long dissolve between separate slides.
+
+## Required Fidelity Surfaces
+
+- Fonts and typography: passed. Existing rounded display typography, compact navigation labels, and Play hierarchy remain consistent.
+- Spacing and layout rhythm: passed. Sprout no longer overfills the viewport, the feet align with the foreground plane, and Play has a clear gap below the character.
+- Colors and visual tokens: passed. A restrained warm color grade and softer silhouette shadow bring the character closer to the background lighting without changing the approved assets.
+- Image quality and asset fidelity: passed. The four approved transparent PNGs remain untouched and render without recompression.
+- Copy and content: passed. The requested challenge and carousel copy are removed; the remaining controls are concise and functional.
 
 ## Interaction Verification
 
-- The landing animation advanced through frames 1, 2, 3, and 4 in order.
-- Hovering Sprout applied the independent character drop shadow and scale response.
-- Selecting Play opened `/start` and preserved the complete persona-to-event flow.
-- Reloading the post-event dashboard preserved `$1,440` cash and `AUG 2026`.
+- The loop advanced through money burst, victory bounce, confident reset, and lucky finale in order.
+- Each act uses anticipation, subtle squash, rebound, and a short handoff at the motion apex.
+- Hovering Sprout applies a subtle independent response.
+- Reduced motion stops the loop and preserves the first action.
+- Selecting Play still completes the persona, profile, decision, event, and persisted dashboard flow.
 - Browser console errors and warnings: none.
-- Reduced motion: the cycle and float stop, and frame 1 remains visible.
 
 ## Comparison History
 
 ### Iteration 1
 
-- [P1] The prior implementation was a single baked title-screen image, so Sprout could not animate independently.
-- [P2] The first layered capture rendered Sprout smaller than the reference hero scale.
+- [P1] Sprout was baked into a single title-screen image and could not move independently.
 
-Fixes made:
-
-- Replaced the baked title-screen image with the supplied clean background.
-- Added all four transparent Sprout images as independently animated layers.
-- Increased the character stage and raised the Play button to match the source hierarchy.
-- Added real top actions, navigation, character selection, challenge progress, and Play controls.
+Fix: split the background and character into independent source assets.
 
 ### Iteration 2
 
-The revised capture preserves the reference game-title composition while supporting real character animation, hover response, keyboard focus, responsive behavior, and reduced motion.
+- [P1] The four stills read as a carousel because they used equal boxes, long fades, and visible thumbnail chrome.
+- [P1] Sprout was oversized and floated over the set because the poses had unmatched internal geometry and no shared ground plane.
+- [P2] The lower challenge card competed with Play and was no longer wanted.
 
-## Findings
+Fixes:
 
-No actionable P0, P1, or P2 differences remain within the supplied asset set.
+- Removed the character strip and challenge card.
+- Measured every alpha bound and assigned per-pose scale and translation corrections.
+- Anchored all faces and feet to stable screen positions.
+- Replaced the equal slideshow cycle with four named acts using anticipation, squash, rebound, and 72 ms handoffs.
+- Added restrained warmth, saturation control, and silhouette shadow to match the scene lighting.
+
+### Iteration 3
+
+The revised full-view, all four stable actions, and midpoint handoff were recaptured. No actionable P0, P1, or P2 visual differences remain under the latest user direction.
 
 ## Follow-up Polish
 
-- [P3] Add a transparent sunglasses pose if that exact accessory needs to persist during the animation.
-- [P3] Add dedicated graphic assets for the side-rail symbols if they become interactive destinations.
+- [P3] True limb-by-limb interpolation would require a purpose-built frame sequence or rigged animation source. The current loop uses the four approved raster actions and makes their handoffs visually continuous without changing the canonical artwork.
 
 final result: passed
