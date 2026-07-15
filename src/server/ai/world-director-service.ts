@@ -85,10 +85,10 @@ function fallbackSelection(
     templateId: candidate.id,
     templateVersion: candidate.version,
     targetedWeaknessId: targeted,
-    parameters: Object.fromEntries(candidate.parameters.map((parameter) => [
-      parameter.id,
-      Math.round((parameter.minimum + parameter.maximum) / 2),
-    ])),
+    parameters: candidate.parameters.map((parameter) => ({
+      id: parameter.id,
+      value: Math.round((parameter.minimum + parameter.maximum) / 2),
+    })),
     headline: "Your financial plan meets a real-life stress test",
     narrative: `A bounded ${candidate.tier} event now tests ${targeted.replaceAll("_", " ")}. Choose how to respond before time advances.`,
     rationale: `Selected the strongest demonstrated weakness using deterministic exposure evidence and engine-owned event bounds.`,
@@ -149,6 +149,9 @@ export class AiWorldDirectorService {
       payload: {
         source,
         ...selected,
+        parameters: Object.fromEntries(
+          selected.parameters.map(({ id, value }) => [id, value]),
+        ),
         targetedWeaknessId: selected.targetedWeaknessId as EventWeakness,
       },
     };

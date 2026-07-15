@@ -90,7 +90,13 @@ export const hostileFedResponseSchema = z
     templateId: safeIdentifier,
     templateVersion: safeInteger.min(1),
     targetedWeaknessId: safeIdentifier,
-    parameters: z.record(safeIdentifier, safeInteger),
+    parameters: z
+      .array(
+        z
+          .object({ id: safeIdentifier, value: safeInteger })
+          .strict(),
+      )
+      .max(8),
     headline: shortText,
     narrative: narrativeText,
     rationale: narrativeText.max(800),

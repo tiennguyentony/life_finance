@@ -39,7 +39,7 @@ const hostileOutput = {
   templateId: "personal.industry_layoff",
   templateVersion: 1,
   targetedWeaknessId: "low_emergency_fund",
-  parameters: { income_gap_cents: 500_000 },
+  parameters: [{ id: "income_gap_cents", value: 500_000 }],
   headline: "The paycheck stops before the bills do",
   narrative: "Your industry contracts while fixed costs remain due.",
   rationale: "This fairly tests the evidenced thin cash buffer.",
@@ -160,7 +160,10 @@ describe("AiRoleClient", () => {
   });
 
   it("retries invalid structured output once, then fails without fallback", async () => {
-    const invalid = { ...hostileOutput, parameters: { income_gap_cents: 9_000_000 } };
+    const invalid = {
+      ...hostileOutput,
+      parameters: [{ id: "income_gap_cents", value: 9_000_000 }],
+    };
     const { client, requests, audits } = harness([
       completed(invalid, "resp_invalid_1"),
       completed(invalid, "resp_invalid_2"),
