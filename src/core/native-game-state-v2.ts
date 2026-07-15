@@ -299,7 +299,8 @@ export function createNativeGameStateV2(
       },
       exposure: { current: null, history: [] },
       eventLifecycle: {
-        pendingEventId: null,
+        pending: null,
+        history: [],
         activeStoryIds: [],
         cooldowns: [],
       },
