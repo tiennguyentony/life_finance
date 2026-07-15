@@ -24,7 +24,8 @@ export class AiEducationError extends Error {
   }
 }
 
-type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate">;
+type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate"> &
+  Partial<Pick<AiRoleClient, "responseSource">>;
 
 export class AiEducationService {
   constructor(
@@ -55,7 +56,8 @@ export class AiEducationService {
       citedEvidenceIds: [],
     };
     try {
-      explanation = await this.clientFactory(runId).generate<"explanation">({
+      const client = this.clientFactory(runId);
+      explanation = await client.generate<"explanation">({
         contractVersion: AI_CONTRACT_VERSION,
         privacyNoticeVersion: request.privacyNoticeVersion,
         dataUseAccepted: request.dataUseAccepted,
@@ -65,7 +67,7 @@ export class AiEducationService {
         whyNow: `Month ${context.month}; FI progress ${context.goal.progressPpm} ppm; adapt to the supplied evidence.`,
         evidence: [...evidence],
       });
-      source = process.env.AI_PROVIDER === "ollama" ? "local_oss" : "openai";
+      source = client.responseSource?.() ?? "openai";
     } catch {
       // The deterministic curriculum remains available when model, quota, or audit storage is unavailable.
     }

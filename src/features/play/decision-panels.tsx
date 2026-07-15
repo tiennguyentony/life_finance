@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import type { GameStateV2 } from "@/core/game-state-v2";
+import type { AiContentSource } from "@/core/ai-source";
 import {
   EDUCATION_CONCEPTS,
   EDUCATION_CONTENT_VERSION,
@@ -203,7 +204,7 @@ export function EducationPanel({
   busy: boolean;
   consented: boolean;
   lesson: Readonly<{
-    source: "openai" | "local_oss" | "deterministic_fallback";
+    source: AiContentSource;
     explanation: Readonly<{
       title: string;
       explanation: string;
@@ -244,8 +245,9 @@ export function EducationPanel({
           <h3>Adaptive AI lesson</h3>
           <p>
             Send a minimized simulation snapshot—never the full ledger or run
-            history—to OpenAI GPT-5.6 (or local gpt-oss in development). Encrypted
-            prompts and outputs are retained for administrator-only audit; the
+            history—to the configured provider: Groq-hosted gpt-oss-120b,
+            OpenAI GPT-5.6, or local gpt-oss in development. Encrypted prompts
+            and outputs are retained for administrator-only audit; the
             deterministic engine remains authoritative.
           </p>
           <label>
@@ -265,6 +267,8 @@ export function EducationPanel({
             <p className="hero-kicker">
               {lesson.source === "openai"
                 ? "GPT-5.6 personalized lesson"
+                : lesson.source === "hosted_oss"
+                  ? "Hosted gpt-oss-120b personalized lesson"
                 : lesson.source === "local_oss"
                   ? "Local gpt-oss lesson"
                   : "Reliable curriculum fallback"}

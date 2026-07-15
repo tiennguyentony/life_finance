@@ -1,5 +1,6 @@
 import type { MoneyCents, RatePpm } from "./domain/money";
 import type { SimulationMonth } from "./domain/month";
+import type { AiContentSource } from "./ai-source";
 import {
   assertValidGameState,
   type GameState as GameStateV1,
@@ -111,7 +112,7 @@ export type PendingEventV2 = Readonly<{
   scheduledMonth: SimulationMonth;
   expiresMonth: SimulationMonth;
   aiNarrative?: Readonly<{
-    source: "openai" | "local_oss" | "deterministic_fallback";
+    source: AiContentSource;
     headline: string;
     narrative: string;
     rationale: string;

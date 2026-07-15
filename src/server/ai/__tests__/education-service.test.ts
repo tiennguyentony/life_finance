@@ -46,7 +46,7 @@ function repository() {
 const request = {
   conceptId: "liquidity",
   expectedRevision: 0,
-  privacyNoticeVersion: 1 as const,
+  privacyNoticeVersion: 2 as const,
   dataUseAccepted: true as const,
 };
 
@@ -56,6 +56,7 @@ describe("adaptive AI education service", () => {
     const service = new AiEducationService(
       repo.value,
       () => ({
+        responseSource: () => "hosted_oss" as const,
         generate: async () => ({
           title: "Liquidity under pressure",
           explanation: "Cash can settle near-term obligations without forced selling.",
@@ -69,7 +70,7 @@ describe("adaptive AI education service", () => {
 
     const result = await service.explain("run", "secret", request);
 
-    expect(result.source).toBe("openai");
+    expect(result.source).toBe("hosted_oss");
     expect(result.memoryRecorded).toBe(true);
     expect(result.explanation.citedEvidenceIds).toEqual([
       "context.cash", "context.required_cash",

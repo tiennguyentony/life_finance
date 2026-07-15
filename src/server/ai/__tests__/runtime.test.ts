@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { OpenAiResponsesTransport } from "../client";
 import { OllamaGptOssTransport } from "../ollama-transport";
+import { GroqGptOssTransport } from "../groq-transport";
 import { aiTransportFromEnvironment } from "../runtime";
 
 describe("server-only AI runtime composition", () => {
@@ -26,13 +27,19 @@ describe("server-only AI runtime composition", () => {
     }
   });
 
-  it("selects OpenAI by default and Ollama only through an explicit local provider", () => {
+  it("selects explicit hosted/local providers while preserving the OpenAI default", () => {
     expect(
       aiTransportFromEnvironment({ OPENAI_API_KEY: `sk-test-${"x".repeat(32)}` }),
     ).toBeInstanceOf(OpenAiResponsesTransport);
     expect(aiTransportFromEnvironment({ AI_PROVIDER: "ollama" })).toBeInstanceOf(
       OllamaGptOssTransport,
     );
+    expect(
+      aiTransportFromEnvironment({
+        AI_PROVIDER: "groq",
+        GROQ_API_KEY: `gsk-test-${"x".repeat(32)}`,
+      }),
+    ).toBeInstanceOf(GroqGptOssTransport);
     expect(() =>
       aiTransportFromEnvironment({
         AI_PROVIDER: "ollama",
@@ -40,7 +47,7 @@ describe("server-only AI runtime composition", () => {
       }),
     ).toThrow("restricted to local development");
     expect(() => aiTransportFromEnvironment({ AI_PROVIDER: "unknown" })).toThrow(
-      "openai or ollama",
+      "openai, groq, or ollama",
     );
   });
 });

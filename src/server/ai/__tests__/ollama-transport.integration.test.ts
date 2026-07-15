@@ -28,7 +28,7 @@ describe("local gpt-oss integration", () => {
       );
       const request: ExplanationRequest = {
         contractVersion: 1,
-        privacyNoticeVersion: 1,
+        privacyNoticeVersion: 2,
         dataUseAccepted: true,
         role: "explanation",
         conceptId: "emergency_fund",
@@ -70,7 +70,7 @@ describe("local gpt-oss integration", () => {
       });
       const request: HostileFedRequest = {
         contractVersion: 1,
-        privacyNoticeVersion: 1,
+        privacyNoticeVersion: 2,
         dataUseAccepted: true,
         role: "hostile_fed",
         simulationMonth: "2026-07",
@@ -125,7 +125,7 @@ describe("local gpt-oss integration", () => {
       });
       const request: TeacherRequest = {
         contractVersion: 1,
-        privacyNoticeVersion: 1,
+        privacyNoticeVersion: 2,
         dataUseAccepted: true,
         role: "teacher",
         outcome: {
@@ -167,7 +167,7 @@ describe("local gpt-oss integration", () => {
       });
       const request: OnboardingRequest = {
         contractVersion: 1,
-        privacyNoticeVersion: 1,
+        privacyNoticeVersion: 2,
         dataUseAccepted: true,
         role: "onboarding",
         sanitizedFreeText: "I live in Seattle and work in software.",

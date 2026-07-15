@@ -1,4 +1,5 @@
 import type { SimulationMonth } from "./domain/month";
+import { isAiContentSource, type AiContentSource } from "./ai-source";
 import {
   demonstratedWeaknessesV2,
   eligiblePersonalEventTemplatesV2,
@@ -14,7 +15,7 @@ export type QueueAiWorldEventV2Command = Readonly<{
   expectedRevision: number;
   effectiveMonth: SimulationMonth;
   payload: Readonly<{
-    source: "openai" | "local_oss" | "deterministic_fallback";
+    source: AiContentSource;
     templateId: string;
     templateVersion: number;
     targetedWeaknessId: EventWeakness;
@@ -55,7 +56,7 @@ export function queueAiWorldEventV2(
     !ID.test(command.id) ||
     command.effectiveMonth !== state.currentMonth ||
     !Number.isSafeInteger(command.expectedRevision) || command.expectedRevision < 0 ||
-    !["openai", "local_oss", "deterministic_fallback"].includes(payload.source) ||
+    !isAiContentSource(payload.source) ||
     !ID.test(payload.templateId) || !Number.isSafeInteger(payload.templateVersion) ||
     payload.headline.trim().length < 1 || payload.headline.length > 240 ||
     payload.narrative.trim().length < 1 || payload.narrative.length > 2_000 ||

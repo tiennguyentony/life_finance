@@ -30,7 +30,8 @@ export class AiWorldDirectorError extends Error {
   }
 }
 
-type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate">;
+type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate"> &
+  Partial<Pick<AiRoleClient, "responseSource">>;
 
 function clampRate(value: number): number {
   return Math.max(0, Math.min(1_000_000, Math.round(value)));
@@ -117,7 +118,8 @@ export class AiWorldDirectorService {
     let source: AiWorldEventApiResponse["source"] = "deterministic_fallback";
     let selected = fallbackSelection(candidates, weaknesses);
     try {
-      selected = await this.clientFactory(runId).generate<"hostile_fed">({
+      const client = this.clientFactory(runId);
+      selected = await client.generate<"hostile_fed">({
         contractVersion: AI_CONTRACT_VERSION,
         privacyNoticeVersion: request.privacyNoticeVersion,
         dataUseAccepted: request.dataUseAccepted,
@@ -134,7 +136,7 @@ export class AiWorldDirectorService {
           parameters: candidate.parameters.map(({ id, minimum, maximum }) => ({ id, minimum, maximum })),
         })),
       });
-      source = process.env.AI_PROVIDER === "ollama" ? "local_oss" : "openai";
+      source = client.responseSource?.() ?? "openai";
     } catch {
       // The same engine-owned candidates and midpoint parameters provide a safe fallback.
     }
