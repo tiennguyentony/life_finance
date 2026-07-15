@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, gt, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
 
 import { canonicalJson, sha256Canonical } from "../../core/canonical";
 import {
@@ -716,6 +716,58 @@ export class RunRepository {
     return stored.evidence;
   }
 
+  async loadMonthlyTaxEvidenceForContext(
+    runId: string,
+    accessSecret: string,
+    contextFingerprint: string,
+  ): Promise<MonthlyTaxEvidence | null> {
+    assertUuid(runId);
+    if (!/^[0-9a-f]{64}$/.test(contextFingerprint)) {
+      throw new TypeError("tax context fingerprint must be canonical SHA-256");
+    }
+    const [run] = await this.#db
+      .select()
+      .from(gameRuns)
+      .where(eq(gameRuns.id, runId))
+      .limit(1);
+    if (
+      !run ||
+      !isAuthorized(
+        this.#secretCodec,
+        accessSecret,
+        run.accessSecretHash,
+        run.accessSecretHashVersion,
+      )
+    ) {
+      throw new RunRepositoryError(
+        "NOT_FOUND_OR_UNAUTHORIZED",
+        "run was not found or the credential is invalid",
+      );
+    }
+    const [stored] = await this.#db
+      .select()
+      .from(monthlyTaxEvidence)
+      .where(
+        and(
+          eq(monthlyTaxEvidence.runId, runId),
+          eq(monthlyTaxEvidence.taxContextFingerprint, contextFingerprint),
+        ),
+      )
+      .orderBy(desc(monthlyTaxEvidence.createdAt))
+      .limit(1);
+    if (!stored) return null;
+    if (
+      stored.evidence.contextFingerprint !== contextFingerprint ||
+      sha256Canonical(stored.evidence) !== stored.evidenceChecksum
+    ) {
+      throw new RunRepositoryError(
+        "CORRUPT_STATE",
+        "cached tax evidence failed fingerprint or checksum validation",
+      );
+    }
+    return stored.evidence;
+  }
+
   async applyCommand(
     runId: string,
     accessSecret: string,
@@ -1088,6 +1140,7 @@ export class RunRepository {
           traceId: evidence.traceId,
           commandId: command.id,
           effectiveMonth: command.effectiveMonth,
+          taxContextFingerprint: evidence.contextFingerprint ?? null,
           evidenceChecksum: sha256Canonical(evidence),
           evidence,
           createdAt: now,

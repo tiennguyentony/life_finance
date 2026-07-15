@@ -238,6 +238,7 @@ export const monthlyTaxEvidence = pgTable(
     traceId: varchar("trace_id", { length: 128 }).notNull(),
     commandId: varchar("command_id", { length: 128 }).notNull(),
     effectiveMonth: char("effective_month", { length: 7 }).notNull(),
+    taxContextFingerprint: char("tax_context_fingerprint", { length: 64 }),
     evidenceChecksum: char("evidence_checksum", { length: 64 }).notNull(),
     evidence: jsonb("evidence").$type<MonthlyTaxEvidence>().notNull(),
     createdAt,
@@ -252,6 +253,11 @@ export const monthlyTaxEvidence = pgTable(
       table.runId,
       table.commandId,
     ),
+    index("monthly_tax_evidence_run_context_idx").on(
+      table.runId,
+      table.taxContextFingerprint,
+      table.createdAt,
+    ),
     foreignKey({
       columns: [table.runId, table.commandId],
       foreignColumns: [acceptedCommands.runId, acceptedCommands.commandId],
@@ -264,6 +270,10 @@ export const monthlyTaxEvidence = pgTable(
     check(
       "monthly_tax_evidence_checksum_format",
       sql`${table.evidenceChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "monthly_tax_evidence_context_fingerprint_format",
+      sql`${table.taxContextFingerprint} IS NULL OR ${table.taxContextFingerprint} ~ '^[0-9a-f]{64}$'`,
     ),
   ],
 ).enableRLS();

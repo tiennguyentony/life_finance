@@ -1149,8 +1149,8 @@ databaseDescribe("Postgres run repository", () => {
             w2Jobs: [
               expect.objectContaining({
                 wagesCents: 12_000_000,
-                pretaxRetirementContributionsCents: 600_000,
-                pretaxHealthContributionsCents: 240_000,
+                pretaxRetirementContributionsCents: 300_000,
+                pretaxHealthContributionsCents: 120_000,
               }),
             ],
           }),
@@ -1190,6 +1190,33 @@ databaseDescribe("Postgres run repository", () => {
     await expect(loadedResponse.json()).resolves.toMatchObject({
       state: { revision: 2, currentMonth: "2026-08" },
     });
+
+    const cachedMonthResponse = await handleSubmitCommandV2(
+      new Request(`https://example.test/api/v2/runs/${created.runId}/commands`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${created.accessSecret}` },
+        body: JSON.stringify({
+          schemaVersion: 2,
+          id: "cmd.api-v2.month.2026-08",
+          type: "process_month",
+          expectedRevision: 2,
+          effectiveMonth: "2026-08",
+          payload: {},
+        }),
+      }),
+      created.runId,
+      api,
+    );
+    expect(cachedMonthResponse.status).toBe(200);
+    await expect(cachedMonthResponse.json()).resolves.toMatchObject({
+      state: { revision: 3, currentMonth: "2026-09" },
+      monthlyRecord: {
+        processedMonth: "2026-08",
+        taxTraceId: "tax.cache.cmd.api-v2.month.2026-08",
+        totalTaxCents: 200_000,
+      },
+    });
+    expect(tax.calculate).toHaveBeenCalledTimes(1);
   });
 
   it("returns 503 and commits nothing when server-owned tax calculation fails", async () => {
