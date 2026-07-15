@@ -74,6 +74,7 @@ authority boundary.
 - Python 3.12 and [uv](https://docs.astral.sh/uv/)
 - PostgreSQL 17, or a Supabase PostgreSQL connection
 - An OpenAI project key with access to `gpt-5.6-sol` and `gpt-5.6-terra`
+- Optional for local AI development: Ollama with `gpt-oss:20b`
 
 ## Environment
 
@@ -91,7 +92,9 @@ The server requires:
 | `RUN_SECRET_PEPPER_BASE64URL` | 256-bit HMAC pepper for anonymous run secrets |
 | `TAX_SERVICE_URL` | Base URL of the separately running tax service |
 | `TAX_SERVICE_TOKEN` | Shared server-only bearer used by both services |
+| `AI_PROVIDER` | `openai` by default; `ollama` is accepted only outside Vercel production |
 | `OPENAI_API_KEY` | Server-only OpenAI project key |
+| `OLLAMA_BASE_URL` | Loopback-only Ollama origin used by the local provider |
 | `AI_AUDIT_ENCRYPTION_KEYS` | Versioned JSON keyring of canonical base64 AES-256 keys |
 | `AI_AUDIT_ACTIVE_KEY_VERSION` | Positive version selected for new audit records |
 | `AI_AUDIT_ADMIN_TOKEN` | Independent 256-bit administrator bearer for audit reads |
@@ -143,6 +146,34 @@ corepack pnpm dev
 Open <http://localhost:3000>. API readiness is available at
 <http://localhost:3000/api/v1/health>.
 
+### Optional local gpt-oss model
+
+When GPT-5.6 API access is temporarily unavailable, deterministic integration
+work can use OpenAI's open-weight `gpt-oss-20b` through Ollama. This is a local
+development transport, not a silent fallback and not evidence of the required
+GPT-5.6 submission path.
+
+```sh
+ollama pull gpt-oss:20b
+ollama list
+RUN_OLLAMA_INTEGRATION=1 pnpm test -- src/server/ai/ollama-transport.integration.test.ts
+```
+
+Set the following in the uncommitted `.env.local` file:
+
+```dotenv
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+The adapter calls Ollama's non-streaming `/api/chat` endpoint with the same
+strict JSON Schema used by the production role contract. It accepts only a
+loopback HTTP origin, never sends the OpenAI API key, discards model thinking
+from audit output, and records the actual model as `ollama/gpt-oss:20b`.
+Production Vercel configuration rejects the Ollama provider. Before submission,
+restore `AI_PROVIDER=openai` and pass a real encrypted-audit success path using
+the required GPT-5.6 model.
+
 ## API surface
 
 | Method and path | Behavior |
@@ -152,11 +183,17 @@ Open <http://localhost:3000>. API readiness is available at
 | `POST /api/v1/runs` | Create an authoritative run and return its one-time access secret |
 | `GET /api/v1/runs/{runId}` | Read a run using its bearer secret |
 | `POST /api/v1/runs/{runId}/commands` | Submit a player action with optimistic revision and idempotency ID |
+| `POST /api/v2/runs` | Create a native catalog-backed v2 run and return its one-time access secret |
+| `GET /api/v2/runs/{runId}` | Read an authorized detailed v2 state |
+| `POST /api/v2/runs/{runId}/commands` | Configure strategy, take a detailed action, or request server-owned monthly processing |
 
-Only player actions cross the public command boundary. Clients cannot submit
-raw journals, market returns, tax results, event effects, grades, or replacement
-state. The AI and audit runtimes are server-only; there is deliberately no
-public audit route.
+Only player-authored choices cross the public command boundary. A v2
+`process_month` request contains only its idempotency/revision/month envelope;
+the application service builds the annual household request, calls the pinned
+PolicyEngine adapter, derives monthly evidence, and commits it with the turn.
+Clients cannot submit raw journals, market returns, tax results, event effects,
+grades, or replacement state. The AI and audit runtimes are server-only; there
+is deliberately no public audit route.
 
 ## Verification
 
@@ -180,7 +217,7 @@ curl --fail https://life-finance-mu.vercel.app/api/v1/openapi.json >/dev/null
 ```
 
 Judges can use the public readiness and OpenAPI URLs without credentials. Full
-run creation/testing uses an access secret returned by `POST /api/v1/runs` and
+run creation/testing uses an access secret returned by `POST /api/v2/runs` and
 does not require a user account. The tax calculation endpoint is intentionally
 server-authenticated and should be exercised through the Next.js backend or a
 provided test credential, never by exposing its bearer in browser code.

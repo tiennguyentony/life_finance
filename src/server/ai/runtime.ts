@@ -10,6 +10,7 @@ import {
   OpenAiResponsesTransport,
   type AiResponsesTransport,
 } from "./client";
+import { OllamaGptOssTransport } from "./ollama-transport";
 
 type AiRuntimeDependencies = Readonly<{
   transport: AiResponsesTransport;
@@ -19,9 +20,25 @@ type AiRuntimeDependencies = Readonly<{
 
 let dependencies: AiRuntimeDependencies | undefined;
 
+export function aiTransportFromEnvironment(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): AiResponsesTransport {
+  const provider = environment.AI_PROVIDER ?? "openai";
+  if (provider === "openai") {
+    return new OpenAiResponsesTransport({ apiKey: environment.OPENAI_API_KEY });
+  }
+  if (provider === "ollama") {
+    if (environment.VERCEL_ENV === "production") {
+      throw new Error("Ollama is restricted to local development");
+    }
+    return new OllamaGptOssTransport({ baseUrl: environment.OLLAMA_BASE_URL });
+  }
+  throw new Error("AI_PROVIDER must be openai or ollama");
+}
+
 function getAiRuntimeDependencies(): AiRuntimeDependencies {
   dependencies ??= Object.freeze({
-    transport: new OpenAiResponsesTransport(),
+    transport: aiTransportFromEnvironment(),
     cipher: auditCipherFromEnvironment(),
     adminAuthorizer: auditAdminAuthorizerFromEnvironment(),
   });

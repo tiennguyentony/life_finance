@@ -27,6 +27,12 @@ describe("market regime model", () => {
     expect(result).toEqual({
       month: {
         modelVersion: "regime-v1",
+        appliedReturnModifiersPpm: {
+          equity: 0,
+          bonds: 0,
+          cash: 0,
+          housing: 0,
+        },
         regime: "expansion",
         nextRegime: "expansion",
         equityReturnPpm: 3_000,

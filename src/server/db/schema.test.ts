@@ -7,6 +7,7 @@ import {
   gameRuns,
   ledgerPostings,
   ledgerTransactions,
+  runStateMigrations,
   runStateSnapshots,
   transactionalOutbox,
 } from "./schema";
@@ -15,6 +16,7 @@ describe("authoritative persistence schema", () => {
   it.each([
     [gameRuns, "game_runs"],
     [runStateSnapshots, "run_state_snapshots"],
+    [runStateMigrations, "run_state_migrations"],
     [acceptedCommands, "accepted_commands"],
     [ledgerTransactions, "ledger_transactions"],
     [ledgerPostings, "ledger_postings"],
@@ -24,6 +26,20 @@ describe("authoritative persistence schema", () => {
     const config = getTableConfig(table);
     expect(config.name).toBe(expectedName);
     expect(config.enableRLS).toBe(true);
+  });
+
+  it("stores immutable state migrations separately from command revisions", () => {
+    const config = getTableConfig(runStateMigrations);
+    expect(config.primaryKeys).toHaveLength(1);
+    expect(config.foreignKeys[0]?.onDelete).toBe("cascade");
+    expect(config.checks.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "run_state_migrations_version_progression",
+        "run_state_migrations_revision_nonnegative",
+        "run_state_migrations_source_checksum_format",
+        "run_state_migrations_target_checksum_format",
+      ]),
+    );
   });
 
   it("stores AI audit content only as an authenticated encrypted envelope", () => {
