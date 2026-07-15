@@ -89,6 +89,204 @@ a:focus-visible {
   margin-inline: auto;
 }
 
+.play-start {
+  display: grid;
+  min-height: calc(100dvh - 144px);
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  align-items: center;
+  gap: clamp(2rem, 7vw, 7rem);
+  padding-block: 4rem;
+}
+
+.play-start h1,
+.play-titlebar h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  letter-spacing: -0.06em;
+  line-height: 1;
+}
+
+.play-panel {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 18px 50px var(--shadow);
+}
+
+.play-panel h2 {
+  margin: 0 0 1.25rem;
+  font-size: 1.25rem;
+  letter-spacing: -0.025em;
+}
+
+.play-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.play-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.play-form input,
+.play-form select,
+.play-console button {
+  min-height: 44px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+}
+
+.play-console button,
+.play-form button {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.play-console button:hover:not(:disabled),
+.play-form button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.play-console button:disabled,
+.play-form button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.play-primary {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: var(--accent-contrast) !important;
+}
+
+.play-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.play-error {
+  padding: 0.9rem 1rem;
+  border: 1px solid #ba4c4c;
+  border-radius: 10px;
+  background: color-mix(in srgb, #ba4c4c 12%, var(--surface));
+  color: var(--text);
+}
+
+.play-console {
+  display: grid;
+  gap: 1.25rem;
+  padding-block: 3rem 5rem;
+}
+
+.play-titlebar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.play-titlebar p:last-child {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+}
+
+.play-quiet {
+  flex: none;
+}
+
+.play-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+}
+
+.play-stats > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  padding: 1.1rem;
+  background: var(--surface);
+}
+
+.play-stats span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.play-stats strong {
+  overflow: hidden;
+  font-size: clamp(1rem, 2.2vw, 1.35rem);
+  text-overflow: ellipsis;
+}
+
+.play-stats.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.play-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.play-turn,
+.play-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.play-turn button {
+  flex: 1 1 220px;
+}
+
+.play-event {
+  border-color: var(--accent);
+}
+
+.play-event dl {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.play-event dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.play-event dt {
+  color: var(--muted);
+}
+
+.play-event dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.play-activity {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.play-activity li + li {
+  margin-top: 0.65rem;
+}
+
 .header-inner {
   display: flex;
   min-height: 72px;
@@ -403,7 +601,8 @@ a:focus-visible {
   }
 
   .hero,
-  .feature-shell {
+  .feature-shell,
+  .play-start {
     min-height: auto;
     grid-template-columns: 1fr;
     gap: 3rem;
@@ -418,6 +617,15 @@ a:focus-visible {
 
   .journey-grid {
     grid-template-columns: 1fr;
+  }
+
+  .play-grid,
+  .play-stats.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .play-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .journey-card {
@@ -449,6 +657,15 @@ a:focus-visible {
   }
 
   .status-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .play-titlebar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .play-stats {
     grid-template-columns: 1fr;
   }
 

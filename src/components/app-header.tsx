@@ -10,6 +10,7 @@ export function AppHeader() {
           Life Finance
         </Link>
         <nav aria-label="Critical user journeys" className="site-nav">
+          <Link href="/play">Play</Link>
           {CUJS.map((journey) => (
             <Link href={journey.href} key={journey.slug}>
               {journey.navLabel}

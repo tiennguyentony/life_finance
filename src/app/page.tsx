@@ -10,26 +10,26 @@ export default function HomePage() {
           <p className="hero-kicker">A financial life simulation</p>
           <h1>Build the game one clear journey at a time.</h1>
           <p>
-            Four CUJs, deterministic rules, and local-first saves without
-            premature infrastructure.
+            Try the deterministic financial simulation through its live
+            production backend.
           </p>
-          <Link className="primary-link" href="/character">
-            Open the first journey
+          <Link className="primary-link" href="/play">
+            Play the live backend
           </Link>
         </div>
         <aside className="scope-panel">
-          <h2>The boundary is the product</h2>
+          <h2>A thin UI over the real engine</h2>
           <p>
-            Routes own presentation. Features own journeys. Core stays pure.
-            Data stays static until gameplay needs it.
+            This developer interface is intentionally replaceable. Every turn,
+            tax result, event, and checkpoint comes from the authoritative API.
           </p>
           <div className="scope-facts">
             <span>Runtime</span>
-            <strong>Browser</strong>
+            <strong>Vercel + Supabase</strong>
             <span>Players</span>
             <strong>Single-player</strong>
             <span>Persistence</span>
-            <strong>Local-first</strong>
+            <strong>PostgreSQL</strong>
           </div>
         </aside>
       </section>
