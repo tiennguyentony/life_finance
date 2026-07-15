@@ -7,6 +7,7 @@ import {
   type StateInvariantViolation,
 } from "./game-state";
 import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
+import type { EventTier, EventWeakness } from "./events";
 
 export const GAME_STATE_V2_SCHEMA_VERSION = 2 as const;
 export const ENGINE_V2_VERSION = "4.1.0" as const;
@@ -80,6 +81,32 @@ export type ExposureSnapshot = Readonly<{
   jobInvestmentCorrelationPpm: RatePpm | null;
 }>;
 
+export type PendingEventV2 = Readonly<{
+  eventId: string;
+  templateId: string;
+  templateVersion: number;
+  tier: Exclude<EventTier, "ambient">;
+  targetedWeakness: EventWeakness;
+  parameters: Readonly<Record<string, number>>;
+  choiceIds: readonly string[];
+  scheduledMonth: SimulationMonth;
+  expiresMonth: SimulationMonth;
+}>;
+
+export type ResolvedEventEvidenceV2 = Readonly<{
+  eventId: string;
+  templateId: string;
+  templateVersion: number;
+  tier: Exclude<EventTier, "ambient">;
+  targetedWeakness: EventWeakness;
+  parameters: Readonly<Record<string, number>>;
+  choiceId: string;
+  scheduledMonth: SimulationMonth;
+  resolvedMonth: SimulationMonth;
+  playerCostCents: MoneyCents;
+  insurerCostCents: MoneyCents;
+}>;
+
 export type GameplayStateV2 = Readonly<{
   catalogs: VersionedCatalogSelection;
   catalogSnapshot: ResolvedScenarioSnapshot | null;
@@ -126,7 +153,8 @@ export type GameplayStateV2 = Readonly<{
     history: readonly ExposureSnapshot[];
   }>;
   eventLifecycle: Readonly<{
-    pendingEventId: string | null;
+    pending: PendingEventV2 | null;
+    history: readonly ResolvedEventEvidenceV2[];
     activeStoryIds: readonly string[];
     cooldowns: readonly Readonly<{
       templateId: string;
@@ -805,6 +833,95 @@ export function validateGameStateV2(
       ),
     );
   }
+  const lifecycle = state.gameplay.eventLifecycle;
+  const pending = lifecycle.pending;
+  if (pending) {
+    if (
+      pending.eventId.length === 0 ||
+      pending.templateId.length === 0 ||
+      !Number.isSafeInteger(pending.templateVersion) ||
+      pending.templateVersion < 1 ||
+      pending.choiceIds.length === 0 ||
+      new Set(pending.choiceIds).size !== pending.choiceIds.length ||
+      pending.choiceIds.some((choiceId) => choiceId.length === 0) ||
+      Object.entries(pending.parameters).some(
+        ([id, value]) =>
+          id.length === 0 || !Number.isSafeInteger(value),
+      )
+    ) {
+      violations.push(
+        violation(
+          "gameplay.eventLifecycle.pending",
+          "invalid_pending_event",
+          "pending event evidence must contain stable ids, parameters, and choices",
+        ),
+      );
+    }
+    try {
+      simulationMonth(pending.scheduledMonth);
+      simulationMonth(pending.expiresMonth);
+      if (
+        pending.scheduledMonth !== state.currentMonth ||
+        compareMonths(pending.expiresMonth, pending.scheduledMonth) <= 0
+      ) {
+        violations.push(
+          violation(
+            "gameplay.eventLifecycle.pending",
+            "invalid_pending_window",
+            "pending event must begin in the current month and expire later",
+          ),
+        );
+      }
+    } catch {
+      violations.push(
+        violation(
+          "gameplay.eventLifecycle.pending",
+          "invalid_month",
+          "pending event months must use canonical YYYY-MM",
+        ),
+      );
+    }
+  }
+  const eventIds = lifecycle.history.map(({ eventId }) => eventId);
+  if (
+    new Set(eventIds).size !== eventIds.length ||
+    (pending !== null && eventIds.includes(pending.eventId))
+  ) {
+    violations.push(
+      violation(
+        "gameplay.eventLifecycle.history",
+        "duplicate_event",
+        "event ids must be unique across pending and resolved evidence",
+      ),
+    );
+  }
+  lifecycle.history.forEach((event, index) => {
+    try {
+      simulationMonth(event.scheduledMonth);
+      simulationMonth(event.resolvedMonth);
+      if (
+        compareMonths(event.resolvedMonth, event.scheduledMonth) < 0 ||
+        compareMonths(event.resolvedMonth, state.currentMonth) > 0 ||
+        event.eventId.length === 0 ||
+        event.templateId.length === 0 ||
+        event.choiceId.length === 0 ||
+        !Number.isSafeInteger(event.playerCostCents) ||
+        event.playerCostCents < 0 ||
+        !Number.isSafeInteger(event.insurerCostCents) ||
+        event.insurerCostCents < 0
+      ) {
+        throw new RangeError("invalid resolved event");
+      }
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.eventLifecycle.history.${index}`,
+          "invalid_resolved_event",
+          "resolved event evidence must be chronological and financially bounded",
+        ),
+      );
+    }
+  });
   if (new Set(state.gameplay.eventLifecycle.activeStoryIds).size !== state.gameplay.eventLifecycle.activeStoryIds.length) {
     violations.push(
       violation("gameplay.eventLifecycle.activeStoryIds", "duplicate_story", "active story ids must be unique"),
@@ -818,6 +935,20 @@ export function validateGameStateV2(
       violation("gameplay.eventLifecycle.cooldowns", "duplicate_cooldown", "each template may have one cooldown"),
     );
   }
+  state.gameplay.eventLifecycle.cooldowns.forEach((cooldown, index) => {
+    try {
+      simulationMonth(cooldown.eligibleAgainMonth);
+      if (cooldown.templateId.length === 0) throw new RangeError("empty template");
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.eventLifecycle.cooldowns.${index}`,
+          "invalid_cooldown",
+          "cooldown requires a template id and canonical month",
+        ),
+      );
+    }
+  });
 
   return violations;
 }
@@ -914,7 +1045,8 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
       },
       exposure: { current: null, history: [] },
       eventLifecycle: {
-        pendingEventId: null,
+        pending: null,
+        history: [],
         activeStoryIds: [],
         cooldowns: [],
       },
