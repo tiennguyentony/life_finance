@@ -242,7 +242,7 @@ Status meanings: **implemented** has production code and direct tests;
 | Explicit financial actions | Partial | `src/core/actions.ts`, `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts` | Apply recurring plan in turn orchestration; add claims, home/refi/upskill, and API |
 | Elastic checkpoints | Partial | `src/core/checkpoints.ts` | Integrate decisions/events and persist monthly records |
 | Versioned commands and concurrency | Partial | `src/core/commands.ts`, repository transaction tests | Expose process-turn command and replay contract |
-| Tax adapter | Partial | `src/server/tax` | Call from turn service and persist result before core application |
+| Tax adapter | Partial | `src/server/tax`, `src/core/payroll-v2.ts` | Build/persist evidence in turn service before atomic core application |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Partial | `src/server/db`, `src/server/api` | Add gameplay application service, queries, outbox dispatcher |
 | Location/career/benefits catalogs | Partial | `src/core/scenario-catalog.ts`, `src/data/scenario-catalog.ts` | Persist resolved catalog snapshots during native v2 run creation |
