@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   AI_ROLE_MODELS,
+  explanationRequestSchema,
   explanationResponseSchema,
   hostileFedRequestSchema,
   hostileFedResponseSchema,
   onboardingResponseSchema,
   teacherResponseSchema,
 } from "./contracts";
+import { AI_PRIVACY_NOTICE, AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
 
 describe("AI role contracts", () => {
   it("locks expensive and balanced GPT-5.6 models to their intended roles", () => {
@@ -22,6 +24,8 @@ describe("AI role contracts", () => {
   it("accepts only bounded engine-owned Hostile Fed candidates", () => {
     const request = hostileFedRequestSchema.parse({
       contractVersion: 1,
+      privacyNoticeVersion: 1,
+      dataUseAccepted: true,
       role: "hostile_fed",
       simulationMonth: "2026-07",
       marketRegime: "recession",
@@ -49,6 +53,33 @@ describe("AI role contracts", () => {
       hostileFedRequestSchema.parse({
         ...request,
         candidates: [{ ...request.candidates[0], arbitraryEffectCents: 9_999_999 }],
+      }),
+    ).toThrow();
+  });
+
+  it("requires affirmative acceptance of the published privacy notice", () => {
+    expect(AI_PRIVACY_NOTICE.version).toBe(AI_PRIVACY_NOTICE_VERSION);
+    expect(AI_PRIVACY_NOTICE.disclosures.join(" ")).toContain("retained indefinitely");
+    const valid = {
+      contractVersion: 1,
+      privacyNoticeVersion: 1,
+      dataUseAccepted: true,
+      role: "explanation",
+      conceptId: "emergency_fund",
+      audienceLevel: "beginner",
+      whyNow: "A repair is due.",
+      evidence: [],
+    };
+    expect(explanationRequestSchema.parse(valid).dataUseAccepted).toBe(true);
+    expect(() =>
+      explanationRequestSchema.parse({
+        contractVersion: 1,
+        privacyNoticeVersion: 1,
+        role: "explanation",
+        conceptId: "emergency_fund",
+        audienceLevel: "beginner",
+        whyNow: "A repair is due.",
+        evidence: [],
       }),
     ).toThrow();
   });
