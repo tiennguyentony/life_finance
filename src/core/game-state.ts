@@ -75,6 +75,42 @@ const INITIAL_LEDGER_ACCOUNTS: readonly LedgerAccount[] = [
     category: "equity",
     normalBalance: "credit",
   },
+  {
+    id: "equity.adjustment",
+    name: "Equity adjustments",
+    category: "equity",
+    normalBalance: "credit",
+  },
+  {
+    id: "income.employment",
+    name: "Employment income",
+    category: "income",
+    normalBalance: "credit",
+  },
+  {
+    id: "income.other",
+    name: "Other income",
+    category: "income",
+    normalBalance: "credit",
+  },
+  {
+    id: "expense.living",
+    name: "Living expenses",
+    category: "expense",
+    normalBalance: "debit",
+  },
+  {
+    id: "expense.tax",
+    name: "Tax expense",
+    category: "expense",
+    normalBalance: "debit",
+  },
+  {
+    id: "expense.interest",
+    name: "Interest expense",
+    category: "expense",
+    normalBalance: "debit",
+  },
 ];
 
 export type MarketRegime =
@@ -178,6 +214,11 @@ function deepFreeze<T>(value: T): Readonly<T> {
   }
 
   return value;
+}
+
+export function finalizeGameState(state: GameState): GameState {
+  assertValidGameState(state);
+  return deepFreeze(state) as GameState;
 }
 
 function violation(
@@ -394,8 +435,7 @@ export function createInitialGameState(input: InitialGameStateInput): GameState 
     outcome: null,
   };
 
-  assertValidGameState(state);
-  return deepFreeze(state) as GameState;
+  return finalizeGameState(state);
 }
 
 function createOpeningLedger(
@@ -515,4 +555,18 @@ export function hasReachedFinancialIndependence(
     BigInt(calculateInvestableAssets(finances)) >=
     BigInt(finances.annualLivingCostCents) * BigInt(25)
   );
+}
+
+export function reconcileFinancesWithLedger(
+  finances: FinancialSnapshot,
+  ledger: Ledger,
+): FinancialSnapshot {
+  const reconciled = { ...finances };
+  for (const [financeKey, accountId] of Object.entries(FINANCIAL_ACCOUNT_IDS) as [
+    keyof typeof FINANCIAL_ACCOUNT_IDS,
+    string,
+  ][]) {
+    reconciled[financeKey] = calculateAccountBalance(ledger, accountId);
+  }
+  return reconciled;
 }
