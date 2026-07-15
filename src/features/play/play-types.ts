@@ -24,7 +24,7 @@ export type OnboardingDraft = Readonly<{
   cash: number;
   studentDebt: number;
   studentDebtPayment: number;
-  healthPlanId: string;
+  healthPlanId: string | null;
   coverageIds: readonly string[];
   desiredAnnualFiSpending: number;
   safeWithdrawalRate: number;

@@ -144,10 +144,10 @@ export function OverviewPanel({
           <h2>Benefits & protection</h2>
           {snapshot ? (
             <dl className="metric-list">
-              <div><dt>Health plan</dt><dd>{snapshot.healthPlan.label}</dd></div>
-              <div><dt>Monthly premium</dt><dd>{formatMoney(snapshot.household.healthCoverageTier === "self" ? snapshot.healthPlan.monthlyEmployeePremiumSelfCents : snapshot.healthPlan.monthlyEmployeePremiumFamilyCents)}</dd></div>
-              <div><dt>Annual deductible</dt><dd>{formatMoney(snapshot.household.healthCoverageTier === "self" ? snapshot.healthPlan.annualDeductibleSelfCents : snapshot.healthPlan.annualDeductibleFamilyCents)}</dd></div>
-              <div><dt>Out-of-pocket max</dt><dd>{formatMoney(snapshot.household.healthCoverageTier === "self" ? snapshot.healthPlan.annualOutOfPocketMaximumSelfCents : snapshot.healthPlan.annualOutOfPocketMaximumFamilyCents)}</dd></div>
+              <div><dt>Health plan</dt><dd>{snapshot.healthPlan?.label ?? "Coverage waived"}</dd></div>
+              <div><dt>Monthly premium</dt><dd>{formatMoney(snapshot.healthPlan ? (snapshot.household.healthCoverageTier === "self" ? snapshot.healthPlan.monthlyEmployeePremiumSelfCents : snapshot.healthPlan.monthlyEmployeePremiumFamilyCents) : 0)}</dd></div>
+              <div><dt>Annual deductible</dt><dd>{snapshot.healthPlan ? formatMoney(snapshot.household.healthCoverageTier === "self" ? snapshot.healthPlan.annualDeductibleSelfCents : snapshot.healthPlan.annualDeductibleFamilyCents) : "Not applicable"}</dd></div>
+              <div><dt>Out-of-pocket max</dt><dd>{snapshot.healthPlan ? formatMoney(snapshot.household.healthCoverageTier === "self" ? snapshot.healthPlan.annualOutOfPocketMaximumSelfCents : snapshot.healthPlan.annualOutOfPocketMaximumFamilyCents) : "None — full bill is yours"}</dd></div>
               <div><dt>Retirement plan</dt><dd>{snapshot.retirementPlan.label}</dd></div>
               <div><dt>Other coverage</dt><dd>{snapshot.insuranceCoverages.map(({ label }) => label).join(", ") || "None"}</dd></div>
             </dl>

@@ -14,7 +14,7 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function state(): GameStateV2 {
+function state(healthPlanId: string | null = "health.ppo_balanced"): GameStateV2 {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
     {
@@ -23,7 +23,7 @@ function state(): GameStateV2 {
       careerId: "career.software",
       householdId: "household.single",
       benefitsPackageId: "benefits.corporate_flex",
-      healthPlanId: "health.ppo_balanced",
+      healthPlanId,
       retirementPlanId: "retirement.401k_standard",
       insuranceCoverageIds: ["insurance.renters"],
       scenarioId: "scenario.fresh_start",
@@ -111,6 +111,24 @@ describe("deterministic v2 insurance adjudication", () => {
     expect(uncovered.playerResponsibilityCents).toBe(100_000);
     expect(uncovered.insurerResponsibilityCents).toBe(0);
     expect(uncovered.nextInsurance).toBe(nearCap.gameplay.insurance);
+  });
+
+  it("charges the full medical bill when health coverage was waived", () => {
+    const waived = state(null);
+    const settlement = adjudicateHealthClaim(
+      waived,
+      moneyCents(250_000),
+      true,
+    );
+
+    expect(settlement).toMatchObject({
+      covered: false,
+      playerResponsibilityCents: 250_000,
+      insurerResponsibilityCents: 0,
+      deductibleAppliedCents: 0,
+      coinsuranceAppliedCents: 0,
+    });
+    expect(settlement.nextInsurance).toBe(waived.gameplay.insurance);
   });
 
   it("applies non-health deductible and lifetime usage cap in order", () => {

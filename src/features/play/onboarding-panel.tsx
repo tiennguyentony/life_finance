@@ -208,6 +208,18 @@ export function OnboardingPanel({
         </fieldset>
         <fieldset className="benefit-choices">
           <legend>Choose health protection</legend>
+          <label>
+            <input
+              checked={draft.healthPlanId === null}
+              name="health-plan"
+              onChange={() => onChange({ ...draft, healthPlanId: null })}
+              type="radio"
+            />
+            <span>
+              <strong>Waive employer health coverage</strong>
+              <small>$0 premium · you pay the full cost of medical events · no HSA</small>
+            </span>
+          </label>
           {healthPlans.map((plan) => {
             const family = household.healthCoverageTier !== "self";
             const premium = family
@@ -269,7 +281,9 @@ export function OnboardingPanel({
             {preset.householdId.replace("household.", "").replaceAll("_", " ")}
           </span>
           <span>
-            {draft.healthPlanId.replace("health.", "").replaceAll("_", " ")}
+            {draft.healthPlanId
+              ? draft.healthPlanId.replace("health.", "").replaceAll("_", " ")
+              : "coverage waived"}
           </span>
           <span>
             {preset.retirementPlanId

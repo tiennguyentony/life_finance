@@ -76,6 +76,17 @@ export function adjudicateHealthClaim(
   }
   const family = snapshot.selected.household.healthCoverageTier === "family";
   const plan = snapshot.selected.healthPlan;
+  if (plan === null) {
+    return Object.freeze({
+      grossBillCents,
+      covered: false,
+      deductibleAppliedCents: moneyCents(0),
+      coinsuranceAppliedCents: moneyCents(0),
+      playerResponsibilityCents: grossBillCents,
+      insurerResponsibilityCents: moneyCents(0),
+      nextInsurance: state.gameplay.insurance,
+    });
+  }
   const deductible = family
     ? plan.annualDeductibleFamilyCents
     : plan.annualDeductibleSelfCents;
