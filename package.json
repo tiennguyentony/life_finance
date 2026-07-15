@@ -8,6 +8,7 @@
     "build": "next build",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
+    "db:migrate": "drizzle-kit migrate",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
