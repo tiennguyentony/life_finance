@@ -9,6 +9,10 @@ import {
   internalGameCommandSchema,
 } from "./contracts";
 import { generateOpenApiDocument } from "./openapi";
+import {
+  createRunV2RequestSchema,
+  gameCommandV2PublicSchema,
+} from "./contracts-v2";
 
 const finances = {
   cashCents: 10_000_00,
@@ -141,17 +145,68 @@ describe("v1 API contracts", () => {
   });
 });
 
+describe("v2 API contracts", () => {
+  it("accepts catalog-backed creation and rejects authoritative month inputs", () => {
+    expect(
+      createRunV2RequestSchema.parse({
+        schemaVersion: 2,
+        startMonth: "2026-07",
+        birthMonth: "1995-01",
+        randomSeed: "contract-v2",
+        catalogVersion: "us-2026.2",
+        locationId: "location.seattle",
+        careerId: "career.software",
+        householdId: "household.single",
+        benefitsPackageId: "benefits.corporate_flex",
+        healthPlanId: "health.hdhp_hsa",
+        retirementPlanId: "retirement.401k_standard",
+        insuranceCoverageIds: ["insurance.renters"],
+        scenarioId: "scenario.fresh_start",
+        annualGrossSalaryCents: 12_000_000,
+        finances: {
+          cashCents: 1_000_000,
+          taxableBroadIndexCents: 0,
+          taxableSectorCents: 0,
+          taxableSpeculativeCents: 0,
+          retirement401kCents: 0,
+          retirementIraCents: 0,
+          hsaCents: 0,
+          homeValueCents: 0,
+          otherAssetsCents: 0,
+          termDebts: [],
+          revolvingCreditLimitCents: 1_000_000,
+          revolvingCreditUsedCents: 0,
+        },
+        wellbeing: { burnoutPpm: 0, happinessPpm: 1_000_000 },
+      }).schemaVersion,
+    ).toBe(2);
+    expect(() =>
+      gameCommandV2PublicSchema.parse({
+        schemaVersion: 2,
+        id: "cmd.public-v2.month",
+        expectedRevision: 0,
+        effectiveMonth: "2026-07",
+        type: "process_month",
+        payload: { taxEvidence: { totalTaxCents: 0 } },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("generated OpenAPI", () => {
   it("publishes versioned paths from the same strict schemas", () => {
     const document = generateOpenApiDocument();
 
     expect(document.openapi).toBe("3.1.0");
-    expect(Object.keys(document.paths ?? {})).toEqual([
+    expect(Object.keys(document.paths ?? {}).toSorted()).toEqual([
       "/api/v1/health",
       "/api/v1/runs",
       "/api/v1/runs/{runId}",
       "/api/v1/runs/{runId}/commands",
-    ]);
+      "/api/v2/runs",
+      "/api/v2/runs/{runId}",
+      "/api/v2/runs/{runId}/commands",
+    ].toSorted());
     expect(
       document.paths?.["/api/v1/runs/{runId}"]?.get?.security,
     ).toEqual([{ runBearer: [] }]);
@@ -159,5 +214,11 @@ describe("generated OpenAPI", () => {
     expect(JSON.stringify(document.paths?.["/api/v1/runs/{runId}"])).not.toContain(
       "accessSecret",
     );
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/commands"]?.post?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      JSON.stringify(document.paths?.["/api/v2/runs/{runId}/commands"]),
+    ).not.toContain("taxEvidence");
   });
 });

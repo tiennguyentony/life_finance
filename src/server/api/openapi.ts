@@ -13,6 +13,14 @@ import {
   getRunResponseSchema,
   runIdPathSchema,
 } from "./contracts";
+import {
+  commandV2ResponseSchema,
+  createRunV2RequestSchema,
+  createRunV2ResponseSchema,
+  gameCommandV2PublicSchema,
+  getRunV2ResponseSchema,
+  runIdV2PathSchema,
+} from "./contracts-v2";
 
 const registry = new OpenAPIRegistry();
 registry.registerComponent("securitySchemes", "runBearer", {
@@ -54,6 +62,70 @@ registry.registerPath({
     503: {
       description: "One or more required backend dependencies are unavailable",
       content: { "application/json": { schema: readinessResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs",
+  operationId: "createRunV2",
+  summary: "Create a native catalog-backed schema-v2 run",
+  request: {
+    body: { content: { "application/json": { schema: createRunV2RequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: "Native v2 run created; the access secret is returned only here",
+      content: { "application/json": { schema: createRunV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v2/runs/{runId}",
+  operationId: "getRunV2",
+  summary: "Read a schema-v2 authoritative state",
+  security: [{ runBearer: [] }],
+  request: { params: runIdV2PathSchema },
+  responses: {
+    200: {
+      description: "Authoritative schema-v2 run state",
+      content: { "application/json": { schema: getRunV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/commands",
+  operationId: "submitCommandV2",
+  summary:
+    "Submit a player-authored v2 strategy/action or request server-owned monthly processing",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: { content: { "application/json": { schema: gameCommandV2PublicSchema } } },
+  },
+  responses: {
+    200: {
+      description: "Command accepted or replayed with the original immutable result",
+      content: { "application/json": { schema: commandV2ResponseSchema } },
+    },
+    ...errorResponses,
+    502: {
+      description: "Tax service returned unusable authoritative evidence",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    503: {
+      description: "Tax service is temporarily unavailable; no state was committed",
+      content: { "application/json": { schema: apiErrorSchema } },
     },
   },
 });
@@ -118,7 +190,7 @@ export function generateOpenApiDocument() {
     openapi: "3.1.0",
     info: {
       title: "Life Finance API",
-      version: "1.0.0",
+      version: "2.0.0",
       description: "Versioned authoritative API for deterministic financial runs.",
     },
     servers: [{ url: "/", description: "Current deployment" }],
