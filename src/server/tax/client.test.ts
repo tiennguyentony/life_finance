@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DEFAULT_TAX_MAX_ATTEMPTS,
+  DEFAULT_TAX_TIMEOUT_MS,
   PolicyEngineTaxClient,
   TaxServiceError,
   createTaxClientFromEnvironment,
@@ -111,6 +113,7 @@ describe("PolicyEngineTaxClient", () => {
       fetch,
       sleep,
       retryDelayMs: 10,
+      maxAttempts: 3,
     });
 
     await expect(client.calculate(request())).resolves.toBeDefined();
@@ -143,6 +146,8 @@ describe("PolicyEngineTaxClient", () => {
   });
 
   it("fails closed when environment configuration is missing", () => {
+    expect(DEFAULT_TAX_TIMEOUT_MS).toBe(120_000);
+    expect(DEFAULT_TAX_MAX_ATTEMPTS).toBe(2);
     expect(() => createTaxClientFromEnvironment({})).toThrow(TaxServiceError);
     expect(
       () =>
