@@ -6,6 +6,11 @@ import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
 import { createInitialGameState } from "../../core/game-state";
 import { RunSecretCodec } from "../auth/run-secret";
+import { AiAuditCipher } from "../ai/audit-crypto";
+import {
+  AiAuditAdminAuthorizer,
+  AiAuditRepository,
+} from "../ai/audit-repository";
 import {
   createDatabaseConnection,
   type DatabaseConnection,
@@ -14,6 +19,7 @@ import { migrateDatabase } from "./migrate";
 import { RunRepository } from "./run-repository";
 import {
   acceptedCommands,
+  aiAuditRecords,
   gameRuns,
   ledgerTransactions,
   runStateSnapshots,
@@ -89,6 +95,7 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000001",
     "10000000-0000-4000-8000-000000000002",
     "10000000-0000-4000-8000-000000000003",
+    "10000000-0000-4000-8000-000000000004",
   ];
   let runIndex = 0;
 
@@ -205,5 +212,78 @@ databaseDescribe("Postgres run repository", () => {
       status: "rejected",
       reason: expect.objectContaining({ code: "OPTIMISTIC_CONFLICT" }),
     });
+  });
+
+  it("stores encrypted AI audits, requires admin access, and prevents retention-breaking run deletion", async () => {
+    const created = await repository.createRun(initialState);
+    const invocationId = "30000000-0000-4000-8000-000000000001";
+    const adminToken = `lf_audit_${Buffer.alloc(32, 0x42).toString("base64url")}`;
+    const auditRepository = new AiAuditRepository(
+      connection.db,
+      new AiAuditCipher(new Map([[1, Buffer.alloc(32, 0x24)]]), 1, {
+        randomBytes: () => Buffer.from("000102030405060708090a0b", "hex"),
+      }),
+      new AiAuditAdminAuthorizer(adminToken),
+      {
+        runId: created.runId,
+        clock: () => new Date("2026-07-14T20:01:00.000Z"),
+      },
+    );
+
+    await auditRepository.record({
+      invocationId,
+      contractVersion: 1,
+      role: "explanation",
+      model: "gpt-5.6-terra",
+      prompt: {
+        instructions: "Explain only the supplied concept.",
+        input: { conceptId: "emergency_fund", whyNow: "A repair is due." },
+      },
+      attempts: [
+        {
+          attempt: 1,
+          kind: "success",
+          responseId: "resp_audit_1",
+          output: [{ type: "output_text", text: "Cash absorbs surprises." }],
+          errorCode: null,
+        },
+      ],
+      outcome: "success",
+    });
+
+    const [stored] = await connection.db
+      .select()
+      .from(aiAuditRecords)
+      .where(eq(aiAuditRecords.invocationId, invocationId));
+    expect(stored.initializationVector).toHaveLength(12);
+    expect(stored.authenticationTag).toHaveLength(16);
+    expect(stored.ciphertext.toString("utf8")).not.toContain("emergency_fund");
+    await expect(auditRepository.list(null)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+    const records = await auditRepository.list(`Bearer ${adminToken}`, {
+      runId: created.runId,
+      limit: 1,
+    });
+    expect(records[0]).toMatchObject({
+      metadata: {
+        invocationId,
+        runId: created.runId,
+        role: "explanation",
+        outcome: "success",
+      },
+      content: {
+        prompt: { input: { conceptId: "emergency_fund" } },
+        attempts: [{ responseId: "resp_audit_1", kind: "success" }],
+      },
+    });
+
+    await expect(
+      connection.db.delete(gameRuns).where(eq(gameRuns.id, created.runId)),
+    ).rejects.toBeTruthy();
+    const retained = await auditRepository.list(`Bearer ${adminToken}`, {
+      role: "explanation",
+      limit: 1,
+    });
+    expect(retained[0]?.metadata).toMatchObject({ invocationId, runId: created.runId });
   });
 });
