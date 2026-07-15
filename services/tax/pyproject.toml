@@ -21,6 +21,11 @@ dev = [
 addopts = "-q"
 pythonpath = ["."]
 testpaths = ["tests"]
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
+  "ignore:Accessing .values on a MicroSeries:UserWarning",
+  "ignore::RuntimeWarning",
+]
 
 [tool.uv]
 package = false
