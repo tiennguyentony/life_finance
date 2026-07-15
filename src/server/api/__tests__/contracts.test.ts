@@ -235,6 +235,7 @@ describe("generated OpenAPI", () => {
       "/api/v1/runs/{runId}/commands",
       "/api/v2/runs",
       "/api/v2/runs/{runId}",
+      "/api/v2/runs/{runId}/ai/explanation",
       "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
     ].toSorted());

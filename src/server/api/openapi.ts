@@ -3,6 +3,10 @@ import {
   OpenApiGeneratorV31,
 } from "@asteasolutions/zod-to-openapi";
 import { readinessResponseSchema } from "../health/readiness";
+import {
+  aiExplanationApiRequestSchema,
+  aiExplanationApiResponseSchema,
+} from "../ai/education-contracts";
 
 import {
   apiErrorSchema,
@@ -150,6 +154,28 @@ registry.registerPath({
       description: "Tax service is temporarily unavailable; no state was committed",
       content: { "application/json": { schema: apiErrorSchema } },
     },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/ai/explanation",
+  operationId: "createAdaptiveExplanationV2",
+  summary: "Generate a grounded adaptive lesson with deterministic fallback",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: { content: { "application/json": { schema: aiExplanationApiRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: "Structured lesson and authoritative state with updated learning memory",
+      content: { "application/json": { schema: aiExplanationApiResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    409: errorResponses[409],
+    500: errorResponses[500],
   },
 });
 

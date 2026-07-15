@@ -21,6 +21,7 @@ import {
   assertNoDueLifeMilestone,
   manageLifeMilestoneV2,
 } from "../../core/life-milestones-v2";
+import { recordLearningInteractionV2 } from "../../core/learning-interaction-v2";
 import {
   RUN_SECRET_HASH_VERSION,
   RunSecretCodec,
@@ -217,7 +218,8 @@ export function reduceGameCommandV2(
 ): Readonly<{ state: GameStateV2; monthlyRecord: MonthlyTurnV2Record | null }> {
   if (
     state.gameplay.eventLifecycle.pending &&
-    command.type !== "resolve_event_choice"
+    command.type !== "resolve_event_choice" &&
+    command.type !== "record_learning_interaction_v2"
   ) {
     throw new EventLifecycleV2Error(
       "PENDING_EVENT_UNRESOLVED",
@@ -235,6 +237,9 @@ export function reduceGameCommandV2(
   }
   if (command.type === "manage_life_milestone") {
     return { state: manageLifeMilestoneV2(state, command), monthlyRecord: null };
+  }
+  if (command.type === "record_learning_interaction_v2") {
+    return { state: recordLearningInteractionV2(state, command), monthlyRecord: null };
   }
   assertNoDueLifeMilestone(state);
   const result = processMonthlyTurnV2(state, command);
