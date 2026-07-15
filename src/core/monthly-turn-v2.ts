@@ -33,6 +33,7 @@ import {
   type V2FundingRecord,
 } from "./obligation-funding-v2";
 import { evaluateTerminalOutcome } from "./outcomes";
+import { recordExposureSnapshotV2 } from "./exposure-v2";
 import { applyMonthlyPayroll, type MonthlyTaxEvidence } from "./payroll-v2";
 import {
   planRecurringAllocations,
@@ -591,13 +592,16 @@ export function processMonthlyTurnV2(
         reachedMonth: nextMonth,
         reasonCode: "required_obligations_exceed_automatic_liquidity",
       });
-      const nextState = finalizeGameStateV2({
-        ...working,
-        currentMonth: nextMonth,
-        revision: state.revision + 1,
-        acceptedCommandIds: [...state.acceptedCommandIds, command.id],
-        outcome,
-      });
+      const nextState = recordExposureSnapshotV2(
+        finalizeGameStateV2({
+          ...working,
+          currentMonth: nextMonth,
+          revision: state.revision + 1,
+          acceptedCommandIds: [...state.acceptedCommandIds, command.id],
+          outcome,
+        }),
+        nextMonth,
+      );
       return Object.freeze({
         state: nextState,
         record: Object.freeze({
@@ -644,12 +648,15 @@ export function processMonthlyTurnV2(
       preTax: payroll.allocationPlan.preTax,
     });
     working = applyAfterTaxPlan(working, command.id, recurringAllocations);
-    const beforeOutcome = finalizeGameStateV2({
-      ...working,
-      currentMonth: nextMonth,
-      revision: state.revision + 1,
-      acceptedCommandIds: [...state.acceptedCommandIds, command.id],
-    });
+    const beforeOutcome = recordExposureSnapshotV2(
+      finalizeGameStateV2({
+        ...working,
+        currentMonth: nextMonth,
+        revision: state.revision + 1,
+        acceptedCommandIds: [...state.acceptedCommandIds, command.id],
+      }),
+      nextMonth,
+    );
     const outcomeProjection: GameState = {
       ...beforeOutcome,
       schemaVersion: 1,

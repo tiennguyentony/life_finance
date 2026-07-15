@@ -736,6 +736,75 @@ export function validateGameStateV2(
       ),
     );
   }
+  const exposure = state.gameplay.exposure;
+  const exposureMonths = exposure.history.map(({ month }) => month);
+  if (new Set(exposureMonths).size !== exposureMonths.length) {
+    violations.push(
+      violation(
+        "gameplay.exposure.history",
+        "duplicate_exposure_month",
+        "each simulation month may have one exposure snapshot",
+      ),
+    );
+  }
+  for (const [index, snapshot] of exposure.history.entries()) {
+    try {
+      simulationMonth(snapshot.month);
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.exposure.history.${index}.month`,
+          "invalid_exposure_month",
+          "exposure month must use canonical simulation time",
+        ),
+      );
+    }
+    const bounded = [
+      snapshot.revolvingDebtPpm,
+      snapshot.portfolioConcentrationPpm,
+      snapshot.insuranceGapPpm,
+      snapshot.jobInvestmentCorrelationPpm,
+    ];
+    if (
+      !Number.isSafeInteger(snapshot.scorePpm) ||
+      snapshot.scorePpm < 1_000_000 ||
+      snapshot.scorePpm > 3_000_000 ||
+      !Number.isSafeInteger(snapshot.emergencyFundMonthsPpm) ||
+      snapshot.emergencyFundMonthsPpm < 0 ||
+      snapshot.emergencyFundMonthsPpm > 12_000_000 ||
+      (snapshot.debtToIncomePpm !== null &&
+        (!Number.isSafeInteger(snapshot.debtToIncomePpm) ||
+          snapshot.debtToIncomePpm < 0)) ||
+      bounded.some(
+        (value) =>
+          value !== null &&
+          (!Number.isSafeInteger(value) || value < 0 || value > 1_000_000),
+      )
+    ) {
+      violations.push(
+        violation(
+          `gameplay.exposure.history.${index}`,
+          "invalid_exposure_metric",
+          "exposure metrics must remain inside their versioned bounds",
+        ),
+      );
+    }
+  }
+  if (
+    (exposure.current === null) !== (exposure.history.length === 0) ||
+    (exposure.current !== null &&
+      (exposure.history.at(-1)?.month !== exposure.current.month ||
+        sha256Canonical(exposure.history.at(-1)) !==
+          sha256Canonical(exposure.current)))
+  ) {
+    violations.push(
+      violation(
+        "gameplay.exposure.current",
+        "exposure_current_mismatch",
+        "current exposure must equal the final historical month",
+      ),
+    );
+  }
   if (new Set(state.gameplay.eventLifecycle.activeStoryIds).size !== state.gameplay.eventLifecycle.activeStoryIds.length) {
     violations.push(
       violation("gameplay.eventLifecycle.activeStoryIds", "duplicate_story", "active story ids must be unique"),
