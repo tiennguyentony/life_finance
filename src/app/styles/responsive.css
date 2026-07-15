@@ -1,0 +1,110 @@
+@media (max-width: 780px) {
+  .header-inner {
+    gap: 1rem;
+  }
+
+  .site-nav {
+    margin-right: -1rem;
+    padding-right: 1rem;
+  }
+
+  .hero,
+  .play-start {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    padding-block: 4rem;
+  }
+
+  .scope-panel {
+    padding: 2rem 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .capability-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .play-grid,
+  .play-stats.compact,
+  .learn-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-grid,
+  .cashflow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .macro-item {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .play-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .capability-card {
+    min-height: 230px;
+  }
+}
+
+@media (max-width: 540px) {
+  .brand {
+    font-size: 0.92rem;
+  }
+
+  .site-nav {
+    gap: 1rem;
+  }
+
+  .site-nav a {
+    font-size: 0.8rem;
+  }
+
+  .hero h1,
+  .not-found h1 {
+    letter-spacing: -0.05em;
+  }
+
+  .play-titlebar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .play-inline-fields,
+  .strategy-grid,
+  .cashflow-grid,
+  .event-choices {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-grid label {
+    grid-template-columns: minmax(0, 1fr) 90px 16px;
+  }
+
+  .play-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .site-footer {
+    min-height: 88px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
