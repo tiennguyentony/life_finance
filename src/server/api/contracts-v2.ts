@@ -215,6 +215,22 @@ const detailedActionSchema = z.discriminatedUnion("type", [
       mortgageTermMonths: z.int().min(12).max(480),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal("change_lifestyle"),
+      annualLivingCostDeltaCents: z.int().refine((value) => value !== 0),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("start_upskill"),
+      programId: z.enum([
+        "upskill.certificate",
+        "upskill.bootcamp",
+        "upskill.degree",
+      ]),
+    })
+    .strict(),
 ]);
 
 const setStrategyV2CommandSchema = v2Envelope

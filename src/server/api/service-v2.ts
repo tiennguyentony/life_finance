@@ -256,8 +256,18 @@ function internalPlayerCommand(
         publicAction.mortgageAnnualInterestRatePpm,
       ),
     };
-  } else if (publicAction.type === "sell_home") {
+  } else if (
+    publicAction.type === "sell_home" ||
+    publicAction.type === "start_upskill"
+  ) {
     action = publicAction;
+  } else if (publicAction.type === "change_lifestyle") {
+    action = {
+      ...publicAction,
+      annualLivingCostDeltaCents: moneyCents(
+        publicAction.annualLivingCostDeltaCents,
+      ),
+    };
   } else {
     action = {
       ...publicAction,
