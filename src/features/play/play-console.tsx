@@ -880,7 +880,7 @@ export function PlayConsole() {
         <button disabled={busy || Boolean(pending) || Boolean(state.outcome)} onClick={() => void runMonths(12)} type="button">Run to next year/event</button>
         <button disabled={busy} onClick={() => void loadCheckpoint()} type="button">Load checkpoint</button>
       </section>
-      <p className="play-note">Fast-forward stops immediately at a required event or terminal outcome. A cold first tax calculation may take 20–30 seconds.</p>
+      <p className="play-note">Fast-forward stops immediately at a required event or terminal outcome. A fully cold first tax calculation may take up to roughly two minutes.</p>
 
       {checkpoint ? (
         <section className="play-panel">
