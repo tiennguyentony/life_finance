@@ -116,6 +116,10 @@ export type GameplayStateV2 = Readonly<{
       usedCents: MoneyCents;
     }>[];
   }>;
+  market: Readonly<{
+    modelVersion: "regime-v1";
+    monthsInRegime: number;
+  }>;
   recurringStrategy: RecurringStrategy;
   exposure: Readonly<{
     current: ExposureSnapshot | null;
@@ -380,6 +384,19 @@ export function validateGameStateV2(
   }
 
   const strategy = state.gameplay.recurringStrategy;
+  if (
+    state.gameplay.market.modelVersion !== "regime-v1" ||
+    !Number.isSafeInteger(state.gameplay.market.monthsInRegime) ||
+    state.gameplay.market.monthsInRegime < 0
+  ) {
+    violations.push(
+      violation(
+        "gameplay.market",
+        "invalid_market_lifecycle",
+        "market model and months in regime must be persisted",
+      ),
+    );
+  }
   try {
     simulationMonth(strategy.effectiveMonth);
     if (compareMonths(strategy.effectiveMonth, state.currentMonth) > 0) {
@@ -815,6 +832,7 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
         healthOutOfPocketPaidCents: 0 as MoneyCents,
         coverageUsage: [],
       },
+      market: { modelVersion: "regime-v1", monthsInRegime: 0 },
       recurringStrategy: {
         effectiveMonth: state.currentMonth,
         preTax401kSalaryRatePpm: 0 as RatePpm,
