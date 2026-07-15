@@ -2,3 +2,5 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@asteasolutions/zod-to-openapi@9.0.0'
