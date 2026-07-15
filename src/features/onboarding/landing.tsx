@@ -1,7 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 
-const landingFrames = [1, 2, 3, 4] as const;
+const landingPerformance = [
+  { action: "money-burst", frame: 1 },
+  { action: "victory-bounce", frame: 2 },
+  { action: "confident-reset", frame: 3 },
+  { action: "lucky-finale", frame: 4 },
+] as const;
 
 export function Landing() {
   return (
@@ -41,19 +46,24 @@ export function Landing() {
         <Link href="/game">Stats</Link>
       </nav>
 
-      <section aria-label="Sprout character showcase" className="landing-character-stage">
-        {landingFrames.map((frame, index) => (
-          <Image
-            alt={index === 0 ? "Sprout celebrating with a money gun" : ""}
-            aria-hidden={index === 0 ? undefined : true}
-            className={`landing-sprout-frame landing-sprout-frame-${frame}`}
-            fill
-            key={frame}
-            loading="eager"
-            sizes="(max-width: 700px) 92vw, 760px"
-            src={`/assets/characters/sprout/reference/sprout-landing-${frame}.png`}
-            unoptimized
-          />
+      <section aria-label="Sprout performing a celebration loop" className="landing-character-stage">
+        {landingPerformance.map(({ action, frame }, index) => (
+          <span
+            className={`landing-sprout-act landing-sprout-act-${frame}`}
+            data-action={action}
+            key={action}
+          >
+            <Image
+              alt={index === 0 ? "Sprout celebrating with a money gun" : ""}
+              aria-hidden={index === 0 ? undefined : true}
+              className={`landing-sprout-art landing-sprout-art-${frame}`}
+              fill
+              loading="eager"
+              sizes="(max-width: 820px) 96vw, 900px"
+              src={`/assets/characters/sprout/reference/sprout-landing-${frame}.png`}
+              unoptimized
+            />
+          </span>
         ))}
       </section>
 
@@ -61,28 +71,6 @@ export function Landing() {
         Play
       </Link>
 
-      <div aria-label="Available Sprout styles" className="landing-skins">
-        {landingFrames.map((frame) => (
-          <span className="landing-skin" key={frame}>
-            <Image
-              alt=""
-              fill
-              sizes="44px"
-              src={`/assets/characters/sprout/reference/sprout-landing-${frame}.png`}
-            />
-          </span>
-        ))}
-        <strong>+4</strong>
-      </div>
-
-      <aside className="landing-challenge">
-        <div>
-          <span>Current challenge</span>
-          <strong>Survive 24 months.</strong>
-          <progress aria-label="Eight of twenty-four months survived" max="24" value="8" />
-        </div>
-        <b>24</b>
-      </aside>
     </div>
   );
 }
