@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
+import { FINANCIAL_GOAL_VERSION } from "../financial-goals-v2";
 import { createInitialGameState } from "../game-state";
 import { migrateGameStateV1ToV2, validateGameStateV2 } from "../game-state-v2";
 import {
@@ -82,6 +83,13 @@ describe("native game state v2 creation", () => {
     expect(state.engineVersion).toBe("4.1.0");
     expect(state.migration).toBeNull();
     expect(state.gameplay.catalogSnapshotChecksum).toHaveLength(64);
+    expect(state.gameplay.financialGoal).toEqual({
+      version: "financial-goal-v1",
+      desiredAnnualSpendingCents: 6_500_000,
+      safeWithdrawalRatePpm: 40_000,
+      targetAgeYears: 65,
+      source: "current_lifestyle_default",
+    });
     expect(state.gameplay.employment).toEqual({
       status: "employed",
       annualGrossSalaryCents: 12_000_000,
@@ -157,6 +165,22 @@ describe("native game state v2 creation", () => {
         }),
       ),
     ).toThrow(expect.objectContaining({ code: "INVALID_OPENING_DEBT" }));
+  });
+
+  it("rejects a player-selected finish line at or before the starting age", () => {
+    expect(() =>
+      createNativeGameStateV2(
+        input({
+          financialGoal: {
+            version: FINANCIAL_GOAL_VERSION,
+            desiredAnnualSpendingCents: moneyCents(6_000_000),
+            safeWithdrawalRatePpm: ratePpm(40_000),
+            targetAgeYears: 31,
+            source: "player_selected",
+          },
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "INVALID_FINANCIAL_GOAL" }));
   });
 
   it("detects later catalog snapshot or selected-benefit drift", () => {

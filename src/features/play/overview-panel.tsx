@@ -49,9 +49,23 @@ export function OverviewPanel({
           <span style={{ width: `${fi.progressPpm / 10_000}%` }} />
         </div>
         <p className="play-note">
-          {formatRate(fi.progressPpm)} complete · target = 25 ×{" "}
-          {formatMoney(state.finances.annualLivingCostCents)} annual living cost ·
-          home equity excluded.
+          {formatRate(fi.progressPpm)} complete ·{" "}
+          {state.gameplay.financialGoal ? (
+            <>
+              target supports{" "}
+              {formatMoney(
+                state.gameplay.financialGoal.desiredAnnualSpendingCents,
+              )}
+              /year at{" "}
+              {formatRate(
+                state.gameplay.financialGoal.safeWithdrawalRatePpm,
+              )}
+              , by age {state.gameplay.financialGoal.targetAgeYears}
+            </>
+          ) : (
+            <>target = 25 × current annual living cost</>
+          )}
+          {" "}· home equity excluded.
         </p>
       </section>
 

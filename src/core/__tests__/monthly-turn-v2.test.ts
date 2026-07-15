@@ -5,6 +5,7 @@ import { buildCheckpointEvidenceV2 } from "../checkpoint-v2";
 import { reduceDetailedFinanceCommand } from "../detailed-actions-v2";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
+import { projectFinancialGoal } from "../financial-goals-v2";
 import { validateGameStateV2 } from "../game-state-v2";
 import {
   processMonthlyTurnV2,
@@ -215,6 +216,12 @@ describe("atomic v2 monthly turn", () => {
       result.record.debtService.totalInterestCents,
     );
     expect(checkpoint.end.exposure).toMatchObject({ month: "2026-08" });
+    expect(checkpoint.end.financialIndependenceTargetCents).toBe(
+      projectFinancialGoal(
+        result.state.finances,
+        result.state.gameplay.financialGoal,
+      ).targetCents,
+    );
     expect(() =>
       buildCheckpointEvidenceV2(initial, result.state, [
         { ...result.record, processedMonth: simulationMonth("2026-06") },

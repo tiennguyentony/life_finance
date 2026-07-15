@@ -1,6 +1,8 @@
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type { CreateRunV2Request } from "@/server/api/contracts-v2";
 
+import { projectFinancialGoal } from "../../core/financial-goals-v2";
+
 export const PLAYER_PRESETS = {
   software: {
     label: "Software developer · Seattle",
@@ -54,6 +56,18 @@ export const PLAYER_PRESETS = {
 
 export type PlayerPresetId = keyof typeof PLAYER_PRESETS;
 
+export type BuildCreateRequestOptions = Readonly<{
+  studentDebtDollars?: number;
+  studentDebtPaymentDollars?: number;
+  healthPlanId?: string;
+  insuranceCoverageIds?: readonly string[];
+  financialGoal?: Readonly<{
+    desiredAnnualSpendingDollars: number;
+    safeWithdrawalRatePercent: number;
+    targetAgeYears: number;
+  }>;
+}>;
+
 export function dollarsToCents(dollars: number): number {
   if (!Number.isFinite(dollars)) return 0;
   return Math.round(dollars * 100);
@@ -100,13 +114,15 @@ export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
   targetCents: number;
   progressPpm: number;
 }> {
-  const investableAssetsCents = calculateInvestableAssets(state);
-  const targetCents = state.finances.annualLivingCostCents * 25;
-  const progressPpm =
-    targetCents === 0
-      ? 1_000_000
-      : Math.min(1_000_000, Math.round((investableAssetsCents * 1_000_000) / targetCents));
-  return { investableAssetsCents, targetCents, progressPpm };
+  const projection = projectFinancialGoal(
+    state.finances,
+    state.gameplay.financialGoal,
+  );
+  return {
+    investableAssetsCents: projection.investableAssetsCents,
+    targetCents: projection.targetCents,
+    progressPpm: projection.progressPpm,
+  };
 }
 
 export function calculateAgeYears(birthMonth: string, currentMonth: string): number {
@@ -124,12 +140,12 @@ export function buildCreateRequest(
   salaryDollars: number,
   cashDollars: number,
   seed: string,
-  studentDebtDollars = 0,
-  studentDebtPaymentDollars = 250,
-  healthPlanId?: string,
-  insuranceCoverageIds: readonly string[] = ["insurance.renters"],
+  options: BuildCreateRequestOptions = {},
 ): CreateRunV2Request {
   const preset = PLAYER_PRESETS[presetId];
+  const studentDebtDollars = options.studentDebtDollars ?? 0;
+  const studentDebtPaymentDollars =
+    options.studentDebtPaymentDollars ?? 250;
   return {
     schemaVersion: 2,
     startMonth: "2026-07",
@@ -140,11 +156,28 @@ export function buildCreateRequest(
     careerId: preset.careerId,
     householdId: preset.householdId,
     benefitsPackageId: preset.benefitsPackageId,
-    healthPlanId: healthPlanId ?? preset.healthPlanId,
+    healthPlanId: options.healthPlanId ?? preset.healthPlanId,
     retirementPlanId: preset.retirementPlanId,
-    insuranceCoverageIds: [...insuranceCoverageIds],
+    insuranceCoverageIds: [
+      ...(options.insuranceCoverageIds ?? ["insurance.renters"]),
+    ],
     scenarioId: preset.scenarioId,
     annualGrossSalaryCents: dollarsToCents(salaryDollars),
+    ...(options.financialGoal
+      ? {
+          financialGoal: {
+            version: "financial-goal-v1",
+            desiredAnnualSpendingCents: dollarsToCents(
+              options.financialGoal.desiredAnnualSpendingDollars,
+            ),
+            safeWithdrawalRatePpm: percentToPpm(
+              options.financialGoal.safeWithdrawalRatePercent,
+            ),
+            targetAgeYears: options.financialGoal.targetAgeYears,
+            source: "player_selected",
+          },
+        }
+      : {}),
     finances: {
       cashCents: dollarsToCents(cashDollars),
       taxableBroadIndexCents: 0,
