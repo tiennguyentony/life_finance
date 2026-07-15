@@ -6,6 +6,7 @@ import {
 } from "./game-state";
 import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
 import type { FinancialGoalV1 } from "./financial-goals-v2";
+import type { LifeMilestoneStateV1 } from "./life-milestones-v2";
 import type {
   EventTier,
   EventWeakness,
@@ -130,6 +131,8 @@ export type ResolvedEventEvidenceV2 = Readonly<{
 export type GameplayStateV2 = Readonly<{
   /** Optional only for backward compatibility with schema-v2 runs created before goals-v1. */
   financialGoal?: FinancialGoalV1;
+  /** Optional only for backward compatibility with earlier schema-v2 runs. */
+  lifeMilestones?: LifeMilestoneStateV1;
   catalogs: VersionedCatalogSelection;
   catalogSnapshot: ResolvedScenarioSnapshot | null;
   catalogSnapshotChecksum: string | null;
