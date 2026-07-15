@@ -35,6 +35,7 @@ import {
   setRecurringStrategy,
   type SetRecurringStrategyCommand,
 } from "../../core/recurring-strategy-v2";
+import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import {
   RUN_SECRET_HASH_VERSION,
   RunSecretCodec,
@@ -554,6 +555,72 @@ export class RunRepository {
       .limit(1);
     assertScenarioSnapshotRecord(state, catalogRow);
     return state;
+  }
+
+  async loadMonthlyTaxEvidenceForCommand(
+    runId: string,
+    accessSecret: string,
+    commandId: string,
+  ): Promise<MonthlyTaxEvidence | null> {
+    assertUuid(runId);
+    const [run] = await this.#db
+      .select()
+      .from(gameRuns)
+      .where(eq(gameRuns.id, runId))
+      .limit(1);
+    if (
+      !run ||
+      !isAuthorized(
+        this.#secretCodec,
+        accessSecret,
+        run.accessSecretHash,
+        run.accessSecretHashVersion,
+      )
+    ) {
+      throw new RunRepositoryError(
+        "NOT_FOUND_OR_UNAUTHORIZED",
+        "run was not found or the credential is invalid",
+      );
+    }
+    const [accepted] = await this.#db
+      .select()
+      .from(acceptedCommands)
+      .where(
+        and(
+          eq(acceptedCommands.runId, runId),
+          eq(acceptedCommands.commandId, commandId),
+        ),
+      )
+      .limit(1);
+    if (!accepted) return null;
+    if (accepted.commandSchemaVersion !== 2 || accepted.commandType !== "process_month_v2") {
+      throw new RunRepositoryError(
+        "IDEMPOTENCY_MISMATCH",
+        "command id belongs to a different accepted command",
+      );
+    }
+    const [stored] = await this.#db
+      .select()
+      .from(monthlyTaxEvidence)
+      .where(
+        and(
+          eq(monthlyTaxEvidence.runId, runId),
+          eq(monthlyTaxEvidence.commandId, commandId),
+        ),
+      )
+      .limit(1);
+    const payload = accepted.payload as { taxEvidence?: unknown };
+    if (
+      !stored ||
+      sha256Canonical(stored.evidence) !== stored.evidenceChecksum ||
+      canonicalJson(stored.evidence) !== canonicalJson(payload.taxEvidence)
+    ) {
+      throw new RunRepositoryError(
+        "CORRUPT_STATE",
+        "accepted monthly command is missing consistent tax evidence",
+      );
+    }
+    return stored.evidence;
   }
 
   async applyCommand(

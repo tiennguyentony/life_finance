@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { sha256Canonical } from "../../core/canonical";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { createInitialGameState } from "../../core/game-state";
+import { migrateGameStateV1ToV2 } from "../../core/game-state-v2";
 import { RunSecretCodec } from "../auth/run-secret";
 import type { RunRepository } from "../db/run-repository";
 import { LifeFinanceApiClient, LifeFinanceApiError } from "./client";
@@ -204,5 +205,45 @@ describe("typed v1 client", () => {
       status: 0,
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("typed v2 client", () => {
+  it("validates v2 state and sends only the public process-month envelope", async () => {
+    const current = migrateGameStateV1ToV2(state());
+    const fetchMock = vi.fn<typeof fetch>(async (input) =>
+      Response.json({
+        state: current,
+        stateChecksum: sha256Canonical(current),
+        ...(String(input).endsWith("/commands")
+          ? { idempotentReplay: false, monthlyRecord: null }
+          : {}),
+      }),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+    await client.getRunV2(runId, accessSecret);
+    await client.submitCommandV2(runId, accessSecret, {
+      schemaVersion: 2,
+      id: "cmd.client-v2.month",
+      type: "process_month",
+      expectedRevision: 0,
+      effectiveMonth: "2026-07",
+      payload: {},
+    });
+
+    const [getUrl, getInit] = fetchMock.mock.calls[0];
+    const [commandUrl, commandInit] = fetchMock.mock.calls[1];
+    expect(String(getUrl)).toBe(`https://example.test/api/v2/runs/${runId}`);
+    expect(getInit?.headers).toMatchObject({ Authorization: `Bearer ${accessSecret}` });
+    expect(String(commandUrl).endsWith(`/api/v2/runs/${runId}/commands`)).toBe(true);
+    expect(JSON.parse(String(commandInit?.body))).toEqual({
+        schemaVersion: 2,
+        id: "cmd.client-v2.month",
+        type: "process_month",
+        expectedRevision: 0,
+        effectiveMonth: "2026-07",
+        payload: {},
+      });
+    expect(String(commandInit?.body)).not.toContain("taxEvidence");
   });
 });

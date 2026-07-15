@@ -1,5 +1,5 @@
 import { count, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../core/commands";
 import { moneyCents, ratePpm } from "../../core/domain/money";
@@ -31,6 +31,14 @@ import {
 } from "./client";
 import { migrateDatabase } from "./migrate";
 import { RunRepository } from "./run-repository";
+import {
+  handleCreateRunV2,
+  handleGetRunV2,
+  handleSubmitCommandV2,
+} from "../api/http";
+import { RunApiServiceV2 } from "../api/service-v2";
+import type { CreateRunV2Request } from "../api/contracts-v2";
+import { TaxServiceError, type TaxCalculator } from "../tax/client";
 import {
   acceptedCommands,
   aiAuditRecords,
@@ -210,6 +218,75 @@ function monthCommandV2(id = "cmd.repository-v2.month"): ProcessMonthV2Command {
   };
 }
 
+const apiCreateRequestV2: CreateRunV2Request = {
+  schemaVersion: 2,
+  startMonth: "2026-07",
+  birthMonth: "1995-01",
+  randomSeed: "api-v2-integration",
+  catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
+  locationId: "location.seattle",
+  careerId: "career.software",
+  householdId: "household.single",
+  benefitsPackageId: "benefits.corporate_flex",
+  healthPlanId: "health.hdhp_hsa",
+  retirementPlanId: "retirement.401k_standard",
+  insuranceCoverageIds: ["insurance.renters"],
+  scenarioId: "scenario.fresh_start",
+  annualGrossSalaryCents: 12_000_000,
+  finances: {
+    cashCents: 1_000_000,
+    taxableBroadIndexCents: 1_000_000,
+    taxableSectorCents: 200_000,
+    taxableSpeculativeCents: 100_000,
+    retirement401kCents: 500_000,
+    retirementIraCents: 100_000,
+    hsaCents: 50_000,
+    homeValueCents: 0,
+    otherAssetsCents: 0,
+    termDebts: [
+      {
+        id: "debt.student.api-v2",
+        kind: "student_loan",
+        principalCents: 120_000,
+        annualInterestRatePpm: 120_000,
+        minimumPaymentCents: 11_000,
+        remainingTermMonths: 12,
+      },
+    ],
+    revolvingCreditLimitCents: 1_000_000,
+    revolvingCreditUsedCents: 0,
+  },
+  wellbeing: { burnoutPpm: 100_000, happinessPpm: 900_000 },
+};
+
+function successfulTaxCalculator() {
+  const calculate = vi.fn<TaxCalculator["calculate"]>(async (request) => ({
+    schemaVersion: 1,
+    traceId: request.traceId,
+    economicYear: request.economicYear,
+    policyYear: request.policyYear,
+    stateCode: request.stateCode,
+    filingStatus: request.filingStatus,
+    annualGrossIncomeCents: 12_000_000,
+    federalIncomeTaxCents: 1_200_000,
+    stateIncomeTaxCents: 0,
+    employeePayrollTaxCents: 1_200_000,
+    selfEmploymentTaxCents: 0,
+    totalTaxCents: 2_400_000,
+    afterTaxIncomeCents: 9_600_000,
+    effectiveTaxRatePpm: 200_000,
+    componentsCents: { federal_income_tax: 1_200_000, payroll_tax: 1_200_000 },
+    model: {
+      provider: "PolicyEngine US",
+      bundleVersion: "4.21.0",
+      rulesVersion: "1.764.6",
+      projectedFromFrozenPolicy: false,
+    },
+    disclaimer: "Educational estimate only; not tax, legal, or financial advice.",
+  }));
+  return { calculator: { calculate } satisfies TaxCalculator, calculate };
+}
+
 databaseDescribe("Postgres run repository", () => {
   let connection: DatabaseConnection;
   let repository: RunRepository;
@@ -227,6 +304,8 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000011",
     "10000000-0000-4000-8000-000000000012",
     "10000000-0000-4000-8000-000000000013",
+    "10000000-0000-4000-8000-000000000014",
+    "10000000-0000-4000-8000-000000000015",
   ];
   let runIndex = 0;
 
@@ -741,5 +820,185 @@ databaseDescribe("Postgres run repository", () => {
       status: "rejected",
       reason: expect.objectContaining({ code: "OPTIMISTIC_CONFLICT" }),
     });
+  });
+
+  it("drives the authorized v2 HTTP flow without accepting tax inputs or recalculating on replay", async () => {
+    const tax = successfulTaxCalculator();
+    const api = new RunApiServiceV2(repository, tax.calculator, () => "player.api-v2");
+    const createdResponse = await handleCreateRunV2(
+      new Request("https://example.test/api/v2/runs", {
+        method: "POST",
+        body: JSON.stringify(apiCreateRequestV2),
+      }),
+      api,
+    );
+    const created = (await createdResponse.json()) as {
+      runId: string;
+      accessSecret: string;
+      state: { revision: number; currentMonth: string };
+    };
+    expect(createdResponse.status).toBe(201);
+    expect(created.state).toMatchObject({ revision: 0, currentMonth: "2026-07" });
+
+    const strategy = {
+      schemaVersion: 2,
+      id: "cmd.api-v2.strategy",
+      type: "set_recurring_strategy",
+      expectedRevision: 0,
+      effectiveMonth: "2026-07",
+      payload: {
+        strategy: {
+          preTax401kSalaryRatePpm: 50_000,
+          preTaxHsaSalaryRatePpm: 20_000,
+          afterTaxBroadIndexRatePpm: 200_000,
+          afterTaxSectorRatePpm: 0,
+          afterTaxSpeculativeRatePpm: 0,
+          afterTaxIraRatePpm: 100_000,
+          afterTaxExtraDebtRatePpm: 200_000,
+        },
+      },
+    };
+    const strategyResponse = await handleSubmitCommandV2(
+      new Request(`https://example.test/api/v2/runs/${created.runId}/commands`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${created.accessSecret}` },
+        body: JSON.stringify(strategy),
+      }),
+      created.runId,
+      api,
+    );
+    expect(strategyResponse.status).toBe(200);
+
+    const command = {
+      schemaVersion: 2,
+      id: "cmd.api-v2.month.2026-07",
+      type: "process_month",
+      expectedRevision: 1,
+      effectiveMonth: "2026-07",
+      payload: {},
+    };
+    const injected = await handleSubmitCommandV2(
+      new Request(`https://example.test/api/v2/runs/${created.runId}/commands`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${created.accessSecret}` },
+        body: JSON.stringify({
+          ...command,
+          payload: { taxEvidence: { totalTaxCents: 0 } },
+        }),
+      }),
+      created.runId,
+      api,
+    );
+    expect(injected.status).toBe(400);
+    expect(tax.calculate).not.toHaveBeenCalled();
+
+    const process = () =>
+      handleSubmitCommandV2(
+        new Request(`https://example.test/api/v2/runs/${created.runId}/commands`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${created.accessSecret}` },
+          body: JSON.stringify(command),
+        }),
+        created.runId,
+        api,
+      );
+    const processedResponse = await process();
+    const replayedResponse = await process();
+    const processed = (await processedResponse.json()) as {
+      state: { revision: number; currentMonth: string };
+      monthlyRecord: { processedMonth: string; taxTraceId: string };
+      idempotentReplay: boolean;
+    };
+    const replayed = (await replayedResponse.json()) as typeof processed;
+    expect(processedResponse.status).toBe(200);
+    expect(replayedResponse.status).toBe(200);
+    expect(processed).toMatchObject({
+      state: { revision: 2, currentMonth: "2026-08" },
+      monthlyRecord: {
+        processedMonth: "2026-07",
+        taxTraceId: "tax.cmd.api-v2.month.2026-07",
+      },
+      idempotentReplay: false,
+    });
+    expect(replayed).toEqual({ ...processed, idempotentReplay: true });
+    expect(tax.calculate).toHaveBeenCalledTimes(1);
+    expect(tax.calculate.mock.calls[0]?.[0]).toMatchObject({
+      stateCode: "WA",
+      filingStatus: "single",
+      people: [
+        expect.objectContaining({
+          income: expect.objectContaining({
+            w2Jobs: [
+              expect.objectContaining({
+                wagesCents: 12_000_000,
+                pretaxRetirementContributionsCents: 600_000,
+                pretaxHealthContributionsCents: 240_000,
+              }),
+            ],
+          }),
+        }),
+      ],
+    });
+
+    const loadedResponse = await handleGetRunV2(
+      new Request(`https://example.test/api/v2/runs/${created.runId}`, {
+        headers: { Authorization: `Bearer ${created.accessSecret}` },
+      }),
+      created.runId,
+      api,
+    );
+    expect(loadedResponse.status).toBe(200);
+    await expect(loadedResponse.json()).resolves.toMatchObject({
+      state: { revision: 2, currentMonth: "2026-08" },
+    });
+  });
+
+  it("returns 503 and commits nothing when server-owned tax calculation fails", async () => {
+    const calculate = vi.fn<TaxCalculator["calculate"]>(async () => {
+      throw new TaxServiceError("SERVICE_UNAVAILABLE", "temporary test outage", {
+        retryable: true,
+      });
+    });
+    const api = new RunApiServiceV2(repository, { calculate }, () => "player.api-v2-fail");
+    const createdResponse = await handleCreateRunV2(
+      new Request("https://example.test/api/v2/runs", {
+        method: "POST",
+        body: JSON.stringify(apiCreateRequestV2),
+      }),
+      api,
+    );
+    const created = (await createdResponse.json()) as {
+      runId: string;
+      accessSecret: string;
+    };
+    const failed = await handleSubmitCommandV2(
+      new Request(`https://example.test/api/v2/runs/${created.runId}/commands`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${created.accessSecret}` },
+        body: JSON.stringify({
+          schemaVersion: 2,
+          id: "cmd.api-v2.tax-failure",
+          type: "process_month",
+          expectedRevision: 0,
+          effectiveMonth: "2026-07",
+          payload: {},
+        }),
+      }),
+      created.runId,
+      api,
+    );
+
+    expect(failed.status).toBe(503);
+    expect(await failed.json()).toMatchObject({
+      error: { code: "TAX_SERVICE_UNAVAILABLE" },
+    });
+    expect(
+      await repository.loadAuthorizedRunV2(created.runId, created.accessSecret),
+    ).toMatchObject({ revision: 0, currentMonth: "2026-07" });
+    const [evidenceCount] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTaxEvidence)
+      .where(eq(monthlyTaxEvidence.runId, created.runId));
+    expect(evidenceCount.value).toBe(0);
   });
 });

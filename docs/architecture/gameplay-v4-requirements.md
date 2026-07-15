@@ -241,17 +241,17 @@ Status meanings: **implemented** has production code and direct tests;
 | Event templates and bounded choices | Partial | `src/core/events.ts`, `src/data/event-templates.ts` | Add scheduler, cooldowns, story state, insurance and behavioral events |
 | Explicit financial actions | Partial | `src/core/detailed-actions-v2.ts`, `src/core/recurring-strategy-v2.ts`, `src/core/monthly-turn-v2.ts` | Add home/refi/upskill and API commands |
 | Elastic checkpoints | Partial | `src/core/checkpoints.ts` | Integrate decisions/events and persist monthly records |
-| Versioned commands and concurrency | Partial | `src/core/monthly-turn-v2.ts`, `src/server/db/run-repository.ts`, PostgreSQL transaction tests | Expose the v2 command replay contract through the API |
-| Atomic monthly turn composition | Implemented | `src/core/monthly-turn-v2.ts`, `src/server/db/run-repository.ts`, orchestration/rollback tests | Connect tax calculation and strict API application services |
-| Tax adapter | Partial | `src/server/tax`, `src/core/payroll-v2.ts`, `monthly_tax_evidence` persistence | Build evidence in the application service before atomic repository application |
+| Versioned commands and concurrency | Implemented | v2 core/repository/API contracts and PostgreSQL HTTP tests | Extend the same envelope to future event-choice commands |
+| Atomic monthly turn composition | Implemented | core reducer, repository transaction, `RunApiServiceV2`, rollback/replay tests | Extend with scheduled event and checkpoint consumers |
+| Tax adapter | Partial | pinned adapter plus server-owned v2 request/evidence flow | Pass a live multi-month PolicyEngine deployment E2E |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
-| Run persistence and REST API | Partial | `src/server/db`, native-v2 transaction tests, v1 `src/server/api` | Add v2 gameplay application service/routes and outbox dispatcher |
-| Location/career/benefits catalogs | Partial | `src/core/scenario-catalog.ts`, `src/data/scenario-catalog.ts`, `run_scenario_snapshots` | Expose native v2 run creation through a strict API contract |
-| Detailed portfolio, debt, insurance, HSA | Partial | v2 core reducers and `RunRepository.applyCommandV2` | Expose authorized typed API commands and journeys |
+| Run persistence and REST API | Partial | v2 repository, REST/OpenAPI/typed client, PostgreSQL HTTP journeys | Add outbox dispatcher and event/checkpoint routes |
+| Location/career/benefits catalogs | Implemented | catalog resolver, normalized snapshots, strict v2 creation endpoint | Add future catalog versions without mutating 2026.2 |
+| Detailed portfolio, debt, insurance, HSA | Partial | v2 reducers plus authorized REST/typed-client commands | Add home/refi/upskill actions and scheduled claims |
 | Exposure and Hostile Fed targeting | Missing | — | Implement metrics, fairness policy, scheduler, audit breakdown |
 | Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
 | Teacher evidence/debrief pipeline | Missing | — | Build deterministic evidence first, AI narrative second |
-| Gameplay API integration and multi-turn E2E | Missing | — | Prove create → configure → process → choose → checkpoint → terminal |
+| Gameplay API integration and multi-turn E2E | Partial | create → configure → process/replay PostgreSQL HTTP journey | Add choose → checkpoint → terminal and deployment smoke journeys |
 
 ## State evolution requirements
 
