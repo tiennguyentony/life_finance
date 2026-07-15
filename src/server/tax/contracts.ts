@@ -129,7 +129,6 @@ export const annualDeductionsSchema = z
     hsaContributionsCents: nonNegativeCentsSchema.default(0),
     deductibleIraContributionsCents: nonNegativeCentsSchema.default(0),
     selfEmployedHealthInsuranceCents: nonNegativeCentsSchema.default(0),
-    otherItemizedDeductionsCents: nonNegativeCentsSchema.default(0),
   })
   .strict();
 
