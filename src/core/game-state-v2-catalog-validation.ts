@@ -159,9 +159,10 @@ export function validateCatalogAndBenefitsStateV2(
     );
   }
   if (catalogSnapshot !== null && benefits.status === "selected") {
+    const selectedHealthPlan = catalogSnapshot.selected.healthPlan;
     if (
-      benefits.healthPlanId !== catalogSnapshot.selected.healthPlan.id ||
-      benefits.hsaEligible !== catalogSnapshot.selected.healthPlan.hsaEligible ||
+      benefits.healthPlanId !== (selectedHealthPlan?.id ?? null) ||
+      benefits.hsaEligible !== (selectedHealthPlan?.hsaEligible ?? false) ||
       benefits.employerRetirementPlanId !==
         catalogSnapshot.selected.retirementPlan.id ||
       benefits.insuranceCoverageIds.length !==
@@ -239,16 +240,18 @@ export function validateCatalogAndBenefitsStateV2(
     const family =
       catalogSnapshot.selected.household.healthCoverageTier === "family";
     const healthPlan = catalogSnapshot.selected.healthPlan;
-    const deductible = family
-      ? healthPlan.annualDeductibleFamilyCents
-      : healthPlan.annualDeductibleSelfCents;
-    const outOfPocketMaximum = family
-      ? healthPlan.annualOutOfPocketMaximumFamilyCents
-      : healthPlan.annualOutOfPocketMaximumSelfCents;
-    if (
-      insurance.healthDeductiblePaidCents > deductible ||
-      insurance.healthOutOfPocketPaidCents > outOfPocketMaximum
-    ) {
+    const deductible = healthPlan === null
+      ? 0
+      : family
+        ? healthPlan.annualDeductibleFamilyCents
+        : healthPlan.annualDeductibleSelfCents;
+    const outOfPocketMaximum = healthPlan === null
+      ? 0
+      : family
+        ? healthPlan.annualOutOfPocketMaximumFamilyCents
+        : healthPlan.annualOutOfPocketMaximumSelfCents;
+    if (insurance.healthDeductiblePaidCents > deductible ||
+      insurance.healthOutOfPocketPaidCents > outOfPocketMaximum) {
       violations.push(
         violation(
           "gameplay.insurance",
@@ -302,13 +305,13 @@ export function validateCatalogAndBenefitsStateV2(
   }
   if (
     benefits.status === "selected" &&
-    (benefits.healthPlanId === null || benefits.hsaEligible === null)
+    benefits.hsaEligible === null
   ) {
     violations.push(
       violation(
         "gameplay.benefits",
         "incomplete_benefits_selection",
-        "selected benefits require a health plan and explicit HSA eligibility",
+        "selected benefits require explicit HSA eligibility even when health coverage is waived",
       ),
     );
   }

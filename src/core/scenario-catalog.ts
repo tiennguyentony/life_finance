@@ -1,5 +1,10 @@
 import { sha256Canonical } from "./canonical";
-import { multiplyMoneyByRate, type MoneyCents, type RatePpm } from "./domain/money";
+import {
+  moneyCents,
+  multiplyMoneyByRate,
+  type MoneyCents,
+  type RatePpm,
+} from "./domain/money";
 
 export const SCENARIO_CATALOG_SCHEMA_VERSION = 1 as const;
 
@@ -152,7 +157,8 @@ export type ScenarioCatalogSelection = Readonly<{
   careerId: string;
   householdId: string;
   benefitsPackageId: string;
-  healthPlanId: string;
+  /** Null means the player explicitly waived employer health coverage. */
+  healthPlanId: string | null;
   retirementPlanId: string;
   insuranceCoverageIds: readonly string[];
   scenarioId: string;
@@ -171,7 +177,7 @@ export type ResolvedScenarioSnapshot = Readonly<{
     household: HouseholdCatalogEntry;
     benefitPolicy: BenefitPolicyCatalogEntry;
     benefitsPackage: BenefitsPackageCatalogEntry;
-    healthPlan: HealthPlanCatalogEntry;
+    healthPlan: HealthPlanCatalogEntry | null;
     retirementPlan: RetirementPlanCatalogEntry;
     insuranceCoverages: readonly InsuranceCoverageCatalogEntry[];
     scenario: ScenarioCatalogEntry;
@@ -583,7 +589,9 @@ export function resolveScenarioCatalogSelection(
   const career = requireEntry(catalog.careers, selection.careerId, "career");
   const household = requireEntry(catalog.households, selection.householdId, "household");
   const benefitsPackage = requireEntry(catalog.benefitsPackages, selection.benefitsPackageId, "benefits package");
-  const healthPlan = requireEntry(catalog.healthPlans, selection.healthPlanId, "health plan");
+  const healthPlan = selection.healthPlanId === null
+    ? null
+    : requireEntry(catalog.healthPlans, selection.healthPlanId, "health plan");
   const retirementPlan = requireEntry(catalog.retirementPlans, selection.retirementPlanId, "retirement plan");
   const insuranceCoverages = selection.insuranceCoverageIds.map((id) =>
     requireEntry(catalog.insuranceCoverages, id, "insurance coverage"),
@@ -595,7 +603,9 @@ export function resolveScenarioCatalogSelection(
   requireAllowed(scenario.allowedCareerIds.includes(career.id), "career is not allowed by scenario");
   requireAllowed(scenario.allowedHouseholdIds.includes(household.id), "household is not allowed by scenario");
   requireAllowed(career.eligibleBenefitsPackageIds.includes(benefitsPackage.id), "career is not eligible for benefits package");
-  requireAllowed(benefitsPackage.healthPlanIds.includes(healthPlan.id), "health plan is not in benefits package");
+  if (healthPlan !== null) {
+    requireAllowed(benefitsPackage.healthPlanIds.includes(healthPlan.id), "health plan is not in benefits package");
+  }
   requireAllowed(benefitsPackage.retirementPlanIds.includes(retirementPlan.id), "retirement plan is not in benefits package");
   requireAllowed(
     insuranceCoverages.every(({ id }) => benefitsPackage.insuranceCoverageIds.includes(id)),
@@ -608,7 +618,7 @@ export function resolveScenarioCatalogSelection(
     ...household.sourceIds,
     ...catalog.benefitPolicy.sourceIds,
     ...benefitsPackage.sourceIds,
-    ...healthPlan.sourceIds,
+    ...(healthPlan?.sourceIds ?? []),
     ...retirementPlan.sourceIds,
     ...insuranceCoverages.flatMap(({ sourceIds }) => sourceIds),
     ...scenario.sourceIds,
@@ -649,10 +659,12 @@ export function resolveScenarioCatalogSelection(
         household.livingCostMultiplierPpm,
       ),
       monthlyHealthPremiumCents:
-        household.healthCoverageTier === "self"
+        healthPlan === null
+          ? moneyCents(0)
+          : household.healthCoverageTier === "self"
           ? healthPlan.monthlyEmployeePremiumSelfCents
           : healthPlan.monthlyEmployeePremiumFamilyCents,
-      hsaAnnualContributionLimitCents: healthPlan.hsaEligible
+      hsaAnnualContributionLimitCents: healthPlan?.hsaEligible
         ? household.healthCoverageTier === "self"
           ? catalog.benefitPolicy.hsaContributionLimitSelfCents
           : catalog.benefitPolicy.hsaContributionLimitFamilyCents

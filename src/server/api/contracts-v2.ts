@@ -82,7 +82,7 @@ export const createRunV2RequestSchema = z
     careerId: identifierSchema,
     householdId: identifierSchema,
     benefitsPackageId: identifierSchema,
-    healthPlanId: identifierSchema,
+    healthPlanId: identifierSchema.nullable(),
     retirementPlanId: identifierSchema,
     insuranceCoverageIds: z.array(identifierSchema).max(16),
     scenarioId: identifierSchema,
