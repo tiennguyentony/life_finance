@@ -245,7 +245,7 @@ Status meanings: **implemented** has production code and direct tests;
 | Tax adapter | Partial | `src/server/tax` | Call from turn service and persist result before core application |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Partial | `src/server/db`, `src/server/api` | Add gameplay application service, queries, outbox dispatcher |
-| Location/career/benefits catalogs | Missing | — | Define versioned schemas, sources, fixtures, validation |
+| Location/career/benefits catalogs | Partial | `src/core/scenario-catalog.ts`, `src/data/scenario-catalog.ts` | Persist resolved catalog snapshots during native v2 run creation |
 | Detailed portfolio, debt, insurance, HSA | Partial | `src/core/game-state-v2.ts`, `src/core/persisted-game-state.ts`, `src/server/db/run-repository.ts` | Implement v2 reducers and reconcile detailed accounts to the ledger |
 | Exposure and Hostile Fed targeting | Missing | — | Implement metrics, fairness policy, scheduler, audit breakdown |
 | Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
