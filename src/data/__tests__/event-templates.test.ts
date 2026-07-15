@@ -5,6 +5,7 @@ import { applyEvent, validateEventTemplate } from "../../core/events";
 import { createInitialGameState } from "../../core/game-state";
 
 import { EVENT_TEMPLATES, getEventTemplate } from "../event-templates";
+import { getPersonalEventExperience } from "../event-experience";
 
 function homeOwnerState() {
   return createInitialGameState({
@@ -63,6 +64,21 @@ describe("engine-owned event catalog", () => {
         ({ choices }) => choices.length >= 2 && choices.length <= 3,
       ),
     ).toBe(true);
+  });
+
+  it("gives every personal event human-readable game presentation", () => {
+    for (const template of EVENT_TEMPLATES.filter(({ kind }) => kind === "personal_shock")) {
+      const experience = getPersonalEventExperience(template.id);
+      expect(experience).not.toBeNull();
+      expect(experience!.title.length).toBeGreaterThan(0);
+      expect(experience!.situation.length).toBeGreaterThan(0);
+      for (const parameter of template.parameters) {
+        expect(experience!.parameterLabels[parameter.id]).toBeTruthy();
+      }
+      for (const choice of template.choices) {
+        expect(experience!.choiceLabels[choice.id]).toBeTruthy();
+      }
+    }
   });
 
   it("resolves only the catalog version requested", () => {
