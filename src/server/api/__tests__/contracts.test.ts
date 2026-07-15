@@ -203,6 +203,23 @@ describe("v2 API contracts", () => {
         },
       }).type,
     ).toBe("resolve_event_choice");
+    expect(
+      gameCommandV2PublicSchema.parse({
+        schemaVersion: 2,
+        id: "cmd.public-v2.milestone",
+        expectedRevision: 2,
+        effectiveMonth: "2026-08",
+        type: "manage_life_milestone",
+        payload: {
+          action: "schedule",
+          milestoneId: "milestone.first-car",
+          kind: "vehicle",
+          label: "Buy a reliable car",
+          targetMonth: "2027-01",
+          estimatedCostCents: 2_000_000,
+        },
+      }).type,
+    ).toBe("manage_life_milestone");
   });
 });
 

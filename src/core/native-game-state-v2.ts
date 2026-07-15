@@ -17,6 +17,7 @@ import {
   type GameStateV2,
 } from "./game-state-v2";
 import type { ResolvedScenario } from "./scenario-catalog";
+import { emptyLifeMilestoneState } from "./life-milestones-v2";
 import {
   defaultFinancialGoal,
   validateFinancialGoal,
@@ -240,6 +241,7 @@ export function createNativeGameStateV2(
     engineVersion: ENGINE_V2_VERSION,
     migration: null,
     gameplay: {
+      lifeMilestones: emptyLifeMilestoneState(),
       financialGoal:
         input.financialGoal ??
         defaultFinancialGoal(snapshot.derived.annualLivingCostCents),

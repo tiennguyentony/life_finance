@@ -5,6 +5,7 @@ import type {
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { ResolveEventChoiceV2Command } from "../../../core/event-lifecycle-v2";
+import type { ManageLifeMilestoneV2Command } from "../../../core/life-milestones-v2";
 import type { SetRecurringStrategyCommand } from "../../../core/recurring-strategy-v2";
 import type { GameCommandV2Public } from "../contracts-v2";
 
@@ -15,7 +16,7 @@ type PlayerAuthoredCommand = Exclude<
 
 export function mapPlayerCommand(
   command: PlayerAuthoredCommand,
-): DetailedFinanceCommand | SetRecurringStrategyCommand | ResolveEventChoiceV2Command {
+): DetailedFinanceCommand | SetRecurringStrategyCommand | ResolveEventChoiceV2Command | ManageLifeMilestoneV2Command {
   if (command.type === "set_recurring_strategy") {
     const strategy = command.payload.strategy;
     return {
@@ -44,6 +45,19 @@ export function mapPlayerCommand(
     return {
       ...command,
       effectiveMonth: simulationMonth(command.effectiveMonth),
+    };
+  }
+  if (command.type === "manage_life_milestone") {
+    return {
+      ...command,
+      effectiveMonth: simulationMonth(command.effectiveMonth),
+      payload: command.payload.action === "schedule"
+        ? {
+            ...command.payload,
+            targetMonth: simulationMonth(command.payload.targetMonth),
+            estimatedCostCents: moneyCents(command.payload.estimatedCostCents),
+          }
+        : command.payload,
     };
   }
   const publicAction = command.payload.action;
