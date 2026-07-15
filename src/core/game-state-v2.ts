@@ -94,6 +94,8 @@ export type PendingEventV2 = Readonly<{
 }>;
 
 export type ResolvedEventEvidenceV2 = Readonly<{
+  commandId: string;
+  resultingRevision: number;
   eventId: string;
   templateId: string;
   templateVersion: number;
@@ -101,6 +103,7 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   targetedWeakness: EventWeakness;
   parameters: Readonly<Record<string, number>>;
   choiceId: string;
+  availableChoiceIds: readonly string[];
   scheduledMonth: SimulationMonth;
   resolvedMonth: SimulationMonth;
   playerCostCents: MoneyCents;
@@ -902,9 +905,16 @@ export function validateGameStateV2(
       if (
         compareMonths(event.resolvedMonth, event.scheduledMonth) < 0 ||
         compareMonths(event.resolvedMonth, state.currentMonth) > 0 ||
+        event.commandId.length === 0 ||
+        !Number.isSafeInteger(event.resultingRevision) ||
+        event.resultingRevision < 1 ||
+        event.resultingRevision > state.revision ||
         event.eventId.length === 0 ||
         event.templateId.length === 0 ||
         event.choiceId.length === 0 ||
+        event.availableChoiceIds.length === 0 ||
+        !event.availableChoiceIds.includes(event.choiceId) ||
+        new Set(event.availableChoiceIds).size !== event.availableChoiceIds.length ||
         !Number.isSafeInteger(event.playerCostCents) ||
         event.playerCostCents < 0 ||
         !Number.isSafeInteger(event.insurerCostCents) ||
