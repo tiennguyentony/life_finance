@@ -18,6 +18,10 @@ import {
 } from "../../core/persisted-game-state";
 import { setRecurringStrategy } from "../../core/recurring-strategy-v2";
 import {
+  assertNoDueLifeMilestone,
+  manageLifeMilestoneV2,
+} from "../../core/life-milestones-v2";
+import {
   RUN_SECRET_HASH_VERSION,
   RunSecretCodec,
 } from "../auth/run-secret";
@@ -229,6 +233,10 @@ export function reduceGameCommandV2(
   if (command.type === "set_recurring_strategy") {
     return { state: setRecurringStrategy(state, command), monthlyRecord: null };
   }
+  if (command.type === "manage_life_milestone") {
+    return { state: manageLifeMilestoneV2(state, command), monthlyRecord: null };
+  }
+  assertNoDueLifeMilestone(state);
   const result = processMonthlyTurnV2(state, command);
   return { state: result.state, monthlyRecord: result.record };
 }

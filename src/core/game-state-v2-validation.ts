@@ -14,6 +14,7 @@ import type { GameStateV2 } from "./game-state-v2";
 import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-validation";
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
 import { validateFinancialGoal } from "./financial-goals-v2";
+import { validateLifeMilestoneState } from "./life-milestones-v2";
 
 export class InvalidGameStateV2Error extends Error {
   readonly violations: readonly StateInvariantViolation[];
@@ -87,6 +88,19 @@ export function validateGameStateV2(
           "gameplay.financialGoal",
           "invalid_financial_goal",
           "FI goal must use goals-v1 with bounded spending, withdrawal rate, and age",
+        ),
+      );
+    }
+  }
+  if (state.gameplay.lifeMilestones !== undefined) {
+    try {
+      validateLifeMilestoneState(state.gameplay.lifeMilestones);
+    } catch {
+      violations.push(
+        violation(
+          "gameplay.lifeMilestones",
+          "invalid_life_milestones",
+          "life milestones must be versioned, bounded, unique, and internally reconciled",
         ),
       );
     }

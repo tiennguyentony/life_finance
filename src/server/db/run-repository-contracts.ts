@@ -7,6 +7,7 @@ import type {
   ProcessMonthV2Command,
 } from "../../core/monthly-turn-v2";
 import type { SetRecurringStrategyCommand } from "../../core/recurring-strategy-v2";
+import type { ManageLifeMilestoneV2Command } from "../../core/life-milestones-v2";
 
 export type CreatedRun = Readonly<{
   runId: string;
@@ -32,6 +33,7 @@ export type GameCommandV2 =
   | DetailedFinanceCommand
   | SetRecurringStrategyCommand
   | ResolveEventChoiceV2Command
+  | ManageLifeMilestoneV2Command
   | ProcessMonthV2Command;
 
 export type AppliedCommandV2 = Readonly<{

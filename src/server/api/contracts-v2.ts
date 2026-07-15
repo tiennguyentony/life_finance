@@ -270,10 +270,32 @@ const resolveEventChoiceV2CommandSchema = v2Envelope
   })
   .strict();
 
+const manageLifeMilestoneV2CommandSchema = v2Envelope
+  .extend({
+    type: z.literal("manage_life_milestone"),
+    payload: z.discriminatedUnion("action", [
+      z.object({
+        action: z.literal("schedule"),
+        milestoneId: identifierSchema,
+        kind: z.enum(["move", "vehicle", "wedding", "child", "education", "travel", "caregiving", "custom"]),
+        label: z.string().trim().min(1).max(80),
+        targetMonth: simulationMonthSchema,
+        estimatedCostCents: nonNegativeCentsSchema.min(1),
+      }).strict(),
+      z.object({
+        action: z.literal("resolve"),
+        milestoneId: identifierSchema,
+        resolution: z.enum(["pay_cash", "postpone_6_months", "cancel"]),
+      }).strict(),
+    ]),
+  })
+  .strict();
+
 export const gameCommandV2PublicSchema = z.discriminatedUnion("type", [
   setStrategyV2CommandSchema,
   detailedActionV2CommandSchema,
   resolveEventChoiceV2CommandSchema,
+  manageLifeMilestoneV2CommandSchema,
   processMonthV2PublicCommandSchema,
 ]);
 
