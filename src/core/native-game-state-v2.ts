@@ -18,6 +18,7 @@ import {
 } from "./game-state-v2";
 import type { ResolvedScenario } from "./scenario-catalog";
 import { emptyLifeMilestoneState } from "./life-milestones-v2";
+import { emptyAiLearningMemory } from "./ai-learning-memory-v2";
 import {
   defaultFinancialGoal,
   validateFinancialGoal,
@@ -241,6 +242,7 @@ export function createNativeGameStateV2(
     engineVersion: ENGINE_V2_VERSION,
     migration: null,
     gameplay: {
+      aiLearningMemory: emptyAiLearningMemory(),
       lifeMilestones: emptyLifeMilestoneState(),
       financialGoal:
         input.financialGoal ??
