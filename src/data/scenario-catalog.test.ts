@@ -56,7 +56,7 @@ describe("versioned US scenario catalog", () => {
       { ...selection, insuranceCoverageIds: [...selection.insuranceCoverageIds] },
     );
 
-    expect(left.snapshot.catalog.version).toBe("us-2026.1");
+    expect(left.snapshot.catalog.version).toBe("us-2026.2");
     expect(left.snapshot.selected.sector.id).toBe("sector.technology");
     expect(left.snapshot.selected.benefitPolicy.policyYear).toBe(2026);
     expect(left.snapshot.derived).toEqual({
@@ -85,6 +85,9 @@ describe("versioned US scenario catalog", () => {
       expect(retirement.employeeAnnualLimitCents).toBe(2_450_000);
       expect(retirement.employerAnnualAdditionLimitCents).toBe(7_200_000);
     }
+    expect(
+      US_2026_SCENARIO_CATALOG.benefitPolicy.iraContributionLimitCents,
+    ).toBe(750_000);
     const hdhp = US_2026_SCENARIO_CATALOG.healthPlans.find(
       ({ id }) => id === "health.hdhp_hsa",
     );
@@ -136,7 +139,7 @@ describe("versioned US scenario catalog", () => {
     expect(() =>
       resolveScenarioCatalogSelection(US_2026_SCENARIO_CATALOG, {
         ...selection,
-        catalogVersion: "us-2026.2",
+        catalogVersion: "us-2026.3",
       }),
     ).toThrow(
       expect.objectContaining<Partial<ScenarioCatalogError>>({
@@ -157,12 +160,12 @@ describe("versioned US scenario catalog", () => {
     };
     const nextCatalog = finalizeScenarioCatalog({
       ...changed,
-      version: "us-2026.2",
+      version: "us-2026.3",
       locations: [changedLocation, ...changed.locations.slice(1)],
     });
     const next = resolveScenarioCatalogSelection(nextCatalog, {
       ...selection,
-      catalogVersion: "us-2026.2",
+      catalogVersion: "us-2026.3",
     });
 
     expect(original.snapshot.derived.annualLivingCostCents).toBe(6_500_000);

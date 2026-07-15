@@ -65,6 +65,7 @@ export type BenefitPolicyCatalogEntry = SourcedEntry &
   Readonly<{
     policyYear: number;
     employeeRetirementContributionLimitCents: MoneyCents;
+    iraContributionLimitCents: MoneyCents;
     definedContributionAdditionLimitCents: MoneyCents;
     hsaContributionLimitSelfCents: MoneyCents;
     hsaContributionLimitFamilyCents: MoneyCents;
@@ -348,6 +349,7 @@ export function validateScenarioCatalog(
 
   const benefitPolicyMoney = [
     catalog.benefitPolicy.employeeRetirementContributionLimitCents,
+    catalog.benefitPolicy.iraContributionLimitCents,
     catalog.benefitPolicy.definedContributionAdditionLimitCents,
     catalog.benefitPolicy.hsaContributionLimitSelfCents,
     catalog.benefitPolicy.hsaContributionLimitFamilyCents,
