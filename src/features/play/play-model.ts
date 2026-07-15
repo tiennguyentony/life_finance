@@ -10,6 +10,9 @@ export const PLAYER_PRESETS = {
     healthPlanId: "health.hdhp_hsa",
     retirementPlanId: "retirement.401k_standard",
     salaryDollars: 120_000,
+    defaultCashDollars: 25_000,
+    householdId: "household.single",
+    scenarioId: "scenario.fresh_start",
   },
   nurse: {
     label: "Registered nurse · Austin",
@@ -19,6 +22,9 @@ export const PLAYER_PRESETS = {
     healthPlanId: "health.hdhp_hsa",
     retirementPlanId: "retirement.401k_essential",
     salaryDollars: 85_000,
+    defaultCashDollars: 20_000,
+    householdId: "household.single",
+    scenarioId: "scenario.fresh_start",
   },
   teacher: {
     label: "Teacher · Chicago",
@@ -28,6 +34,21 @@ export const PLAYER_PRESETS = {
     healthPlanId: "health.hdhp_hsa",
     retirementPlanId: "retirement.403b_public",
     salaryDollars: 70_000,
+    defaultCashDollars: 15_000,
+    householdId: "household.single",
+    scenarioId: "scenario.fresh_start",
+  },
+  established: {
+    label: "Established software household · Austin",
+    locationId: "location.austin",
+    careerId: "career.software",
+    benefitsPackageId: "benefits.corporate_flex",
+    healthPlanId: "health.hdhp_hsa",
+    retirementPlanId: "retirement.401k_standard",
+    salaryDollars: 125_000,
+    defaultCashDollars: 75_000,
+    householdId: "household.married",
+    scenarioId: "scenario.established_household",
   },
 } as const;
 
@@ -65,11 +86,48 @@ export function calculateNetWorth(state: GameStateV2): number {
   );
 }
 
+export function calculateInvestableAssets(state: GameStateV2): number {
+  return (
+    state.finances.cashCents +
+    state.finances.taxableInvestmentsCents +
+    state.finances.retirementCents +
+    state.finances.otherInvestableAssetsCents
+  );
+}
+
+export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
+  investableAssetsCents: number;
+  targetCents: number;
+  progressPpm: number;
+}> {
+  const investableAssetsCents = calculateInvestableAssets(state);
+  const targetCents = state.finances.annualLivingCostCents * 25;
+  const progressPpm =
+    targetCents === 0
+      ? 1_000_000
+      : Math.min(1_000_000, Math.round((investableAssetsCents * 1_000_000) / targetCents));
+  return { investableAssetsCents, targetCents, progressPpm };
+}
+
+export function calculateAgeYears(birthMonth: string, currentMonth: string): number {
+  const [birthYear, birthMonthNumber] = birthMonth.split("-").map(Number);
+  const [currentYear, currentMonthNumber] = currentMonth.split("-").map(Number);
+  return (
+    currentYear! -
+    birthYear! -
+    (currentMonthNumber! < birthMonthNumber! ? 1 : 0)
+  );
+}
+
 export function buildCreateRequest(
   presetId: PlayerPresetId,
   salaryDollars: number,
   cashDollars: number,
   seed: string,
+  studentDebtDollars = 0,
+  studentDebtPaymentDollars = 250,
+  healthPlanId?: string,
+  insuranceCoverageIds: readonly string[] = ["insurance.renters"],
 ): CreateRunV2Request {
   const preset = PLAYER_PRESETS[presetId];
   return {
@@ -80,12 +138,12 @@ export function buildCreateRequest(
     catalogVersion: "us-2026.2",
     locationId: preset.locationId,
     careerId: preset.careerId,
-    householdId: "household.single",
+    householdId: preset.householdId,
     benefitsPackageId: preset.benefitsPackageId,
-    healthPlanId: preset.healthPlanId,
+    healthPlanId: healthPlanId ?? preset.healthPlanId,
     retirementPlanId: preset.retirementPlanId,
-    insuranceCoverageIds: ["insurance.renters"],
-    scenarioId: "scenario.fresh_start",
+    insuranceCoverageIds: [...insuranceCoverageIds],
+    scenarioId: preset.scenarioId,
     annualGrossSalaryCents: dollarsToCents(salaryDollars),
     finances: {
       cashCents: dollarsToCents(cashDollars),
@@ -97,7 +155,22 @@ export function buildCreateRequest(
       hsaCents: 0,
       homeValueCents: 0,
       otherAssetsCents: 0,
-      termDebts: [],
+      termDebts:
+        studentDebtDollars > 0
+          ? [
+              {
+                id: "debt.student-loan",
+                kind: "student_loan",
+                principalCents: dollarsToCents(studentDebtDollars),
+                annualInterestRatePpm: 55_000,
+                minimumPaymentCents: Math.min(
+                  dollarsToCents(studentDebtDollars),
+                  dollarsToCents(studentDebtPaymentDollars),
+                ),
+                remainingTermMonths: 120,
+              },
+            ]
+          : [],
       revolvingCreditLimitCents: 1_000_000,
       revolvingCreditUsedCents: 0,
     },
