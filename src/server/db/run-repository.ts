@@ -23,6 +23,11 @@ import {
 } from "../../core/game-state-v2";
 import type { JournalTransaction } from "../../core/ledger";
 import {
+  EventLifecycleV2Error,
+  resolveEventChoiceV2,
+  type ResolveEventChoiceV2Command,
+} from "../../core/event-lifecycle-v2";
+import {
   processMonthlyTurnV2,
   type MonthlyTurnV2Record,
   type ProcessMonthV2Command,
@@ -78,6 +83,7 @@ export type AppliedCommand = Readonly<{
 export type GameCommandV2 =
   | DetailedFinanceCommand
   | SetRecurringStrategyCommand
+  | ResolveEventChoiceV2Command
   | ProcessMonthV2Command;
 
 export type AppliedCommandV2 = Readonly<{
@@ -297,6 +303,18 @@ function reduceGameCommandV2(
   state: GameStateV2,
   command: GameCommandV2,
 ): Readonly<{ state: GameStateV2; monthlyRecord: MonthlyTurnV2Record | null }> {
+  if (
+    state.gameplay.eventLifecycle.pending &&
+    command.type !== "resolve_event_choice"
+  ) {
+    throw new EventLifecycleV2Error(
+      "PENDING_EVENT_UNRESOLVED",
+      "pending event choice must be resolved before another command",
+    );
+  }
+  if (command.type === "resolve_event_choice") {
+    return { state: resolveEventChoiceV2(state, command), monthlyRecord: null };
+  }
   if (command.type === "take_detailed_action") {
     return { state: reduceDetailedFinanceCommand(state, command), monthlyRecord: null };
   }

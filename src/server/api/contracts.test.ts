@@ -190,6 +190,19 @@ describe("v2 API contracts", () => {
         payload: { taxEvidence: { totalTaxCents: 0 } },
       }),
     ).toThrow();
+    expect(
+      gameCommandV2PublicSchema.parse({
+        schemaVersion: 2,
+        id: "cmd.public-v2.choice",
+        expectedRevision: 1,
+        effectiveMonth: "2026-08",
+        type: "resolve_event_choice",
+        payload: {
+          eventId: "evt.2026-08.personal.medical_bill",
+          choiceId: "use_insurance",
+        },
+      }).type,
+    ).toBe("resolve_event_choice");
   });
 });
 

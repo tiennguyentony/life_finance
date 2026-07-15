@@ -27,6 +27,7 @@ export class EventLifecycleV2Error extends Error {
     | "STALE_REVISION"
     | "RUN_TERMINAL"
     | "PENDING_EVENT_EXISTS"
+    | "PENDING_EVENT_UNRESOLVED"
     | "NO_PENDING_EVENT"
     | "EVENT_MISMATCH"
     | "INVALID_CHOICE";
