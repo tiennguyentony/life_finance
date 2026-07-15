@@ -134,7 +134,7 @@ function validateRoleSemantics<R extends AiRole>(
     if (!weakness || !candidate.targetsWeaknesses.includes(weakness.id)) {
       throw new Error("selected weakness must be supplied and targeted by the candidate");
     }
-    const parameterKeys = Object.keys(output.parameters).sort();
+    const parameterKeys = output.parameters.map(({ id }) => id).sort();
     const definitions = [...candidate.parameters].sort((left, right) => left.id.localeCompare(right.id));
     if (
       parameterKeys.length !== definitions.length ||
@@ -143,7 +143,7 @@ function validateRoleSemantics<R extends AiRole>(
       throw new Error("event parameters must exactly match the selected candidate");
     }
     for (const definition of definitions) {
-      const value = output.parameters[definition.id];
+      const value = output.parameters.find(({ id }) => id === definition.id)?.value;
       if (value === undefined || value < definition.minimum || value > definition.maximum) {
         throw new Error("event parameter is outside engine-owned bounds");
       }

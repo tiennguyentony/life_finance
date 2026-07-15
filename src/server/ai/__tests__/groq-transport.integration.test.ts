@@ -50,4 +50,68 @@ describeIfEnabled("hosted Groq gpt-oss integration", () => {
       }),
     ]);
   }, 60_000);
+
+  it("selects only the supplied engine event and bounded parameters", async () => {
+    const audits: AiAuditRecord[] = [];
+    const client = new AiRoleClient(
+      new GroqGptOssTransport(),
+      { async record(record) { audits.push(record); } },
+      { invocationId: () => "groq-integration-world" },
+    );
+
+    try {
+      const result = await client.generate<"hostile_fed">({
+        contractVersion: 1,
+        privacyNoticeVersion: 2,
+        dataUseAccepted: true,
+        role: "hostile_fed",
+        simulationMonth: "2026-08",
+        marketRegime: "expansion",
+        weaknesses: [
+          {
+            id: "low_emergency_fund",
+            severityPpm: 800_000,
+            evidence: [
+              {
+                id: "weakness.low_emergency_fund",
+                label: "low emergency fund",
+                value: "800000 ppm severity from deterministic exposure metrics",
+              },
+            ],
+          },
+        ],
+        candidates: [
+          {
+            templateId: "personal.industry_layoff",
+            templateVersion: 1,
+            tier: "large",
+            teachingPrinciple: "Liquidity protects required expenses during income loss.",
+            targetsWeaknesses: ["low_emergency_fund"],
+            parameters: [
+              { id: "income_gap_cents", minimum: 300_000, maximum: 2_500_000 },
+            ],
+          },
+        ],
+      });
+
+      expect(result).toMatchObject({
+        templateId: "personal.industry_layoff",
+        templateVersion: 1,
+        targetedWeaknessId: "low_emergency_fund",
+        citedEvidenceIds: ["weakness.low_emergency_fund"],
+      });
+      const incomeGap = result.parameters.find(
+        ({ id }) => id === "income_gap_cents",
+      )?.value;
+      expect(incomeGap).toBeGreaterThanOrEqual(300_000);
+      expect(incomeGap).toBeLessThanOrEqual(2_500_000);
+    } catch (error) {
+      const safeAttempts = audits.flatMap(({ attempts }) =>
+        attempts.map(({ kind, errorCode }) => ({ kind, errorCode })),
+      );
+      throw new Error(`hosted world integration failed: ${JSON.stringify(safeAttempts)}`, {
+        cause: error,
+      });
+    }
+  }, 60_000);
 });
