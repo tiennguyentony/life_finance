@@ -304,6 +304,7 @@ export function createNativeGameStateV2(
         activeStoryIds: [],
         cooldowns: [],
       },
+      careerDevelopment: { pending: [], history: [] },
     },
   });
 }
