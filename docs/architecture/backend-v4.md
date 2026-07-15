@@ -83,6 +83,15 @@ and a versioned payload. A command is rejected when its identifier was already
 accepted, its expected revision is stale, its month is invalid, or its payload
 violates an invariant. State is never partially mutated.
 
+The schema-v2 monthly reducer uses one stable order: validate the command and
+external tax evidence; adjudicate the optional insurance claim; apply the
+persisted market draw and inflation; apply payroll, withholding, benefits, and
+employer match; calculate debt service and all non-debt obligations; assess and
+prepare automatic liquidity; pay mandatory items; apply the bounded recurring
+strategy; then advance time, accept the command, and evaluate terminal outcomes.
+If total automatic liquidity cannot cover mandatory items, the reducer records
+bankruptcy without making partial obligation or strategy payments.
+
 Canonical serialization sorts object keys and preserves array order. A SHA-256
 checksum covers all replay-relevant state. Checksums are evidence of accidental
 or unauthorized changes, not a substitute for authorization.
@@ -113,6 +122,30 @@ entries are never edited or deleted.
 - At age 65, non-FI grades use goal progress: A at 0.8, B at 0.6, C at 0.4, D at
   0.2, and E below 0.2. Bankruptcy is F.
 
+## Exposure evidence
+
+Schema-v2 records an explainable end-of-month exposure snapshot. Emergency-fund
+months are liquid cash divided by current required obligations and capped at 12;
+zero obligations explicitly produce the 12-month cap. DTI is total term plus
+revolving debt divided by authoritative annual salary and is `null` when income
+is unknown or zero. Revolving utilization, insurance gap, non-diversified
+sector/speculative concentration, and catalog-sector job correlation are bounded
+to 0–1,000,000 PPM. No investable assets produce zero concentration/correlation.
+
+The hidden score is 1,000,000 plus twice a 0–1,000,000 weighted risk: emergency
+fund 30%, DTI 20%, revolving utilization 15%, insurance gap 10%, concentration
+15%, and job correlation 10%. Unknown DTI or insurance receives a documented
+neutral 500,000 risk; unknown job correlation contributes zero. The score and
+all components are retained together for fairness audits and debrief evidence.
+
+Personal-event scheduling uses versioned `fairness-v1`. The monthly probability
+scales linearly from 8% at a 1,000,000 exposure score to 30% at 3,000,000. The
+scheduler consumes persisted RNG in a fixed frequency → sorted-template →
+parameter order. It considers only engine-owned, deterministically eligible
+personal templates that target a demonstrated metric weakness and are off
+cooldown. Catastrophes additionally require score 2,400,000 or higher. A
+terminal run or pending player choice schedules nothing and consumes no RNG.
+
 ## External ports
 
 ### Tax
@@ -135,6 +168,19 @@ no state mutation. There is no narrative fallback.
 Prompt and response bodies are minimized, redacted, encrypted with AES-256-GCM,
 and stored in an administrator-only audit trail. They are never written to normal
 application logs.
+
+## Verified multi-turn journey
+
+On 2026-07-15 the native v2 HTTP flow completed six consecutive months against
+the pinned local PolicyEngine service and a fresh PostgreSQL 17 database. The
+journey created a run, configured strategy, started a cataloged upskill, bought
+a mortgaged home, processed and persisted six tax-backed monthly turns, resolved
+a server-scheduled personal choice, materialized the salary increase in the
+completion month, and built a six-month checkpoint. The final state was active
+at 2027-01 with salary increased from 12,000,000 to 12,300,000 cents. Database
+counts reconciled to 6 monthly records, 6 tax-evidence rows, 10 commands, 11
+snapshots, and 11 outbox rows. A separate high-leverage journey reached
+bankruptcy and correctly rejected later progression with HTTP 409.
 
 ## Persistence and API
 

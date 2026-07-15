@@ -18,8 +18,12 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import type { GameState } from "../../core/game-state";
+import type { GameStateV2 } from "../../core/game-state-v2";
+import type { PersistedGameState } from "../../core/persisted-game-state";
 import type { JournalPosting } from "../../core/ledger";
+import type { MonthlyTurnV2Record } from "../../core/monthly-turn-v2";
+import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
+import type { ResolvedScenarioSnapshot } from "../../core/scenario-catalog";
 
 export const runStatus = pgEnum("run_status", ["active", "terminal"]);
 export const outboxStatus = pgEnum("outbox_status", [
@@ -55,7 +59,7 @@ export const gameRuns = pgTable(
     currentRevision: integer("current_revision").notNull().default(0),
     currentMonth: char("current_month", { length: 7 }).notNull(),
     status: runStatus("status").notNull().default("active"),
-    currentState: jsonb("current_state").$type<GameState>().notNull(),
+    currentState: jsonb("current_state").$type<PersistedGameState>().notNull(),
     currentStateChecksum: char("current_state_checksum", { length: 64 }).notNull(),
     terminalAt: timestamp("terminal_at", { withTimezone: true, mode: "date" }),
     createdAt,
@@ -102,7 +106,7 @@ export const runStateSnapshots = pgTable(
     revision: integer("revision").notNull(),
     stateSchemaVersion: integer("state_schema_version").notNull(),
     engineVersion: varchar("engine_version", { length: 32 }).notNull(),
-    state: jsonb("state").$type<GameState>().notNull(),
+    state: jsonb("state").$type<PersistedGameState>().notNull(),
     stateChecksum: char("state_checksum", { length: 64 }).notNull(),
     createdAt,
   },
@@ -116,6 +120,64 @@ export const runStateSnapshots = pgTable(
     check(
       "run_state_snapshots_checksum_format",
       sql`${table.stateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+).enableRLS();
+
+export const runStateMigrations = pgTable(
+  "run_state_migrations",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => gameRuns.id, { onDelete: "cascade" }),
+    migrationVersion: varchar("migration_version", { length: 64 }).notNull(),
+    sourceSchemaVersion: integer("source_schema_version").notNull(),
+    sourceEngineVersion: varchar("source_engine_version", { length: 32 }).notNull(),
+    targetSchemaVersion: integer("target_schema_version").notNull(),
+    targetEngineVersion: varchar("target_engine_version", { length: 32 }).notNull(),
+    sourceRevision: integer("source_revision").notNull(),
+    sourceStateChecksum: char("source_state_checksum", { length: 64 }).notNull(),
+    targetState: jsonb("target_state").$type<GameStateV2>().notNull(),
+    targetStateChecksum: char("target_state_checksum", { length: 64 }).notNull(),
+    createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.runId, table.migrationVersion] }),
+    index("run_state_migrations_run_created_idx").on(table.runId, table.createdAt),
+    check(
+      "run_state_migrations_version_progression",
+      sql`${table.sourceSchemaVersion} > 0 AND ${table.targetSchemaVersion} > ${table.sourceSchemaVersion}`,
+    ),
+    check(
+      "run_state_migrations_revision_nonnegative",
+      sql`${table.sourceRevision} >= 0`,
+    ),
+    check(
+      "run_state_migrations_source_checksum_format",
+      sql`${table.sourceStateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "run_state_migrations_target_checksum_format",
+      sql`${table.targetStateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+).enableRLS();
+
+export const runScenarioSnapshots = pgTable(
+  "run_scenario_snapshots",
+  {
+    runId: uuid("run_id")
+      .primaryKey()
+      .references(() => gameRuns.id, { onDelete: "cascade" }),
+    catalogVersion: varchar("catalog_version", { length: 64 }).notNull(),
+    snapshotChecksum: char("snapshot_checksum", { length: 64 }).notNull(),
+    snapshot: jsonb("snapshot").$type<ResolvedScenarioSnapshot>().notNull(),
+    createdAt,
+  },
+  (table) => [
+    check(
+      "run_scenario_snapshots_checksum_format",
+      sql`${table.snapshotChecksum} ~ '^[0-9a-f]{64}$'`,
     ),
   ],
 ).enableRLS();
@@ -163,6 +225,99 @@ export const acceptedCommands = pgTable(
     check(
       "accepted_commands_checksum_format",
       sql`${table.resultingStateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+).enableRLS();
+
+export const monthlyTaxEvidence = pgTable(
+  "monthly_tax_evidence",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => gameRuns.id, { onDelete: "cascade" }),
+    traceId: varchar("trace_id", { length: 128 }).notNull(),
+    commandId: varchar("command_id", { length: 128 }).notNull(),
+    effectiveMonth: char("effective_month", { length: 7 }).notNull(),
+    evidenceChecksum: char("evidence_checksum", { length: 64 }).notNull(),
+    evidence: jsonb("evidence").$type<MonthlyTaxEvidence>().notNull(),
+    createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.runId, table.traceId] }),
+    uniqueIndex("monthly_tax_evidence_run_month_uidx").on(
+      table.runId,
+      table.effectiveMonth,
+    ),
+    uniqueIndex("monthly_tax_evidence_run_command_uidx").on(
+      table.runId,
+      table.commandId,
+    ),
+    foreignKey({
+      columns: [table.runId, table.commandId],
+      foreignColumns: [acceptedCommands.runId, acceptedCommands.commandId],
+      name: "monthly_tax_evidence_command_fk",
+    }).onDelete("cascade"),
+    check(
+      "monthly_tax_evidence_month_format",
+      sql`${table.effectiveMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`,
+    ),
+    check(
+      "monthly_tax_evidence_checksum_format",
+      sql`${table.evidenceChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+).enableRLS();
+
+export const monthlyTurnRecords = pgTable(
+  "monthly_turn_records",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => gameRuns.id, { onDelete: "cascade" }),
+    processedMonth: char("processed_month", { length: 7 }).notNull(),
+    commandId: varchar("command_id", { length: 128 }).notNull(),
+    resultingRevision: integer("resulting_revision").notNull(),
+    taxTraceId: varchar("tax_trace_id", { length: 128 }).notNull(),
+    recordChecksum: char("record_checksum", { length: 64 }).notNull(),
+    record: jsonb("record").$type<MonthlyTurnV2Record>().notNull(),
+    createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.runId, table.processedMonth] }),
+    uniqueIndex("monthly_turn_records_run_command_uidx").on(
+      table.runId,
+      table.commandId,
+    ),
+    uniqueIndex("monthly_turn_records_run_revision_uidx").on(
+      table.runId,
+      table.resultingRevision,
+    ),
+    foreignKey({
+      columns: [table.runId, table.commandId],
+      foreignColumns: [acceptedCommands.runId, acceptedCommands.commandId],
+      name: "monthly_turn_records_command_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.runId, table.resultingRevision],
+      foreignColumns: [runStateSnapshots.runId, runStateSnapshots.revision],
+      name: "monthly_turn_records_snapshot_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.runId, table.taxTraceId],
+      foreignColumns: [monthlyTaxEvidence.runId, monthlyTaxEvidence.traceId],
+      name: "monthly_turn_records_tax_evidence_fk",
+    }).onDelete("cascade"),
+    check(
+      "monthly_turn_records_month_format",
+      sql`${table.processedMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`,
+    ),
+    check(
+      "monthly_turn_records_revision_positive",
+      sql`${table.resultingRevision} > 0`,
+    ),
+    check(
+      "monthly_turn_records_checksum_format",
+      sql`${table.recordChecksum} ~ '^[0-9a-f]{64}$'`,
     ),
   ],
 ).enableRLS();
@@ -319,7 +474,11 @@ export const aiAuditRecords = pgTable(
 export type GameRunRow = typeof gameRuns.$inferSelect;
 export type NewGameRunRow = typeof gameRuns.$inferInsert;
 export type RunStateSnapshotRow = typeof runStateSnapshots.$inferSelect;
+export type RunStateMigrationRow = typeof runStateMigrations.$inferSelect;
+export type RunScenarioSnapshotRow = typeof runScenarioSnapshots.$inferSelect;
 export type AcceptedCommandRow = typeof acceptedCommands.$inferSelect;
+export type MonthlyTaxEvidenceRow = typeof monthlyTaxEvidence.$inferSelect;
+export type MonthlyTurnRecordRow = typeof monthlyTurnRecords.$inferSelect;
 export type LedgerTransactionRow = typeof ledgerTransactions.$inferSelect;
 export type LedgerPostingRow = typeof ledgerPostings.$inferSelect;
 export type TransactionalOutboxRow = typeof transactionalOutbox.$inferSelect;

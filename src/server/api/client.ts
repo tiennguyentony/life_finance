@@ -13,6 +13,22 @@ import {
   type GetRunResponse,
 } from "./contracts";
 import { isRunSecret } from "../auth/run-secret";
+import {
+  commandV2ResponseSchema,
+  checkpointV2QuerySchema,
+  checkpointV2ResponseSchema,
+  createRunV2RequestSchema,
+  createRunV2ResponseSchema,
+  gameCommandV2PublicSchema,
+  getRunV2ResponseSchema,
+  runIdV2PathSchema,
+  type CommandV2Response,
+  type CheckpointV2Response,
+  type CreateRunV2Request,
+  type CreateRunV2Response,
+  type GameCommandV2Public,
+  type GetRunV2Response,
+} from "./contracts-v2";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
@@ -137,6 +153,65 @@ export class LifeFinanceApiClient {
         },
         body: JSON.stringify(body),
       },
+    );
+  }
+
+  async createRunV2(request: CreateRunV2Request): Promise<CreateRunV2Response> {
+    const body = createRunV2RequestSchema.parse(request);
+    return this.#request("/api/v2/runs", createRunV2ResponseSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async getRunV2(
+    runId: string,
+    accessSecret: string,
+  ): Promise<GetRunV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}`,
+      getRunV2ResponseSchema,
+      {
+        method: "GET",
+        headers: this.#authorization(accessSecret),
+      },
+    );
+  }
+
+  async submitCommandV2(
+    runId: string,
+    accessSecret: string,
+    command: GameCommandV2Public,
+  ): Promise<CommandV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    const body = gameCommandV2PublicSchema.parse(command);
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}/commands`,
+      commandV2ResponseSchema,
+      {
+        method: "POST",
+        headers: {
+          ...this.#authorization(accessSecret),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  async getCheckpointV2(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ): Promise<CheckpointV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    const query = checkpointV2QuerySchema.parse({ fromRevision });
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}/checkpoint?fromRevision=${query.fromRevision}`,
+      checkpointV2ResponseSchema,
+      { method: "GET", headers: this.#authorization(accessSecret) },
     );
   }
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { auditCipherFromEnvironment } from "../ai/audit-crypto";
 import { auditAdminAuthorizerFromEnvironment } from "../ai/audit-repository";
-import { OpenAiResponsesTransport } from "../ai/client";
+import { aiTransportFromEnvironment } from "../ai/runtime";
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { getDatabaseConnection } from "../db/runtime";
 import { createTaxClientFromEnvironment } from "../tax/client";
@@ -81,7 +81,7 @@ export function assertProductionConfiguration(
   createTaxClientFromEnvironment(environment);
   auditCipherFromEnvironment(environment);
   auditAdminAuthorizerFromEnvironment(environment);
-  new OpenAiResponsesTransport({ apiKey: environment.OPENAI_API_KEY });
+  aiTransportFromEnvironment(environment);
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;

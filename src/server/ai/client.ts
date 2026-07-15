@@ -46,6 +46,7 @@ export type AiTransportResult = Readonly<{
 }>;
 
 export interface AiResponsesTransport {
+  auditModel?(requestedModel: AiTransportRequest["model"]): string;
   create(request: AiTransportRequest): Promise<AiTransportResult>;
 }
 
@@ -280,6 +281,9 @@ export class AiRoleClient {
     }
 
     const role = parsedRequest.data.role as R;
+    const requestedModel = AI_ROLE_MODELS[role];
+    const auditModel =
+      this.transport.auditModel?.(requestedModel) ?? requestedModel;
     const schema = responseSchemaFor(role);
     const promptBody = JSON.stringify(parsedRequest.data);
     const invocationId = this.options.invocationId?.() ?? randomUUID();
@@ -293,7 +297,7 @@ export class AiRoleClient {
       let transportResult: AiTransportResult;
       try {
         transportResult = await this.transport.create({
-          model: AI_ROLE_MODELS[role],
+          model: requestedModel,
           input: [
             { role: "developer", content: ROLE_INSTRUCTIONS[role] },
             { role: "user", content: promptBody },
@@ -357,7 +361,7 @@ export class AiRoleClient {
         invocationId,
         contractVersion: parsedRequest.data.contractVersion,
         role,
-        model: AI_ROLE_MODELS[role],
+        model: auditModel,
         prompt: {
           instructions: ROLE_INSTRUCTIONS[role],
           input: parsedRequest.data,

@@ -40,7 +40,25 @@ Contains immutable shared catalogs such as locations, careers, event templates, 
 
 ## State and persistence
 
-The future authoritative state is a versioned `GameState`. The first persistence adapter will use browser storage and JSON export or import. Storage is an adapter around state, not part of financial calculation.
+Supabase PostgreSQL is authoritative. Each accepted command stores the versioned
+`GameState`, canonical checksum, immutable revision snapshot, append-only ledger
+delta, command envelope, and outbox event in one transaction. Native schema-v2
+runs additionally store their resolved scenario snapshot once. Monthly turns
+store checksum-protected tax evidence and a checksum-protected result record
+linked to the accepted command and resulting state revision. Persistence remains
+an adapter around deterministic core transitions; it never recalculates money.
+
+### Outbox delivery
+
+`TransactionalOutboxDispatcher` provides bounded at-least-once delivery. Workers
+claim eligible rows with `FOR UPDATE SKIP LOCKED`, publish outside the database
+transaction, and compare attempt numbers when acknowledging success or failure.
+Expired processing leases are reclaimable after a crash. Failures store only a
+sanitized code and use capped exponential backoff; exhausted rows remain
+`failed` with their final attempt count. Consumers must deduplicate the stable
+`idempotencyKey`, because a crash after publish and before acknowledgement can
+legitimately cause redelivery. Optional topic filters allow independent workers
+to partition consumers without competing for unrelated events.
 
 ## AI boundary
 
