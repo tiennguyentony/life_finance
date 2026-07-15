@@ -4,3 +4,4 @@ allowBuilds:
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@asteasolutions/zod-to-openapi@9.0.0'
+  - openai@6.47.0
