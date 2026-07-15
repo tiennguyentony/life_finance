@@ -110,7 +110,55 @@ function emptyIncome() {
   };
 }
 
-function buildTaxRequest(
+export function projectAnnualPretaxContributions(
+  state: Awaited<ReturnType<V2Repository["loadAuthorizedRunV2"]>>,
+) {
+  const employment = state.gameplay.employment;
+  if (employment.status !== "employed") {
+    throw new RunApiV2Error(
+      "TAX_CONTEXT_MISMATCH",
+      "annual contribution projection requires native employment",
+    );
+  }
+  const monthNumber = Number(state.currentMonth.slice(5, 7));
+  const remainingMonths = 13 - monthNumber;
+  const monthlyGross = allocateMoney(
+    employment.annualGrossSalaryCents,
+    1,
+    12,
+  );
+  let employee401kCents = state.gameplay.contributions.employee401kCents;
+  let hsaCents = state.gameplay.contributions.hsaCents;
+  let projectionState = state;
+
+  for (let month = 0; month < remainingMonths; month += 1) {
+    const plan = planRecurringAllocations(
+      projectionState,
+      monthlyGross,
+      moneyCents(0),
+    );
+    employee401kCents = addMoney(
+      employee401kCents,
+      plan.preTax.employee401kCents,
+    );
+    hsaCents = addMoney(hsaCents, plan.preTax.hsaCents);
+    projectionState = {
+      ...projectionState,
+      gameplay: {
+        ...projectionState.gameplay,
+        contributions: {
+          ...projectionState.gameplay.contributions,
+          employee401kCents,
+          hsaCents,
+        },
+      },
+    };
+  }
+
+  return Object.freeze({ employee401kCents, hsaCents });
+}
+
+export function buildTaxRequest(
   state: Awaited<ReturnType<V2Repository["loadAuthorizedRunV2"]>>,
   commandId: string,
 ) {
@@ -122,11 +170,7 @@ function buildTaxRequest(
       "monthly processing requires a native employed v2 run",
     );
   }
-  const annualPlan = planRecurringAllocations(
-    state,
-    employment.annualGrossSalaryCents,
-    moneyCents(0),
-  );
+  const projectedContributions = projectAnnualPretaxContributions(state);
   const ageYears = Math.max(
     0,
     Math.floor(monthsBetween(state.player.birthMonth, state.currentMonth) / 12),
@@ -145,14 +189,9 @@ function buildTaxRequest(
           {
             id: "job.primary",
             wagesCents: employment.annualGrossSalaryCents,
-            pretaxRetirementContributionsCents: addMoney(
-              state.gameplay.contributions.employee401kCents,
-              annualPlan.preTax.employee401kCents,
-            ),
-            pretaxHealthContributionsCents: addMoney(
-              state.gameplay.contributions.hsaCents,
-              annualPlan.preTax.hsaCents,
-            ),
+            pretaxRetirementContributionsCents:
+              projectedContributions.employee401kCents,
+            pretaxHealthContributionsCents: projectedContributions.hsaCents,
           },
         ],
       },
