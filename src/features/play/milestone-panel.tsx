@@ -27,11 +27,11 @@ export function MilestonePanel({
   return (
     <section className="play-panel play-form">
       <div>
-        <p className="hero-kicker">Planned life spending</p>
-        <h2>Put real life on the calendar</h2>
+        <p className="hero-kicker">Your optional life plans</p>
+        <h2>Plan only the goals you choose</h2>
       </div>
       <p className="play-note">
-        A goal becomes a decision when its month arrives. Paying reduces cash through the ledger; postponing preserves liquidity but moves the life plan.
+        This calendar is for deliberate goals such as your own wedding or a planned move. Repairs, invitations, care needs, and other surprises are generated separately by the life-event engine as time advances.
       </p>
       <div className="play-inline-fields">
         <label>
