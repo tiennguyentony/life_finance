@@ -295,6 +295,10 @@ textarea:focus-visible {
   min-height: 100dvh;
 }
 
+.page-shell:has(.splash-screen) + .site-footer {
+  display: none;
+}
+
 .splash-screen {
   position: relative;
   width: calc(100% - 24px);
