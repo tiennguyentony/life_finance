@@ -246,7 +246,7 @@ Status meanings: **implemented** has production code and direct tests;
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Partial | `src/server/db`, `src/server/api` | Add gameplay application service, queries, outbox dispatcher |
 | Location/career/benefits catalogs | Partial | `src/core/scenario-catalog.ts`, `src/data/scenario-catalog.ts` | Persist resolved catalog snapshots during native v2 run creation |
-| Detailed portfolio, debt, insurance, HSA | Partial | `src/core/game-state-v2.ts`, `src/core/native-game-state-v2.ts`, `src/core/detailed-actions-v2.ts`, `src/core/insurance-v2.ts` | Apply claims/recurring plans in turns; add debt accrual and repository commands |
+| Detailed portfolio, debt, insurance, HSA | Partial | `src/core/game-state-v2.ts`, `src/core/detailed-actions-v2.ts`, `src/core/debt-service-v2.ts`, `src/core/insurance-v2.ts` | Apply these subsystems in atomic turns and repository commands |
 | Exposure and Hostile Fed targeting | Missing | — | Implement metrics, fairness policy, scheduler, audit breakdown |
 | Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
 | Teacher evidence/debrief pipeline | Missing | — | Build deterministic evidence first, AI narrative second |
