@@ -210,6 +210,34 @@ describe("atomic v2 monthly turn", () => {
     );
   });
 
+  it("queues a fair event after the completed month and blocks progression until choice", () => {
+    const initial = configuredState();
+    const result = processMonthlyTurnV2(initial, command(initial), {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 1_000_000,
+        maximumChancePpm: 1_000_000,
+      },
+    });
+
+    expect(result.record.scheduledEvent).toEqual(
+      result.state.gameplay.eventLifecycle.pending,
+    );
+    expect(result.record.scheduledEvent).toMatchObject({
+      scheduledMonth: "2026-08",
+      expiresMonth: "2026-09",
+    });
+    const nextCommand = {
+      ...command(result.state),
+      id: "cmd.month.2026-08",
+      effectiveMonth: result.state.currentMonth,
+      expectedRevision: result.state.revision,
+    };
+    expect(() => processMonthlyTurnV2(result.state, nextCommand)).toThrow(
+      expect.objectContaining({ code: "PENDING_EVENT" }),
+    );
+  });
+
   it("records bankruptcy without partial funding when a claim exceeds all liquidity", () => {
     const initial = configuredState();
     const result = processMonthlyTurnV2(
