@@ -192,9 +192,27 @@ export function ActionPanel({
 export function EducationPanel({
   activeConceptId,
   onChange,
+  busy,
+  consented,
+  lesson,
+  onConsentChange,
+  onAskAi,
 }: Readonly<{
   activeConceptId: string;
   onChange: (conceptId: string) => void;
+  busy: boolean;
+  consented: boolean;
+  lesson: Readonly<{
+    source: "openai" | "local_oss" | "deterministic_fallback";
+    explanation: Readonly<{
+      title: string;
+      explanation: string;
+      whyItMattersNow: string;
+      actionTips: readonly string[];
+    }>;
+  }> | null;
+  onConsentChange: (accepted: boolean) => void;
+  onAskAi: () => void;
 }>) {
   const activeConcept =
     getEducationConcept(activeConceptId) ?? EDUCATION_CONCEPTS[0]!;
@@ -222,6 +240,44 @@ export function EducationPanel({
         <p>{activeConcept.whyItMatters}</p>
         <h3>The trade-off</h3>
         <p>{activeConcept.decisionTradeoff}</p>
+        <div className="action-guidance">
+          <h3>Adaptive AI lesson</h3>
+          <p>
+            Send a minimized simulation snapshot—never the full ledger or run
+            history—to OpenAI GPT-5.6 (or local gpt-oss in development). Encrypted
+            prompts and outputs are retained for administrator-only audit; the
+            deterministic engine remains authoritative.
+          </p>
+          <label>
+            <input
+              checked={consented}
+              onChange={(event) => onConsentChange(event.target.checked)}
+              type="checkbox"
+            />
+            I agree to send the minimized, redacted game context for this lesson.
+          </label>
+          <button disabled={busy || !consented} onClick={onAskAi} type="button">
+            {busy ? "Generating lesson…" : "Explain using my current situation"}
+          </button>
+        </div>
+        {lesson ? (
+          <div className="concept-card ai-lesson">
+            <p className="hero-kicker">
+              {lesson.source === "openai"
+                ? "GPT-5.6 personalized lesson"
+                : lesson.source === "local_oss"
+                  ? "Local gpt-oss lesson"
+                  : "Reliable curriculum fallback"}
+            </p>
+            <h3>{lesson.explanation.title}</h3>
+            <p>{lesson.explanation.explanation}</p>
+            <h3>Why it matters in this run</h3>
+            <p>{lesson.explanation.whyItMattersNow}</p>
+            <ul>
+              {lesson.explanation.actionTips.map((tip) => <li key={tip}>{tip}</li>)}
+            </ul>
+          </div>
+        ) : null}
       </article>
     </div>
   );

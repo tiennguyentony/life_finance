@@ -4,9 +4,12 @@ import { getDatabaseConnection } from "../db/runtime";
 import { RunApiService } from "./service";
 import { createTaxClientFromEnvironment } from "../tax/client";
 import { RunApiServiceV2 } from "./service-v2";
+import { AiEducationService } from "../ai/education-service";
+import { getAiRoleClient } from "../ai/runtime";
 
 let service: RunApiService | undefined;
 let serviceV2: RunApiServiceV2 | undefined;
+let aiEducationService: AiEducationService | undefined;
 
 export function getRunApiService(): RunApiService {
   if (!service) {
@@ -18,6 +21,21 @@ export function getRunApiService(): RunApiService {
     service = new RunApiService(repository);
   }
   return service;
+}
+
+export function getAiEducationService(): AiEducationService {
+  if (!aiEducationService) {
+    const connection = getDatabaseConnection();
+    const repository = new RunRepository(
+      connection.db,
+      runSecretCodecFromEnvironment(),
+    );
+    aiEducationService = new AiEducationService(
+      repository,
+      (runId) => getAiRoleClient(runId),
+    );
+  }
+  return aiEducationService;
 }
 
 export function getRunApiServiceV2(): RunApiServiceV2 {
