@@ -207,9 +207,19 @@ const processMonthV2PublicCommandSchema = v2Envelope
   .extend({ type: z.literal("process_month"), payload: z.object({}).strict() })
   .strict();
 
+const resolveEventChoiceV2CommandSchema = v2Envelope
+  .extend({
+    type: z.literal("resolve_event_choice"),
+    payload: z
+      .object({ eventId: identifierSchema, choiceId: identifierSchema })
+      .strict(),
+  })
+  .strict();
+
 export const gameCommandV2PublicSchema = z.discriminatedUnion("type", [
   setStrategyV2CommandSchema,
   detailedActionV2CommandSchema,
+  resolveEventChoiceV2CommandSchema,
   processMonthV2PublicCommandSchema,
 ]);
 
