@@ -122,6 +122,22 @@ entries are never edited or deleted.
 - At age 65, non-FI grades use goal progress: A at 0.8, B at 0.6, C at 0.4, D at
   0.2, and E below 0.2. Bankruptcy is F.
 
+## Exposure evidence
+
+Schema-v2 records an explainable end-of-month exposure snapshot. Emergency-fund
+months are liquid cash divided by current required obligations and capped at 12;
+zero obligations explicitly produce the 12-month cap. DTI is total term plus
+revolving debt divided by authoritative annual salary and is `null` when income
+is unknown or zero. Revolving utilization, insurance gap, non-diversified
+sector/speculative concentration, and catalog-sector job correlation are bounded
+to 0–1,000,000 PPM. No investable assets produce zero concentration/correlation.
+
+The hidden score is 1,000,000 plus twice a 0–1,000,000 weighted risk: emergency
+fund 30%, DTI 20%, revolving utilization 15%, insurance gap 10%, concentration
+15%, and job correlation 10%. Unknown DTI or insurance receives a documented
+neutral 500,000 risk; unknown job correlation contributes zero. The score and
+all components are retained together for fairness audits and debrief evidence.
+
 ## External ports
 
 ### Tax

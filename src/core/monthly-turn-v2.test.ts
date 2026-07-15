@@ -167,6 +167,10 @@ describe("atomic v2 monthly turn", () => {
       ]),
     );
     expect(result.state.gameplay.market.monthsInRegime).toBeGreaterThanOrEqual(0);
+    expect(result.state.gameplay.exposure).toMatchObject({
+      current: { month: "2026-08" },
+      history: [{ month: "2026-08" }],
+    });
     expect(validateGameStateV2(result.state)).toEqual([]);
     expect(initial.currentMonth).toBe("2026-07");
   });

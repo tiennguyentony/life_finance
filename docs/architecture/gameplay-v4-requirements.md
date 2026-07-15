@@ -248,7 +248,7 @@ Status meanings: **implemented** has production code and direct tests;
 | Run persistence and REST API | Partial | v2 repository, REST/OpenAPI/typed client, PostgreSQL HTTP journeys | Add outbox dispatcher and event/checkpoint routes |
 | Location/career/benefits catalogs | Implemented | catalog resolver, normalized snapshots, strict v2 creation endpoint | Add future catalog versions without mutating 2026.2 |
 | Detailed portfolio, debt, insurance, HSA | Partial | v2 reducers plus authorized REST/typed-client commands | Add home/refi/upskill actions and scheduled claims |
-| Exposure and Hostile Fed targeting | Missing | — | Implement metrics, fairness policy, scheduler, audit breakdown |
+| Exposure and Hostile Fed targeting | Partial | `src/core/exposure-v2.ts`, persisted monthly metric history | Add fairness policy, scheduler, and bounded template targeting |
 | Psychology traps and multi-month macro story | Missing | — | Add bounded templates and persisted story lifecycle |
 | Teacher evidence/debrief pipeline | Missing | — | Build deterministic evidence first, AI narrative second |
 | Gameplay API integration and multi-turn E2E | Partial | create → configure → process/replay PostgreSQL HTTP journey | Add choose → checkpoint → terminal and deployment smoke journeys |
