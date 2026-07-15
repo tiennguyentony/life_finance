@@ -1,10 +1,12 @@
 import type { MoneyCents, RatePpm } from "./domain/money";
 import { compareMonths, simulationMonth, type SimulationMonth } from "./domain/month";
+import { sha256Canonical } from "./canonical";
 import {
   assertValidGameState,
   type GameState as GameStateV1,
   type StateInvariantViolation,
 } from "./game-state";
+import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
 
 export const GAME_STATE_V2_SCHEMA_VERSION = 2 as const;
 export const ENGINE_V2_VERSION = "4.1.0" as const;
@@ -80,9 +82,33 @@ export type ExposureSnapshot = Readonly<{
 
 export type GameplayStateV2 = Readonly<{
   catalogs: VersionedCatalogSelection;
+  catalogSnapshot: ResolvedScenarioSnapshot | null;
+  catalogSnapshotChecksum: string | null;
+  employment:
+    | Readonly<{
+        status: "legacy_unknown";
+        annualGrossSalaryCents: null;
+        careerId: null;
+        sectorId: null;
+      }>
+    | Readonly<{
+        status: "employed";
+        annualGrossSalaryCents: MoneyCents;
+        careerId: string;
+        sectorId: string;
+      }>;
   portfolio: PortfolioBreakdown;
   debts: DebtBreakdown;
   benefits: BenefitsSelection;
+  insurance: Readonly<{
+    policyYear: number | null;
+    healthDeductiblePaidCents: MoneyCents;
+    healthOutOfPocketPaidCents: MoneyCents;
+    coverageUsage: readonly Readonly<{
+      coverageId: string;
+      usedCents: MoneyCents;
+    }>[];
+  }>;
   recurringStrategy: RecurringStrategy;
   exposure: Readonly<{
     current: ExposureSnapshot | null;
@@ -111,7 +137,7 @@ export type GameStateV2 = Readonly<
     schemaVersion: typeof GAME_STATE_V2_SCHEMA_VERSION;
     engineVersion: typeof ENGINE_V2_VERSION;
     gameplay: GameplayStateV2;
-    migration: StateMigrationRecord;
+    migration: StateMigrationRecord | null;
   }
 >;
 
@@ -189,11 +215,12 @@ export function validateGameStateV2(
     );
   }
   if (
-    state.migration.sourceSchemaVersion !== 1 ||
-    state.migration.sourceEngineVersion !== "4.0.0" ||
-    state.migration.targetSchemaVersion !== GAME_STATE_V2_SCHEMA_VERSION ||
-    state.migration.targetEngineVersion !== ENGINE_V2_VERSION ||
-    state.migration.migrationVersion !== V1_TO_V2_MIGRATION_VERSION
+    state.migration !== null &&
+    (state.migration.sourceSchemaVersion !== 1 ||
+      state.migration.sourceEngineVersion !== "4.0.0" ||
+      state.migration.targetSchemaVersion !== GAME_STATE_V2_SCHEMA_VERSION ||
+      state.migration.targetEngineVersion !== ENGINE_V2_VERSION ||
+      state.migration.migrationVersion !== V1_TO_V2_MIGRATION_VERSION)
   ) {
     violations.push(
       violation("migration", "invalid_migration_record", "must identify the exact v1-to-v2 migration"),
@@ -303,6 +330,20 @@ export function validateGameStateV2(
         ),
       );
     }
+    if (
+      (debt.principalCents === 0 &&
+        (debt.minimumPaymentCents !== 0 || debt.remainingTermMonths !== 0)) ||
+      (debt.principalCents > 0 &&
+        (debt.minimumPaymentCents <= 0 || debt.remainingTermMonths <= 0))
+    ) {
+      violations.push(
+        violation(
+          `gameplay.debts.termDebts.${index}`,
+          "invalid_debt_lifecycle",
+          "active debt requires positive payment and term; paid debt requires both zero",
+        ),
+      );
+    }
   }
   if (
     sum([
@@ -395,7 +436,103 @@ export function validateGameStateV2(
       violation("gameplay.catalogs", "invalid_catalog_ref", "catalog ids and versions must not be empty"),
     );
   }
+  const catalogSnapshot = state.gameplay.catalogSnapshot;
+  if ((catalogSnapshot === null) !== (state.gameplay.catalogSnapshotChecksum === null)) {
+    violations.push(
+      violation(
+        "gameplay.catalogSnapshot",
+        "incomplete_catalog_snapshot",
+        "catalog snapshot and checksum must both be present or absent",
+      ),
+    );
+  }
+  if (
+    (catalogSnapshot === null && state.migration === null) ||
+    (catalogSnapshot !== null && state.migration !== null)
+  ) {
+    violations.push(
+      violation(
+        "migration",
+        "invalid_v2_provenance",
+        "v2 state must be either a journaled v1 migration or a native catalog snapshot",
+      ),
+    );
+  }
+  if (catalogSnapshot !== null && state.gameplay.catalogSnapshotChecksum !== null) {
+    if (sha256Canonical(catalogSnapshot) !== state.gameplay.catalogSnapshotChecksum) {
+      violations.push(
+        violation(
+          "gameplay.catalogSnapshotChecksum",
+          "catalog_checksum_mismatch",
+          "must match the canonical resolved catalog snapshot",
+        ),
+      );
+    }
+    const snapshotRefs = {
+      location: catalogSnapshot.selected.location.id,
+      career: catalogSnapshot.selected.career.id,
+      household: catalogSnapshot.selected.household.id,
+      benefits: catalogSnapshot.selected.benefitsPackage.id,
+      scenario: catalogSnapshot.selected.scenario.id,
+    };
+    for (const [kind, id] of Object.entries(snapshotRefs)) {
+      const ref = state.gameplay.catalogs[kind as keyof VersionedCatalogSelection];
+      if (ref.id !== id || ref.version !== catalogSnapshot.catalog.version) {
+        violations.push(
+          violation(
+            `gameplay.catalogs.${kind}`,
+            "catalog_snapshot_mismatch",
+            "catalog reference must match the resolved snapshot",
+          ),
+        );
+      }
+    }
+  }
+  const employment = state.gameplay.employment;
+  if (employment.status === "legacy_unknown") {
+    if (
+      employment.annualGrossSalaryCents !== null ||
+      employment.careerId !== null ||
+      employment.sectorId !== null ||
+      catalogSnapshot !== null
+    ) {
+      violations.push(
+        violation(
+          "gameplay.employment",
+          "ambiguous_legacy_employment",
+          "legacy employment cannot claim cataloged salary or job data",
+        ),
+      );
+    }
+  } else if (
+    !isNonNegativeSafeInteger(employment.annualGrossSalaryCents) ||
+    employment.annualGrossSalaryCents === 0 ||
+    catalogSnapshot === null ||
+    employment.careerId !== catalogSnapshot.selected.career.id ||
+    employment.sectorId !== catalogSnapshot.selected.sector.id ||
+    employment.annualGrossSalaryCents <
+      catalogSnapshot.derived.annualSalaryMinimumCents ||
+    employment.annualGrossSalaryCents >
+      catalogSnapshot.derived.annualSalaryMaximumCents
+  ) {
+    violations.push(
+      violation(
+        "gameplay.employment",
+        "invalid_employment",
+        "employment must match the cataloged career, sector, and salary range",
+      ),
+    );
+  }
   const benefits = state.gameplay.benefits;
+  if (catalogSnapshot !== null && benefits.status !== "selected") {
+    violations.push(
+      violation(
+        "gameplay.benefits",
+        "missing_native_benefits",
+        "native v2 state requires selected catalog benefits",
+      ),
+    );
+  }
   if (
     benefits.status === "legacy_unknown" &&
     (benefits.healthPlanId !== null ||
@@ -410,6 +547,85 @@ export function validateGameStateV2(
         "legacy-unknown benefits cannot claim a selected plan or coverage",
       ),
     );
+  }
+  if (catalogSnapshot !== null && benefits.status === "selected") {
+    if (
+      benefits.healthPlanId !== catalogSnapshot.selected.healthPlan.id ||
+      benefits.hsaEligible !== catalogSnapshot.selected.healthPlan.hsaEligible ||
+      benefits.employerRetirementPlanId !==
+        catalogSnapshot.selected.retirementPlan.id ||
+      benefits.insuranceCoverageIds.length !==
+        catalogSnapshot.selected.insuranceCoverages.length ||
+      benefits.insuranceCoverageIds.some(
+        (id, index) =>
+          id !== catalogSnapshot.selected.insuranceCoverages[index]?.id,
+      )
+    ) {
+      violations.push(
+        violation(
+          "gameplay.benefits",
+          "benefits_snapshot_mismatch",
+          "selected benefits must exactly match the resolved catalog snapshot",
+        ),
+      );
+    }
+  }
+  const insurance = state.gameplay.insurance;
+  validateMoneyRecord(
+    {
+      healthDeductiblePaidCents: insurance.healthDeductiblePaidCents,
+      healthOutOfPocketPaidCents: insurance.healthOutOfPocketPaidCents,
+    },
+    "gameplay.insurance",
+    violations,
+  );
+  if (
+    insurance.healthDeductiblePaidCents > insurance.healthOutOfPocketPaidCents
+  ) {
+    violations.push(
+      violation(
+        "gameplay.insurance",
+        "invalid_health_accumulator",
+        "deductible paid cannot exceed total out-of-pocket paid",
+      ),
+    );
+  }
+  if (
+    catalogSnapshot === null
+      ? insurance.policyYear !== null || insurance.coverageUsage.length > 0
+      : insurance.policyYear !== catalogSnapshot.selected.benefitPolicy.policyYear
+  ) {
+    violations.push(
+      violation(
+        "gameplay.insurance",
+        "insurance_policy_mismatch",
+        "insurance state must match the resolved benefit policy",
+      ),
+    );
+  }
+  const coverageIds = insurance.coverageUsage.map(({ coverageId }) => coverageId);
+  if (new Set(coverageIds).size !== coverageIds.length) {
+    violations.push(
+      violation(
+        "gameplay.insurance.coverageUsage",
+        "duplicate_coverage_usage",
+        "each coverage may have one usage accumulator",
+      ),
+    );
+  }
+  for (const [index, usage] of insurance.coverageUsage.entries()) {
+    if (
+      !isNonNegativeSafeInteger(usage.usedCents) ||
+      !benefits.insuranceCoverageIds.includes(usage.coverageId)
+    ) {
+      violations.push(
+        violation(
+          `gameplay.insurance.coverageUsage.${index}`,
+          "invalid_coverage_usage",
+          "usage must be non-negative and reference selected coverage",
+        ),
+      );
+    }
   }
   if (
     benefits.status === "selected" &&
@@ -483,6 +699,14 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
         benefits: { id: "legacy-benefits", version: LEGACY_CATALOG_VERSION },
         scenario: { id: "legacy-scenario", version: LEGACY_CATALOG_VERSION },
       },
+      catalogSnapshot: null,
+      catalogSnapshotChecksum: null,
+      employment: {
+        status: "legacy_unknown",
+        annualGrossSalaryCents: null,
+        careerId: null,
+        sectorId: null,
+      },
       portfolio: {
         taxableBroadIndexCents: 0 as MoneyCents,
         taxableSectorCents: 0 as MoneyCents,
@@ -507,6 +731,12 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
         hsaEligible: null,
         employerRetirementPlanId: null,
         insuranceCoverageIds: [],
+      },
+      insurance: {
+        policyYear: null,
+        healthDeductiblePaidCents: 0 as MoneyCents,
+        healthOutOfPocketPaidCents: 0 as MoneyCents,
+        coverageUsage: [],
       },
       recurringStrategy: {
         effectiveMonth: state.currentMonth,
