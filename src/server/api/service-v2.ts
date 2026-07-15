@@ -72,6 +72,7 @@ type V2Repository = Pick<
   | "loadAuthorizedRunV2"
   | "applyCommandV2"
   | "loadMonthlyTaxEvidenceForCommand"
+  | "loadCheckpointEvidenceV2"
 >;
 
 function annualCpiPpm(state: Awaited<ReturnType<V2Repository["loadAuthorizedRunV2"]>>) {
@@ -347,6 +348,20 @@ export class RunApiServiceV2 {
       state,
       stateChecksum: sha256Canonical(state),
     });
+  }
+
+  async getCheckpoint(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ) {
+    return {
+      evidence: await this.#repository.loadCheckpointEvidenceV2(
+        runId,
+        accessSecret,
+        fromRevision,
+      ),
+    };
   }
 
   async submitCommand(

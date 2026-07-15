@@ -218,6 +218,7 @@ describe("generated OpenAPI", () => {
       "/api/v1/runs/{runId}/commands",
       "/api/v2/runs",
       "/api/v2/runs/{runId}",
+      "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
     ].toSorted());
     expect(
@@ -229,6 +230,9 @@ describe("generated OpenAPI", () => {
     );
     expect(
       document.paths?.["/api/v2/runs/{runId}/commands"]?.post?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/checkpoint"]?.get?.security,
     ).toEqual([{ runBearer: [] }]);
     expect(
       JSON.stringify(document.paths?.["/api/v2/runs/{runId}/commands"]),

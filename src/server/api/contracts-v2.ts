@@ -275,6 +275,101 @@ export const commandV2ResponseSchema = getRunV2ResponseSchema
   })
   .strict();
 
+export const checkpointV2QuerySchema = z
+  .object({ fromRevision: z.coerce.number().int().min(0) })
+  .strict();
+
+const exposureSnapshotV2Schema = z
+  .object({
+    month: simulationMonthSchema,
+    scorePpm: z.int().min(1_000_000).max(3_000_000),
+    emergencyFundMonthsPpm: z.int().min(0).max(12_000_000),
+    debtToIncomePpm: z.int().min(0).nullable(),
+    revolvingDebtPpm: boundedRatePpmSchema,
+    insuranceGapPpm: boundedRatePpmSchema.nullable(),
+    portfolioConcentrationPpm: boundedRatePpmSchema,
+    jobInvestmentCorrelationPpm: boundedRatePpmSchema.nullable(),
+  })
+  .strict();
+
+const checkpointSnapshotV2Schema = z
+  .object({
+    month: simulationMonthSchema,
+    ageYears: z.int().min(0),
+    cashCents: nonNegativeCentsSchema,
+    investableAssetsCents: nonNegativeCentsSchema,
+    liabilitiesCents: nonNegativeCentsSchema,
+    netWorthCents: z.int(),
+    annualLivingCostCents: nonNegativeCentsSchema,
+    financialIndependenceTargetCents: nonNegativeCentsSchema,
+    financialIndependenceProgressPpm: boundedRatePpmSchema,
+    exposure: exposureSnapshotV2Schema.nullable(),
+  })
+  .strict();
+
+const resolvedEventEvidenceV2Schema = z
+  .object({
+    commandId: commandIdSchema,
+    resultingRevision: z.int().min(1),
+    eventId: identifierSchema,
+    templateId: identifierSchema,
+    templateVersion: z.int().min(1),
+    tier: z.enum(["micro", "medium", "large", "catastrophe"]),
+    targetedWeakness: z.enum([
+      "low_emergency_fund",
+      "high_credit_utilization",
+      "job_portfolio_correlation",
+      "portfolio_concentration",
+      "uninsured_property",
+      "high_fixed_costs",
+      "lifestyle_fragility",
+      "market_timing",
+    ]),
+    parameters: z.record(z.string().min(1), z.int()),
+    choiceId: identifierSchema,
+    availableChoiceIds: z.array(identifierSchema).min(1),
+    scheduledMonth: simulationMonthSchema,
+    resolvedMonth: simulationMonthSchema,
+    playerCostCents: nonNegativeCentsSchema,
+    insurerCostCents: nonNegativeCentsSchema,
+  })
+  .strict();
+
+const checkpointEvidenceV2Schema = z
+  .object({
+    evidenceVersion: z.literal("checkpoint-v2.1"),
+    start: checkpointSnapshotV2Schema,
+    end: checkpointSnapshotV2Schema,
+    monthsProcessed: z.int().min(0).max(12),
+    monthlyCommandIds: z.array(commandIdSchema).max(12),
+    taxTraceIds: z.array(identifierSchema).max(12),
+    totalGrossIncomeCents: z.int(),
+    totalTaxCents: z.int(),
+    totalAfterTaxCashIncomeCents: z.int(),
+    totalRequiredCashCents: nonNegativeCentsSchema,
+    totalMarketValueChangeCents: z.int(),
+    totalInflationIncreaseCents: z.int(),
+    totalInsurancePlayerCostCents: nonNegativeCentsSchema,
+    totalDebtInterestCents: nonNegativeCentsSchema,
+    totalDebtPaymentsCents: nonNegativeCentsSchema,
+    totalLiquidationCostCents: nonNegativeCentsSchema,
+    netWorthChangeCents: z.int(),
+    investableAssetsChangeCents: z.int(),
+    liabilitiesChangeCents: z.int(),
+    eventChoices: z.array(resolvedEventEvidenceV2Schema),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.monthlyCommandIds.length === value.monthsProcessed &&
+      value.taxTraceIds.length === value.monthsProcessed,
+    { message: "checkpoint record identifiers must match processed month count" },
+  );
+
+export const checkpointV2ResponseSchema = z
+  .object({ evidence: checkpointEvidenceV2Schema })
+  .strict();
+
 export { runIdPathSchema as runIdV2PathSchema };
 
 export type CreateRunV2Request = z.infer<typeof createRunV2RequestSchema>;
@@ -282,3 +377,4 @@ export type CreateRunV2Response = z.infer<typeof createRunV2ResponseSchema>;
 export type GameCommandV2Public = z.infer<typeof gameCommandV2PublicSchema>;
 export type GetRunV2Response = z.infer<typeof getRunV2ResponseSchema>;
 export type CommandV2Response = z.infer<typeof commandV2ResponseSchema>;
+export type CheckpointV2Response = z.infer<typeof checkpointV2ResponseSchema>;
