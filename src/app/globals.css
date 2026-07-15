@@ -429,7 +429,7 @@ textarea:focus-visible {
   position: absolute;
   top: 8%;
   bottom: 13%;
-  left: 50%;
+  left: 55.25%;
   z-index: 2;
   width: min(72vw, 900px);
   transform: translateX(-50%);
@@ -1798,6 +1798,7 @@ textarea:focus-visible {
   .landing-character-stage {
     top: 14%;
     bottom: 15%;
+    left: 50%;
     width: min(96vw, 680px);
   }
 

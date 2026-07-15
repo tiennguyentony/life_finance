@@ -7,6 +7,7 @@
 - Stable action screenshots: `/private/tmp/life-finance-landing-frame-2.png`, `/private/tmp/life-finance-landing-frame-3.png`, and `/private/tmp/life-finance-landing-frame-4.png`
 - Handoff screenshot: `/private/tmp/life-finance-landing-transition.png`
 - Large desktop screenshot: `/private/tmp/life-finance-landing-2048.png`
+- Centered user-viewport screenshot: `/private/tmp/life-finance-landing-centered.png`
 - Viewport: 1536 x 1024 CSS pixels
 - State: landing screen before Play is selected
 
@@ -66,6 +67,14 @@ Fixes:
 ### Iteration 3
 
 The revised full-view, all four stable actions, and midpoint handoff were recaptured. No actionable P0, P1, or P2 visual differences remain under the latest user direction.
+
+### Iteration 4
+
+- [P2] At the user's 1902 x 1307 desktop viewport, the shared transparent canvas was mathematically centered but Sprout's visible body mass sat left of the Play button.
+
+Fix: moved the desktop character stage to 55.25% so Sprout's visible torso, face, and feet align with the viewport and Play center. Mobile keeps the stage at 50% because its narrower crop already centers the visible body.
+
+The corrected 1902 x 1307 capture confirms that Sprout and Play now share one visual center line while the background and navigation remain fixed.
 
 ## Follow-up Polish
 
