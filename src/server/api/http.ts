@@ -29,7 +29,8 @@ import {
   getRunV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
-import { RunApiV2Error, type RunApiServiceV2 } from "./service-v2";
+import type { RunApiServiceV2 } from "./service-v2";
+import { RunApiV2Error } from "./v2/errors";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
