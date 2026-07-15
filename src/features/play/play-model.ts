@@ -2,65 +2,21 @@ import type { GameStateV2 } from "@/core/game-state-v2";
 import type { CreateRunV2Request } from "@/server/api/contracts-v2";
 
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
+import {
+  selectionForPreset,
+  type PlayerPresetId,
+  type StartingSelection,
+} from "./onboarding-model";
 
-export const PLAYER_PRESETS = {
-  software: {
-    label: "Software developer · Seattle",
-    locationId: "location.seattle",
-    careerId: "career.software",
-    benefitsPackageId: "benefits.corporate_flex",
-    healthPlanId: "health.hdhp_hsa",
-    retirementPlanId: "retirement.401k_standard",
-    salaryDollars: 120_000,
-    defaultCashDollars: 25_000,
-    householdId: "household.single",
-    scenarioId: "scenario.fresh_start",
-  },
-  nurse: {
-    label: "Registered nurse · Austin",
-    locationId: "location.austin",
-    careerId: "career.nurse",
-    benefitsPackageId: "benefits.essential_worker",
-    healthPlanId: "health.hdhp_hsa",
-    retirementPlanId: "retirement.401k_essential",
-    salaryDollars: 85_000,
-    defaultCashDollars: 20_000,
-    householdId: "household.single",
-    scenarioId: "scenario.fresh_start",
-  },
-  teacher: {
-    label: "Teacher · Chicago",
-    locationId: "location.chicago",
-    careerId: "career.teacher",
-    benefitsPackageId: "benefits.public_service",
-    healthPlanId: "health.hdhp_hsa",
-    retirementPlanId: "retirement.403b_public",
-    salaryDollars: 70_000,
-    defaultCashDollars: 15_000,
-    householdId: "household.single",
-    scenarioId: "scenario.fresh_start",
-  },
-  established: {
-    label: "Established software household · Austin",
-    locationId: "location.austin",
-    careerId: "career.software",
-    benefitsPackageId: "benefits.corporate_flex",
-    healthPlanId: "health.hdhp_hsa",
-    retirementPlanId: "retirement.401k_standard",
-    salaryDollars: 125_000,
-    defaultCashDollars: 75_000,
-    householdId: "household.married",
-    scenarioId: "scenario.established_household",
-  },
-} as const;
-
-export type PlayerPresetId = keyof typeof PLAYER_PRESETS;
+export { PLAYER_PRESETS } from "./onboarding-model";
+export type { PlayerPresetId } from "./onboarding-model";
 
 export type BuildCreateRequestOptions = Readonly<{
   studentDebtDollars?: number;
   studentDebtPaymentDollars?: number;
   healthPlanId?: string | null;
   insuranceCoverageIds?: readonly string[];
+  selection?: StartingSelection;
   financialGoal?: Readonly<{
     desiredAnnualSpendingDollars: number;
     safeWithdrawalRatePercent: number;
@@ -142,29 +98,29 @@ export function buildCreateRequest(
   seed: string,
   options: BuildCreateRequestOptions = {},
 ): CreateRunV2Request {
-  const preset = PLAYER_PRESETS[presetId];
+  const selection = options.selection ?? selectionForPreset(presetId);
   const studentDebtDollars = options.studentDebtDollars ?? 0;
   const studentDebtPaymentDollars =
     options.studentDebtPaymentDollars ?? 250;
   return {
     schemaVersion: 2,
     startMonth: "2026-07",
-    birthMonth: "1995-01",
+    birthMonth: selection.birthMonth,
     randomSeed: seed,
     catalogVersion: "us-2026.2",
-    locationId: preset.locationId,
-    careerId: preset.careerId,
-    householdId: preset.householdId,
-    benefitsPackageId: preset.benefitsPackageId,
+    locationId: selection.locationId,
+    careerId: selection.careerId,
+    householdId: selection.householdId,
+    benefitsPackageId: selection.benefitsPackageId,
     healthPlanId:
       options.healthPlanId === undefined
-        ? preset.healthPlanId
+        ? selection.healthPlanId
         : options.healthPlanId,
-    retirementPlanId: preset.retirementPlanId,
+    retirementPlanId: selection.retirementPlanId,
     insuranceCoverageIds: [
       ...(options.insuranceCoverageIds ?? ["insurance.renters"]),
     ],
-    scenarioId: preset.scenarioId,
+    scenarioId: selection.scenarioId,
     annualGrossSalaryCents: dollarsToCents(salaryDollars),
     ...(options.financialGoal
       ? {

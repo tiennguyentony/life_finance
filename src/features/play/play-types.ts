@@ -4,7 +4,10 @@ import type {
   GameCommandV2Public,
 } from "@/server/api/contracts-v2";
 
-import type { PlayerPresetId } from "./play-model";
+import type {
+  PlayerPresetId,
+  StartingSelection,
+} from "./onboarding-model";
 
 export type RunCredential = Readonly<{ runId: string; accessSecret: string }>;
 export type RunResponse = Readonly<{
@@ -19,7 +22,9 @@ export type DetailedAction = Extract<
 export type PlayTab = "overview" | "strategy" | "actions" | "learn";
 
 export type OnboardingDraft = Readonly<{
+  setupMode: "quick" | "custom";
   presetId: PlayerPresetId;
+  selection: StartingSelection;
   salary: number;
   cash: number;
   studentDebt: number;
