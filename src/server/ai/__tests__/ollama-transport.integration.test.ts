@@ -107,8 +107,11 @@ describe("local gpt-oss integration", () => {
       expect(result.templateId).toBe("personal.industry_layoff");
       expect(result.targetedWeaknessId).toBe("low_emergency_fund");
       expect(result.citedEvidenceIds).toEqual(["cash_months"]);
-      expect(result.parameters.income_gap_cents).toBeGreaterThanOrEqual(300_000);
-      expect(result.parameters.income_gap_cents).toBeLessThanOrEqual(2_500_000);
+      const incomeGap = result.parameters.find(
+        ({ id }) => id === "income_gap_cents",
+      )?.value;
+      expect(incomeGap).toBeGreaterThanOrEqual(300_000);
+      expect(incomeGap).toBeLessThanOrEqual(2_500_000);
       expect(audits[0]).toMatchObject({
         model: "ollama/gpt-oss:20b",
         outcome: "success",
