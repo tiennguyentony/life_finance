@@ -463,6 +463,11 @@ function deepFreeze<T>(value: T): Readonly<T> {
   return value;
 }
 
+export function finalizeGameStateV2(state: GameStateV2): GameStateV2 {
+  assertValidGameStateV2(state);
+  return deepFreeze(state) as GameStateV2;
+}
+
 export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
   assertValidGameState(state);
 
@@ -529,6 +534,5 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
     },
   };
 
-  assertValidGameStateV2(migrated);
-  return deepFreeze(migrated) as GameStateV2;
+  return finalizeGameStateV2(migrated);
 }

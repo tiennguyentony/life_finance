@@ -11,7 +11,16 @@ import {
   assertValidGameState,
   type GameState,
 } from "../../core/game-state";
+import {
+  migrateGameStateV1ToV2,
+  V1_TO_V2_MIGRATION_VERSION,
+  type GameStateV2,
+} from "../../core/game-state-v2";
 import type { JournalTransaction } from "../../core/ledger";
+import {
+  decodePersistedGameState,
+  type PersistedGameState,
+} from "../../core/persisted-game-state";
 import {
   RUN_SECRET_HASH_VERSION,
   RunSecretCodec,
@@ -23,6 +32,7 @@ import {
   gameRuns,
   ledgerPostings,
   ledgerTransactions,
+  runStateMigrations,
   runStateSnapshots,
   transactionalOutbox,
 } from "./schema";
@@ -40,12 +50,19 @@ export type AppliedCommand = Readonly<{
   idempotentReplay: boolean;
 }>;
 
+export type MigratedRun = Readonly<{
+  state: GameStateV2;
+  stateChecksum: string;
+  idempotentReplay: boolean;
+}>;
+
 export class RunRepositoryError extends Error {
   readonly code:
     | "INVALID_RUN_ID"
     | "NOT_FOUND_OR_UNAUTHORIZED"
     | "IDEMPOTENCY_MISMATCH"
     | "CORRUPT_STATE"
+    | "UNSUPPORTED_STATE_SCHEMA"
     | "OPTIMISTIC_CONFLICT"
     | "PERSISTENCE_INVARIANT";
   override readonly cause?: unknown;
@@ -105,13 +122,22 @@ function assertUuid(value: string): void {
   }
 }
 
+type PersistedStateExpectation = Readonly<{
+  runId: string;
+  checksum: string;
+  schemaVersion: number;
+  engineVersion: string;
+  revision: number;
+  currentMonth?: string;
+}>;
+
 function assertPersistedState(
-  state: GameState,
-  expectedRunId: string,
-  expectedChecksum: string,
-): void {
+  state: unknown,
+  expected: PersistedStateExpectation,
+): PersistedGameState {
+  let decoded: PersistedGameState;
   try {
-    assertValidGameState(state);
+    decoded = decodePersistedGameState(state);
   } catch (cause) {
     throw new RunRepositoryError(
       "CORRUPT_STATE",
@@ -120,14 +146,31 @@ function assertPersistedState(
     );
   }
   if (
-    state.runId !== expectedRunId ||
-    sha256Canonical(state) !== expectedChecksum
+    decoded.runId !== expected.runId ||
+    decoded.schemaVersion !== expected.schemaVersion ||
+    decoded.engineVersion !== expected.engineVersion ||
+    decoded.revision !== expected.revision ||
+    (expected.currentMonth !== undefined &&
+      decoded.currentMonth !== expected.currentMonth) ||
+    sha256Canonical(decoded) !== expected.checksum
   ) {
     throw new RunRepositoryError(
       "CORRUPT_STATE",
       "persisted run state does not match its identity and checksum",
     );
   }
+  return decoded;
+}
+
+function requireV1State(state: PersistedGameState): GameState {
+  if (state.schemaVersion !== 1) {
+    throw new RunRepositoryError(
+      "UNSUPPORTED_STATE_SCHEMA",
+      "commands for this state schema are not enabled yet",
+    );
+  }
+  assertValidGameState(state);
+  return state;
 }
 
 function isAuthorized(
@@ -287,8 +330,16 @@ export class RunRepository {
         "run was not found or the credential is invalid",
       );
     }
-    assertPersistedState(row.currentState, runId, row.currentStateChecksum);
-    return row.currentState;
+    return requireV1State(
+      assertPersistedState(row.currentState, {
+        runId,
+        checksum: row.currentStateChecksum,
+        schemaVersion: row.stateSchemaVersion,
+        engineVersion: row.engineVersion,
+        revision: row.currentRevision,
+        currentMonth: row.currentMonth,
+      }),
+    );
   }
 
   async applyCommand(
@@ -318,7 +369,16 @@ export class RunRepository {
           "run was not found or the credential is invalid",
         );
       }
-      assertPersistedState(run.currentState, runId, run.currentStateChecksum);
+      const currentState = requireV1State(
+        assertPersistedState(run.currentState, {
+          runId,
+          checksum: run.currentStateChecksum,
+          schemaVersion: run.stateSchemaVersion,
+          engineVersion: run.engineVersion,
+          revision: run.currentRevision,
+          currentMonth: run.currentMonth,
+        }),
+      );
 
       const [existing] = await tx
         .select()
@@ -353,9 +413,17 @@ export class RunRepository {
             "idempotent command is missing its immutable snapshot",
           );
         }
-        assertPersistedState(snapshot.state, runId, snapshot.stateChecksum);
+        const snapshotState = requireV1State(
+          assertPersistedState(snapshot.state, {
+            runId,
+            checksum: snapshot.stateChecksum,
+            schemaVersion: snapshot.stateSchemaVersion,
+            engineVersion: snapshot.engineVersion,
+            revision: snapshot.revision,
+          }),
+        );
         return Object.freeze({
-          state: snapshot.state,
+          state: snapshotState,
           stateChecksum: snapshot.stateChecksum,
           idempotentReplay: true,
         });
@@ -367,10 +435,10 @@ export class RunRepository {
           `expected revision ${command.expectedRevision}, current revision is ${run.currentRevision}`,
         );
       }
-      const nextState = reduceGameCommand(run.currentState, command);
+      const nextState = reduceGameCommand(currentState, command);
       const checksum = sha256Canonical(nextState);
-      const previousTransactionCount = run.currentState.ledger.transactions.length;
-      const newTransactions = newLedgerTransactions(run.currentState, nextState);
+      const previousTransactionCount = currentState.ledger.transactions.length;
+      const newTransactions = newLedgerTransactions(currentState, nextState);
       const ledgerRows = flattenLedger(
         runId,
         newTransactions,
@@ -449,6 +517,172 @@ export class RunRepository {
       return Object.freeze({
         state: nextState,
         stateChecksum: checksum,
+        idempotentReplay: false,
+      });
+    });
+  }
+
+  async migrateRunStateToV2(
+    runId: string,
+    accessSecret: string,
+  ): Promise<MigratedRun> {
+    assertUuid(runId);
+    return this.#db.transaction(async (tx) => {
+      const [run] = await tx
+        .select()
+        .from(gameRuns)
+        .where(eq(gameRuns.id, runId))
+        .for("update")
+        .limit(1);
+      if (
+        !run ||
+        !isAuthorized(
+          this.#secretCodec,
+          accessSecret,
+          run.accessSecretHash,
+          run.accessSecretHashVersion,
+        )
+      ) {
+        throw new RunRepositoryError(
+          "NOT_FOUND_OR_UNAUTHORIZED",
+          "run was not found or the credential is invalid",
+        );
+      }
+
+      const currentState = assertPersistedState(run.currentState, {
+        runId,
+        checksum: run.currentStateChecksum,
+        schemaVersion: run.stateSchemaVersion,
+        engineVersion: run.engineVersion,
+        revision: run.currentRevision,
+        currentMonth: run.currentMonth,
+      });
+      const [existingMigration] = await tx
+        .select()
+        .from(runStateMigrations)
+        .where(
+          and(
+            eq(runStateMigrations.runId, runId),
+            eq(
+              runStateMigrations.migrationVersion,
+              V1_TO_V2_MIGRATION_VERSION,
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (currentState.schemaVersion === 2) {
+        if (
+          !existingMigration ||
+          existingMigration.sourceSchemaVersion !==
+            currentState.migration.sourceSchemaVersion ||
+          existingMigration.sourceEngineVersion !==
+            currentState.migration.sourceEngineVersion ||
+          existingMigration.targetSchemaVersion !== currentState.schemaVersion ||
+          existingMigration.targetEngineVersion !== currentState.engineVersion ||
+          existingMigration.sourceRevision !== currentState.revision ||
+          existingMigration.targetStateChecksum !== run.currentStateChecksum
+        ) {
+          throw new RunRepositoryError(
+            "CORRUPT_STATE",
+            "migrated run is missing a consistent immutable migration record",
+          );
+        }
+        const recordedTarget = assertPersistedState(
+          existingMigration.targetState,
+          {
+            runId,
+            checksum: existingMigration.targetStateChecksum,
+            schemaVersion: existingMigration.targetSchemaVersion,
+            engineVersion: existingMigration.targetEngineVersion,
+            revision: existingMigration.sourceRevision,
+          },
+        );
+        if (
+          recordedTarget.schemaVersion !== 2 ||
+          canonicalJson(recordedTarget) !== canonicalJson(currentState)
+        ) {
+          throw new RunRepositoryError(
+            "CORRUPT_STATE",
+            "migration record does not match the authoritative run state",
+          );
+        }
+        return Object.freeze({
+          state: currentState,
+          stateChecksum: run.currentStateChecksum,
+          idempotentReplay: true,
+        });
+      }
+
+      if (existingMigration) {
+        throw new RunRepositoryError(
+          "CORRUPT_STATE",
+          "v1 run already has a conflicting migration record",
+        );
+      }
+      const targetState = migrateGameStateV1ToV2(currentState);
+      const targetChecksum = sha256Canonical(targetState);
+      const now = this.#clock();
+
+      await tx.insert(runStateMigrations).values({
+        runId,
+        migrationVersion: V1_TO_V2_MIGRATION_VERSION,
+        sourceSchemaVersion: currentState.schemaVersion,
+        sourceEngineVersion: currentState.engineVersion,
+        targetSchemaVersion: targetState.schemaVersion,
+        targetEngineVersion: targetState.engineVersion,
+        sourceRevision: currentState.revision,
+        sourceStateChecksum: run.currentStateChecksum,
+        targetState,
+        targetStateChecksum: targetChecksum,
+        createdAt: now,
+      });
+      const [updated] = await tx
+        .update(gameRuns)
+        .set({
+          stateSchemaVersion: targetState.schemaVersion,
+          engineVersion: targetState.engineVersion,
+          currentState: targetState,
+          currentStateChecksum: targetChecksum,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(gameRuns.id, runId),
+            eq(gameRuns.stateSchemaVersion, currentState.schemaVersion),
+            eq(gameRuns.engineVersion, currentState.engineVersion),
+            eq(gameRuns.currentRevision, currentState.revision),
+            eq(gameRuns.currentStateChecksum, run.currentStateChecksum),
+          ),
+        )
+        .returning({ id: gameRuns.id });
+      if (!updated) {
+        throw new RunRepositoryError(
+          "OPTIMISTIC_CONFLICT",
+          "run state changed before migration could commit",
+        );
+      }
+      await tx.insert(transactionalOutbox).values({
+        runId,
+        topic: "run.state.migrated",
+        idempotencyKey: `${runId}:${V1_TO_V2_MIGRATION_VERSION}`,
+        payload: {
+          runId,
+          migrationVersion: V1_TO_V2_MIGRATION_VERSION,
+          sourceSchemaVersion: currentState.schemaVersion,
+          targetSchemaVersion: targetState.schemaVersion,
+          revision: targetState.revision,
+          sourceStateChecksum: run.currentStateChecksum,
+          targetStateChecksum: targetChecksum,
+        },
+        status: "pending",
+        availableAt: now,
+        createdAt: now,
+      });
+
+      return Object.freeze({
+        state: targetState,
+        stateChecksum: targetChecksum,
         idempotentReplay: false,
       });
     });

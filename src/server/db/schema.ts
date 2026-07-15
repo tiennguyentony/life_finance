@@ -18,7 +18,8 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import type { GameState } from "../../core/game-state";
+import type { GameStateV2 } from "../../core/game-state-v2";
+import type { PersistedGameState } from "../../core/persisted-game-state";
 import type { JournalPosting } from "../../core/ledger";
 
 export const runStatus = pgEnum("run_status", ["active", "terminal"]);
@@ -55,7 +56,7 @@ export const gameRuns = pgTable(
     currentRevision: integer("current_revision").notNull().default(0),
     currentMonth: char("current_month", { length: 7 }).notNull(),
     status: runStatus("status").notNull().default("active"),
-    currentState: jsonb("current_state").$type<GameState>().notNull(),
+    currentState: jsonb("current_state").$type<PersistedGameState>().notNull(),
     currentStateChecksum: char("current_state_checksum", { length: 64 }).notNull(),
     terminalAt: timestamp("terminal_at", { withTimezone: true, mode: "date" }),
     createdAt,
@@ -102,7 +103,7 @@ export const runStateSnapshots = pgTable(
     revision: integer("revision").notNull(),
     stateSchemaVersion: integer("state_schema_version").notNull(),
     engineVersion: varchar("engine_version", { length: 32 }).notNull(),
-    state: jsonb("state").$type<GameState>().notNull(),
+    state: jsonb("state").$type<PersistedGameState>().notNull(),
     stateChecksum: char("state_checksum", { length: 64 }).notNull(),
     createdAt,
   },
@@ -116,6 +117,45 @@ export const runStateSnapshots = pgTable(
     check(
       "run_state_snapshots_checksum_format",
       sql`${table.stateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+).enableRLS();
+
+export const runStateMigrations = pgTable(
+  "run_state_migrations",
+  {
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => gameRuns.id, { onDelete: "cascade" }),
+    migrationVersion: varchar("migration_version", { length: 64 }).notNull(),
+    sourceSchemaVersion: integer("source_schema_version").notNull(),
+    sourceEngineVersion: varchar("source_engine_version", { length: 32 }).notNull(),
+    targetSchemaVersion: integer("target_schema_version").notNull(),
+    targetEngineVersion: varchar("target_engine_version", { length: 32 }).notNull(),
+    sourceRevision: integer("source_revision").notNull(),
+    sourceStateChecksum: char("source_state_checksum", { length: 64 }).notNull(),
+    targetState: jsonb("target_state").$type<GameStateV2>().notNull(),
+    targetStateChecksum: char("target_state_checksum", { length: 64 }).notNull(),
+    createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.runId, table.migrationVersion] }),
+    index("run_state_migrations_run_created_idx").on(table.runId, table.createdAt),
+    check(
+      "run_state_migrations_version_progression",
+      sql`${table.sourceSchemaVersion} > 0 AND ${table.targetSchemaVersion} > ${table.sourceSchemaVersion}`,
+    ),
+    check(
+      "run_state_migrations_revision_nonnegative",
+      sql`${table.sourceRevision} >= 0`,
+    ),
+    check(
+      "run_state_migrations_source_checksum_format",
+      sql`${table.sourceStateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "run_state_migrations_target_checksum_format",
+      sql`${table.targetStateChecksum} ~ '^[0-9a-f]{64}$'`,
     ),
   ],
 ).enableRLS();
@@ -319,6 +359,7 @@ export const aiAuditRecords = pgTable(
 export type GameRunRow = typeof gameRuns.$inferSelect;
 export type NewGameRunRow = typeof gameRuns.$inferInsert;
 export type RunStateSnapshotRow = typeof runStateSnapshots.$inferSelect;
+export type RunStateMigrationRow = typeof runStateMigrations.$inferSelect;
 export type AcceptedCommandRow = typeof acceptedCommands.$inferSelect;
 export type LedgerTransactionRow = typeof ledgerTransactions.$inferSelect;
 export type LedgerPostingRow = typeof ledgerPostings.$inferSelect;
