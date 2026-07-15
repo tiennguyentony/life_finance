@@ -243,7 +243,7 @@ Status meanings: **implemented** has production code and direct tests;
 | Elastic checkpoints | Implemented | checksum-validated v2 snapshots/monthly records, authorized API, and player-facing recap/intervention UI | Extend presentation only when new checkpoint evidence is added |
 | Versioned commands and concurrency | Implemented | v2 action/strategy/month/event envelopes, replay and PostgreSQL concurrency tests | Preserve envelope for future actions |
 | Atomic monthly turn composition | Implemented | market/macro, tax/payroll, insurance, funding, debt, strategy, exposure, events, career completion, outcomes | Preserve order as replay-critical |
-| Tax adapter | Implemented | pinned PolicyEngine 4.21.0 / rules 1.764.6, live HTTP/PostgreSQL journey, deployed paycheck evidence, and cold-start-tolerant client | Preserve pinned-policy and deployed smoke gates |
+| Tax adapter | Implemented | pinned PolicyEngine 4.21.0 / rules 1.764.6, stable year-end contribution projection, persisted annual-context cache, live HTTP/PostgreSQL journey, deployed paycheck evidence, and cold-start-tolerant client | Preserve pinned-policy, cache-invalidation, and deployed smoke gates |
 | AI contracts, privacy, encrypted audit | Partial | `src/server/ai` | Connect bounded roles to events/debrief; quota is not required for core work |
 | Run persistence and REST API | Implemented | v2 repository, strict REST/OpenAPI/client, event/checkpoint routes, leased outbox dispatcher | Wire an external outbox consumer when one is selected |
 | Location/career/benefits catalogs | Implemented | catalog resolver, normalized snapshots, strict v2 creation endpoint | Add future catalog versions without mutating 2026.2 |

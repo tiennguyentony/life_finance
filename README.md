@@ -48,7 +48,8 @@ the current onboarding. The developer UI exposes rather than hides the model:
 
 Fast-forward stops at required decisions and terminal outcomes. A fully cold
 first PolicyEngine calculation can take up to roughly two minutes; duplicate
-submissions remain disabled while it completes.
+submissions remain disabled while it completes. Later months with an unchanged
+annual tax context use persisted evidence and expose a `tax.cache.*` trace.
 
 ## Implemented backend
 
@@ -62,6 +63,11 @@ submissions remain disabled while it completes.
 - PolicyEngine US `4.21.0`, pinning rules `1.764.6`, for all 50 states and DC and
   all supported filing statuses. Future scenarios use frozen 2026 policy after
   exact deflation/re-inflation.
+- Persisted annual tax-context fingerprints reuse a checksum-validated monthly
+  tax snapshot when jurisdiction, filing status, household, salary, projected
+  401(k)/HSA contributions, deductions, and tax year are unchanged. Command
+  traces and evidence remain unique; PolicyEngine runs again on a real context
+  change rather than on every Next Month click.
 - Drizzle/PostgreSQL persistence with RLS, immutable snapshots and ledger
   entries, optimistic revisions, command idempotency, and a transactional
   outbox.
