@@ -7,6 +7,7 @@ import {
 import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
 import type { FinancialGoalV1 } from "./financial-goals-v2";
 import type { LifeMilestoneStateV1 } from "./life-milestones-v2";
+import type { AiLearningMemoryV1 } from "./ai-learning-memory-v2";
 import type {
   EventTier,
   EventWeakness,
@@ -133,6 +134,8 @@ export type GameplayStateV2 = Readonly<{
   financialGoal?: FinancialGoalV1;
   /** Optional only for backward compatibility with earlier schema-v2 runs. */
   lifeMilestones?: LifeMilestoneStateV1;
+  /** Bounded structured memory; prompts never replay the unbounded run history. */
+  aiLearningMemory?: AiLearningMemoryV1;
   catalogs: VersionedCatalogSelection;
   catalogSnapshot: ResolvedScenarioSnapshot | null;
   catalogSnapshotChecksum: string | null;
