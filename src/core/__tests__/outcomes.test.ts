@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../domain/money";
 import { createInitialGameState, type FinancialSnapshot } from "../game-state";
+import type { FinancialGoalV1 } from "../financial-goals-v2";
 import {
   assessRequiredObligationLiquidity,
   evaluateTerminalOutcome,
@@ -118,6 +119,14 @@ describe("bankruptcy liquidity", () => {
 });
 
 describe("terminal outcomes", () => {
+  const playerGoal: FinancialGoalV1 = {
+    version: "financial-goal-v1",
+    desiredAnnualSpendingCents: moneyCents(2_000_00),
+    safeWithdrawalRatePpm: ratePpm(40_000),
+    targetAgeYears: 40,
+    source: "player_selected",
+  };
+
   it("awards immediate S for FI before considering liquidity", () => {
     const outcome = evaluateTerminalOutcome(
       state({
@@ -176,5 +185,40 @@ describe("terminal outcomes", () => {
         ratePpm(0),
       ),
     ).toBeNull();
+  });
+
+  it("uses the player finish line and target age when configured", () => {
+    const reachedFi = evaluateTerminalOutcome(
+      state({
+        cashCents: moneyCents(0),
+        taxableInvestmentsCents: moneyCents(5_000_000),
+        annualLivingCostCents: moneyCents(10_000_000),
+        requiredObligationsCents: moneyCents(1),
+      }),
+      ratePpm(0),
+      playerGoal,
+    );
+    expect(reachedFi).toMatchObject({
+      kind: "financial_independence",
+      reasonCode: "investable_assets_reached_player_fi_goal",
+    });
+
+    const missedAtTargetAge = evaluateTerminalOutcome(
+      state(
+        {
+          cashCents: moneyCents(100_00),
+          taxableInvestmentsCents: moneyCents(100_00),
+          requiredObligationsCents: moneyCents(1),
+        },
+        "1986-01",
+        "2026-07",
+      ),
+      ratePpm(0),
+      playerGoal,
+    );
+    expect(missedAtTargetAge).toMatchObject({
+      kind: "retirement_age",
+      reasonCode: "reached_player_target_age",
+    });
   });
 });

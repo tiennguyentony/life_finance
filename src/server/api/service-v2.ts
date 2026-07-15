@@ -71,6 +71,19 @@ export class RunApiServiceV2 {
         randomSeed: String(request.randomSeed),
         resolvedScenario,
         annualGrossSalaryCents: moneyCents(request.annualGrossSalaryCents),
+        ...(request.financialGoal
+          ? {
+              financialGoal: {
+                ...request.financialGoal,
+                desiredAnnualSpendingCents: moneyCents(
+                  request.financialGoal.desiredAnnualSpendingCents,
+                ),
+                safeWithdrawalRatePpm: ratePpm(
+                  request.financialGoal.safeWithdrawalRatePpm,
+                ),
+              },
+            }
+          : {}),
         finances: {
           ...request.finances,
           cashCents: moneyCents(request.finances.cashCents),

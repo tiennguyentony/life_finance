@@ -26,6 +26,9 @@ export type OnboardingDraft = Readonly<{
   studentDebtPayment: number;
   healthPlanId: string;
   coverageIds: readonly string[];
+  desiredAnnualFiSpending: number;
+  safeWithdrawalRate: number;
+  targetAgeYears: number;
 }>;
 
 export type StrategyDraft = Readonly<{

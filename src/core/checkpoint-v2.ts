@@ -1,8 +1,8 @@
 import { safeBigIntToNumber } from "./domain/integer";
-import { moneyCents, ratePpm, type MoneyCents, type RatePpm } from "./domain/money";
+import { moneyCents, type MoneyCents, type RatePpm } from "./domain/money";
 import { addMonths, compareMonths, monthsBetween, type SimulationMonth } from "./domain/month";
+import { projectFinancialGoal } from "./financial-goals-v2";
 import {
-  calculateInvestableAssets,
   calculateNetWorth,
   type GameState,
 } from "./game-state";
@@ -74,7 +74,11 @@ function difference(left: MoneyCents, right: MoneyCents, label: string): MoneyCe
 }
 
 function snapshot(state: GameStateV2): CheckpointSnapshotV2 {
-  const investableAssetsCents = calculateInvestableAssets(state.finances);
+  const financialGoal = projectFinancialGoal(
+    state.finances,
+    state.gameplay.financialGoal,
+  );
+  const investableAssetsCents = financialGoal.investableAssetsCents;
   const liabilitiesCents = moneyCents(
     safeBigIntToNumber(
       BigInt(state.finances.nonCreditLiabilitiesCents) +
@@ -82,17 +86,6 @@ function snapshot(state: GameStateV2): CheckpointSnapshotV2 {
       "checkpoint v2 liabilities",
     ),
   );
-  const target = moneyCents(
-    safeBigIntToNumber(
-      BigInt(state.finances.annualLivingCostCents) * BigInt(25),
-      "checkpoint v2 FI target",
-    ),
-  );
-  const progress = target === 0
-    ? 1_000_000
-    : Number(
-        (BigInt(investableAssetsCents) * BigInt(1_000_000)) / BigInt(target),
-      );
   const projection: GameState = {
     ...state,
     schemaVersion: 1,
@@ -106,10 +99,8 @@ function snapshot(state: GameStateV2): CheckpointSnapshotV2 {
     liabilitiesCents,
     netWorthCents: calculateNetWorth(state.finances),
     annualLivingCostCents: state.finances.annualLivingCostCents,
-    financialIndependenceTargetCents: target,
-    financialIndependenceProgressPpm: ratePpm(
-      Math.max(0, Math.min(1_000_000, progress)),
-    ),
+    financialIndependenceTargetCents: financialGoal.targetCents,
+    financialIndependenceProgressPpm: financialGoal.progressPpm,
     exposure: state.gameplay.exposure.current,
   });
 }

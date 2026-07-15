@@ -10,9 +10,7 @@ import {
 } from "./domain/money";
 import { monthsBetween, type SimulationMonth } from "./domain/month";
 import {
-  calculateInvestableAssets,
   calculateRemainingCredit,
-  hasReachedFinancialIndependence,
   reconcileFinancesWithLedger,
   type FinalGrade,
   type FinancialSnapshot,
@@ -24,6 +22,10 @@ import {
   type JournalPosting,
   type Ledger,
 } from "./ledger";
+import {
+  projectFinancialGoal,
+  type FinancialGoalV1,
+} from "./financial-goals-v2";
 
 export type LiquidityAssessment = Readonly<{
   requiredObligationsCents: MoneyCents;
@@ -108,9 +110,11 @@ export function calculateAgeYears(state: GameState): number {
 
 export function gradeRetirementProgress(
   finances: FinancialSnapshot,
+  financialGoal?: FinancialGoalV1,
 ): Exclude<FinalGrade, "S" | "F"> {
-  const investable = BigInt(calculateInvestableAssets(finances));
-  const goal = BigInt(finances.annualLivingCostCents) * BigInt(25);
+  const projection = projectFinancialGoal(finances, financialGoal);
+  const investable = BigInt(projection.investableAssetsCents);
+  const goal = BigInt(projection.targetCents);
 
   if (investable * BigInt(100) >= goal * BigInt(80)) return "A";
   if (investable * BigInt(100) >= goal * BigInt(60)) return "B";
@@ -122,14 +126,19 @@ export function gradeRetirementProgress(
 export function evaluateTerminalOutcome(
   state: GameState,
   taxableLiquidationCostRatePpm: RatePpm,
+  financialGoal?: FinancialGoalV1,
 ): GameOutcome | null {
   if (state.outcome) return state.outcome;
-  if (hasReachedFinancialIndependence(state.finances)) {
+  const goalProjection = projectFinancialGoal(state.finances, financialGoal);
+  if (goalProjection.investableAssetsCents >= goalProjection.targetCents) {
+    const isPlayerSelectedGoal = financialGoal?.source === "player_selected";
     return Object.freeze({
       kind: "financial_independence",
       grade: "S",
       reachedMonth: state.currentMonth,
-      reasonCode: "investable_assets_reached_25x_living_cost",
+      reasonCode: isPlayerSelectedGoal
+        ? "investable_assets_reached_player_fi_goal"
+        : "investable_assets_reached_25x_living_cost",
     });
   }
   const liquidity = assessRequiredObligationLiquidity(
@@ -144,12 +153,16 @@ export function evaluateTerminalOutcome(
       reasonCode: "required_obligations_exceed_automatic_liquidity",
     });
   }
-  if (calculateAgeYears(state) >= 65) {
+  const targetAgeYears = financialGoal?.targetAgeYears ?? 65;
+  if (calculateAgeYears(state) >= targetAgeYears) {
+    const isPlayerSelectedGoal = financialGoal?.source === "player_selected";
     return Object.freeze({
       kind: "retirement_age",
-      grade: gradeRetirementProgress(state.finances),
+      grade: gradeRetirementProgress(state.finances, financialGoal),
       reachedMonth: state.currentMonth,
-      reasonCode: "reached_age_65",
+      reasonCode: isPlayerSelectedGoal
+        ? "reached_player_target_age"
+        : "reached_age_65",
     });
   }
   return null;
