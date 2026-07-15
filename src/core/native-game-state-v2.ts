@@ -302,6 +302,7 @@ export function createNativeGameStateV2(
         pending: null,
         history: [],
         activeStoryIds: [],
+        macroStories: [],
         cooldowns: [],
       },
       careerDevelopment: { pending: [], history: [] },

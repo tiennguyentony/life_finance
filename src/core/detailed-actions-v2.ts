@@ -13,6 +13,7 @@ import {
 } from "./domain/integer";
 import {
   addMonths,
+  compareMonths,
   monthsBetween,
   simulationMonth,
   type SimulationMonth,
@@ -890,11 +891,25 @@ function applyStartUpskill(
 }
 
 export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
-  const completed = state.gameplay.careerDevelopment.pending.filter(
-    ({ completesMonth }) => completesMonth === state.currentMonth,
+  const retainedStories = state.gameplay.eventLifecycle.macroStories.filter(
+    ({ expiresMonth }) => compareMonths(expiresMonth, state.currentMonth) >= 0,
   );
-  if (completed.length === 0) return finalizeGameStateV2(state);
-  if (state.gameplay.employment.status !== "employed") {
+  const working: GameStateV2 = {
+    ...state,
+    gameplay: {
+      ...state.gameplay,
+      eventLifecycle: {
+        ...state.gameplay.eventLifecycle,
+        macroStories: retainedStories,
+        activeStoryIds: retainedStories.map(({ storyId }) => storyId),
+      },
+    },
+  };
+  const completed = working.gameplay.careerDevelopment.pending.filter(
+    ({ completesMonth }) => completesMonth === working.currentMonth,
+  );
+  if (completed.length === 0) return finalizeGameStateV2(working);
+  if (working.gameplay.employment.status !== "employed") {
     throw new DetailedFinanceError(
       "EMPLOYMENT_REQUIRED",
       "pending salary effect cannot complete without active employment",
@@ -910,28 +925,28 @@ export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
     ),
   );
   return finalizeGameStateV2({
-    ...state,
+    ...working,
     gameplay: {
-      ...state.gameplay,
+      ...working.gameplay,
       employment: {
-        ...state.gameplay.employment,
+        ...working.gameplay.employment,
         annualGrossSalaryCents: addMoney(
-          state.gameplay.employment.annualGrossSalaryCents,
+          working.gameplay.employment.annualGrossSalaryCents,
           salaryIncrease,
         ),
       },
       careerDevelopment: {
-        pending: state.gameplay.careerDevelopment.pending.filter(
-          ({ completesMonth }) => completesMonth !== state.currentMonth,
+        pending: working.gameplay.careerDevelopment.pending.filter(
+          ({ completesMonth }) => completesMonth !== working.currentMonth,
         ),
         history: [
-          ...state.gameplay.careerDevelopment.history,
+          ...working.gameplay.careerDevelopment.history,
           ...completed.map((entry) => ({
             commandId: entry.commandId,
             programId: entry.programId,
             catalogVersion: entry.catalogVersion,
             startedMonth: entry.startedMonth,
-            completedMonth: state.currentMonth,
+            completedMonth: working.currentMonth,
             annualSalaryIncreaseCents: entry.annualSalaryIncreaseCents,
           })),
         ],
