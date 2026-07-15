@@ -48,6 +48,18 @@ store checksum-protected tax evidence and a checksum-protected result record
 linked to the accepted command and resulting state revision. Persistence remains
 an adapter around deterministic core transitions; it never recalculates money.
 
+### Outbox delivery
+
+`TransactionalOutboxDispatcher` provides bounded at-least-once delivery. Workers
+claim eligible rows with `FOR UPDATE SKIP LOCKED`, publish outside the database
+transaction, and compare attempt numbers when acknowledging success or failure.
+Expired processing leases are reclaimable after a crash. Failures store only a
+sanitized code and use capped exponential backoff; exhausted rows remain
+`failed` with their final attempt count. Consumers must deduplicate the stable
+`idempotencyKey`, because a crash after publish and before acknowledgement can
+legitimately cause redelivery. Optional topic filters allow independent workers
+to partition consumers without competing for unrelated events.
+
 ## AI boundary
 
 An optional server adapter may eventually turn a resolved event into narrative text. The deterministic result remains authoritative. AI cannot author or change player state.

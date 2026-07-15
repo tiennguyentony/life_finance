@@ -43,6 +43,10 @@ import { RunApiServiceV2 } from "../api/service-v2";
 import type { CreateRunV2Request } from "../api/contracts-v2";
 import { TaxServiceError, type TaxCalculator } from "../tax/client";
 import {
+  TransactionalOutboxDispatcher,
+  type OutboxPublisher,
+} from "../outbox/dispatcher";
+import {
   acceptedCommands,
   aiAuditRecords,
   gameRuns,
@@ -310,6 +314,7 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000014",
     "10000000-0000-4000-8000-000000000015",
     "10000000-0000-4000-8000-000000000016",
+    "10000000-0000-4000-8000-000000000017",
   ];
   let runIndex = 0;
 
@@ -894,6 +899,111 @@ databaseDescribe("Postgres run repository", () => {
     expect(replayed).toMatchObject({
       idempotentReplay: true,
       stateChecksum: applied.stateChecksum,
+    });
+  });
+
+  it("claims outbox once across workers, retries with backoff, and recovers stale leases", async () => {
+    const created = await repository.createRun(initialState);
+    let now = new Date("2026-07-15T12:00:00.000Z");
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.concurrent",
+      idempotencyKey: `${created.runId}:test.concurrent`,
+      payload: { safe: true },
+      status: "pending",
+      availableAt: now,
+      createdAt: now,
+    });
+    const publish = vi.fn<OutboxPublisher["publish"]>(async () => undefined);
+    const options = {
+      clock: () => now,
+      leaseMilliseconds: 60_000,
+      baseBackoffMilliseconds: 5_000,
+      maximumBackoffMilliseconds: 60_000,
+      maximumAttempts: 3,
+      topics: ["test.concurrent"],
+    };
+    const left = new TransactionalOutboxDispatcher(connection.db, { publish }, options);
+    const right = new TransactionalOutboxDispatcher(connection.db, { publish }, options);
+    const concurrent = await Promise.all([left.dispatchBatch(), right.dispatchBatch()]);
+    expect(concurrent.reduce((total, result) => total + result.claimed, 0)).toBe(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0]?.[0]).toMatchObject({
+      topic: "test.concurrent",
+      attemptCount: 1,
+    });
+
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.retry",
+      idempotencyKey: `${created.runId}:test.retry`,
+      payload: { safe: true },
+      status: "pending",
+      availableAt: now,
+      createdAt: now,
+    });
+    const retryPublish = vi.fn<OutboxPublisher["publish"]>(async (delivery) => {
+      if (delivery.attemptCount === 1) {
+        const error = new Error("sensitive message must not persist");
+        error.name = "Temporary Network Error";
+        throw error;
+      }
+    });
+    const retrying = new TransactionalOutboxDispatcher(
+      connection.db,
+      { publish: retryPublish },
+      { ...options, topics: ["test.retry"] },
+    );
+    expect(await retrying.dispatchBatch()).toMatchObject({
+      claimed: 1,
+      retryScheduled: 1,
+    });
+    expect(await retrying.dispatchBatch()).toMatchObject({ claimed: 0 });
+    const [failed] = await connection.db
+      .select()
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.topic, "test.retry"));
+    expect(failed).toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      lastErrorCode: "TEMPORARY_NETWORK_ERROR",
+      availableAt: new Date("2026-07-15T12:00:05.000Z"),
+    });
+    now = new Date("2026-07-15T12:00:05.000Z");
+    expect(await retrying.dispatchBatch()).toMatchObject({
+      claimed: 1,
+      delivered: 1,
+    });
+
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.stale",
+      idempotencyKey: `${created.runId}:test.stale`,
+      payload: { safe: true },
+      status: "processing",
+      attemptCount: 1,
+      availableAt: now,
+      lockedAt: new Date(now.getTime() - 60_001),
+      createdAt: now,
+    });
+    const staleDispatcher = new TransactionalOutboxDispatcher(
+      connection.db,
+      { publish },
+      { ...options, topics: ["test.stale"] },
+    );
+    expect(await staleDispatcher.dispatchBatch()).toMatchObject({
+      claimed: 1,
+      delivered: 1,
+    });
+    const [recovered] = await connection.db
+      .select()
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.topic, "test.stale"));
+    expect(recovered).toMatchObject({
+      status: "delivered",
+      attemptCount: 2,
+      lockedAt: null,
+      lastErrorCode: null,
     });
   });
 
