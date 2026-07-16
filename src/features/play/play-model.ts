@@ -1,4 +1,5 @@
 import type { GameStateV2 } from "@/core/game-state-v2";
+import type { PauseReasonV2 } from "@/core/time-controller-v2";
 import type { CreateRunV2Request } from "@/server/api/contracts-v2";
 
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
@@ -44,6 +45,31 @@ export function formatMoney(cents: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(cents / 100);
+}
+
+export function describeTimePauseV2(pause: PauseReasonV2): string {
+  switch (pause.kind) {
+    case "requested_duration":
+      return `Requested ${pause.requestedMonths}-month advance completed.`;
+    case "periodic_checkpoint":
+      return `Checkpoint reached at ${pause.checkpointMonth}.`;
+    case "event_response":
+      return "Progress paused for a required event response.";
+    case "policy_decision":
+      return "Progress paused for a required life milestone decision.";
+    case "financial_warning":
+      return "Progress paused for a monthly cash-flow warning.";
+    case "financial_independence":
+      return "Financial independence reached.";
+    case "retirement":
+      return "Configured retirement age reached.";
+    case "bankruptcy":
+      return "Progress stopped after liquidity was exhausted.";
+    case "explicit_user_stop":
+      return "Time advance stopped by the player.";
+    case "bounded_limit":
+      return `Safe ${pause.maxMonths}-month processing limit reached.`;
+  }
 }
 
 export function calculateNetWorth(state: GameStateV2): number {

@@ -22,6 +22,8 @@ import {
   runIdPathSchema,
 } from "./contracts";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
   checkpointV2QuerySchema,
   checkpointV2ResponseSchema,
@@ -171,6 +173,35 @@ registry.registerPath({
     200: {
       description: "Command accepted or replayed with the original immutable result",
       content: { "application/json": { schema: commandV2ResponseSchema } },
+    },
+    ...errorResponses,
+    502: {
+      description: "Tax service returned unusable authoritative evidence",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    503: {
+      description: "Tax service is temporarily unavailable; no state was committed",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/advance",
+  operationId: "advanceTimeV2",
+  summary: "Advance monthly simulation ticks until the requested pause",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: {
+      content: { "application/json": { schema: advanceTimeV2RequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Atomic time advance result with one aggregate UI summary",
+      content: { "application/json": { schema: advanceTimeV2ResponseSchema } },
     },
     ...errorResponses,
     502: {

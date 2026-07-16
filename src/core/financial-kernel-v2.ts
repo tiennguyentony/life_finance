@@ -127,6 +127,22 @@ export type FinancialMonthRecordV2 = Readonly<{
   shortfall: FinancialShortfallV2 | null;
 }>;
 
+export function calculateMonthlyCashFlowDeficitV2(
+  record: Pick<
+    FinancialMonthRecordV2,
+    "afterTaxCashIncomeCents" | "resolvedIncomeCents" | "requiredCashCents"
+  >,
+): MoneyCents | null {
+  const availableIncome =
+    BigInt(record.afterTaxCashIncomeCents) + BigInt(record.resolvedIncomeCents);
+  const deficit = BigInt(record.requiredCashCents) - availableIncome;
+  return deficit > BigInt(0)
+    ? moneyCents(
+        safeBigIntToNumber(deficit, "monthly cash-flow deficit"),
+      )
+    : null;
+}
+
 export type FinancialClosingStateV2 = Readonly<
   Omit<GameStateV2, "revision" | "acceptedCommandIds" | "outcome"> & {
     closingStateKind: typeof FINANCIAL_CLOSING_STATE_V2_KIND;

@@ -9,6 +9,7 @@ import { RunRepositoryError, type RunRepository } from "../../db/run-repository"
 import { LifeFinanceApiClient, LifeFinanceApiError } from "../client";
 import type { CreateRunRequest } from "../contracts";
 import {
+  handleAdvanceTimeV2,
   handleCreateRun,
   handleGetRun,
   handleMigrateRunV2,
@@ -271,6 +272,64 @@ describe("v2 migration HTTP handler", () => {
   });
 });
 
+describe("v2 time advance HTTP handler", () => {
+  it("validates bearer auth and forwards one strict advance request", async () => {
+    const current = migrateGameStateV1ToV2(state());
+    const advanceTime = vi.fn(async () => ({
+      state: current,
+      stateChecksum: sha256Canonical(current),
+      idempotentReplay: false,
+      monthsAdvanced: 0,
+      pauseReason: { kind: "explicit_user_stop" as const },
+      pendingEvent: null,
+      pendingDecision: null,
+      checkpointInput: null,
+      endCondition: null,
+      uiChanges: {
+        kind: "time_advance_summary_v2" as const,
+        fromMonth: current.currentMonth,
+        toMonth: current.currentMonth,
+        monthsAdvanced: 0,
+        pauseKind: "explicit_user_stop" as const,
+        cashChangeCents: 0,
+        netWorthChangeCents: 0,
+        totalGrossIncomeCents: 0,
+        totalTaxCents: 0,
+        totalAfterTaxCashIncomeCents: 0,
+        totalRequiredCashCents: 0,
+        totalMarketValueChangeCents: 0,
+      },
+    }));
+    const body = {
+      schemaVersion: 2,
+      id: "advance.http.stop",
+      expectedRevision: current.revision,
+      effectiveMonth: current.currentMonth,
+      maxMonths: 12,
+      mode: { kind: "stop" },
+    };
+    const response = await handleAdvanceTimeV2(
+      new Request(`https://example.test/api/v2/runs/${runId}/advance`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessSecret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+      runId,
+      { advanceTime } as unknown as RunApiServiceV2,
+    );
+
+    expect(response.status).toBe(200);
+    expect(advanceTime).toHaveBeenCalledWith(runId, accessSecret, body);
+    expect(await response.json()).toMatchObject({
+      monthsAdvanced: 0,
+      pauseReason: { kind: "explicit_user_stop" },
+    });
+  });
+});
+
 describe("typed v1 client", () => {
   it("validates output and keeps the run secret out of URLs and bodies", async () => {
     const current = state();
@@ -324,6 +383,62 @@ describe("typed v1 client", () => {
 });
 
 describe("typed v2 client", () => {
+  it("posts one authenticated time-advance request", async () => {
+    const current = migrateGameStateV1ToV2(state());
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        state: current,
+        stateChecksum: sha256Canonical(current),
+        idempotentReplay: false,
+        monthsAdvanced: 0,
+        pauseReason: { kind: "explicit_user_stop" },
+        pendingEvent: null,
+        pendingDecision: null,
+        checkpointInput: null,
+        endCondition: null,
+        uiChanges: {
+          kind: "time_advance_summary_v2",
+          fromMonth: current.currentMonth,
+          toMonth: current.currentMonth,
+          monthsAdvanced: 0,
+          pauseKind: "explicit_user_stop",
+          cashChangeCents: 0,
+          netWorthChangeCents: 0,
+          totalGrossIncomeCents: 0,
+          totalTaxCents: 0,
+          totalAfterTaxCashIncomeCents: 0,
+          totalRequiredCashCents: 0,
+          totalMarketValueChangeCents: 0,
+        },
+      }),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+    const request = {
+      schemaVersion: 2 as const,
+      id: "advance.client.stop",
+      expectedRevision: current.revision,
+      effectiveMonth: current.currentMonth,
+      maxMonths: 12,
+      mode: { kind: "stop" as const },
+    };
+
+    await expect(
+      client.advanceTimeV2(runId, accessSecret, request),
+    ).resolves.toMatchObject({ pauseReason: { kind: "explicit_user_stop" } });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      `https://example.test/api/v2/runs/${runId}/advance`,
+    );
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessSecret}`,
+        "Content-Type": "application/json",
+      },
+    });
+    expect(JSON.parse(String(init?.body))).toEqual(request);
+  });
+
   it("posts an authenticated migration request without a body", async () => {
     const migratedState = migrateGameStateV1ToV2(state());
     const fetchMock = vi.fn<typeof fetch>(async () =>

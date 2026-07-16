@@ -4,6 +4,7 @@ Date: 2026-07-16
 
 Scope: current repository behavior, with emphasis on the v2 browser game, server application layer, deterministic core, persistence, tax adapter, and optional AI adapters. The original audit was read-only; this document now includes the verified Prompt 01 authority, ledger, replay, and migration repair.
 It also includes the verified Prompt 02 financial-kernel, replay, projection, integration, and consumer-authority repair.
+It now includes the Prompt 03 pure time controller, segmented tax-evidence boundary, atomic batch persistence, and aggregate play-UI repair.
 
 ## Status legend
 
@@ -22,8 +23,8 @@ It also includes the verified Prompt 02 financial-kernel, replay, projection, in
 3. Personal-event causality is wrong for the intended simulation. Exposure weaknesses decide which bad events may occur, the exposure score raises monthly event chance, and the same score unlocks catastrophe-tier templates. A weak emergency fund can therefore make bad luck more available and more frequent, rather than only making an independently caused shock more damaging.
 4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
 5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
-6. Time advancement is split. A tested v1 in-process checkpoint loop exists but is not used by production. The v2 UI advances multiple months through sequential network/database commands, so there is no authoritative v2 controller with tagged pause reasons.
-7. Persistence is robust but may not scale linearly. The event-free financial projection now has a measured 480-month gate and immutable-prefix fast path, but real Web progression still validates, checksums, and persists growing current state once per month. Full controller/database/storage long-run budgets remain open.
+6. Time advancement now has one v2 core authority with tagged pauses. The server resolves tax evidence outside pure annual segments, persists every accepted hidden tick in one transaction, and returns one aggregate response to the browser. Runtime Balance pressure remains intentionally deferred to Prompt 09.
+7. Persistence is robust but may not scale linearly. A Web fast-forward now locks and updates the current save once per batch, but it still validates, checksums, and records every growing hidden-month state inside the transaction. Full database/storage long-run budgets remain open for Prompt 14.
 8. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
 9. The Offline Balance Lab is missing. A deterministic 480-month financial projection benchmark now exists, but there is no matched-seed strategy runner, difficulty comparison, bot set, or distributional balance report.
 
@@ -35,8 +36,9 @@ It also includes the verified Prompt 02 financial-kernel, replay, projection, in
 flowchart LR
     UI["Next.js play UI"] --> ROUTE["Versioned API route"]
     ROUTE --> SERVICE["RunApiServiceV2"]
-    SERVICE --> TAX["Resolve or reuse tax evidence"]
-    SERVICE --> REPO["RunRepository transaction"]
+    SERVICE --> TAX["Resolve or reuse tax evidence outside pure segments"]
+    TAX --> TIME["V2 Time Controller with tagged pause reasons"]
+    TIME --> REPO["One atomic RunRepository batch"]
     REPO --> LOCK["Lock run and verify auth, revision, checksum, idempotency"]
     LOCK --> REDUCE["Versioned reducer dispatcher"]
     REDUCE --> KERNEL["2.0.0 financial kernel"]
@@ -67,7 +69,7 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | --- | --- | --- | --- | --- | --- |
 | 1 | Onboarding and State Initialization | duplicated | Onboarding UI/model, scenario catalog, native v2 state factory, legacy compatibility constructor | v2 is the only public creation path, but legacy construction remains for migration fixtures and the UI repeats salary math. | Prompt 13 |
 | 2 | Authoritative Game State and Ledger | complete | state-authority-v2.ts, game-state-v2.ts, ledger.ts, repository/replay modules | GameStateV2 is the sole mutable gameplay authority; v1 is decode/migrate/read-only; current state is the save authority and sparse verified anchors support historical reconstruction. | Complete in Prompt 01 |
-| 3 | Time and Turn Controller | incorrectly coupled | v2 play-console loop; dormant v1 checkpoints.ts | Multi-month control is in the browser and crosses API/DB once per month; no v2 tagged controller. | Prompt 03 |
+| 3 | Time and Turn Controller | partial | time-controller-v2.ts, RunApiServiceV2 advance path, atomic repository batch | Prompt 03 orchestration is repaired; Runtime Balance pressure/cooldown ordering cannot be complete until Prompt 09 supplies its versioned monthly step. | Finish integration in Prompt 09 |
 | 4 | Deterministic Financial Simulation Engine | complete | financial-kernel-v2.ts, financial-transition-v2.ts, obligation-funding-v2.ts, financial-projection-v2.ts, versioned monthly wrapper | New months, projections, Web/AI/goal/checkpoint consumers, and replay have one documented financial authority; old formulas are frozen compatibility only. | Complete in Prompt 02 |
 | 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; legacy v1 action reducers remain reusable compatibility code. | Prompt 05 |
 | 6 | Goals, End Conditions, and Grading | partial | financial-goals-v2.ts and evaluateTerminalOutcomeV2 | v2 goal consumers share canonical selectors and bankruptcy consumes actual shortfall; the full Prompt 04 outcome/grade audit remains pending. Frozen v1 rules are replay compatibility. | Prompt 04 |
@@ -116,19 +118,19 @@ Status: complete.
 
 ### 3. Time and Turn Controller
 
-Status: incorrectly coupled.
+Status: Prompt 03 orchestration complete; cross-system Runtime Balance integration pending Prompt 09.
 
-- Authoritative files and entry points: src/features/play/play-console.tsx runMonths, src/core/monthly-turn-v2.ts for a single month, src/core/checkpoints.ts for the unused v1 in-process fast-forward, and v2 month/checkpoint API routes.
-- Inputs: requested month count, current state, stop conditions, command IDs, and per-month tax evidence.
-- Outputs: one or more monthly transitions, or a pause at terminal outcome, pending event choice, or due milestone.
-- State owned: no dedicated v2 controller state. The browser owns loop progress and busy state; the run state owns current month and pending interruptions.
-- Dependencies: UI fetch loop, API client, service, repository, tax adapter, reducer, event lifecycle, milestone lifecycle, and checkpoint query.
-- Tests found: v1 checkpoint planning/fast-forward determinism, monthly-turn v1/v2 tests, API/repository tests, and play model tests. No production v2 controller test exists.
-- Determinism/performance risks: one browser request and database transaction per month; tax resolution is entered per command, even when cacheable; interruption reasons are inferred by UI conditions rather than returned as a tagged result.
-- Missing requirements: AdvanceOneMonth, AdvanceNMonths, and AdvanceUntilEventOrCheckpoint as one application/core boundary; tagged pause reasons; no-network/no-remote-DB hidden loop; parity tests between one-at-a-time and fast-forward.
-- Duplicate formulas or authority: dormant v1 fast-forward and active v2 browser loop.
-- AI boundary: none required.
-- Next action: Prompt 03, after engine authority is settled, should move loop control behind one server application command while keeping tax evidence pre-resolution outside the core.
+- Authoritative files and entry points: `src/core/time-controller-v2.ts`, `RunApiServiceV2.advanceTime`, `RunRepository.applyTimeAdvanceV2`, the v2 advance route/client contract, and the play console's single advance request. `src/core/checkpoints.ts` remains frozen v1 compatibility rather than a second production loop.
+- Inputs: one bounded tagged advance mode, opening revision/month, deterministic command IDs, pre-resolved monthly evidence, seeded reducer policies, and an optional checkpoint interval.
+- Outputs: exact months advanced, final immutable GameStateV2, one tagged pause, pending event/decision, checkpoint input, terminal outcome, ordered persistence steps, records, and one compact UI aggregate.
+- Tick order and ownership: the controller delegates exactly once per accepted hidden tick to `processMonthlyTurnV2`, then applies terminal, event, milestone, financial-warning, checkpoint, and duration pause priority. Macro/event/career work remains in the monthly wrapper; financial warning amounts come from the financial-engine selector. Runtime Balance regeneration remains a Prompt 09 responsibility.
+- External boundary: the service checks authorization before evidence work, resolves or reuses PolicyEngine evidence outside the pure loop, and uses maximal segments that do not cross an annual tax-context boundary. No callback inside `advanceTimeV2` can call AI, HTTP, or persistence.
+- Persistence: one locked transaction replays and verifies every prepared step, inserts accepted commands/tax evidence/monthly records/normalized ledger rows and sparse anchors, updates the current save once, and emits one aggregate outbox notification. Whole-request retry is keyed by the batch request fingerprint.
+- UI: the browser sends one request for a multi-month advance, updates state once, renders the aggregate and exhaustive pause label once, and carries a verified event/milestone resolution ID into resume.
+- Tests found: exact 12-month and one-month counts, early event/end/decision/warning pauses, checkpoint boundaries, verified and stale resume IDs, deep evidence ownership, deterministic pause/checksum sequences, no duplicate reducer calls, forbidden dependencies, 480-month performance, public schemas/service segmentation, atomic PostgreSQL rollback/idempotency/concurrency/replay, and aggregate UI labels.
+- Determinism/performance evidence: the pure real-reducer 480-month path completes all ticks under a 25-second Windows CI gate (approximately 17–18 seconds observed locally). Database/storage distributional budgets remain Prompt 14 work.
+- AI boundary: no AI participates in a hidden tick or pause decision.
+- Remaining concerns: the current engine turns actual funding shortfall into terminal bankruptcy, so nonterminal warning uses the engine-owned monthly cash-flow deficit selector. Runtime Balance pressure/cooldown orchestration is explicitly not claimed until Prompt 09 implements and version-stamps that system; Prompt 15 must verify the final tick order.
 
 ### 4. Deterministic Financial Simulation Engine
 
