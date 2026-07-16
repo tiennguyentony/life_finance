@@ -12,6 +12,7 @@ import {
 } from "./domain/integer";
 import type { GameStateV2 } from "./game-state-v2";
 import type { JournalPosting } from "./ledger";
+import { calculateStoredMinimumDebtObligationV2 } from "./debt-service-v2";
 import {
   DetailedFinanceError,
   type DetailedFinanceCommand,
@@ -177,15 +178,7 @@ export function applyHomeSale(
       "mortgage payoff",
     ),
   );
-  const removedMinimums = moneyCents(
-    safeBigIntToNumber(
-      mortgages.reduce(
-        (total, debt) => total + BigInt(debt.minimumPaymentCents),
-        BigInt(0),
-      ),
-      "mortgage minimums",
-    ),
-  );
+  const removedMinimums = calculateStoredMinimumDebtObligationV2(mortgages);
   const saleCost = multiplyMoneyByRate(homeValue, HOME_SALE_COST_PPM);
   const net = homeValue - saleCost - mortgagePrincipal;
   if (net < 0) requireCash(state, moneyCents(-net));

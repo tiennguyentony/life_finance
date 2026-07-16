@@ -6,7 +6,12 @@ import {
   simulateFinancialMonthV2,
   type FinancialMonthInputV2,
 } from "../financial-kernel-v2";
-import { moneyCents, ratePpm, type MoneyCents } from "../domain/money";
+import {
+  addMoney,
+  moneyCents,
+  ratePpm,
+  type MoneyCents,
+} from "../domain/money";
 import { simulationMonth, type SimulationMonth } from "../domain/month";
 import { finalizeGameStateV2 } from "../game-state-v2";
 import { marketSimulationState, simulateMarketMonth } from "../market";
@@ -245,6 +250,103 @@ function successfulInput(state = configuredState()): FinancialMonthInputV2 {
 }
 
 describe("simulateFinancialMonthV2", () => {
+  it("does not charge a historical debt minimum above the exact payoff", () => {
+    const native = configuredState({
+      finances: {
+        termDebts: [
+          {
+            id: "debt.historical-payoff",
+            kind: "personal_loan",
+            principalCents: moneyCents(500),
+            annualInterestRatePpm: ratePpm(0),
+            minimumPaymentCents: moneyCents(600),
+            remainingTermMonths: 2,
+          },
+        ],
+      },
+      strategy: ZERO_STRATEGY,
+    });
+    const historical = finalizeGameStateV2({
+      ...native,
+      finances: {
+        ...native.finances,
+        requiredObligationsCents: addMoney(
+          native.finances.requiredObligationsCents,
+          moneyCents(100),
+        ),
+      },
+      gameplay: {
+        ...native.gameplay,
+        debts: {
+          ...native.gameplay.debts,
+          termDebts: [
+            {
+              ...native.gameplay.debts.termDebts[0]!,
+              minimumPaymentCents: moneyCents(600),
+            },
+          ],
+        },
+      },
+    });
+    const input = successfulInput(historical);
+    const taxEvidence = {
+      ...input.taxEvidence,
+      employee401kContributionCents: moneyCents(0),
+      employeeHsaContributionCents: moneyCents(0),
+      afterTaxCashIncomeCents: moneyCents(800_000),
+    };
+    const result = simulateFinancialMonthV2({
+      ...input,
+      taxEvidence,
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+    });
+    const expectedNonDebtObligations = moneyCents(
+      historical.finances.requiredObligationsCents - 600,
+    );
+    const nonDebtTransaction = result.state.ledger.transactions.find(
+      ({ reasonCode }) => reasonCode === "monthly_non_debt_obligations_v2",
+    );
+    const debtPaymentTransaction = result.state.ledger.transactions.find(
+      ({ reasonCode }) => reasonCode === "monthly_term_debt_payment",
+    );
+
+    expect(result.record.baseNonDebtObligationsCents).toBe(
+      expectedNonDebtObligations,
+    );
+    expect(result.record.debtService.totalScheduledPaymentCents).toBe(500);
+    expect(nonDebtTransaction?.postings).toEqual([
+      {
+        accountId: "expense.living",
+        debitCents: expectedNonDebtObligations,
+        creditCents: 0,
+      },
+      {
+        accountId: "asset.cash",
+        debitCents: 0,
+        creditCents: expectedNonDebtObligations,
+      },
+    ]);
+    expect(debtPaymentTransaction?.postings).toEqual([
+      {
+        accountId: "liability.non_credit",
+        debitCents: 500,
+        creditCents: 0,
+      },
+      {
+        accountId: "asset.cash",
+        debitCents: 0,
+        creditCents: 500,
+      },
+    ]);
+    expect(result.state.finances.cashCents).toBe(
+      historical.finances.cashCents +
+        taxEvidence.afterTaxCashIncomeCents -
+        expectedNonDebtObligations -
+        500,
+    );
+  });
+
   it("fully funds when required cash exactly exhausts remaining credit", () => {
     const result = simulateFinancialMonthV2(creditBoundaryInput());
 
