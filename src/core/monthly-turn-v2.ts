@@ -65,6 +65,8 @@ export type MonthlyInsuranceClaim =
       eligible: boolean;
     }>;
 
+export type FinancialKernelVersionV2 = "legacy-4.1.0" | "2.0.0";
+
 export type ProcessMonthV2Command = Readonly<{
   schemaVersion: 2;
   id: string;
@@ -72,6 +74,7 @@ export type ProcessMonthV2Command = Readonly<{
   expectedRevision: number;
   effectiveMonth: SimulationMonth;
   payload: Readonly<{
+    financialKernelVersion?: FinancialKernelVersionV2;
     taxEvidence: MonthlyTaxEvidence;
     taxableLiquidationCostRatePpm: RatePpm;
     insuranceClaim?: MonthlyInsuranceClaim;
@@ -112,6 +115,7 @@ export class MonthlyTurnV2Error extends Error {
     | "RUN_TERMINAL"
     | "PENDING_EVENT"
     | "INVALID_LIQUIDATION_RATE"
+    | "UNSUPPORTED_FINANCIAL_KERNEL_VERSION"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
 
@@ -125,6 +129,20 @@ export class MonthlyTurnV2Error extends Error {
     this.code = code;
     this.cause = cause;
   }
+}
+
+export function financialKernelVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): FinancialKernelVersionV2 {
+  const version = command.payload.financialKernelVersion;
+  if (version === undefined || version === "legacy-4.1.0") {
+    return "legacy-4.1.0";
+  }
+  if (version === "2.0.0") return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
+    `unsupported financial kernel version: ${String(version)}`,
+  );
 }
 
 const COMMAND_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/;
@@ -572,13 +590,30 @@ function applyAfterTaxPlan(
   });
 }
 
+type MonthlyTurnV2Dependencies = Readonly<{
+  eventSchedulingPolicy?: EventSchedulingPolicyV2;
+  macroStoryPolicy?: MacroStoryPolicyV2;
+}>;
+
 export function processMonthlyTurnV2(
   state: GameStateV2,
   command: ProcessMonthV2Command,
-  dependencies: Readonly<{
-    eventSchedulingPolicy?: EventSchedulingPolicyV2;
-    macroStoryPolicy?: MacroStoryPolicyV2;
-  }> = {},
+  dependencies: MonthlyTurnV2Dependencies = {},
+): MonthlyTurnV2Result {
+  const version = financialKernelVersionForCommandV2(command);
+  if (version !== "legacy-4.1.0") {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
+      `financial kernel ${version} is not implemented`,
+    );
+  }
+  return processMonthlyTurnV2Legacy410(state, command, dependencies);
+}
+
+export function processMonthlyTurnV2Legacy410(
+  state: GameStateV2,
+  command: ProcessMonthV2Command,
+  dependencies: MonthlyTurnV2Dependencies = {},
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   try {
