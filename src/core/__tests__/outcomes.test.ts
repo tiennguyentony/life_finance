@@ -308,6 +308,23 @@ describe("v2 terminal outcomes from kernel evidence", () => {
     ).toBeNull();
   });
 
+  it("does not infer bankruptcy from negative net worth when the month is funded", () => {
+    const liquidButNegative = migrateGameStateV1ToV2(
+      state({
+        cashCents: moneyCents(100_000),
+        taxableInvestmentsCents: moneyCents(0),
+        retirementCents: moneyCents(0),
+        homeValueCents: moneyCents(0),
+        nonCreditLiabilitiesCents: moneyCents(1_000_000),
+        creditLimitCents: moneyCents(100_000),
+        creditUsedCents: moneyCents(0),
+        requiredObligationsCents: moneyCents(50_000),
+      }),
+    );
+
+    expect(evaluateTerminalOutcomeV2(liquidButNegative, null)).toBeNull();
+  });
+
   it("keeps an existing terminal outcome immutable", () => {
     const active = migrateGameStateV1ToV2(state());
     const terminal = finalizeGameStateV2({

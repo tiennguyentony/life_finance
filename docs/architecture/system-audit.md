@@ -1,8 +1,9 @@
 # Repository-wide system audit
 
-Date: 2026-07-15
+Date: 2026-07-16
 
 Scope: current repository behavior, with emphasis on the v2 browser game, server application layer, deterministic core, persistence, tax adapter, and optional AI adapters. The original audit was read-only; this document now includes the verified Prompt 01 authority, ledger, replay, and migration repair.
+It also includes the verified Prompt 02 financial-kernel, replay, projection, integration, and consumer-authority repair.
 
 ## Status legend
 
@@ -16,15 +17,15 @@ Scope: current repository behavior, with emphasis on the v2 browser game, server
 
 ## Executive findings
 
-1. The v2 deterministic core is strong: money is integer cents, rates are parts per million, the random generator is seeded and serializable, market draw order is explicit, tax results enter as persisted evidence, and database writes are transactional and idempotent.
-2. GameStateV2 is now the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Legacy v1 constructors and reducers remain compatibility code, so later engine/action prompts must still remove their duplicate formulas and interfaces.
+1. The `2.0.0` financial kernel is now the sole new-product financial authority: money is integer cents, rates are PPM, market input is complete and seeded, tax enters as persisted evidence, one funding plan owns liquidity, and event-free projection reuses the production kernel. Web, AI, goal, and checkpoint consumers use canonical selectors/evidence.
+2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas are private frozen replay compatibility, not a competing new-product engine. Legacy action interfaces still belong to Prompt 05.
 3. Personal-event causality is wrong for the intended simulation. Exposure weaknesses decide which bad events may occur, the exposure score raises monthly event chance, and the same score unlocks catastrophe-tier templates. A weak emergency fund can therefore make bad luck more available and more frequent, rather than only making an independently caused shock more damaging.
 4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
 5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
 6. Time advancement is split. A tested v1 in-process checkpoint loop exists but is not used by production. The v2 UI advances multiple months through sequential network/database commands, so there is no authoritative v2 controller with tagged pause reasons.
-7. Persistence is robust but may not scale linearly. Every transition still validates, deep-freezes, checksums, and persists current state containing the complete append-only ledger and histories. Historical v2 snapshots are now sparse verified anchors rather than per-command copies, but repeated full-history current-state serialization and normalized ledger/monthly storage still require long-run budgets.
+7. Persistence is robust but may not scale linearly. The event-free financial projection now has a measured 480-month gate and immutable-prefix fast path, but real Web progression still validates, checksums, and persists growing current state once per month. Full controller/database/storage long-run budgets remain open.
 8. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
-9. The Offline Balance Lab is missing. No matched-seed strategy runner, difficulty comparison, 480-month headless benchmark, or distributional balance report was found.
+9. The Offline Balance Lab is missing. A deterministic 480-month financial projection benchmark now exists, but there is no matched-seed strategy runner, difficulty comparison, bot set, or distributional balance report.
 
 ## Actual architecture
 
@@ -37,22 +38,25 @@ flowchart LR
     SERVICE --> TAX["Resolve or reuse tax evidence"]
     SERVICE --> REPO["RunRepository transaction"]
     REPO --> LOCK["Lock run and verify auth, revision, checksum, idempotency"]
-    LOCK --> REDUCE["Reduce ProcessMonthV2 or player command"]
-    REDUCE --> CORE["Deterministic core"]
-    CORE --> FINALIZE["Validate and deep-freeze state"]
+    LOCK --> REDUCE["Versioned reducer dispatcher"]
+    REDUCE --> KERNEL["2.0.0 financial kernel"]
+    REDUCE --> LEGACY["Private legacy replay adapter"]
+    KERNEL --> WRAP["Career, exposure, outcome, macro, event wrapper"]
+    LEGACY --> WRAP
+    WRAP --> FINALIZE["Validate and deep-freeze state"]
     FINALIZE --> PERSIST["Current save, sparse boundary anchors, accepted command, evidence, ledger rows, outbox"]
     PERSIST --> RESPONSE["Versioned API response"]
 ~~~
 
-The financial reducer does not call the network or database. The application service obtains external tax evidence before entering the core. The repository is the transactional authority for accepted commands and persisted revisions.
+The financial reducer does not call the network or database. The application service obtains or reuses external tax evidence before entering the core and stamps every new Web month `2.0.0`. The repository is the transactional authority for accepted commands, exact evidence, records, checksums, and persisted revisions.
 
 ### Legacy compatibility path
 
-GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 constructors and monthly reducer remain reusable compatibility code, so Prompt 02 and Prompt 05 still own their formula/action consolidation even though they no longer define mutable production state authority.
+GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 monthly reducer, v1 outcome/checkpoint formulas, and the module-private `legacy-4.1.0` reducer are frozen compatibility paths covered by fixed replay checksums. They are not available as alternate new-product financial entry points. Legacy action interfaces remain for Prompt 05.
 
 ### External and optional services
 
-- Tax: src/server/tax/client.ts may call PolicyEngine; resolved evidence is persisted and supplied to the deterministic reducer.
+- Tax: src/server/tax/client.ts may call PolicyEngine; resolved evidence is persisted and supplied to the deterministic reducer. Prompt 02 tests mock this remote boundary only; core/replay integrations use real local modules and persisted evidence.
 - World director: src/server/ai/world-director-service.ts may call an AI model or use a deterministic fallback, then submits a validated event-queue command.
 - Education and debrief: AI services produce bounded explanatory content with deterministic fallbacks; they do not directly mutate financial state.
 - Database: src/server/db/run-repository.ts owns transactionality, optimistic revision checks, idempotency, the current save, sparse historical anchors, verified replay, normalized ledger persistence, migrations, and outbox writes.
@@ -63,10 +67,10 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | --- | --- | --- | --- | --- | --- |
 | 1 | Onboarding and State Initialization | duplicated | Onboarding UI/model, scenario catalog, native v2 state factory, legacy compatibility constructor | v2 is the only public creation path, but legacy construction remains for migration fixtures and the UI repeats salary math. | Prompt 13 |
 | 2 | Authoritative Game State and Ledger | complete | state-authority-v2.ts, game-state-v2.ts, ledger.ts, repository/replay modules | GameStateV2 is the sole mutable gameplay authority; v1 is decode/migrate/read-only; current state is the save authority and sparse verified anchors support historical reconstruction. | Complete in Prompt 01 |
-| 3 | Time and Turn Controller | incorrectly coupled | v2 play-console loop; dormant v1 checkpoints.ts | Multi-month control is in the browser and crosses API/DB once per month; no v2 tagged controller. | Prompt 03 after Prompt 02 |
-| 4 | Deterministic Financial Simulation Engine | duplicated | monthly-turn.ts and monthly-turn-v2.ts plus finance modules | v2 is deterministic and exact, but v1 remains an alternate engine and some formulas are repeated. | Prompt 02 |
+| 3 | Time and Turn Controller | incorrectly coupled | v2 play-console loop; dormant v1 checkpoints.ts | Multi-month control is in the browser and crosses API/DB once per month; no v2 tagged controller. | Prompt 03 |
+| 4 | Deterministic Financial Simulation Engine | complete | financial-kernel-v2.ts, financial-transition-v2.ts, obligation-funding-v2.ts, financial-projection-v2.ts, versioned monthly wrapper | New months, projections, Web/AI/goal/checkpoint consumers, and replay have one documented financial authority; old formulas are frozen compatibility only. | Complete in Prompt 02 |
 | 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; legacy v1 action reducers remain reusable compatibility code. | Prompt 05 |
-| 6 | Goals, End Conditions, and Grading | duplicated | financial-goals-v2.ts, outcomes.ts, legacy FI helper | v2 player-selected FI goal is coherent, but a legacy 25x helper and UI/AI calculations remain alternate owners. | Prompt 04 |
+| 6 | Goals, End Conditions, and Grading | partial | financial-goals-v2.ts and evaluateTerminalOutcomeV2 | v2 goal consumers share canonical selectors and bankruptcy consumes actual shortfall; the full Prompt 04 outcome/grade audit remains pending. Frozen v1 rules are replay compatibility. | Prompt 04 |
 | 7 | Risk and Resilience Analyzer | incorrectly coupled | exposure-v2.ts and event-scheduler-v2.ts | Exposure measures vulnerability but also causes event eligibility, frequency, and catastrophe access. | Prompt 06 |
 | 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
 | 9 | Personal Event and Trap System | incorrectly coupled | event scheduler, lifecycle, templates, and events.ts | Deterministic and bounded, but event cause is vulnerability-driven and financial effects bypass a dedicated financial-effect interface. | Prompt 08 after Prompt 06 |
@@ -74,7 +78,7 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | 11 | Runtime Balance Controller | missing | None; scheduler contains fragments | Cooldown is not a balance controller. No pressure, recovery, catastrophe, difficulty, or impact policy exists. | Prompt 09 |
 | 12 | Causal History and Counterfactuals | partial | commands, snapshots, ledger, monthly records, event/milestone histories | Evidence exists, but no causal graph, turning-point detector, or controlled replay comparison exists. | Prompt 11 |
 | 13 | Teaching, Checkpoints, and Debrief | partial | checkpoint-v2.ts, education service, debrief service | Checkpoint aggregation and fallbacks are good; explanations do not yet rest on causal/counterfactual evidence. | Prompt 12 after Prompt 11 |
-| 14 | Offline Balance Lab | missing | None | No headless matched-seed simulator, strategy bots, balance metrics, or long-run performance gate. | Prompt 14 |
+| 14 | Offline Balance Lab | missing | None | The financial projection has a 480-month performance gate, but there is no matched-seed lab, strategy bots, or balance report. | Prompt 14 |
 
 ## Detailed system maps
 
@@ -105,8 +109,8 @@ Status: complete.
 - Dependencies: branded primitives, canonical serializer, validators, reducer dispatch, Drizzle/Postgres, tax-evidence schema, and outbox.
 - Tests found: authoritative-v2 guards, Runtime Balance defaults/bounds, transition invariants, game-state v1/v2 compatibility, precise rounding, ledger provenance/reconciliation, canonical serialization, strict command replay, sparse snapshot policy, persistence decoding, repository integration, concurrency, rollback, idempotency, and authenticated migration/legacy-retirement tests.
 - Determinism/performance risks: every accepted command still validates/freezes the aggregate, computes a canonical checksum, and persists `current_state`. Sparse historical anchors remove per-command snapshot duplication, but growing embedded histories and normalized evidence still need 120/480-month budgets under Prompt 14.
-- Missing requirements: no Prompt 01 authority, ledger, migration, or replay requirement remains open. Long-run performance budgets belong to Prompt 14; the browser/API-per-month loop belongs to Prompt 03; duplicate display/AI selectors belong to Prompt 04.
-- Duplicate formulas or authority: v1 constructors/reducers remain read/migrate fixture compatibility rather than mutable production authority. The embedded validated ledger is gameplay authority; normalized SQL ledger rows are an audit/query projection. Financial formula duplication remains recorded under later owning systems.
+- Missing requirements: no Prompt 01 authority, ledger, migration, or replay requirement remains open. Full persistence/storage long-run budgets belong to Prompt 14, and the browser/API-per-month loop belongs to Prompt 03.
+- Duplicate formulas or authority: v1 constructors/reducers remain read/migrate fixture compatibility rather than mutable production authority. The embedded validated ledger is gameplay authority; normalized SQL ledger rows are an audit/query projection. Prompt 02 removed active Web/AI/goal financial-selector duplication.
 - AI boundary: AI does not own state validation or ledger writes, which is correct.
 - Next action: keep this boundary stable while later prompts consume the v2 authority; do not move financial formulas or Runtime Balance behavior into the state layer.
 
@@ -128,19 +132,20 @@ Status: incorrectly coupled.
 
 ### 4. Deterministic Financial Simulation Engine
 
-Status: duplicated.
+Status: complete for Prompt 02.
 
-- Authoritative files and entry points: src/core/monthly-turn-v2.ts, payroll-v2.ts, debt-service-v2.ts, obligation-funding-v2.ts, recurring-strategy-v2.ts, insurance-v2.ts, detailed-actions-v2 modules, outcomes.ts, market.ts, plus legacy monthly-turn.ts.
-- Inputs: immutable prior state, typed command, persisted tax evidence, configuration/catalog snapshot, and serialized RNG state.
-- Outputs: finalized next state, balanced ledger transactions, monthly record, outcome, scheduled interruptions, and updated RNG.
-- State owned: no external mutable state; it transforms the game aggregate. Financial account balances are reconciled against the ledger.
-- Dependencies: money/rate primitives, market/macro, insurance, goals/outcomes, event/milestone systems, ledger, and tax-evidence contracts.
-- Tests found: monthly turns v1/v2 with fixed checksums, payroll, debt, obligation funding, insurance, recurring strategy, detailed actions, market, outcomes, and repository application tests.
-- Determinism/performance risks: no Math.random, clock, network, database, or AI dependency was found in core finance. The risk is repeated whole-state validation/serialization and the absence of a long-run benchmark.
-- Missing requirements: one engine version, an explicit no-events projection interface for counterfactuals and UI forecasts, centralized formula ownership, and 480-month deterministic/performance fixtures.
-- Duplicate formulas or authority: monthly-turn v1/v2; automatic liquidity and minimum-gross-liquidation logic appears in outcomes.ts and obligation-funding-v2.ts.
-- AI boundary: financial computation correctly excludes AI.
-- Next action: Prompt 02 should consolidate the v2 engine interface, centralize repeated liquidity formulas, and expose deterministic projection/replay APIs without changing outcomes.
+- Authoritative files and entry points: `simulateFinancialMonthV2` in src/core/financial-kernel-v2.ts; funding in obligation-funding-v2.ts; debt, payroll, recurring, insurance, inflation, and annual helpers in their named v2 modules; transition acceptance in financial-transition-v2.ts; product orchestration/dispatch in monthly-turn-v2.ts; and `projectWithoutEventsV2` in financial-projection-v2.ts. Exact order and boundaries are in financial-engine-v2.md.
+- Inputs: immutable GameStateV2, persisted `2.0.0` tax/claim/resolved-flow evidence, one complete seeded market step, and a liquidation policy rate. Projection accepts the same evidence as a strict serializable versioned packet.
+- Outputs: immutable financial closing state, balanced ledger transactions, complete financial month record, one exact funding plan, optional actual shortfall, updated financial RNG/market/CPI state, and a branded event-free projection result.
+- State owned: financial balances/details, contribution and insurance accumulators, market financial effects, ledger postings, current month, and financial records. Career, exposure, macro/event selection, terminal labeling, persistence, and UI remain outside the kernel.
+- Dependencies: cents/PPM primitives, authoritative GameState selectors and ledger, market evidence, payroll, debt, recurring strategy, insurance, annual/inflation helpers, and transition validation. There is no React, Next.js, AI, network, database, filesystem, clock, or unseeded randomness dependency.
+- Tests found: manual golden kernel, shortfall/solvency/restricted-wealth boundaries, debt/cap/match/insurance/inflation/market cases, wrapper orchestration, persisted decode/replay and four fixed legacy checksums, API contract/service evidence, projection reproducibility/lifecycle/invariants, Web/AI/goal/checkpoint selector parity, and conditional PostgreSQL integration.
+- Determinism/performance evidence: fixed inputs reproduce state, record, ledger, IDs, fingerprints, RNG, and checksums. Two isolated 480-month projections measured 4,999.987 ms and 5,088.119 ms under an 8,000 ms threshold. Immutable-prefix identity avoids repeated canonical history work; cloned equivalent prefixes retain the canonical fallback.
+- Missing requirements: no Prompt 02 calculation, projection, replay, consumer-authority, or headless-performance requirement remains open. Delinquency/default stages remain intentionally absent because no product terms exist. Full multi-system controller/lab/persistence budgets belong to Prompts 03 and 14.
+- Duplicate formulas or authority: none in active new-product consumers. `monthly-turn.ts`, v1 outcomes/checkpoints/25x rules, and the private unversioned/`legacy-4.1.0` v2 body are frozen replay compatibility. Schemas, fixtures, field displays, event consequence rules, risk metrics, and native input normalization are not competing monthly formulas.
+- Integration boundary: real local tests cross decoder -> wrapper -> kernel -> ledger/outcome/event orchestration, replay -> reducer -> transition -> checksum, and projection -> production market/kernel. Only the remote PolicyEngine tax client is mocked. The real PostgreSQL suite is defined but skipped here because `TEST_DATABASE_URL` is absent.
+- AI boundary: Web/AI context consumes canonical net-worth/investable evidence and exposes no competing liquidity formula. AI never computes or mutates a financial month.
+- Next action: keep this authority stable while Prompt 03 adds multi-month orchestration; future systems must submit resolved evidence or call the production projection rather than copying formulas.
 
 ### 5. Player Actions and Persistent Policies
 
@@ -160,19 +165,19 @@ Status: duplicated.
 
 ### 6. Goals, End Conditions, and Grading
 
-Status: duplicated.
+Status: partial.
 
 - Authoritative files and entry points: src/core/financial-goals-v2.ts, src/core/outcomes.ts, outcome checks in monthly-turn-v2.ts, legacy hasReachedFinancialIndependence in game-state.ts, onboarding goal fields, and debrief display.
-- Inputs: player-selected FI target/age or legacy living-cost target, investable assets, age/current month, required obligations, and available automatic liquidity.
+- Inputs: player-selected FI target/age or legacy living-cost target, canonical investable assets, age/current month, and the completed month's actual `FinancialShortfallV2 | null`.
 - Outputs: progress projection, terminal FI/retirement/bankruptcy outcome, immutable grade, reason code, and reached month.
 - State owned: financialGoal and terminal outcome on the run aggregate.
-- Dependencies: financial snapshot, investable-asset selector, liquidity assessment, calendar, onboarding, checkpoint/debrief.
+- Dependencies: financial snapshot, canonical investable-asset selector, kernel shortfall evidence, calendar, onboarding, checkpoint/debrief.
 - Tests found: financial-goals-v2, outcomes boundary tests, game-state FI tests, monthly-turn bankruptcy/FI tests, and API contract tests.
-- Determinism/performance risks: exact integer comparisons are deterministic; alternate target definitions can drift when both paths remain callable.
-- Missing requirements: one goal definition for all versions and displays, a single age/net-worth/goal selector surface, and counterfactual grading evidence for debrief.
-- Duplicate formulas or authority: legacy 25-times-living-cost helper versus player-selected v2 goal projection; net worth is separately reimplemented in play-model.ts and server/ai/game-context.ts; age is also recomputed in UI.
+- Determinism/performance risks: exact integer comparisons are deterministic. New-product investable assets and net worth now have one selector authority; age display logic still needs the Prompt 04 boundary audit.
+- Missing requirements: the full configured outcome/grade matrix and exact interval audit, one age selector surface, and counterfactual grading evidence for debrief.
+- Duplicate formulas or authority: Web, AI, goal, and checkpoint financial sums now delegate to canonical selectors/evidence. The 25-times-living-cost helper and v1 outcome rules are frozen compatibility paths; UI age calculation remains a later-system duplicate.
 - AI boundary: the final grade is immutable and code-owned, which is correct; AI may explain but not alter it.
-- Next action: Prompt 04 should make goal/outcome selectors the only UI and AI context source.
+- Next action: Prompt 04 should complete the configured goal/outcome/grade matrix and consolidate age evidence without reintroducing financial formulas.
 
 ### 7. Risk and Resilience Analyzer
 
@@ -282,9 +287,9 @@ Status: partial.
 - Tests found: checkpoint aggregation, education catalog/service, debrief service/contracts, AI learning memory, API route/service, and repository checkpoint tests.
 - Determinism/performance risks: core checkpoint math and fallbacks are deterministic. Current debrief evidence selection is shallow, and AI text is structurally validated but not a numerical proof system.
 - Missing requirements: causal turning points, controlled counterfactual comparisons, traceable amount/rate citations, lesson selection based on demonstrated decisions, and end-to-end evidence-link validation.
-- Duplicate formulas or authority: AI context independently calculates net worth instead of consuming the core selector.
+- Duplicate formulas or authority: AI context now consumes canonical net-worth and goal evidence; teaching remains incomplete because causal/counterfactual grounding is absent, not because it owns a financial formula.
 - AI boundary: AI correctly cannot alter the grade or state, but prose claims need stronger grounding than valid evidence IDs alone.
-- Next action: Prompt 12 after Prompt 11; also replace duplicated AI/UI selectors during Prompt 04.
+- Next action: Prompt 12 after Prompt 11; preserve the Prompt 02 selector/evidence boundary.
 
 ### 14. Offline Balance Lab
 
@@ -295,8 +300,8 @@ Status: missing.
 - Outputs required: terminal outcome distributions, FI timing, bankruptcy rate, event frequency/severity, pressure/recovery metrics, strategy sensitivity, invariants, and performance measurements.
 - State owned: offline run specifications and reports only; it must not become production simulation authority.
 - Dependencies: stable engine, time controller, goals, actions/policies, risk, macro, events, balance controller, and causal metrics.
-- Tests found: isolated deterministic/long-path tests exist, but no lab, matched-seed comparison, strategy bot, or 480-month performance suite exists.
-- Determinism/performance risks: current per-command full-state freezing, checksumming, and `current_state` persistence may be a blocker if the lab uses the production persistence path, even though historical anchors are sparse. The lab needs an in-memory headless path plus explicit parity checks.
+- Tests found: the production financial projection has a deterministic 480-month performance/invariant suite, but no lab, matched-seed comparison, bot policy suite, distributional report, or whole-pipeline benchmark exists.
+- Determinism/performance risks: the financial path now reuses immutable history prefixes, but per-command checksumming and `current_state` persistence may still be a blocker if the lab uses the Web persistence path. The lab needs an in-memory headless controller plus explicit parity checks with production orchestration.
 - Missing requirements: all primary lab capabilities.
 - Duplicate formulas or authority: none because the system is absent; future bots must use public action interfaces rather than reimplement finance.
 - AI boundary: no AI is needed for balance truth or numeric tuning.
@@ -381,7 +386,13 @@ That mixing violates the desired causal model. A general risk score should not m
 - Historical/idempotent reads replay strictly decoded contiguous commands from the latest compatible snapshot or migration target and verify the checksum after every revision.
 - Authenticated v1-to-v2 migration is transactional and idempotent; public v1 writes return HTTP 410 without mutation while authenticated legacy reads remain available.
 - Tax evidence is resolved outside the core and can be reused on retry/replay.
-- Tests cover fixed-checksum monthly transitions, command replay, market long paths, repository rollback/concurrency/idempotency, and version migration.
+- Every new Web month is internally stamped `financialKernelVersion: "2.0.0"`;
+  historical absence and explicit `legacy-4.1.0` dispatch to a private frozen
+  adapter. Persisted resolved flows are accepted only with `2.0.0`.
+- Tests cover fixed-checksum monthly transitions, four unversioned legacy
+  fixtures, strict 2.0.0 command/flow replay, market long paths, deterministic
+  projection IDs/fingerprint, repository rollback/concurrency/idempotency, and
+  version migration.
 
 ### Replay boundary
 
@@ -391,7 +402,7 @@ Exact replay requires:
 - the same ordered command payloads and command IDs;
 - the same catalog/config version;
 - the same external evidence, especially tax evidence; and
-- the same reducer version or an explicit migration boundary.
+- the same financial-kernel discriminator or an explicit migration boundary.
 
 Creating semantically equivalent commands with new UUIDs is not checksum-identical because IDs are used in accepted-command, event, and ledger identities. This is acceptable if documented: command identity is part of the replay record, not incidental metadata.
 
@@ -401,23 +412,28 @@ An AI request is not itself deterministic. Once the selected candidate and param
 
 - No repository-level golden replay covers a full v2 life from onboarding through terminal outcome.
 - No parity test compares sequential one-month commands with an in-process AdvanceNMonths controller.
-- No long-run replay/performance budget exists.
-- Snapshot/ledger compaction and migration behavior over hundreds of months is unproven.
+- A 480-month in-memory financial projection is measured, but a complete
+  controller/repository replay over that horizon is not yet proven.
+- Snapshot/ledger compaction and PostgreSQL storage behavior over hundreds of
+  accepted Web months remain unproven. The conditional database suite did not
+  execute here because `TEST_DATABASE_URL` is absent.
 
 ## Formula and authority duplication
 
 | Concept | Intended authority | Other implementation found | Risk |
 | --- | --- | --- | --- |
-| Net worth | src/core/game-state.ts calculateNetWorth | src/features/play/play-model.ts and src/server/ai/game-context.ts | UI or AI explanation can drift from core truth. |
+| Net worth | src/core/game-state.ts `calculateNetWorth` | No active duplicate; Web, AI, checkpoint, and kernel import it. | Resolved in Prompt 02; parity includes large restricted-wealth cancellation. |
 | Age | src/core/outcomes.ts calculateAgeYears | UI calculation | Pause/end/display boundaries can disagree. |
 | Salary bounds | core scenario catalog using money/rate primitives | onboarding-model floating multiplication | Rounding or validation preview mismatch. |
-| FI target/progress | financial-goals-v2.ts and outcomes.ts | legacy hasReachedFinancialIndependence | Player-selected goal and legacy 25x rule can diverge. |
-| Automatic liquidity and gross liquidation | shared finance concept | outcomes.ts and obligation-funding-v2.ts | Bankruptcy assessment and actual funding can drift. |
-| Monthly simulation | v2 engine | v1 monthly-turn.ts | Two engines require duplicate fixes and fixtures. |
+| FI investable input/target/progress | game-state.ts selector plus financial-goals-v2.ts projection | v1 25x helper is frozen compatibility | New Web/AI/checkpoint/outcome consumers share the versioned projection; Prompt 04 still owns the complete goal/grade audit. |
+| Automatic liquidity and gross liquidation | obligation-funding-v2.ts immutable plan | v1 outcomes.ts functions are frozen compatibility | New assessment, execution, kernel shortfall, record, and outcome evidence cannot drift. |
+| Monthly simulation | financial-kernel-v2.ts through the 2.0.0 wrapper | monthly-turn.ts and private legacy-4.1.0 body are replay-only | New commands cannot select or import the compatibility reducers; fixed checksums protect history. |
 | Multi-month control | future v2 controller | v1 checkpoints.ts and v2 browser loop | Different stop rules and performance behavior. |
 | Event selection | deterministic scheduler/controller | seeded uniform scheduler and optional director | Different candidate policies; neither has fairness approval. |
 
-No AI-owned exact financial formula was found. The AI game-context adapter nevertheless recomputes net worth instead of consuming the authoritative core selector.
+No AI-owned exact financial formula was found. The AI game-context adapter now
+consumes canonical net worth and versioned goal projection amounts and exposes
+no independently calculated automatic-liquidity value.
 
 ## AI authority audit
 
@@ -437,7 +453,15 @@ No AI-owned exact financial formula was found. The AI game-context adapter never
 5. Ledger transactions/postings and monthly records are also stored in normalized tables.
 6. The v2 browser fast-forward performs one request/transaction per month.
 
-This is not evidence of a current user-visible failure, but it remains a high-confidence scaling risk. Prompt 01 now separates the current save from sparse verified history. Prompt 03 should add an in-process application loop; Prompt 14 should enforce 120- and 480-month time/size budgets.
+Prompt 02's in-memory projection exposed and repaired one concrete scaling
+problem: cloned growing immutable histories forced repeated ownership and
+canonical transition work. Shared immutable prefixes now use an identity proof,
+with canonical comparison retained for equivalent cloned prefixes. Two isolated
+480-month financial runs measured 4,999.987 ms and 5,088.119 ms under the 8,000
+ms gate. That evidence covers the event-free financial kernel, not the browser
+loop, remote tax resolution, PostgreSQL persistence, full event/controller
+pipeline, or storage growth. Prompt 03 should add an in-process application loop;
+Prompt 14 should enforce complete-run time and size budgets.
 
 ## Dependency-aware implementation order
 
@@ -445,7 +469,7 @@ The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 
 1. Prompt 01 — Authoritative Game State and Ledger. Complete: GameStateV2 is the sole mutable state, v1 is decode/migrate/read-only, ledger provenance is enforced for new writes, and historical anchors are sparse and replay-verified.
 2. Prompt 13 — Onboarding and State Initialization. Create only the canonical state and persist normalized assumptions/provenance.
-3. Prompt 02 — Deterministic Financial Simulation Engine. Consolidate repeated finance formulas and define projection/replay interfaces.
+3. Prompt 02 — Deterministic Financial Simulation Engine. Complete: one 2.0.0 kernel, funding authority, versioned replay boundary, event-free projection, consumer parity, and measured 480-month gate.
 4. Prompt 03 — Time and Turn Controller. Add one in-process v2 controller with tagged stop reasons and sequential-parity tests.
 5. Prompt 04 — Goals, End Conditions, and Grading. Centralize goal, age, net-worth, outcome, and display selectors.
 6. Prompt 05 — Player Actions and Persistent Policies. Route all mutations and previews through the canonical engine/state interfaces.
@@ -463,11 +487,11 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 
 ## Recommended immediate next prompts
 
-1. Prompt 13 can now consume the authoritative v2 state and remove remaining onboarding/UI duplication.
-2. Prompt 06 followed by Prompt 08, because the current exposure-to-event coupling changes game causality and player fairness.
-3. Prompt 09 before Prompt 10, because the persisted Runtime Balance container has no approval behavior yet and the director has no independent approval gate.
-4. Prompt 03 before large-scale balance work, because the browser/network month loop still prevents a clean headless long-run path.
-5. Prompt 14 before final tuning or release claims, because deterministic correctness and sparse history do not prove distributional fairness or acceptable long-run performance.
+1. Prompt 03 should now replace the browser/network month loop with one tagged, deterministic in-process controller that calls the 2.0.0 wrapper exactly once per tick.
+2. Prompt 04 should finish the complete goal/end-condition/grade matrix while consuming actual shortfall and canonical selector evidence.
+3. Prompt 13 can later consume the authoritative v2 state and remove remaining onboarding/UI initialization duplication.
+4. Prompts 06 then 08, followed by Prompt 09 before Prompt 10, must repair event causality and add independent fairness approval before changing director authority.
+5. Prompt 14 remains required before tuning or release claims because the financial projection benchmark does not prove distributional fairness or full-run storage performance.
 
 ## Audit completion checklist
 
@@ -476,4 +500,9 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 - Probability, severity, exposure, and difficulty are analyzed separately.
 - Save/load, external evidence, seeded replay, and command-identity boundaries are documented.
 - Duplicate formulas and remaining legacy compatibility implementations are identified without treating them as mutable state authority.
-- Prompt 01 findings are updated from the verified implementation; all Prompt 02-14 statuses remain unchanged.
+- Prompt 01 and Prompt 02 findings are updated from verified implementations;
+  Prompts 03-14 remain incomplete unless their own requirements are proven.
+- Prompt 02's active formulas, frozen compatibility paths, schemas/fixtures,
+  presentation fields, local integration boundaries, mocked remote tax client,
+  measured projection, and unavailable conditional PostgreSQL gate are
+  classified explicitly.

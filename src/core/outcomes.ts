@@ -57,8 +57,11 @@ export class OutcomeDomainError extends Error {
   }
 }
 
-// Historical v1 outcome compatibility. New v2 financial processing consumes
-// the canonical obligation-funding plan and hands its shortfall to outcomes.
+// Historical v1 outcome/funding compatibility includes
+// assessRequiredObligationLiquidity, evaluateTerminalOutcome, and
+// fundRequiredObligations below. New v2 financial processing consumes the
+// canonical obligation-funding plan and hands its actual shortfall to
+// evaluateTerminalOutcomeV2.
 function assertLiquidationRate(rate: RatePpm): void {
   if (!Number.isSafeInteger(rate) || rate < 0 || rate > 1_000_000) {
     throw new OutcomeDomainError(

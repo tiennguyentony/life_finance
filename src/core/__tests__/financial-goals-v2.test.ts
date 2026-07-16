@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../domain/money";
 import {
+  calculateGoalInvestableAssets,
   financialGoalTargetCents,
   projectFinancialGoal,
   validateFinancialGoal,
   type FinancialGoalV1,
 } from "../financial-goals-v2";
-import type { FinancialSnapshot } from "../game-state";
+import {
+  calculateInvestableAssets,
+  type FinancialSnapshot,
+} from "../game-state";
 
 const goal: FinancialGoalV1 = {
   version: "financial-goal-v1",
@@ -43,6 +47,13 @@ describe("financial goals v2", () => {
       progressPpm: 66_666,
       remainingCents: 140_000_000,
     });
+  });
+
+  it("exports the canonical investable-assets selector as its only authority", () => {
+    expect(calculateGoalInvestableAssets).toBe(calculateInvestableAssets);
+    expect(projectFinancialGoal(finances, goal).investableAssetsCents).toBe(
+      calculateInvestableAssets(finances),
+    );
   });
 
   it("rejects unsafe rates and target ages", () => {

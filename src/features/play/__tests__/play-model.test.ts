@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 
+import { moneyCents, ratePpm } from "../../../core/domain/money";
+import {
+  calculateInvestableAssets as calculateCanonicalInvestableAssets,
+  calculateNetWorth as calculateCanonicalNetWorth,
+  createInitialGameState,
+} from "../../../core/game-state";
+import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import {
   buildCreateRequest,
   calculateFinancialIndependence,
+  calculateInvestableAssets as calculatePlayInvestableAssets,
+  calculateNetWorth as calculatePlayNetWorth,
   dollarsToCents,
   percentToPpm,
 } from "../play-model";
@@ -75,6 +84,47 @@ describe("developer play UI model", () => {
       targetCents: 1_000,
       progressPpm: 1_000_000,
     });
+    expect(calculatePlayInvestableAssets(state)).toBe(
+      calculateCanonicalInvestableAssets(state.finances),
+    );
+  });
+
+  it("uses exact canonical net worth for high restricted wealth", () => {
+    const maximum = Number.MAX_SAFE_INTEGER;
+    const state = migrateGameStateV1ToV2(createInitialGameState({
+      runId: "run.play-authority",
+      startMonth: "2026-07",
+      randomSeed: "play-authority",
+      player: {
+        playerId: "player.play-authority",
+        birthMonth: "1995-01",
+        locationId: "location.test",
+        careerTrackId: "career.test",
+        filingStatus: "single",
+      },
+      finances: {
+        cashCents: moneyCents(0),
+        taxableInvestmentsCents: moneyCents(0),
+        retirementCents: moneyCents(maximum - 1),
+        homeValueCents: moneyCents(maximum),
+        otherInvestableAssetsCents: moneyCents(0),
+        otherAssetsCents: moneyCents(0),
+        nonCreditLiabilitiesCents: moneyCents(maximum),
+        creditLimitCents: moneyCents(maximum),
+        creditUsedCents: moneyCents(maximum),
+        annualLivingCostCents: moneyCents(1),
+        requiredObligationsCents: moneyCents(1),
+      },
+      wellbeing: {
+        burnoutPpm: ratePpm(0),
+        happinessPpm: ratePpm(1_000_000),
+      },
+    }));
+
+    expect(calculateCanonicalNetWorth(state.finances)).toBe(-1);
+    expect(calculatePlayNetWorth(state)).toBe(
+      calculateCanonicalNetWorth(state.finances),
+    );
   });
 
   it("sends a player-owned FI goal in exact engine units", () => {

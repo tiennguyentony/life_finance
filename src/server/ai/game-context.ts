@@ -1,4 +1,5 @@
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
+import { calculateNetWorth } from "../../core/game-state";
 import type { GameStateV2 } from "../../core/game-state-v2";
 import { lifeMilestoneState } from "../../core/life-milestones-v2";
 import { calculateAgeYears } from "../../core/outcomes";
@@ -19,13 +20,6 @@ export type AiGameContextV1 = Readonly<{
   recentEventDecisions: readonly Readonly<{ eventId: string; choiceId: string; resolvedMonth: string; playerCostCents: number }>[];
   learning: Readonly<{ audienceLevel: "beginner" | "intermediate"; concepts: readonly Readonly<{ conceptId: string; exposureCount: number; confidence: string }>[] }>;
 }>;
-
-function netWorth(state: GameStateV2): number {
-  const value = state.finances;
-  return value.cashCents + value.taxableInvestmentsCents + value.retirementCents +
-    value.homeValueCents + value.otherInvestableAssetsCents + value.otherAssetsCents -
-    value.nonCreditLiabilitiesCents - value.creditUsedCents;
-}
 
 export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
   const goal = projectFinancialGoal(state.finances, state.gameplay.financialGoal);
@@ -50,7 +44,7 @@ export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
     finances: Object.freeze({
       cashCents: state.finances.cashCents,
       investableAssetsCents: goal.investableAssetsCents,
-      netWorthCents: netWorth(state),
+      netWorthCents: calculateNetWorth(state.finances),
       annualGrossIncomeCents: state.gameplay.employment.annualGrossSalaryCents ?? 0,
       annualLivingCostCents: state.finances.annualLivingCostCents,
       requiredMonthlyObligationsCents: state.finances.requiredObligationsCents,
