@@ -322,20 +322,59 @@ function validateTransaction(
         "unknown_reversal_target",
         "must reference an earlier transaction",
       );
-    } else if (reversedIds.has(original.id)) {
-      addViolation(
-        violations,
-        `${path}.reversesTransactionId`,
-        "duplicate_reversal",
-        "a transaction may only be reversed once",
-      );
-    } else if (!isExactReversal(original, transaction)) {
-      addViolation(
-        violations,
-        `${path}.postings`,
-        "invalid_reversal",
-        "must exactly swap every debit and credit in the original transaction",
-      );
+    } else {
+      if (reversedIds.has(original.id)) {
+        addViolation(
+          violations,
+          `${path}.reversesTransactionId`,
+          "duplicate_reversal",
+          "a transaction may only be reversed once",
+        );
+      } else if (!isExactReversal(original, transaction)) {
+        addViolation(
+          violations,
+          `${path}.postings`,
+          "invalid_reversal",
+          "must exactly swap every debit and credit in the original transaction",
+        );
+      }
+
+      const hasProvenance =
+        transaction.sourceSystem !== undefined ||
+        transaction.category !== undefined ||
+        transaction.causalReference !== undefined;
+      if (hasProvenance) {
+        const expectedSourceSystem = original.sourceSystem ?? "ledger";
+        const expectedCategory =
+          original.category ?? "ledger.legacy_reversal";
+        if (transaction.sourceSystem !== expectedSourceSystem) {
+          addViolation(
+            violations,
+            `${path}.sourceSystem`,
+            "invalid_reversal_provenance",
+            "must match the reversed transaction source system",
+          );
+        }
+        if (transaction.category !== expectedCategory) {
+          addViolation(
+            violations,
+            `${path}.category`,
+            "invalid_reversal_provenance",
+            "must match the reversed transaction category",
+          );
+        }
+        if (
+          transaction.causalReference?.kind !== "command" ||
+          transaction.causalReference.id !== transaction.commandId
+        ) {
+          addViolation(
+            violations,
+            `${path}.causalReference`,
+            "invalid_reversal_provenance",
+            "must be a command reference matching the reversal command id",
+          );
+        }
+      }
     }
     reversedIds.add(transaction.reversesTransactionId);
   }
