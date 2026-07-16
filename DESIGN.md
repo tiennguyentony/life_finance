@@ -77,6 +77,14 @@ Months render as "Mar 2027" via `formatMonthLabel`. Engine authority is expresse
 
 WCAG 2.2 AA. Keyboard-complete (tabs pattern, roving focus, visible rings), color-plus-sign money semantics, `prefers-reduced-motion`, `prefers-contrast: more` (stronger lines), and `prefers-reduced-transparency` (solid header) are all honored in the token layer.
 
+## Brightwater City (the game layer)
+
+`/game` is the frontend-only life game: a Baloo-titled screen, a react-three-fiber low-poly city board (`src/features/game/city-scene.tsx`), a Planet-Coaster-style HUD, Monopoly-deed decision cards, a Frostpunk-toned crisis beat, and a Sprout Bank allocation dashboard.
+All data is mocked and deterministic: `src/features/game/model.ts` defines five decisions with three options each and enumerates all 243 scenarios (63 bankruptcies), locked by tests.
+The board stays daylight like the character art; every 2D chrome element uses the shared tokens, buttons, and chips.
+Motion follows the same rules: the board auto-rotates only as a cinematic backdrop behind overlays, ledger rows reveal sequentially, and reduced motion collapses all of it.
+
 ## Verifying visually
 
 `/design/preview` (development only, 404 in production) renders onboarding, the pending-event moment, tabs, and the overview in both fixture states, built from real engine factories with no server.
+The game is verified by playing it: the frugal path (shared room, e-bike, homebody, pay in full, clear the loan) survives with a gold year; luxe plus car plus say-yes goes bankrupt in month nine.
