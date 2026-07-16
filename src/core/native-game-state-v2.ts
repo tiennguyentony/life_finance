@@ -173,6 +173,16 @@ export function createNativeGameStateV2(
 ): GameStateV2 {
   assertNativeInput(input);
   const { snapshot, snapshotChecksum } = input.resolvedScenario;
+  const termDebts = Object.freeze(
+    input.finances.termDebts.map((debt) =>
+      Object.freeze({
+        ...debt,
+        minimumPaymentCents: moneyCents(
+          Math.min(debt.minimumPaymentCents, debt.principalCents),
+        ),
+      }),
+    ),
+  );
   const selectedInsurancePremiums = snapshot.selected.insuranceCoverages.map(
     ({ monthlyPremiumCents }) => monthlyPremiumCents,
   );
@@ -182,7 +192,7 @@ export function createNativeGameStateV2(
     12,
   );
   const minimumDebtPayments = calculateTotalMinimumDebtPaymentV2(
-    input.finances.termDebts,
+    termDebts,
   );
   const monthlyInsurancePremiums = sumMoney(
     selectedInsurancePremiums,
@@ -205,7 +215,7 @@ export function createNativeGameStateV2(
     "opening retirement portfolio",
   );
   const nonCreditLiabilitiesCents = sumMoney(
-    input.finances.termDebts.map(({ principalCents }) => principalCents),
+    termDebts.map(({ principalCents }) => principalCents),
     "opening term debt principal",
   );
 
@@ -291,7 +301,7 @@ export function createNativeGameStateV2(
         otherInvestableLegacyUnclassifiedCents: moneyCents(0),
       },
       debts: {
-        termDebts: input.finances.termDebts,
+        termDebts,
         legacyUnclassifiedPrincipalCents: moneyCents(0),
         revolvingCreditLimitCents: input.finances.revolvingCreditLimitCents,
         revolvingCreditUsedCents: input.finances.revolvingCreditUsedCents,

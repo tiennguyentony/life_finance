@@ -11,6 +11,7 @@ import { simulationMonth } from "../domain/month";
 import {
   finalizeGameStateV2,
   validateGameStateV2,
+  type DebtBreakdown,
   type GameStateV2,
 } from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
@@ -20,7 +21,18 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function state(): GameStateV2 {
+function state(
+  termDebts: DebtBreakdown["termDebts"] = [
+    {
+      id: "debt.student.1",
+      kind: "student_loan",
+      principalCents: moneyCents(2_000_000),
+      annualInterestRatePpm: ratePpm(50_000),
+      minimumPaymentCents: moneyCents(25_000),
+      remainingTermMonths: 120,
+    },
+  ],
+): GameStateV2 {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
     {
@@ -53,16 +65,7 @@ function state(): GameStateV2 {
       hsaCents: moneyCents(0),
       homeValueCents: moneyCents(0),
       otherAssetsCents: moneyCents(0),
-      termDebts: [
-        {
-          id: "debt.student.1",
-          kind: "student_loan",
-          principalCents: moneyCents(2_000_000),
-          annualInterestRatePpm: ratePpm(50_000),
-          minimumPaymentCents: moneyCents(25_000),
-          remainingTermMonths: 120,
-        },
-      ],
+      termDebts,
       revolvingCreditLimitCents: moneyCents(1_000_000),
       revolvingCreditUsedCents: moneyCents(200_000),
     },
@@ -186,6 +189,37 @@ describe("detailed v2 financial commands", () => {
         }),
       ),
     ).toThrow(expect.objectContaining({ code: "PAYMENT_EXCEEDS_DEBT" }));
+  });
+
+  it("does not over-reduce obligations after normalizing an oversized native minimum", () => {
+    const initial = state([
+      {
+        id: "debt.oversized-minimum",
+        kind: "personal_loan",
+        principalCents: moneyCents(500),
+        annualInterestRatePpm: ratePpm(0),
+        minimumPaymentCents: moneyCents(600),
+        remainingTermMonths: 2,
+      },
+    ]);
+
+    const paid = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.partial-normalized-debt", {
+        type: "pay_term_debt",
+        debtId: "debt.oversized-minimum",
+        amountCents: moneyCents(100),
+      }),
+    );
+
+    expect(initial.gameplay.debts.termDebts[0]?.minimumPaymentCents).toBe(500);
+    expect(paid.gameplay.debts.termDebts[0]).toMatchObject({
+      principalCents: 400,
+      minimumPaymentCents: 400,
+    });
+    expect(paid.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents - 100,
+    );
   });
 
   it("keeps revolving detail synchronized and rejects stale or duplicate commands", () => {
