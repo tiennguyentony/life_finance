@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../../../core/domain/money";
-import { createInitialGameState } from "../../../core/game-state";
+import {
+  calculateInvestableAssets,
+  calculateNetWorth,
+  createInitialGameState,
+  type FinancialSnapshot,
+} from "../../../core/game-state";
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import { buildAiGameContext, contextEvidence } from "../game-context";
 
-function state() {
+function state(overrides: Partial<FinancialSnapshot> = {}) {
   return migrateGameStateV1ToV2(createInitialGameState({
     runId: "run.ai-context",
     startMonth: "2026-07",
@@ -29,6 +34,7 @@ function state() {
       creditUsedCents: moneyCents(10_000),
       annualLivingCostCents: moneyCents(600_000),
       requiredObligationsCents: moneyCents(50_000),
+      ...overrides,
     },
     wellbeing: { burnoutPpm: ratePpm(0), happinessPpm: ratePpm(1_000_000) },
   }));
@@ -36,7 +42,8 @@ function state() {
 
 describe("AI game context assembler", () => {
   it("builds a minimized immutable snapshot without raw ledger or full command history", () => {
-    const context = buildAiGameContext(state());
+    const current = state();
+    const context = buildAiGameContext(current);
 
     expect(context).toMatchObject({
       version: "ai-game-context-v1",
@@ -50,7 +57,34 @@ describe("AI game context assembler", () => {
     });
     expect(context).not.toHaveProperty("ledger");
     expect(context).not.toHaveProperty("acceptedCommandIds");
+    expect(context.finances.investableAssetsCents).toBe(
+      calculateInvestableAssets(current.finances),
+    );
+    expect(context.finances.netWorthCents).toBe(
+      calculateNetWorth(current.finances),
+    );
+    expect(context.finances).not.toHaveProperty("automaticLiquidityCents");
     expect(contextEvidence(context)).toHaveLength(6);
     expect(Object.isFrozen(context)).toBe(true);
+  });
+
+  it("uses canonical net worth for high restricted wealth", () => {
+    const maximum = Number.MAX_SAFE_INTEGER;
+    const restricted = state({
+      cashCents: moneyCents(0),
+      taxableInvestmentsCents: moneyCents(0),
+      retirementCents: moneyCents(maximum - 1),
+      homeValueCents: moneyCents(maximum),
+      otherInvestableAssetsCents: moneyCents(0),
+      otherAssetsCents: moneyCents(0),
+      nonCreditLiabilitiesCents: moneyCents(maximum),
+      creditLimitCents: moneyCents(maximum),
+      creditUsedCents: moneyCents(maximum),
+    });
+
+    expect(calculateNetWorth(restricted.finances)).toBe(-1);
+    expect(buildAiGameContext(restricted).finances.netWorthCents).toBe(
+      calculateNetWorth(restricted.finances),
+    );
   });
 });

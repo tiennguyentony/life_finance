@@ -1,3 +1,7 @@
+/**
+ * Frozen schema-v1 replay/test compatibility. New Web months dispatch through
+ * processMonthlyTurnV2 and the 2.0.0 financial kernel.
+ */
 import { getEventTemplate } from "../data/event-templates";
 import { safeBigIntToNumber } from "./domain/integer";
 import {

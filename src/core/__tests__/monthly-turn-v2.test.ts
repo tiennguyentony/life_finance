@@ -11,6 +11,7 @@ import {
   type ResolvedCashFlowV2,
 } from "../financial-kernel-v2";
 import { projectFinancialGoal } from "../financial-goals-v2";
+import { calculateInvestableAssets, calculateNetWorth } from "../game-state";
 import { validateGameStateV2, type GameStateV2 } from "../game-state-v2";
 import {
   marketSimulationState,
@@ -653,6 +654,15 @@ describe("atomic v2 monthly turn", () => {
         result.state.finances,
         result.state.gameplay.financialGoal,
       ).targetCents,
+    );
+    expect(checkpoint.end.investableAssetsCents).toBe(
+      calculateInvestableAssets(result.state.finances),
+    );
+    expect(checkpoint.end.netWorthCents).toBe(
+      calculateNetWorth(result.state.finances),
+    );
+    expect(checkpoint.totalLiquidationCostCents).toBe(
+      result.record.funding?.liquidationCostCents ?? 0,
     );
     expect(() =>
       buildCheckpointEvidenceV2(initial, result.state, [
