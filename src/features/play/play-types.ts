@@ -18,6 +18,9 @@ export type DetailedAction = Extract<
 >["payload"]["action"];
 export type PlayTab = "overview" | "strategy" | "actions" | "learn";
 
+/** Decision-log entry with a stable id so only new rows animate in. */
+export type ActivityEntry = Readonly<{ id: number; message: string }>;
+
 export type OnboardingDraft = Readonly<{
   presetId: PlayerPresetId;
   salary: number;
