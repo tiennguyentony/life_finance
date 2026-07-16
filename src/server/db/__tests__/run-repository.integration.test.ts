@@ -1,4 +1,4 @@
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
@@ -832,6 +832,7 @@ databaseDescribe("Postgres run repository", () => {
       idempotentReplay: false,
       state: { revision: 2, currentMonth: "2026-08" },
       monthlyRecord: {
+        financialKernelVersion: "2.0.0",
         processedMonth: "2026-07",
         nextMonth: "2026-08",
         taxTraceId: "tax.cmd.repository-v2.month",
@@ -1470,7 +1471,9 @@ databaseDescribe("Postgres run repository", () => {
     const replayedResponse = await process();
     const processed = (await processedResponse.json()) as {
       state: { revision: number; currentMonth: string };
+      stateChecksum: string;
       monthlyRecord: {
+        financialKernelVersion: string;
         processedMonth: string;
         taxTraceId: string;
         grossIncomeCents: number;
@@ -1536,6 +1539,74 @@ databaseDescribe("Postgres run repository", () => {
         }),
       ],
     });
+
+    const [storedCommand] = await connection.db
+      .select({
+        payload: acceptedCommands.payload,
+        resultingStateChecksum: acceptedCommands.resultingStateChecksum,
+      })
+      .from(acceptedCommands)
+      .where(
+        and(
+          eq(acceptedCommands.runId, created.runId),
+          eq(acceptedCommands.commandId, command.id),
+        ),
+      );
+    const [storedRecord] = await connection.db
+      .select({
+        record: monthlyTurnRecords.record,
+        recordChecksum: monthlyTurnRecords.recordChecksum,
+      })
+      .from(monthlyTurnRecords)
+      .where(
+        and(
+          eq(monthlyTurnRecords.runId, created.runId),
+          eq(monthlyTurnRecords.commandId, command.id),
+        ),
+      );
+    const storedLedger = await connection.db
+      .select({
+        commandId: ledgerTransactions.commandId,
+        category: ledgerTransactions.category,
+      })
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.runId, created.runId),
+          eq(ledgerTransactions.commandId, command.id),
+        ),
+      )
+      .orderBy(asc(ledgerTransactions.transactionIndex));
+
+    expect(storedCommand).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows: [],
+      },
+      resultingStateChecksum: processed.stateChecksum,
+    });
+    expect(storedRecord.record).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      openingNetWorthCents: expect.any(Number),
+      closingNetWorthCents: expect.any(Number),
+      fundingPlan: expect.objectContaining({ fullyFunded: true }),
+      shortfall: null,
+    });
+    expect(storedRecord.recordChecksum).toBe(
+      sha256Canonical(storedRecord.record),
+    );
+    expect(storedLedger.map(({ commandId }) => commandId)).toEqual(
+      Array(storedLedger.length).fill(command.id),
+    );
+    expect(storedLedger.map(({ category }) => category)).toEqual(
+      expect.arrayContaining([
+        "income.payroll",
+        "expense.non_debt_obligations",
+        "expense.debt_interest",
+        "liability.debt_payment",
+        "allocation.after_tax_strategy",
+      ]),
+    );
 
     const checkpointResponse = await handleGetCheckpointV2(
       new Request(

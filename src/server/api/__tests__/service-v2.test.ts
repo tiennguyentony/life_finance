@@ -12,7 +12,9 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../../data/scenario-catalog";
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
+import { commandV2ResponseSchema } from "../contracts-v2";
 import { RunApiServiceV2 } from "../service-v2";
+import { summarizeMonthlyRecord } from "../v2/monthly-record";
 import {
   buildTaxRequest,
   projectAnnualPretaxContributions,
@@ -125,6 +127,7 @@ describe("annual tax contribution projection", () => {
 
     const { cumulativePriceIndexPpm: _ignored, ...oldMarket } =
       initial.gameplay.market;
+    expect(_ignored).toBe(1_000_000);
     const oldState = {
       ...initial,
       gameplay: { ...initial.gameplay, market: oldMarket },
@@ -181,6 +184,10 @@ describe("annual tax context cache", () => {
         expect(command.payload.taxEvidence.traceId).toBe(
           `tax.cache.${commandId}`,
         );
+        expect(command.payload).toMatchObject({
+          financialKernelVersion: "2.0.0",
+          resolvedCashFlows: [],
+        });
         const applied = processMonthlyTurnV2(state, command);
         state = applied.state;
         return {
@@ -204,7 +211,176 @@ describe("annual tax context cache", () => {
 
     expect(calculate).not.toHaveBeenCalled();
     expect(response.state.revision).toBe(2);
-    expect(response.monthlyRecord?.taxTraceId).toBe(`tax.cache.${commandId}`);
+    expect(response.monthlyRecord).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      taxTraceId: `tax.cache.${commandId}`,
+      openingNetWorthCents: expect.any(Number),
+      closingNetWorthCents: expect.any(Number),
+      openingAutomaticLiquidityCents: expect.any(Number),
+      closingAutomaticLiquidityCents: expect.any(Number),
+      resolvedIncomeCents: 0,
+      resolvedExpenseCents: 0,
+      annualInflationIncreaseCents: expect.any(Number),
+      monthlyObligationInflationIncreaseCents: expect.any(Number),
+      cumulativePriceIndexPpm: expect.any(Number),
+      baseNonDebtObligationsCents: expect.any(Number),
+      fundingPlan: {
+        requiredCashCents: expect.any(Number),
+        cashAvailableCents: expect.any(Number),
+        cashUsedCents: expect.any(Number),
+        taxableLiquidations: expect.any(Array),
+        grossLiquidationCents: expect.any(Number),
+        liquidationCostCents: expect.any(Number),
+        netLiquidationProceedsCents: expect.any(Number),
+        remainingCreditCents: expect.any(Number),
+        creditUsedCents: expect.any(Number),
+        residualShortfallCents: expect.any(Number),
+        fullyFunded: true,
+      },
+      shortfall: null,
+    });
+    if (!response.monthlyRecord) {
+      throw new Error("expected a summarized monthly record");
+    }
+    if (!("fundingPlan" in response.monthlyRecord)) {
+      throw new Error("expected new-kernel monthly evidence");
+    }
+    expect(() =>
+      commandV2ResponseSchema.parse({
+        ...response,
+        monthlyRecord: {
+          ...response.monthlyRecord,
+          ignoredKernelEvidence: true,
+        },
+      }),
+    ).toThrow();
+    const {
+      fundingPlan: removedFundingPlan,
+      ...incompleteKernelSummary
+    } = response.monthlyRecord;
+    expect(removedFundingPlan).toBeDefined();
+    expect(() =>
+      commandV2ResponseSchema.parse({
+        ...response,
+        monthlyRecord: incompleteKernelSummary,
+      }),
+    ).toThrow();
+  });
+});
+
+describe("monthly record response compatibility", () => {
+  it("summarizes and validates a historical record without invented kernel evidence", () => {
+    const initial = stateWithStrategy();
+    const legacy = processMonthlyTurnV2(initial, {
+      schemaVersion: 2,
+      id: "month.legacy-summary",
+      type: "process_month_v2",
+      expectedRevision: initial.revision,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        taxEvidence: {
+          schemaVersion: 1,
+          traceId: "tax.legacy-summary",
+          economicYear: 2026,
+          policyYear: 2026,
+          stateCode: "WA",
+          filingStatus: "single",
+          provider: "PolicyEngine US",
+          bundleVersion: "4.21.0",
+          rulesVersion: "1.764.6",
+          projectedFromFrozenPolicy: false,
+          grossIncomeCents: moneyCents(1_000_000),
+          employee401kContributionCents: moneyCents(50_000),
+          employeeHsaContributionCents: moneyCents(20_000),
+          totalTaxCents: moneyCents(200_000),
+          afterTaxCashIncomeCents: moneyCents(730_000),
+        },
+        taxableLiquidationCostRatePpm: ratePpm(10_000),
+      },
+    });
+    const monthlyRecord = summarizeMonthlyRecord(legacy.record);
+    const parsed = commandV2ResponseSchema.parse({
+      state: legacy.state,
+      stateChecksum: sha256Canonical(legacy.state),
+      idempotentReplay: false,
+      monthlyRecord,
+    });
+
+    expect(monthlyRecord).not.toHaveProperty("financialKernelVersion");
+    expect(monthlyRecord).not.toHaveProperty("fundingPlan");
+    expect(parsed.monthlyRecord).toEqual(monthlyRecord);
+  });
+
+  it("validates the actual typed new-kernel shortfall evidence", () => {
+    const initial = stateWithStrategy();
+    const result = processMonthlyTurnV2(initial, {
+      schemaVersion: 2,
+      id: "month.kernel-shortfall-summary",
+      type: "process_month_v2",
+      expectedRevision: initial.revision,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        financialKernelVersion: "2.0.0",
+        taxEvidence: {
+          schemaVersion: 1,
+          traceId: "tax.kernel-shortfall-summary",
+          economicYear: 2026,
+          policyYear: 2026,
+          stateCode: "WA",
+          filingStatus: "single",
+          provider: "PolicyEngine US",
+          bundleVersion: "4.21.0",
+          rulesVersion: "1.764.6",
+          projectedFromFrozenPolicy: false,
+          grossIncomeCents: moneyCents(1_000_000),
+          employee401kContributionCents: moneyCents(50_000),
+          employeeHsaContributionCents: moneyCents(20_000),
+          totalTaxCents: moneyCents(200_000),
+          afterTaxCashIncomeCents: moneyCents(730_000),
+        },
+        taxableLiquidationCostRatePpm: ratePpm(10_000),
+        insuranceClaim: {
+          type: "health",
+          grossAmountCents: moneyCents(10_000_000),
+          covered: false,
+        },
+        resolvedCashFlows: [],
+      },
+    });
+    const monthlyRecord = summarizeMonthlyRecord(result.record);
+    const response = {
+      state: result.state,
+      stateChecksum: sha256Canonical(result.state),
+      idempotentReplay: false,
+      monthlyRecord,
+    };
+
+    expect(commandV2ResponseSchema.parse(response).monthlyRecord).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      fundingPlan: { fullyFunded: false },
+      shortfall: {
+        residualShortfallCents: expect.any(Number),
+        fundingPlan: { fullyFunded: false },
+        netWorthCents: expect.any(Number),
+        automaticLiquidityCents: expect.any(Number),
+      },
+      outcome: { kind: "bankruptcy" },
+    });
+    if (!("shortfall" in monthlyRecord) || !monthlyRecord.shortfall) {
+      throw new Error("expected shortfall evidence");
+    }
+    expect(() =>
+      commandV2ResponseSchema.parse({
+        ...response,
+        monthlyRecord: {
+          ...monthlyRecord,
+          shortfall: {
+            ...monthlyRecord.shortfall,
+            ignoredShortfallField: true,
+          },
+        },
+      }),
+    ).toThrow();
   });
 });
 

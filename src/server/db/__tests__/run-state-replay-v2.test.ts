@@ -47,6 +47,33 @@ const processMonthPayload = {
   taxableLiquidationCostRatePpm: 10_000,
 } as const;
 
+const resolvedCashFlows = [
+  {
+    id: "flow.replay.other-income",
+    kind: "other_income",
+    amountCents: 11,
+    sourceSystem: "policy.replay",
+  },
+  {
+    id: "flow.replay.recurring-expense",
+    kind: "recurring_expense",
+    amountCents: 7,
+    sourceSystem: "subscription.replay",
+  },
+  {
+    id: "flow.replay.temporary-income",
+    kind: "temporary_income",
+    amountCents: 13,
+    sourceSystem: "event.replay",
+  },
+  {
+    id: "flow.replay.temporary-expense",
+    kind: "temporary_expense",
+    amountCents: 5,
+    sourceSystem: "event.replay",
+  },
+] as const;
+
 const validPayloads = [
   ["take_detailed_action", { action: { type: "sell_home" } }],
   [
@@ -679,6 +706,161 @@ describe("verified v2 run-state replay", () => {
       ).toMatchObject({ payload: { financialKernelVersion } });
     },
   );
+
+  it("preserves absent version and resolved flows for historical monthly rows", () => {
+    const command = rebuildGameCommandV2(
+      storedRow("process_month_v2", processMonthPayload),
+    );
+
+    expect(command).toMatchObject({
+      type: "process_month_v2",
+      payload: processMonthPayload,
+    });
+    if (command.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(command.payload.financialKernelVersion).toBeUndefined();
+    expect(command.payload.resolvedCashFlows).toBeUndefined();
+  });
+
+  it("strictly decodes all persisted resolved cash-flow variants", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          resolvedCashFlows,
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows,
+      },
+    });
+  });
+
+  it.each([
+    [
+      "unknown kind",
+      [{ ...resolvedCashFlows[0], kind: "invented_income" }],
+    ],
+    ["negative cents", [{ ...resolvedCashFlows[0], amountCents: -1 }]],
+    [
+      "non-safe cents",
+      [{ ...resolvedCashFlows[0], amountCents: Number.MAX_SAFE_INTEGER + 1 }],
+    ],
+    ["unsafe flow id", [{ ...resolvedCashFlows[0], id: "flow/replay" }]],
+    [
+      "overlong flow id",
+      [{ ...resolvedCashFlows[0], id: `f${"x".repeat(64)}` }],
+    ],
+    [
+      "unsafe source identifier",
+      [{ ...resolvedCashFlows[0], sourceSystem: "event/replay" }],
+    ],
+    [
+      "overlong source identifier",
+      [{ ...resolvedCashFlows[0], sourceSystem: `s${"x".repeat(64)}` }],
+    ],
+    ["duplicate flow ids", [resolvedCashFlows[0], resolvedCashFlows[0]]],
+    [
+      "extra flow keys",
+      [{ ...resolvedCashFlows[0], ignoredFlowField: true }],
+    ],
+    [
+      "more than 64 flows",
+      Array.from({ length: 65 }, (_, index) => ({
+        ...resolvedCashFlows[0],
+        id: `flow.${index}`,
+      })),
+    ],
+  ])("rejects persisted resolved cash flows with %s", (_label, flows) => {
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            financialKernelVersion: "2.0.0",
+            resolvedCashFlows: flows,
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("replays all four persisted resolved-flow kinds once with stable causal ledger evidence", () => {
+    const start = legacyMonthlyReplayState("successful");
+    const stored: AcceptedCommandReplayRowV2 = {
+      runId: start.runId,
+      commandId: "cmd.kernel-replay.flows",
+      commandSchemaVersion: 2,
+      commandType: "process_month_v2",
+      expectedRevision: start.revision,
+      resultingRevision: start.revision + 1,
+      effectiveMonth: start.currentMonth,
+      payload: {
+        ...legacyMonthlyReplayPayload("successful"),
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows,
+      },
+      resultingStateChecksum: "0".repeat(64),
+    };
+    const command = rebuildGameCommandV2(stored);
+    const first = reduceGameCommandV2(start, command);
+    const second = reduceGameCommandV2(start, rebuildGameCommandV2(stored));
+    const stateChecksum = sha256Canonical(first.state);
+    const acceptedRow = { ...stored, resultingStateChecksum: stateChecksum };
+    const replayed = replayAcceptedCommandsV2(
+      {
+        runId: start.runId,
+        revision: start.revision,
+        stateSchemaVersion: start.schemaVersion,
+        engineVersion: start.engineVersion,
+        state: start,
+        stateChecksum: sha256Canonical(start),
+      },
+      [acceptedRow],
+      acceptedRow.resultingRevision,
+    );
+    const flowTransactions = first.state.ledger.transactions.filter(
+      (transaction) =>
+        transaction.causalReference?.kind === "system" &&
+        resolvedCashFlows.some(
+          (flow) => flow.id === transaction.causalReference?.id,
+        ),
+    );
+
+    expect(first.monthlyRecord).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      resolvedIncomeCents: 24,
+      resolvedExpenseCents: 12,
+    });
+    expect(flowTransactions).toHaveLength(4);
+    for (const flow of resolvedCashFlows) {
+      expect(
+        flowTransactions.filter(
+          (transaction) => transaction.causalReference?.id === flow.id,
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          commandId: stored.commandId,
+          sourceSystem: flow.sourceSystem,
+          category: flow.kind.endsWith("income")
+            ? "income.resolved_cash_flow"
+            : "expense.resolved_cash_flow",
+          causalReference: { kind: "system", id: flow.id },
+        }),
+      ]);
+    }
+    expect(second).toEqual(first);
+    expect(replayed).toEqual({ state: first.state, stateChecksum });
+    expect(replayed.state).toMatchObject({
+      revision: start.revision + 1,
+      currentMonth: "2026-08",
+      acceptedCommandIds: [stored.commandId],
+    });
+  });
 
   it("rejects an unknown persisted financial kernel", () => {
     expect(
