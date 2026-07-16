@@ -1615,8 +1615,21 @@ describe("projectWithoutEventsV2", () => {
     expect(state.currentMonth).toBe("2026-07");
   });
 
-  it("rejects a life milestone decision due inside the projection horizon", () => {
+  it("retains a life milestone first due in the final projected month", () => {
     const base = fixedGoldenInput();
+    const state = withScheduledMilestone(base.state, "2026-08");
+
+    const result = projectWithoutEventsV2(withOpeningState(base, state));
+
+    expect(result.completedMonths).toBe(1);
+    expect(result.projectedState.state.currentMonth).toBe("2026-08");
+    expect(result.projectedState.state.gameplay.lifeMilestones).toEqual(
+      state.gameplay.lifeMilestones,
+    );
+  });
+
+  it("rejects a life milestone due before the final projected transition", () => {
+    const base = stateSeededInput(2, ZERO_MARKET_MODIFIERS);
     const state = withScheduledMilestone(base.state, "2026-08");
     const openingChecksum = sha256Canonical(state);
 
