@@ -26,6 +26,8 @@ import {
   projectFinancialGoal,
   type FinancialGoalV1,
 } from "./financial-goals-v2";
+import type { FinancialShortfallV2 } from "./financial-kernel-v2";
+import type { GameStateV2 } from "./game-state-v2";
 
 export type LiquidityAssessment = Readonly<{
   requiredObligationsCents: MoneyCents;
@@ -104,7 +106,9 @@ export function assessRequiredObligationLiquidity(
   });
 }
 
-export function calculateAgeYears(state: GameState): number {
+export function calculateAgeYears(
+  state: GameState | GameStateV2,
+): number {
   return Math.floor(
     monthsBetween(state.player.birthMonth, state.currentMonth) / 12,
   );
@@ -165,6 +169,48 @@ export function evaluateTerminalOutcome(
       reasonCode: isPlayerSelectedGoal
         ? "reached_player_target_age"
         : "reached_age_65",
+    });
+  }
+  return null;
+}
+
+export function evaluateTerminalOutcomeV2(
+  state: GameStateV2,
+  shortfall: FinancialShortfallV2 | null,
+): GameOutcome | null {
+  if (state.outcome) return state.outcome;
+  if (shortfall !== null) {
+    return Object.freeze({
+      kind: "bankruptcy",
+      grade: "F",
+      reachedMonth: state.currentMonth,
+      reasonCode: "required_obligations_exceed_automatic_liquidity",
+    });
+  }
+
+  const financialGoal = state.gameplay.financialGoal;
+  const goalProjection = projectFinancialGoal(state.finances, financialGoal);
+  if (goalProjection.investableAssetsCents >= goalProjection.targetCents) {
+    return Object.freeze({
+      kind: "financial_independence",
+      grade: "S",
+      reachedMonth: state.currentMonth,
+      reasonCode:
+        financialGoal?.source === "player_selected"
+          ? "investable_assets_reached_player_fi_goal"
+          : "investable_assets_reached_25x_living_cost",
+    });
+  }
+
+  if (calculateAgeYears(state) >= (financialGoal?.targetAgeYears ?? 65)) {
+    return Object.freeze({
+      kind: "retirement_age",
+      grade: gradeRetirementProgress(state.finances, financialGoal),
+      reachedMonth: state.currentMonth,
+      reasonCode:
+        financialGoal?.source === "player_selected"
+          ? "reached_player_target_age"
+          : "reached_age_65",
     });
   }
   return null;

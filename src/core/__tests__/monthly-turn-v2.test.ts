@@ -5,8 +5,18 @@ import { buildCheckpointEvidenceV2 } from "../checkpoint-v2";
 import { reduceDetailedFinanceCommand } from "../detailed-actions-v2";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
+import {
+  FINANCIAL_KERNEL_V2_VERSION,
+  simulateFinancialMonthV2,
+  type ResolvedCashFlowV2,
+} from "../financial-kernel-v2";
 import { projectFinancialGoal } from "../financial-goals-v2";
 import { validateGameStateV2 } from "../game-state-v2";
+import {
+  marketSimulationState,
+  simulateMarketMonth,
+} from "../market";
+import { activeMacroReturnModifiersV2 } from "../macro-story-v2";
 import * as monthlyTurnV2Module from "../monthly-turn-v2";
 import {
   financialKernelVersionForCommandV2,
@@ -21,7 +31,11 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function configuredState() {
+function configuredState(
+  financeOverrides: Partial<
+    Parameters<typeof createNativeGameStateV2>[0]["finances"]
+  > = {},
+) {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
     {
@@ -66,6 +80,7 @@ function configuredState() {
       ],
       revolvingCreditLimitCents: moneyCents(1_000_000),
       revolvingCreditUsedCents: moneyCents(0),
+      ...financeOverrides,
     },
     wellbeing: {
       burnoutPpm: ratePpm(100_000),
@@ -90,6 +105,76 @@ function configuredState() {
       },
     },
   });
+}
+
+const NO_FOLLOW_UP_EVENTS = Object.freeze({
+  eventSchedulingPolicy: Object.freeze({
+    version: "fairness-v1" as const,
+    minimumChancePpm: 0,
+    maximumChancePpm: 0,
+  }),
+  macroStoryPolicy: Object.freeze({
+    version: "macro-story-v1" as const,
+    monthlyChancePpm: 0,
+    minimumDurationMonths: 1,
+    maximumDurationMonths: 1,
+  }),
+});
+
+function expectedMarketStep(state: ReturnType<typeof configuredState>) {
+  return simulateMarketMonth(
+    marketSimulationState(
+      state.marketRegime,
+      state.random,
+      state.gameplay.market.monthsInRegime,
+    ),
+    activeMacroReturnModifiersV2(state),
+  );
+}
+
+function directFinancialMonth(
+  state: ReturnType<typeof configuredState>,
+  monthCommand: ProcessMonthV2Command,
+) {
+  return simulateFinancialMonthV2({
+    version: FINANCIAL_KERNEL_V2_VERSION,
+    commandId: monthCommand.id,
+    state,
+    taxEvidence: monthCommand.payload.taxEvidence,
+    marketStep: expectedMarketStep(state),
+    taxableLiquidationCostRatePpm:
+      monthCommand.payload.taxableLiquidationCostRatePpm,
+    insuranceClaim: monthCommand.payload.insuranceClaim,
+    resolvedCashFlows: monthCommand.payload.resolvedCashFlows,
+  });
+}
+
+function exactLiquidityClaim(
+  state: ReturnType<typeof configuredState>,
+  residualShortfallCents: number,
+) {
+  const oversizedClaimCents = moneyCents(100_000_000);
+  const probeCommand = command(state, {
+    financialKernelVersion: "2.0.0",
+    insuranceClaim: {
+      type: "health",
+      grossAmountCents: oversizedClaimCents,
+      covered: false,
+    },
+  });
+  const probe = directFinancialMonth(state, probeCommand);
+  if (probe.shortfall === null) {
+    throw new Error("oversized claim fixture must exceed automatic liquidity");
+  }
+  const baseRequiredCashCents =
+    probe.record.requiredCashCents - oversizedClaimCents;
+  const maximumFundedCashCents =
+    probe.record.requiredCashCents - probe.shortfall.residualShortfallCents;
+  return moneyCents(
+    maximumFundedCashCents -
+      baseRequiredCashCents +
+      residualShortfallCents,
+  );
 }
 
 function command(
@@ -154,26 +239,26 @@ describe("atomic v2 monthly turn", () => {
     ).toBe("2.0.0");
   });
 
-  it.each(["2.0.0", "invented-kernel"])(
-    "rejects the unsupported %s financial kernel without legacy fallback",
-    (financialKernelVersion) => {
-      const initial = configuredState();
-      const versioned = command(initial, {
-        financialKernelVersion,
-      } as never);
+  it("rejects invented financial kernels without legacy fallback", () => {
+    const initial = configuredState();
+    const versioned = command(initial, {
+      financialKernelVersion: "invented-kernel",
+    } as never);
 
-      expect(() => processMonthlyTurnV2(initial, versioned)).toThrow(
-        expect.objectContaining({
-          code: "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
-        }),
-      );
-      expect(initial.revision).toBe(1);
-    },
-  );
+    expect(() => processMonthlyTurnV2(initial, versioned)).toThrow(
+      expect.objectContaining({
+        code: "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
+      }),
+    );
+    expect(initial.revision).toBe(1);
+  });
 
   it("composes market, payroll, obligations, debt, strategy, and outcome once", () => {
     const initial = configuredState();
-    const result = processMonthlyTurnV2(initial, command(initial));
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, { financialKernelVersion: "2.0.0" }),
+    );
 
     expect(result.state.currentMonth).toBe("2026-08");
     expect(result.state.revision).toBe(2);
@@ -182,12 +267,26 @@ describe("atomic v2 monthly turn", () => {
       "cmd.month.2026-07",
     ]);
     expect(result.record).toMatchObject({
+      financialKernelVersion: "2.0.0",
       processedMonth: "2026-07",
       nextMonth: "2026-08",
       taxTraceId: "tax.cmd.month.2026-07",
+      resolvedIncomeCents: 0,
+      resolvedExpenseCents: 0,
       insurancePlayerCostCents: 0,
+      shortfall: null,
       outcome: null,
     });
+    expect(result.record.openingNetWorthCents).toBeTypeOf("number");
+    expect(result.record.closingNetWorthCents).toBeTypeOf("number");
+    expect(result.record.openingAutomaticLiquidityCents).toBeTypeOf("number");
+    expect(result.record.closingAutomaticLiquidityCents).toBeTypeOf("number");
+    expect(result.record.monthlyObligationInflationIncreaseCents).toBeTypeOf(
+      "number",
+    );
+    expect(result.record.cumulativePriceIndexPpm).toBeTypeOf("number");
+    expect(result.record.baseNonDebtObligationsCents).toBeTypeOf("number");
+    expect(result.record.fundingPlan?.fullyFunded).toBe(true);
     expect(result.record.debtService.lines[0]).toMatchObject({
       interestCents: 1_200,
       scheduledPaymentCents: 11_000,
@@ -222,6 +321,239 @@ describe("atomic v2 monthly turn", () => {
     });
     expect(validateGameStateV2(result.state)).toEqual([]);
     expect(initial.currentMonth).toBe("2026-07");
+  });
+
+  it("samples one complete deterministic market step for the 2.0.0 kernel", () => {
+    const leftInitial = configuredState();
+    const rightInitial = configuredState();
+    const expected = expectedMarketStep(leftInitial);
+    const left = processMonthlyTurnV2(
+      leftInitial,
+      command(leftInitial, { financialKernelVersion: "2.0.0" }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+    const right = processMonthlyTurnV2(
+      rightInitial,
+      command(rightInitial, { financialKernelVersion: "2.0.0" }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(left.record.market).toEqual(expected.month);
+    expect(left.record.market).toEqual(right.record.market);
+    expect(left.state.marketRegime).toBe(expected.nextState.regime);
+    expect(left.state.gameplay.market.monthsInRegime).toBe(
+      expected.nextState.monthsInRegime,
+    );
+    expect(sha256Canonical(left.record)).toBe(sha256Canonical(right.record));
+  });
+
+  it("passes every resolved cash-flow kind through the command once with provenance", () => {
+    const initial = configuredState();
+    const resolvedCashFlows = Object.freeze([
+      {
+        id: "flow.other-income",
+        kind: "other_income",
+        amountCents: moneyCents(10_000),
+        sourceSystem: "fixture.other",
+      },
+      {
+        id: "flow.recurring-expense",
+        kind: "recurring_expense",
+        amountCents: moneyCents(2_000),
+        sourceSystem: "fixture.recurring",
+      },
+      {
+        id: "flow.temporary-income",
+        kind: "temporary_income",
+        amountCents: moneyCents(20_000),
+        sourceSystem: "fixture.temporary",
+      },
+      {
+        id: "flow.temporary-expense",
+        kind: "temporary_expense",
+        amountCents: moneyCents(3_000),
+        sourceSystem: "fixture.temporary",
+      },
+    ] satisfies readonly ResolvedCashFlowV2[]);
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows,
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.record).toMatchObject({
+      resolvedIncomeCents: 30_000,
+      resolvedExpenseCents: 5_000,
+    });
+    const flowTransactions = result.state.ledger.transactions.filter(
+      ({ causalReference }) =>
+        causalReference?.kind === "system" &&
+        resolvedCashFlows.some(({ id }) => id === causalReference?.id),
+    );
+    expect(flowTransactions).toHaveLength(4);
+    for (const flow of resolvedCashFlows) {
+      expect(
+        flowTransactions.filter(
+          ({ causalReference }) => causalReference?.id === flow.id,
+        ),
+      ).toHaveLength(1);
+      expect(
+        flowTransactions.find(
+          ({ causalReference }) => causalReference?.id === flow.id,
+        ),
+      ).toMatchObject({
+        commandId: "cmd.month.2026-07",
+        sourceSystem: flow.sourceSystem,
+        causalReference: { kind: "system", id: flow.id },
+      });
+    }
+  });
+
+  it("turns an exact one-cent kernel shortfall into bankruptcy without partial payment", () => {
+    const initial = configuredState();
+    const marketStep = expectedMarketStep(initial);
+    const exactClaimCents = exactLiquidityClaim(initial, 1);
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        insuranceClaim: {
+          type: "health",
+          grossAmountCents: exactClaimCents,
+          covered: false,
+        },
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.record.shortfall).toMatchObject({
+      residualShortfallCents: 1,
+    });
+    expect(result.state.outcome).toMatchObject({
+      kind: "bankruptcy",
+      grade: "F",
+    });
+    expect(result.record).toMatchObject({
+      funding: null,
+      nonDebtObligationsPaidCents: 0,
+      recurringAllocations: null,
+      scheduledEvent: null,
+    });
+    expect(result.state.revision).toBe(initial.revision + 1);
+    expect(result.state.acceptedCommandIds).toEqual([
+      ...initial.acceptedCommandIds,
+      "cmd.month.2026-07",
+    ]);
+    expect(result.state.random).toEqual(marketStep.nextState.random);
+    expect(
+      result.state.ledger.transactions.some(({ reasonCode }) =>
+        [
+          "execute_v2_obligation_funding",
+          "monthly_resolved_expense_v2",
+          "monthly_non_debt_obligations_v2",
+          "monthly_term_debt_interest",
+          "monthly_term_debt_payment",
+          "monthly_after_tax_strategy_v2",
+        ].includes(reasonCode),
+      ),
+    ).toBe(false);
+  });
+
+  it("declares bankruptcy when high positive net worth is restricted", () => {
+    const initial = configuredState({
+      cashCents: moneyCents(100_000),
+      taxableBroadIndexCents: moneyCents(0),
+      taxableSectorCents: moneyCents(0),
+      taxableSpeculativeCents: moneyCents(0),
+      retirement401kCents: moneyCents(100_000_000),
+      retirementIraCents: moneyCents(0),
+      hsaCents: moneyCents(0),
+      revolvingCreditLimitCents: moneyCents(0),
+      revolvingCreditUsedCents: moneyCents(0),
+    });
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        insuranceClaim: {
+          type: "health",
+          grossAmountCents: moneyCents(100_000_000),
+          covered: false,
+        },
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.record.closingNetWorthCents).toBeGreaterThan(0);
+    expect(result.record.shortfall).not.toBeNull();
+    expect(result.state.outcome).toMatchObject({ kind: "bankruptcy" });
+  });
+
+  it("does not predict bankruptcy after an exactly funded current month", () => {
+    const initial = configuredState();
+    const exactClaimCents = exactLiquidityClaim(initial, 0);
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        insuranceClaim: {
+          type: "health",
+          grossAmountCents: exactClaimCents,
+          covered: false,
+        },
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.record.shortfall).toBeNull();
+    expect(result.record.fundingPlan?.residualShortfallCents).toBe(0);
+    expect(result.record.closingAutomaticLiquidityCents).toBe(0);
+    expect(result.state.outcome).toBeNull();
+  });
+
+  it("keeps career, outcome, exposure, macro, and event orchestration outside the kernel", () => {
+    const initial = configuredState();
+    const monthCommand = command(initial, {
+      financialKernelVersion: "2.0.0",
+    });
+    const direct = directFinancialMonth(initial, monthCommand);
+    const wrapped = processMonthlyTurnV2(initial, monthCommand, {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 1_000_000,
+        maximumChancePpm: 1_000_000,
+      },
+      macroStoryPolicy: {
+        version: "macro-story-v1",
+        monthlyChancePpm: 1_000_000,
+        minimumDurationMonths: 2,
+        maximumDurationMonths: 2,
+      },
+    });
+
+    expect(direct.state.revision).toBe(initial.revision);
+    expect(direct.state.acceptedCommandIds).toEqual(initial.acceptedCommandIds);
+    expect(direct.state.outcome).toBe(initial.outcome);
+    expect(direct.state.gameplay.careerDevelopment).toEqual(
+      initial.gameplay.careerDevelopment,
+    );
+    expect(direct.state.gameplay.exposure).toEqual(initial.gameplay.exposure);
+    expect(direct.state.gameplay.eventLifecycle).toEqual(
+      initial.gameplay.eventLifecycle,
+    );
+
+    expect(wrapped.state.gameplay.careerDevelopment.pending).toEqual([]);
+    expect(wrapped.state.gameplay.careerDevelopment).toEqual(
+      initial.gameplay.careerDevelopment,
+    );
+    expect(wrapped.state.gameplay.exposure.current).toMatchObject({
+      month: "2026-08",
+    });
+    expect(wrapped.state.gameplay.eventLifecycle.macroStories).toHaveLength(1);
+    expect(wrapped.state.gameplay.eventLifecycle.pending).not.toBeNull();
   });
 
   it("is checksum deterministic and rejects an identical command after acceptance", () => {
@@ -296,7 +628,11 @@ describe("atomic v2 monthly turn", () => {
     for (let index = 0; index < 3; index += 1) {
       current = processMonthlyTurnV2(
         current,
-        command(current, {}, `cmd.upskill.month.${current.currentMonth}`),
+        command(
+          current,
+          { financialKernelVersion: "2.0.0" },
+          `cmd.upskill.month.${current.currentMonth}`,
+        ),
         noEvents,
       ).state;
     }
