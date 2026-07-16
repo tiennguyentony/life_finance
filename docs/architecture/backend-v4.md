@@ -131,11 +131,17 @@ entries are never edited or deleted.
 - Home equity, retirement, HSA, and other restricted/illiquid assets do not
   supply automatic liquidity; they require an explicit validated action.
 - Financial independence is reached when investable/yielding assets meet the
-  player's versioned finish line: desired annual spending divided by the
-  selected safe-withdrawal rate. Home equity is excluded. It ends the run
+  versioned finish line: desired annual spending divided by the safe-withdrawal
+  rate. A player-selected spending goal stays fixed; the default goal follows
+  current annual living cost. Home equity is excluded. FI ends the run
   immediately with grade S.
-- At age 65, non-FI grades use goal progress: A at 0.8, B at 0.6, C at 0.4, D at
-  0.2, and E below 0.2. Bankruptcy is F.
+- Outcome policy `1.0.0` stops a non-FI, solvent run at age 65. Its inclusive
+  FI-progress lower bounds are A at 0.8, B at 0.6, C at 0.4, D at 0.2, and E at
+  zero. An actual required-obligation shortfall takes precedence and is F.
+- The terminal state persists the policy version, bounded reason codes, FI
+  numerator/target/progress, displayed net worth, actual automatic-liquidity
+  evidence, and retirement readiness. Cross-field state validation rejects
+  inconsistent evidence rather than recalculating a replacement grade.
 
 ## Exposure evidence
 
@@ -217,7 +223,10 @@ internal command containing server-owned tax evidence,
 `financialKernelVersion: "2.0.0"`, and resolved cash-flow evidence. Strict
 persisted decoding keeps historical absence/`legacy-4.1.0` compatible while
 preventing resolved flows from being attached to a legacy reducer. Monthly API
-summaries expose a strict legacy-or-2.0.0 evidence union.
+summaries expose a strict legacy-or-2.0.0 evidence union. New commands also carry
+`outcomePolicyVersion: "1.0.0"`; historical absence retains the frozen outcome
+semantics and checksum. The goal/outcome contract is detailed in
+[`goals-and-grading-v2.md`](./goals-and-grading-v2.md).
 
 ## Verification gates
 

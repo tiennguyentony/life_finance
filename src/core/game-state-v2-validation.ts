@@ -2,7 +2,10 @@ import { sha256Canonical } from "./canonical";
 import { compareMonths, simulationMonth } from "./domain/month";
 import {
   assertValidGameState,
+  calculateAgeYearsAtMonth,
+  calculateNetWorth,
   type GameState as GameStateV1,
+  type DeterministicGameOutcomeV1,
   type StateInvariantViolation,
 } from "./game-state";
 import {
@@ -13,10 +16,17 @@ import {
 import type { GameStateV2 } from "./game-state-v2";
 import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-validation";
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
-import { validateFinancialGoal } from "./financial-goals-v2";
+import {
+  projectFinancialGoal,
+  validateFinancialGoal,
+} from "./financial-goals-v2";
 import { validateLifeMilestoneState } from "./life-milestones-v2";
 import { validateAiLearningMemory } from "./ai-learning-memory-v2";
 import { validateRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
+import {
+  gradeRetirementProgressV1,
+  outcomePolicyForVersionV2,
+} from "./outcome-policy-v2";
 
 export class InvalidGameStateV2Error extends Error {
   readonly violations: readonly StateInvariantViolation[];
@@ -73,6 +83,112 @@ function validateMoneyRecord(
         ),
       );
     }
+  }
+}
+
+function validateDeterministicOutcomeAgainstState(
+  state: GameStateV2,
+  violations: StateInvariantViolation[],
+): void {
+  if (
+    state.outcome === null ||
+    !("outcomePolicyVersion" in state.outcome)
+  ) {
+    return;
+  }
+  const outcome = state.outcome as DeterministicGameOutcomeV1;
+  let policy;
+  let projection;
+  try {
+    policy = outcomePolicyForVersionV2(outcome.outcomePolicyVersion);
+    projection = projectFinancialGoal(
+      state.finances,
+      state.gameplay.financialGoal,
+    );
+  } catch {
+    violations.push(
+      violation(
+        "outcome",
+        "invalid_outcome_authority",
+        "versioned outcome evidence must resolve through supported goal and outcome policies",
+      ),
+    );
+    return;
+  }
+
+  const fi = outcome.financialIndependence;
+  if (
+    fi.goalSource !== projection.goal.source ||
+    fi.investableAssetsCents !== projection.investableAssetsCents ||
+    fi.targetCents !== projection.targetCents ||
+    fi.progressPpm !== projection.progressPpm
+  ) {
+    violations.push(
+      violation(
+        "outcome.financialIndependence",
+        "outcome_projection_mismatch",
+        "FI evidence must equal the authoritative projection from persisted state",
+      ),
+    );
+  }
+
+  if (outcome.displayedNetWorthCents !== calculateNetWorth(state.finances)) {
+    violations.push(
+      violation(
+        "outcome.displayedNetWorthCents",
+        "outcome_net_worth_mismatch",
+        "displayed net worth must equal the authoritative state calculation",
+      ),
+    );
+  }
+
+  const currentAgeYears = calculateAgeYearsAtMonth(
+    state.player.birthMonth,
+    state.currentMonth,
+  );
+  const expectedGrade = gradeRetirementProgressV1(
+    projection.progressPpm,
+    outcome.outcomePolicyVersion,
+  );
+  const retirement = outcome.retirementReadiness;
+  if (
+    retirement.retirementAgeYears !== policy.retirementAgeYears ||
+    retirement.currentAgeYears !== currentAgeYears ||
+    retirement.reachedRetirementAge !==
+      (currentAgeYears >= policy.retirementAgeYears) ||
+    retirement.gradeIfRetiredNow !== expectedGrade
+  ) {
+    violations.push(
+      violation(
+        "outcome.retirementReadiness",
+        "outcome_retirement_mismatch",
+        "retirement evidence must equal the authoritative age, policy, and FI grade",
+      ),
+    );
+  }
+
+  const solvent = outcome.automaticLiquidSolvency.isSolvent;
+  const validTerminalState =
+    (outcome.kind === "bankruptcy" &&
+      outcome.grade === "F" &&
+      !solvent) ||
+    (outcome.kind === "financial_independence" &&
+      outcome.grade === "S" &&
+      solvent &&
+      projection.progressPpm === 1_000_000) ||
+    (outcome.kind === "retirement_age" &&
+      outcome.grade === expectedGrade &&
+      solvent &&
+      projection.progressPpm < 1_000_000 &&
+      currentAgeYears >= policy.retirementAgeYears);
+  if (!validTerminalState) {
+    violations.push(
+      violation(
+        "outcome.kind",
+        "outcome_terminal_state_mismatch",
+        "outcome kind and grade must match persisted solvency, FI progress, and age",
+      ),
+    );
   }
 }
 
@@ -471,6 +587,7 @@ export function validateGameStateV2(
     );
   }
   violations.push(...validateEventAndCareerStateV2(state));
+  validateDeterministicOutcomeAgainstState(state, violations);
 
   return violations;
 }

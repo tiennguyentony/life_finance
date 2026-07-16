@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";
-import { createInitialGameState } from "../game-state";
+import {
+  createInitialGameState,
+  type DeterministicGameOutcomeV1,
+} from "../game-state";
 import {
   migrateGameStateV1ToV2,
   validateGameStateV2,
@@ -148,5 +151,79 @@ describe("game state v1 to v2 migration", () => {
         ]),
       );
     }
+  });
+
+  it("validates rich outcome evidence while accepting its exact structure", () => {
+    const migrated = migrateGameStateV1ToV2(createV1Fixture());
+    const valid = {
+      ...migrated,
+      outcome: {
+        outcomePolicyVersion: "1.0.0",
+        kind: "bankruptcy",
+        grade: "F",
+        reachedMonth: migrated.currentMonth,
+        reasonCode: "actual_required_obligation_shortfall",
+        reasonCodes: [
+          "actual_required_obligation_shortfall",
+          "automatic_liquidity_exhausted",
+        ],
+        financialIndependence: {
+          goalSource: "current_lifestyle_default",
+          investableAssetsCents: moneyCents(11_000_00),
+          targetCents: moneyCents(1_500_000_00),
+          progressPpm: ratePpm(7_333),
+        },
+        displayedNetWorthCents: moneyCents(13_100_00),
+        automaticLiquidSolvency: {
+          requiredCashCents: moneyCents(101),
+          automaticLiquidityCents: moneyCents(100),
+          residualShortfallCents: moneyCents(1),
+          isSolvent: false,
+        },
+        retirementReadiness: {
+          retirementAgeYears: 65,
+          currentAgeYears: 30,
+          reachedRetirementAge: false,
+          gradeIfRetiredNow: "E",
+        },
+      },
+    } as GameStateV2;
+
+    expect(validateGameStateV2(valid)).toEqual([]);
+    expect(
+      validateGameStateV2({
+        ...valid,
+        outcome: {
+          ...valid.outcome!,
+          reasonCode: "invented_reason",
+          automaticLiquidSolvency: {
+            ...(valid.outcome as DeterministicGameOutcomeV1)
+              .automaticLiquidSolvency,
+            isSolvent: true,
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_outcome_evidence" }),
+      ]),
+    );
+    expect(
+      validateGameStateV2({
+        ...valid,
+        outcome: {
+          ...valid.outcome!,
+          automaticLiquidSolvency: {
+            ...(valid.outcome as DeterministicGameOutcomeV1)
+              .automaticLiquidSolvency,
+            automaticLiquidityCents: moneyCents(99),
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_outcome_evidence" }),
+      ]),
+    );
   });
 });

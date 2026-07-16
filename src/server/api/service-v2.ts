@@ -10,6 +10,7 @@ import {
   type ProcessMonthV2Command,
 } from "../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
+import { OUTCOME_POLICY_V1_VERSION } from "../../core/outcome-policy-v2";
 import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
 import {
   advanceTimeV2,
@@ -208,6 +209,7 @@ export class RunApiServiceV2 {
           commandId,
           payload: {
             financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+            outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
             taxEvidence:
               offset === 0
                 ? evidence
@@ -459,6 +461,7 @@ export class RunApiServiceV2 {
         effectiveMonth: simulationMonth(command.effectiveMonth),
         payload: {
           financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
           taxEvidence: evidence,
           taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
           resolvedCashFlows: [],

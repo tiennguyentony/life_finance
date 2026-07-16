@@ -132,6 +132,7 @@ function inputs(
         commandId,
         payload: Object.freeze({
           financialKernelVersion: "2.0.0" as const,
+          outcomePolicyVersion: "1.0.0" as const,
           taxEvidence: Object.freeze({
             schemaVersion: 1 as const,
             traceId: `tax.${commandId}`,

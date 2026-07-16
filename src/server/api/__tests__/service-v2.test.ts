@@ -498,6 +498,93 @@ describe("annual tax year rollover", () => {
 });
 
 describe("monthly record response compatibility", () => {
+  it("integrates service policy stamping, the monthly reducer, and the strict rich terminal response", async () => {
+    const younger = stateWithStrategy();
+    let state: ReturnType<typeof stateWithStrategy> = {
+      ...younger,
+      player: {
+        ...younger.player,
+        birthMonth: simulationMonth("1961-01"),
+      },
+    };
+    const calculate = vi.fn(async (request: TaxCalculationRequest) =>
+      taxCalculationResultSchema.parse({
+        schemaVersion: 1,
+        traceId: request.traceId,
+        economicYear: request.economicYear,
+        policyYear: request.policyYear,
+        stateCode: request.stateCode,
+        filingStatus: request.filingStatus,
+        annualGrossIncomeCents: 12_000_000,
+        federalIncomeTaxCents: 1_000_000,
+        stateIncomeTaxCents: 0,
+        employeePayrollTaxCents: 200_000,
+        selfEmploymentTaxCents: 0,
+        totalTaxCents: 1_200_000,
+        afterTaxIncomeCents: 10_800_000,
+        effectiveTaxRatePpm: 100_000,
+        componentsCents: {},
+        model: {
+          provider: "PolicyEngine US",
+          bundleVersion: POLICYENGINE_BUNDLE_VERSION,
+          rulesVersion: POLICYENGINE_US_VERSION,
+          projectedFromFrozenPolicy: true,
+        },
+        disclaimer:
+          "Educational estimate only; not tax, legal, or financial advice.",
+      }),
+    );
+    const applyCommandV2 = vi.fn(async (_runId, _secret, command) => {
+      if (command.type !== "process_month_v2") {
+        throw new Error("expected a monthly command");
+      }
+      expect(command.payload.outcomePolicyVersion).toBe("1.0.0");
+      const applied = processMonthlyTurnV2(state, command);
+      state = applied.state;
+      return {
+        state,
+        stateChecksum: sha256Canonical(state),
+        idempotentReplay: false,
+        monthlyRecord: applied.record,
+      };
+    });
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext: vi.fn(async () => null),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2: vi.fn(),
+      applyCommandV2,
+    };
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const response = await service.submitCommand("run-id", "secret", {
+      schemaVersion: 2,
+      id: "month.rich-retirement-response",
+      type: "process_month",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      payload: {},
+    });
+
+    expect(applyCommandV2).toHaveBeenCalledOnce();
+    expect(response.state.outcome).toMatchObject({
+      outcomePolicyVersion: "1.0.0",
+      kind: "retirement_age",
+      reasonCode: "configured_retirement_age_reached",
+      retirementReadiness: {
+        retirementAgeYears: 65,
+        reachedRetirementAge: true,
+      },
+    });
+    expect(response.monthlyRecord).toMatchObject({
+      outcomePolicyVersion: "1.0.0",
+      outcome: response.state.outcome,
+    });
+  });
+
   it("summarizes and validates a historical record without invented kernel evidence", () => {
     const initial = stateWithStrategy();
     const legacy = processMonthlyTurnV2(initial, {
