@@ -6,7 +6,7 @@ import { DetailedFinanceError } from "../../core/detailed-actions-v2";
 import { safeBigIntToNumber } from "../../core/domain/integer";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { monthsBetween, simulationMonth } from "../../core/domain/month";
-import { CAUSAL_EVENT_SCHEDULER_V1_VERSION } from "../../core/event-scheduler-v2";
+import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../../core/event-scheduler-v2";
 import { MACRO_MARKET_MODEL_V2_VERSION } from "../../core/market";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
@@ -216,7 +216,7 @@ export class RunApiServiceV2 {
           payload: {
             financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
             outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
-            eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+            eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
             marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
             macroDifficulty: "normal" as const,
             taxEvidence:
@@ -489,7 +489,7 @@ export class RunApiServiceV2 {
         payload: {
           financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
           outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
-          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
           marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
           macroDifficulty: "normal",
           taxEvidence: evidence,

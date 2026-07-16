@@ -1,8 +1,31 @@
 import { sha256Canonical } from "./canonical";
+import { canonicalJson } from "./canonical";
+import { getPersonalEventTemplateV2 } from "../data/personal-event-templates-v2";
 import { isAiContentSource } from "./ai-source";
-import { compareMonths, simulationMonth } from "./domain/month";
+import { divideRoundHalfAwayFromZero, safeBigIntToNumber } from "./domain/integer";
+import { moneyCents } from "./domain/money";
+import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
 import type { StateInvariantViolation } from "./game-state";
-import type { GameStateV2 } from "./game-state-v2";
+import type {
+  GameStateV2,
+  ResolvedEventEvidenceV2,
+  ScheduledPersonalEventCashFlowV2,
+} from "./game-state-v2";
+import {
+  personalEventCashFlowIdV2,
+  personalEventEffectIdV2,
+  type PersonalEventMagnitudeV2,
+} from "./personal-event-v2";
+
+const EVENT_FLOW_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
+const DECLARATIVE_METADATA_KEYS = [
+  "category",
+  "classification",
+  "lessonTags",
+  "pressureCost",
+  "recoveryDurationMonths",
+  "fallbackNarrative",
+] as const;
 
 function violation(
   path: string,
@@ -10,6 +33,136 @@ function violation(
   message: string,
 ): StateInvariantViolation {
   return { path, code, message };
+}
+
+function declarativeDiscriminator(
+  event: Readonly<Record<string, unknown>>,
+  path: string,
+  violations: StateInvariantViolation[],
+): boolean {
+  const version = event.eventSchemaVersion;
+  if (version !== undefined && version !== 2) {
+    violations.push(violation(
+      path,
+      "unsupported_event_schema_version",
+      "event schema discriminator must use a supported exact version",
+    ));
+    return false;
+  }
+  if (
+    version === undefined &&
+    DECLARATIVE_METADATA_KEYS.some((key) => event[key] !== undefined)
+  ) {
+    violations.push(violation(
+      path,
+      "missing_event_schema_discriminator",
+      "declarative event metadata requires its version discriminator",
+    ));
+  }
+  return version === 2;
+}
+
+function proposalMatchesTemplate(
+  parameters: Readonly<Record<string, number>>,
+  template: ReturnType<typeof getPersonalEventTemplateV2>,
+): boolean {
+  return (
+    Object.keys(parameters).length === template.parameters.length &&
+    template.parameters.every((definition) => {
+      const value = parameters[definition.id];
+      return Number.isSafeInteger(value) && value! >= definition.minimum && value! <= definition.maximum;
+    }) &&
+    Object.keys(parameters).every((id) => template.parameters.some((definition) => definition.id === id))
+  );
+}
+
+function resolveEvidenceMagnitude(
+  magnitude: PersonalEventMagnitudeV2,
+  parameters: Readonly<Record<string, number>>,
+): number {
+  if (magnitude.source === "fixed") return magnitude.value;
+  const value = parameters[magnitude.parameterId];
+  if (!Number.isSafeInteger(value)) throw new RangeError("missing event parameter");
+  return safeBigIntToNumber(
+    divideRoundHalfAwayFromZero(
+      BigInt(value) * BigInt(magnitude.multiplierPpm),
+      BigInt(1_000_000),
+    ),
+    "persisted personal-event magnitude",
+  );
+}
+
+function canonicalScheduledCashFlows(
+  event: ResolvedEventEvidenceV2,
+  template: ReturnType<typeof getPersonalEventTemplateV2>,
+): readonly ScheduledPersonalEventCashFlowV2[] {
+  const response = template.responses.find(({ id }) => id === event.choiceId);
+  if (!response) throw new RangeError("unknown resolved response");
+  let knownPlayerCost = BigInt(0);
+  let insuranceEffectIndex: number | null = null;
+  let insuranceGrossAmount = BigInt(0);
+  for (const [effectIndex, effect] of response.effects.entries()) {
+    if (effect.type === "insurance_claim") {
+      if (insuranceEffectIndex !== null) throw new RangeError("multiple insurance claims");
+      insuranceEffectIndex = effectIndex;
+      insuranceGrossAmount = BigInt(resolveEvidenceMagnitude(effect.grossAmount, event.parameters));
+      continue;
+    }
+    const amount = resolveEvidenceMagnitude(effect.magnitude, event.parameters);
+    if (effect.type === "required_obligation_delta" && amount > 0) {
+      knownPlayerCost += BigInt(amount);
+    } else if (
+      (effect.type === "temporary_expense" || effect.type === "recurring_expense") &&
+      amount > 0
+    ) {
+      knownPlayerCost += BigInt(amount) * BigInt(effect.durationMonths);
+    } else if (effect.type === "cash_delta" && effect.direction === "subtract" && amount > 0) {
+      knownPlayerCost += BigInt(amount);
+    }
+  }
+  const insurancePlayerCost = BigInt(event.playerCostCents) - knownPlayerCost;
+  if (insurancePlayerCost < 0) throw new RangeError("player cost is below canonical non-insurance cost");
+  if (insuranceEffectIndex === null) {
+    if (insurancePlayerCost !== BigInt(0) || event.insurerCostCents !== 0) {
+      throw new RangeError("insurance evidence exists without a claim");
+    }
+  } else if (insurancePlayerCost + BigInt(event.insurerCostCents) !== insuranceGrossAmount) {
+    throw new RangeError("insurance settlement does not reconcile to the gross claim");
+  }
+
+  const flows: ScheduledPersonalEventCashFlowV2[] = [];
+  for (const [effectIndex, effect] of response.effects.entries()) {
+    let kind: ScheduledPersonalEventCashFlowV2["kind"] | null = null;
+    let amount = 0;
+    let durationMonths = 1;
+    if (effect.type === "insurance_claim") {
+      kind = "temporary_expense";
+      amount = safeBigIntToNumber(insurancePlayerCost, "persisted insurance player cost");
+    } else {
+      amount = resolveEvidenceMagnitude(effect.magnitude, event.parameters);
+      if (
+        effect.type === "temporary_expense" ||
+        effect.type === "recurring_expense" ||
+        effect.type === "temporary_income"
+      ) {
+        kind = effect.type;
+        durationMonths = effect.durationMonths;
+      } else if (effect.type === "cash_delta") {
+        kind = effect.direction === "add" ? "temporary_income" : "temporary_expense";
+      }
+    }
+    if (kind !== null && amount > 0) {
+      flows.push({
+        id: personalEventCashFlowIdV2(event.commandId, event.eventId, response.id, effectIndex),
+        sourceEffectId: personalEventEffectIdV2(template.id, template.version, response.id, effectIndex),
+        kind,
+        amountCents: moneyCents(amount),
+        startMonth: event.resolvedMonth,
+        durationMonths,
+      });
+    }
+  }
+  return flows;
 }
 
 export function validateEventAndCareerStateV2(
@@ -20,6 +173,7 @@ export function validateEventAndCareerStateV2(
   const lifecycle = state.gameplay.eventLifecycle;
   const pending = lifecycle.pending;
   if (pending) {
+    const pendingRecord = pending as unknown as Readonly<Record<string, unknown>>;
     if (
       pending.eventId.length === 0 ||
       pending.templateId.length === 0 ||
@@ -51,6 +205,64 @@ export function validateEventAndCareerStateV2(
         ),
       );
     }
+    if (declarativeDiscriminator(
+      pendingRecord,
+      "gameplay.eventLifecycle.pending",
+      violations,
+    )) {
+      try {
+        const template = getPersonalEventTemplateV2(
+          pending.templateId,
+          pending.templateVersion,
+        );
+        const metadata = {
+          tier: pending.tier,
+          category: pending.category,
+          classification: pending.classification,
+          lessonTags: pending.lessonTags,
+          pressureCost: pending.pressureCost,
+          recoveryDurationMonths: pending.recoveryDurationMonths,
+          fallbackNarrative: pending.fallbackNarrative,
+          choiceIds: pending.choiceIds,
+        };
+        const canonicalMetadata = {
+          tier: template.severityTier,
+          category: template.category,
+          classification: template.classification,
+          lessonTags: template.lessonTags,
+          pressureCost: template.pressureCost,
+          recoveryDurationMonths: template.recovery.durationMonths,
+          fallbackNarrative: template.fallbackNarrative,
+          choiceIds: template.responses.map(({ id }) => id),
+        };
+        if (canonicalJson(metadata) !== canonicalJson(canonicalMetadata)) {
+          throw new RangeError("declarative metadata mismatch");
+        }
+      } catch {
+        violations.push(
+          violation(
+            "gameplay.eventLifecycle.pending",
+            "event_template_metadata_mismatch",
+            "declarative pending metadata must match the exact registry version",
+          ),
+        );
+      }
+      try {
+        const template = getPersonalEventTemplateV2(
+          pending.templateId,
+          pending.templateVersion,
+        );
+        if (!proposalMatchesTemplate(pending.parameters, template)) {
+          throw new RangeError("declarative proposal mismatch");
+        }
+      } catch {
+        violations.push(violation(
+          "gameplay.eventLifecycle.pending",
+          "event_template_proposal_mismatch",
+          "declarative pending parameters must exactly match the registry template",
+        ));
+      }
+    }
     try {
       simulationMonth(pending.scheduledMonth);
       simulationMonth(pending.expiresMonth);
@@ -77,6 +289,10 @@ export function validateEventAndCareerStateV2(
     }
   }
   const eventIds = lifecycle.history.map(({ eventId }) => eventId);
+  const canonicalCashFlows = new Map<
+    string,
+    ScheduledPersonalEventCashFlowV2 & Readonly<{ sourceEventId: string }>
+  >();
   if (
     new Set(eventIds).size !== eventIds.length ||
     (pending !== null && eventIds.includes(pending.eventId))
@@ -90,6 +306,7 @@ export function validateEventAndCareerStateV2(
     );
   }
   lifecycle.history.forEach((event, index) => {
+    const eventRecord = event as unknown as Readonly<Record<string, unknown>>;
     try {
       simulationMonth(event.scheduledMonth);
       simulationMonth(event.resolvedMonth);
@@ -121,6 +338,142 @@ export function validateEventAndCareerStateV2(
           "resolved event evidence must be chronological and financially bounded",
         ),
       );
+    }
+    if (declarativeDiscriminator(
+      eventRecord,
+      `gameplay.eventLifecycle.history.${index}`,
+      violations,
+    )) {
+      try {
+        const template = getPersonalEventTemplateV2(
+          event.templateId,
+          event.templateVersion,
+        );
+        if (
+          canonicalJson({
+            tier: event.tier,
+            category: event.category,
+            classification: event.classification,
+            lessonTags: event.lessonTags,
+            pressureCost: event.pressureCost,
+            recoveryDurationMonths: event.recoveryDurationMonths,
+            fallbackNarrative: event.fallbackNarrative,
+            choiceIds: event.availableChoiceIds,
+          }) !== canonicalJson({
+            tier: template.severityTier,
+            category: template.category,
+            classification: template.classification,
+            lessonTags: template.lessonTags,
+            pressureCost: template.pressureCost,
+            recoveryDurationMonths: template.recovery.durationMonths,
+            fallbackNarrative: template.fallbackNarrative,
+            choiceIds: template.responses.map(({ id }) => id),
+          }) ||
+          !template.responses.some(({ id }) => id === event.choiceId)
+        ) throw new RangeError("declarative metadata mismatch");
+      } catch {
+        violations.push(
+          violation(
+            `gameplay.eventLifecycle.history.${index}`,
+            "event_template_metadata_mismatch",
+            "declarative history metadata must match the exact registry version",
+          ),
+        );
+      }
+      try {
+        const template = getPersonalEventTemplateV2(
+          event.templateId,
+          event.templateVersion,
+        );
+        if (!proposalMatchesTemplate(event.parameters, template)) {
+          throw new RangeError("declarative proposal mismatch");
+        }
+      } catch {
+        violations.push(violation(
+          `gameplay.eventLifecycle.history.${index}`,
+          "event_template_proposal_mismatch",
+          "declarative history parameters must exactly match the registry template",
+        ));
+      }
+      try {
+        const template = getPersonalEventTemplateV2(event.templateId, event.templateVersion);
+        const expectedCashFlows = canonicalScheduledCashFlows(event, template);
+        if (canonicalJson(event.scheduledCashFlows ?? []) !== canonicalJson(expectedCashFlows)) {
+          throw new RangeError("scheduled cash-flow evidence mismatch");
+        }
+        for (const flow of expectedCashFlows) {
+          canonicalCashFlows.set(flow.id, { ...flow, sourceEventId: event.eventId });
+        }
+      } catch {
+        violations.push(violation(
+          `gameplay.eventLifecycle.history.${index}.scheduledCashFlows`,
+          "event_scheduled_cash_flow_mismatch",
+          "scheduled cash flows must exactly match the resolved template response and financial evidence",
+        ));
+      }
+    }
+  });
+  const activeCashFlows = lifecycle.activeCashFlows ?? [];
+  const activeCashFlowIds = activeCashFlows.map(({ id }) => id);
+  if (new Set(activeCashFlowIds).size !== activeCashFlowIds.length) {
+    violations.push(violation(
+      "gameplay.eventLifecycle.activeCashFlows",
+      "duplicate_event_cash_flow",
+      "active personal-event cash-flow ids must be unique",
+    ));
+  }
+  for (const expected of canonicalCashFlows.values()) {
+    const elapsedMonths = monthsBetween(expected.startMonth, state.currentMonth);
+    const expectedRemainingMonths = expected.durationMonths - elapsedMonths;
+    const active = activeCashFlows.find(({ id }) => id === expected.id);
+    if (elapsedMonths < 0 || (expectedRemainingMonths > 0) !== Boolean(active)) {
+      violations.push(violation(
+        "gameplay.eventLifecycle.activeCashFlows",
+        "invalid_event_cash_flow",
+        "active flows must exactly reflect every unconsumed canonical scheduled flow",
+      ));
+    }
+  }
+  activeCashFlows.forEach((flow, index) => {
+    try {
+      simulationMonth(flow.startMonth);
+      const expected = canonicalCashFlows.get(flow.id);
+      const expectedRemainingMonths = expected
+        ? expected.durationMonths - monthsBetween(expected.startMonth, state.currentMonth)
+        : 0;
+      const exactExpected = expected
+        ? {
+            id: expected.id,
+            sourceEventId: expected.sourceEventId,
+            sourceEffectId: expected.sourceEffectId,
+            kind: expected.kind,
+            amountCents: expected.amountCents,
+            startMonth: expected.startMonth,
+            remainingMonths: expectedRemainingMonths,
+          }
+        : null;
+      if (
+        !EVENT_FLOW_ID.test(flow.id) ||
+        !expected ||
+        canonicalJson(flow) !== canonicalJson(exactExpected) ||
+        flow.sourceEventId !== expected.sourceEventId ||
+        flow.sourceEffectId !== expected.sourceEffectId ||
+        flow.kind !== expected.kind ||
+        flow.amountCents !== expected.amountCents ||
+        flow.startMonth !== expected.startMonth ||
+        !["temporary_expense", "recurring_expense", "temporary_income"].includes(flow.kind) ||
+        !Number.isSafeInteger(flow.amountCents) ||
+        flow.amountCents <= 0 ||
+        !Number.isSafeInteger(flow.remainingMonths) ||
+        flow.remainingMonths !== expectedRemainingMonths ||
+        expectedRemainingMonths < 1
+      ) throw new RangeError("invalid active event cash flow");
+    } catch {
+      violations.push(violation(
+        `gameplay.eventLifecycle.activeCashFlows.${index}`,
+        "invalid_event_cash_flow",
+        "active personal-event cash flow must have bounded authoritative source and schedule evidence",
+      ));
     }
   });
   if (new Set(state.gameplay.eventLifecycle.activeStoryIds).size !== state.gameplay.eventLifecycle.activeStoryIds.length) {
@@ -173,6 +526,40 @@ export function validateEventAndCareerStateV2(
           `gameplay.eventLifecycle.macroStories.${index}`,
           "invalid_macro_story",
           "macro stories must be current, bounded, and chronological",
+        ),
+      );
+    }
+  });
+  const scheduledFollowUpIdentities = new Set<string>();
+  (lifecycle.scheduledFollowUps ?? []).forEach((followUp, index) => {
+    const identity = `${followUp.sourceEventId}:${followUp.templateId}@${followUp.templateVersion}`;
+    if (scheduledFollowUpIdentities.has(identity)) {
+      violations.push(
+        violation(
+          `gameplay.eventLifecycle.scheduledFollowUps.${index}`,
+          "duplicate_scheduled_followup",
+          "a source event may schedule an exact follow-up only once",
+        ),
+      );
+    }
+    scheduledFollowUpIdentities.add(identity);
+    try {
+      simulationMonth(followUp.eligibleMonth);
+      getPersonalEventTemplateV2(followUp.templateId, followUp.templateVersion);
+      const source = lifecycle.history.find(
+        ({ eventId }) => eventId === followUp.sourceEventId,
+      );
+      if (
+        followUp.sourceEventId.length === 0 ||
+        !source ||
+        compareMonths(followUp.eligibleMonth, source.resolvedMonth) <= 0
+      ) throw new RangeError("invalid follow-up source or due window");
+    } catch {
+      violations.push(
+        violation(
+          `gameplay.eventLifecycle.scheduledFollowUps.${index}`,
+          "invalid_scheduled_followup",
+          "scheduled follow-up must reference exact registry and resolved-event identities",
         ),
       );
     }

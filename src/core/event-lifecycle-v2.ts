@@ -9,6 +9,14 @@ import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
 import { adjudicateHealthClaim } from "./insurance-v2";
 import type { ScheduledPersonalEventV2 } from "./event-scheduler-v2";
 import { getEventTemplate } from "../data/event-templates";
+import {
+  validatePersonalEventTemplateV2,
+  type PersonalEventTemplateV2,
+  type ScheduledDeclarativePersonalEventV2,
+} from "./personal-event-v2";
+import { resolvePersonalEventResponseV2 } from "./personal-event-effects-v2";
+import { getPersonalEventTemplateV2 } from "../data/personal-event-templates-v2";
+import { canonicalJson } from "./canonical";
 
 const COMMAND_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 
@@ -105,6 +113,86 @@ export function queueScheduledPersonalEventV2(
   });
 }
 
+export function queueScheduledDeclarativePersonalEventV2(
+  state: GameStateV2,
+  scheduled: ScheduledDeclarativePersonalEventV2,
+): GameStateV2 {
+  if (state.outcome) {
+    throw new EventLifecycleV2Error("RUN_TERMINAL", "terminal runs reject new events");
+  }
+  if (state.gameplay.eventLifecycle.pending) {
+    throw new EventLifecycleV2Error(
+      "PENDING_EVENT_EXISTS",
+      "a pending event must be resolved before another can be queued",
+    );
+  }
+  const { proposal, template, targetedWeakness } = scheduled;
+  let canonicalTemplate: PersonalEventTemplateV2 | null;
+  try {
+    canonicalTemplate = getPersonalEventTemplateV2(template.id, template.version);
+  } catch {
+    canonicalTemplate = null;
+  }
+  if (
+    canonicalTemplate === null ||
+    canonicalJson(template) !== canonicalJson(canonicalTemplate) ||
+    validatePersonalEventTemplateV2(template).length > 0 ||
+    proposal.templateId !== template.id ||
+    proposal.templateVersion !== template.version ||
+    targetedWeakness !== UNRELATED_HAZARD_TARGET ||
+    template.parameters.some((parameter) => {
+      const value = proposal.parameters[parameter.id];
+      return !Number.isSafeInteger(value) || value! < parameter.minimum || value! > parameter.maximum;
+    }) ||
+    Object.keys(proposal.parameters).length !== template.parameters.length
+  ) {
+    throw new EventLifecycleV2Error(
+      "INVALID_COMMAND",
+      "declarative scheduler output does not match its versioned template",
+    );
+  }
+  return finalizeGameStateV2({
+    ...state,
+    gameplay: {
+      ...state.gameplay,
+      eventLifecycle: {
+        ...state.gameplay.eventLifecycle,
+        pending: {
+          eventId: proposal.eventId,
+          templateId: proposal.templateId,
+          templateVersion: proposal.templateVersion,
+          tier: template.severityTier,
+          targetedWeakness,
+          parameters: { ...proposal.parameters },
+          choiceIds: template.responses.map(({ id }) => id),
+          scheduledMonth: state.currentMonth,
+          expiresMonth: addMonths(state.currentMonth, 1),
+          eventSchemaVersion: 2,
+          category: template.category,
+          classification: template.classification,
+          lessonTags: template.lessonTags,
+          pressureCost: template.pressureCost,
+          recoveryDurationMonths: template.recovery.durationMonths,
+          fallbackNarrative: template.fallbackNarrative,
+        },
+        ...(scheduled.followUpSourceEventId === undefined
+          ? {}
+          : {
+              scheduledFollowUps: (
+                state.gameplay.eventLifecycle.scheduledFollowUps ?? []
+              ).filter(
+                (followUp) => !(
+                  followUp.sourceEventId === scheduled.followUpSourceEventId &&
+                  followUp.templateId === template.id &&
+                  followUp.templateVersion === template.version
+                ),
+              ),
+            }),
+      },
+    },
+  });
+}
+
 function validateChoiceCommand(
   state: GameStateV2,
   command: ResolveEventChoiceV2Command,
@@ -152,6 +240,94 @@ export function resolveEventChoiceV2(
       "INVALID_CHOICE",
       "choice is not declared by the pending event template",
     );
+  }
+  if (pending.eventSchemaVersion === 2) {
+    const template = getPersonalEventTemplateV2(
+      pending.templateId,
+      pending.templateVersion,
+    );
+    const proposal = {
+      eventId: pending.eventId,
+      templateId: pending.templateId,
+      templateVersion: pending.templateVersion,
+      parameters: pending.parameters,
+    };
+    const application = resolvePersonalEventResponseV2(
+      state,
+      template,
+      proposal,
+      command.payload.choiceId,
+      command.id,
+    );
+    const cooldowns = state.gameplay.eventLifecycle.cooldowns.filter(
+      ({ templateId }) => templateId !== pending.templateId,
+    );
+    const followUps = template.followUps
+      .filter(({ whenResponseIds }) => whenResponseIds.includes(command.payload.choiceId))
+      .map((followUp) => ({
+        sourceEventId: pending.eventId,
+        templateId: followUp.templateId,
+        templateVersion: followUp.templateVersion,
+        eligibleMonth: addMonths(state.currentMonth, followUp.delayMonths),
+      }));
+    return finalizeGameStateV2({
+      ...state,
+      revision: state.revision + 1,
+      acceptedCommandIds: [...state.acceptedCommandIds, command.id],
+      finances: application.finances,
+      wellbeing: application.wellbeing,
+      ledger: application.ledger,
+      gameplay: {
+        ...state.gameplay,
+        insurance: application.insurance,
+        eventLifecycle: {
+          ...state.gameplay.eventLifecycle,
+          pending: null,
+          history: [
+            ...state.gameplay.eventLifecycle.history,
+            {
+              commandId: command.id,
+              resultingRevision: state.revision + 1,
+              eventId: pending.eventId,
+              templateId: pending.templateId,
+              templateVersion: pending.templateVersion,
+              tier: pending.tier,
+              targetedWeakness: pending.targetedWeakness,
+              parameters: { ...pending.parameters },
+              choiceId: command.payload.choiceId,
+              availableChoiceIds: [...pending.choiceIds],
+              scheduledMonth: pending.scheduledMonth,
+              resolvedMonth: state.currentMonth,
+              playerCostCents: application.playerCostCents,
+              insurerCostCents: application.insurerCostCents,
+              eventSchemaVersion: 2,
+              category: template.category,
+              classification: template.classification,
+              lessonTags: template.lessonTags,
+              pressureCost: template.pressureCost,
+              recoveryDurationMonths: template.recovery.durationMonths,
+              fallbackNarrative: template.fallbackNarrative,
+              scheduledCashFlows: application.scheduledCashFlows,
+            },
+          ],
+          cooldowns: [
+            ...cooldowns,
+            {
+              templateId: pending.templateId,
+              eligibleAgainMonth: addMonths(
+                state.currentMonth,
+                template.cooldowns.eventMonths,
+              ),
+            },
+          ],
+          scheduledFollowUps: [
+            ...(state.gameplay.eventLifecycle.scheduledFollowUps ?? []),
+            ...followUps,
+          ],
+          activeCashFlows: application.activeCashFlows,
+        },
+      },
+    });
   }
   const template = getEventTemplate(pending.templateId, pending.templateVersion);
   const proposal = {
