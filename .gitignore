@@ -29,3 +29,6 @@ Thumbs.db
 # Logs
 *.log
 pnpm-debug.log*
+
+# Agent worktrees
+.worktrees/
