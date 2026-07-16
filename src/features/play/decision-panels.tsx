@@ -42,7 +42,10 @@ export function StrategyPanel({
   return (
     <section className="play-panel play-form">
       <div className="section-heading">
-        <div><p className="hero-kicker">Recurring every month</p><h2>Offense and resilience</h2></div>
+        <div>
+          <h2>Offense and resilience</h2>
+          <p className="panel-sub">Applied to every paycheck, every month.</p>
+        </div>
         <ConceptButton conceptId="401k" onSelect={onSelectConcept} />
       </div>
       <p className="play-note">
@@ -61,7 +64,8 @@ export function StrategyPanel({
         ] as const).map(([key, label, conceptId]) => (
           <label key={key}>
             <span>
-              {label} <ConceptButton conceptId={conceptId} onSelect={onSelectConcept} />
+              {label}{" "}
+              <ConceptButton conceptId={conceptId} onSelect={onSelectConcept} />
             </span>
             <input
               disabled={
@@ -85,10 +89,15 @@ export function StrategyPanel({
         ))}
       </div>
       <div className={`allocation-check ${invalid ? "invalid" : ""}`}>
-        <span>Pre-tax total: {preTaxTotal}%</span>
-        <span>After-tax total: {afterTaxTotal}%</span>
+        <span className="tnum">Pre-tax total: {preTaxTotal}%</span>
+        <span className="tnum">After-tax total: {afterTaxTotal}%</span>
       </div>
-      <button disabled={busy || blocked || invalid} onClick={onSave} type="button">
+      <button
+        className="btn btn-primary"
+        disabled={busy || blocked || invalid}
+        onClick={onSave}
+        type="button"
+      >
         Save recurring strategy
       </button>
     </section>
@@ -124,7 +133,10 @@ export function ActionPanel({
 
   return (
     <section className="play-panel play-form">
-      <div><p className="hero-kicker">One-time levers</p><h2>Act on the balance sheet</h2></div>
+      <div>
+        <h2>Act on the balance sheet</h2>
+        <p className="panel-sub">One-time levers for this month.</p>
+      </div>
       <label>
         Action
         <select
@@ -138,15 +150,29 @@ export function ActionPanel({
           <option value="invest_speculative">Make a speculative investment</option>
           <option value="liquidate_taxable">Sell broad-index investment</option>
           <option value="contribute_ira">Contribute to IRA</option>
-          {state.gameplay.benefits.hsaEligible ? <option value="contribute_hsa">Contribute to HSA</option> : null}
-          {hasDebt ? <option value="pay_term_debt">Pay highest-priority term debt</option> : null}
-          {state.finances.creditUsedCents > 0 ? <option value="pay_revolving_credit">Pay revolving credit</option> : null}
+          {state.gameplay.benefits.hsaEligible ? (
+            <option value="contribute_hsa">Contribute to HSA</option>
+          ) : null}
+          {hasDebt ? (
+            <option value="pay_term_debt">Pay highest-priority term debt</option>
+          ) : null}
+          {state.finances.creditUsedCents > 0 ? (
+            <option value="pay_revolving_credit">Pay revolving credit</option>
+          ) : null}
           <option value="draw_revolving_credit">Draw revolving credit</option>
-          {state.gameplay.portfolio.retirement401kCents > 0 ? <option value="withdraw_401k">Withdraw 401(k) early</option> : null}
-          {state.gameplay.portfolio.retirementIraCents > 0 ? <option value="withdraw_ira">Withdraw IRA early</option> : null}
-          {canOwnHome && !hasHome ? <option value="purchase_home">Purchase a home</option> : null}
+          {state.gameplay.portfolio.retirement401kCents > 0 ? (
+            <option value="withdraw_401k">Withdraw 401(k) early</option>
+          ) : null}
+          {state.gameplay.portfolio.retirementIraCents > 0 ? (
+            <option value="withdraw_ira">Withdraw IRA early</option>
+          ) : null}
+          {canOwnHome && !hasHome ? (
+            <option value="purchase_home">Purchase a home</option>
+          ) : null}
           {hasHome ? <option value="sell_home">Sell the home</option> : null}
-          {hasMortgage ? <option value="refinance_home">Refinance mortgage</option> : null}
+          {hasMortgage ? (
+            <option value="refinance_home">Refinance mortgage</option>
+          ) : null}
           <option value="reduce_lifestyle">Reduce annual lifestyle cost</option>
           <option value="increase_lifestyle">Increase annual lifestyle cost</option>
           <option value="start_upskill">Start an education program</option>
@@ -154,37 +180,101 @@ export function ActionPanel({
       </label>
       <div className="action-guidance">
         <p>{guidance?.summary}</p>
-        <ConceptButton conceptId={guidance?.conceptId ?? "liquidity"} onSelect={onSelectConcept} />
+        <ConceptButton
+          conceptId={guidance?.conceptId ?? "liquidity"}
+          onSelect={onSelectConcept}
+        />
       </div>
-      {!['sell_home', 'refinance_home', 'start_upskill'].includes(draft.type) ? (
+      {!["sell_home", "refinance_home", "start_upskill"].includes(draft.type) ? (
         <label>
           {draft.type === "purchase_home" ? "Purchase price" : "Amount"} (USD)
-          <input min="1" step="100" type="number" value={draft.amount} onChange={(event) => onChange({ amount: event.target.valueAsNumber })} />
+          <input
+            min="1"
+            step="100"
+            type="number"
+            value={draft.amount}
+            onChange={(event) =>
+              onChange({ amount: event.target.valueAsNumber })
+            }
+          />
         </label>
       ) : null}
       {draft.type === "purchase_home" ? (
         <label>
           Down payment (USD)
-          <input min="0" step="1000" type="number" value={draft.secondaryAmount} onChange={(event) => onChange({ secondaryAmount: event.target.valueAsNumber })} />
+          <input
+            min="0"
+            step="1000"
+            type="number"
+            value={draft.secondaryAmount}
+            onChange={(event) =>
+              onChange({ secondaryAmount: event.target.valueAsNumber })
+            }
+          />
         </label>
       ) : null}
       {draft.type === "purchase_home" || draft.type === "refinance_home" ? (
         <div className="play-inline-fields">
-          <label>Mortgage rate %<input min="0" max="50" step="0.1" type="number" value={draft.mortgageRate} onChange={(event) => onChange({ mortgageRate: event.target.valueAsNumber })} /></label>
-          <label>Term in months<input min="12" max="480" step="12" type="number" value={draft.mortgageTerm} onChange={(event) => onChange({ mortgageTerm: event.target.valueAsNumber })} /></label>
+          <label>
+            Mortgage rate %
+            <input
+              min="0"
+              max="50"
+              step="0.1"
+              type="number"
+              value={draft.mortgageRate}
+              onChange={(event) =>
+                onChange({ mortgageRate: event.target.valueAsNumber })
+              }
+            />
+          </label>
+          <label>
+            Term in months
+            <input
+              min="12"
+              max="480"
+              step="12"
+              type="number"
+              value={draft.mortgageTerm}
+              onChange={(event) =>
+                onChange({ mortgageTerm: event.target.valueAsNumber })
+              }
+            />
+          </label>
         </div>
       ) : null}
       {draft.type === "start_upskill" ? (
         <label>
           Program
-          <select value={draft.upskillProgram} onChange={(event) => onChange({ upskillProgram: event.target.value as ActionDraft["upskillProgram"] })}>
-            <option value="upskill.certificate">Certificate · short / lower cost</option>
-            <option value="upskill.bootcamp">Bootcamp · medium duration / raise</option>
-            <option value="upskill.degree">Degree · long / highest raise</option>
+          <select
+            value={draft.upskillProgram}
+            onChange={(event) =>
+              onChange({
+                upskillProgram: event.target
+                  .value as ActionDraft["upskillProgram"],
+              })
+            }
+          >
+            <option value="upskill.certificate">
+              Certificate: short, lower cost
+            </option>
+            <option value="upskill.bootcamp">
+              Bootcamp: medium duration, solid raise
+            </option>
+            <option value="upskill.degree">
+              Degree: long, highest raise
+            </option>
           </select>
         </label>
       ) : null}
-      <button disabled={busy || blocked} onClick={onApply} type="button">Apply action</button>
+      <button
+        className="btn btn-primary"
+        disabled={busy || blocked}
+        onClick={onApply}
+        type="button"
+      >
+        Apply action
+      </button>
     </section>
   );
 }
@@ -202,10 +292,13 @@ export function EducationPanel({
   return (
     <div className="learn-layout">
       <nav className="play-panel glossary-list" aria-label="Financial glossary">
-        <p className="hero-kicker">{EDUCATION_CONTENT_VERSION}</p>
         {EDUCATION_CONCEPTS.map((concept) => (
           <button
-            className={activeConcept.id === concept.id ? "active" : ""}
+            className={
+              activeConcept.id === concept.id
+                ? "glossary-item active"
+                : "glossary-item"
+            }
             key={concept.id}
             onClick={() => onChange(concept.id)}
             type="button"
@@ -213,9 +306,9 @@ export function EducationPanel({
             {concept.title}
           </button>
         ))}
+        <p className="play-note">{EDUCATION_CONTENT_VERSION}</p>
       </nav>
       <article className="play-panel concept-card">
-        <p className="hero-kicker">What it means</p>
         <h2>{activeConcept.title}</h2>
         <p>{activeConcept.shortDefinition}</p>
         <h3>Why it matters now</h3>
