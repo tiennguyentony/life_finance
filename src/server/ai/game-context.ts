@@ -23,6 +23,12 @@ export type AiGameContextV1 = Readonly<{
 
 export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
   const goal = projectFinancialGoal(state.finances, state.gameplay.financialGoal);
+  const terminalOutcome =
+    state.outcome && "outcomePolicyVersion" in state.outcome
+      ? state.outcome
+      : null;
+  const terminalFinancialIndependence =
+    terminalOutcome?.financialIndependence ?? null;
   const learning = state.gameplay.aiLearningMemory;
   return Object.freeze({
     version: AI_GAME_CONTEXT_VERSION,
@@ -38,13 +44,18 @@ export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
       desiredAnnualSpendingCents: goal.goal.desiredAnnualSpendingCents,
       safeWithdrawalRatePpm: goal.goal.safeWithdrawalRatePpm,
       targetAgeYears: goal.goal.targetAgeYears,
-      targetCents: goal.targetCents,
-      progressPpm: goal.progressPpm,
+      targetCents: terminalFinancialIndependence?.targetCents ?? goal.targetCents,
+      progressPpm:
+        terminalFinancialIndependence?.progressPpm ?? goal.progressPpm,
     }),
     finances: Object.freeze({
       cashCents: state.finances.cashCents,
-      investableAssetsCents: goal.investableAssetsCents,
-      netWorthCents: calculateNetWorth(state.finances),
+      investableAssetsCents:
+        terminalFinancialIndependence?.investableAssetsCents ??
+        goal.investableAssetsCents,
+      netWorthCents:
+        terminalOutcome?.displayedNetWorthCents ??
+        calculateNetWorth(state.finances),
       annualGrossIncomeCents: state.gameplay.employment.annualGrossSalaryCents ?? 0,
       annualLivingCostCents: state.finances.annualLivingCostCents,
       requiredMonthlyObligationsCents: state.finances.requiredObligationsCents,
@@ -80,7 +91,9 @@ export function contextEvidence(context: AiGameContextV1): readonly AiEvidenceFa
   const facts: AiEvidenceFact[] = [
     { id: "context.cash", label: "Cash", value: `${context.finances.cashCents} cents` },
     { id: "context.investable", label: "Investable assets", value: `${context.finances.investableAssetsCents} cents` },
+    { id: "context.fi_target", label: "FI target", value: `${context.goal.targetCents} cents` },
     { id: "context.fi_progress", label: "FI progress", value: `${context.goal.progressPpm} ppm` },
+    { id: "context.net_worth", label: "Displayed net worth", value: `${context.finances.netWorthCents} cents` },
     { id: "context.living_cost", label: "Annual living cost", value: `${context.finances.annualLivingCostCents} cents` },
     { id: "context.required_cash", label: "Monthly required cash", value: `${context.finances.requiredMonthlyObligationsCents} cents` },
     { id: "context.liabilities", label: "Term liabilities", value: `${context.finances.nonCreditLiabilitiesCents} cents` },

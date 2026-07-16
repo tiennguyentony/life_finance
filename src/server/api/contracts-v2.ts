@@ -445,14 +445,178 @@ const recurringAllocationEvidenceSchema = z
   })
   .strict();
 
-const outcomeEvidenceSchema = z
+const outcomeKindV2Schema = z.enum([
+  "financial_independence",
+  "retirement_age",
+  "bankruptcy",
+]);
+const finalGradeV2Schema = z.enum(["S", "A", "B", "C", "D", "E", "F"]);
+const retirementGradeV2Schema = z.enum(["A", "B", "C", "D", "E"]);
+const legacyGameOutcomeV2Schema = z
   .object({
-    kind: z.enum(["financial_independence", "retirement_age", "bankruptcy"]),
-    grade: z.enum(["S", "A", "B", "C", "D", "E", "F"]),
-    reachedMonth: simulationMonthSchema,
-    reasonCode: identifierSchema,
+    kind: outcomeKindV2Schema,
+    grade: finalGradeV2Schema,
+    reachedMonth: brandedSimulationMonthSchema,
+    reasonCode: z.string().trim().min(1).max(128),
   })
   .strict();
+
+const richOutcomeEvidenceShape = {
+  outcomePolicyVersion: z.literal("1.0.0"),
+  reachedMonth: brandedSimulationMonthSchema,
+  financialIndependence: z
+    .object({
+      goalSource: z.enum(["player_selected", "current_lifestyle_default"]),
+      investableAssetsCents: brandedNonNegativeMoneyCentsSchema,
+      targetCents: brandedNonNegativeMoneyCentsSchema.refine(
+        (value) => value > 0,
+      ),
+      progressPpm: brandedBoundedRatePpmSchema,
+    })
+    .strict(),
+  displayedNetWorthCents: brandedMoneyCentsSchema,
+  automaticLiquidSolvency: z
+    .object({
+      requiredCashCents: brandedNonNegativeMoneyCentsSchema,
+      automaticLiquidityCents: brandedNonNegativeMoneyCentsSchema,
+      residualShortfallCents: brandedNonNegativeMoneyCentsSchema,
+      isSolvent: z.boolean(),
+    })
+    .strict(),
+  retirementReadiness: z
+    .object({
+      retirementAgeYears: z.int().min(18).max(120),
+      currentAgeYears: z.int().min(0),
+      reachedRetirementAge: z.boolean(),
+      gradeIfRetiredNow: retirementGradeV2Schema,
+    })
+    .strict(),
+} as const;
+
+const deterministicGameOutcomeV1Schema = z
+  .discriminatedUnion("kind", [
+    z
+      .object({
+        ...richOutcomeEvidenceShape,
+        kind: z.literal("bankruptcy"),
+        grade: z.literal("F"),
+        reasonCode: z.literal("actual_required_obligation_shortfall"),
+        reasonCodes: z.tuple([
+          z.literal("actual_required_obligation_shortfall"),
+          z.literal("automatic_liquidity_exhausted"),
+        ]),
+      })
+      .strict(),
+    z
+      .object({
+        ...richOutcomeEvidenceShape,
+        kind: z.literal("financial_independence"),
+        grade: z.literal("S"),
+        reasonCode: z.literal("financial_independence_target_reached"),
+        reasonCodes: z.tuple([
+          z.literal("financial_independence_target_reached"),
+        ]),
+      })
+      .strict(),
+    z
+      .object({
+        ...richOutcomeEvidenceShape,
+        kind: z.literal("retirement_age"),
+        grade: retirementGradeV2Schema,
+        reasonCode: z.literal("configured_retirement_age_reached"),
+        reasonCodes: z.tuple([
+          z.literal("configured_retirement_age_reached"),
+          z.literal("financial_independence_target_not_reached"),
+        ]),
+      })
+      .strict(),
+  ])
+  .superRefine((outcome, context) => {
+    const solvency = outcome.automaticLiquidSolvency;
+    const retirement = outcome.retirementReadiness;
+    if (solvency.isSolvent !== (solvency.residualShortfallCents === 0)) {
+      context.addIssue({
+        code: "custom",
+        path: ["automaticLiquidSolvency", "isSolvent"],
+        message: "solvency flag must match the residual shortfall",
+      });
+    }
+    if (
+      retirement.reachedRetirementAge !==
+      (retirement.currentAgeYears >= retirement.retirementAgeYears)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["retirementReadiness", "reachedRetirementAge"],
+        message: "retirement-age flag must match the supplied ages",
+      });
+    }
+    if (outcome.kind === "bankruptcy" && solvency.isSolvent) {
+      context.addIssue({
+        code: "custom",
+        path: ["automaticLiquidSolvency", "isSolvent"],
+        message: "bankruptcy requires an actual automatic-liquidity shortfall",
+      });
+    }
+    if (
+      outcome.kind === "bankruptcy" &&
+      (solvency.residualShortfallCents > solvency.requiredCashCents ||
+        solvency.requiredCashCents - solvency.residualShortfallCents !==
+          solvency.automaticLiquidityCents)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["automaticLiquidSolvency", "automaticLiquidityCents"],
+        message:
+          "bankruptcy liquidity plus residual shortfall must equal required cash",
+      });
+    }
+    if (outcome.kind !== "bankruptcy" && !solvency.isSolvent) {
+      context.addIssue({
+        code: "custom",
+        path: ["automaticLiquidSolvency", "isSolvent"],
+        message: "non-bankruptcy terminal outcomes require current solvency",
+      });
+    }
+    if (
+      outcome.kind === "financial_independence" &&
+      outcome.financialIndependence.progressPpm !== 1_000_000
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["financialIndependence", "progressPpm"],
+        message: "financial independence requires 100% goal progress",
+      });
+    }
+    if (outcome.kind === "retirement_age") {
+      if (outcome.financialIndependence.progressPpm === 1_000_000) {
+        context.addIssue({
+          code: "custom",
+          path: ["financialIndependence", "progressPpm"],
+          message: "retirement outcome requires FI to remain below its target",
+        });
+      }
+      if (!retirement.reachedRetirementAge) {
+        context.addIssue({
+          code: "custom",
+          path: ["retirementReadiness", "reachedRetirementAge"],
+          message: "retirement outcome requires reaching retirement age",
+        });
+      }
+      if (outcome.grade !== retirement.gradeIfRetiredNow) {
+        context.addIssue({
+          code: "custom",
+          path: ["grade"],
+          message: "retirement grade must match deterministic readiness evidence",
+        });
+      }
+    }
+  });
+
+const gameOutcomeV2Schema = z.union([
+  deterministicGameOutcomeV1Schema,
+  legacyGameOutcomeV2Schema,
+]);
 
 const legacyMonthlyRecordSummarySchema = z
   .object({
@@ -471,7 +635,7 @@ const legacyMonthlyRecordSummarySchema = z
     debtService: debtServiceEvidenceSchema,
     funding: fundingRecordSchema.nullable(),
     recurringAllocations: recurringAllocationEvidenceSchema.nullable(),
-    outcome: outcomeEvidenceSchema.nullable(),
+    outcome: gameOutcomeV2Schema.nullable(),
   })
   .strict();
 
@@ -489,6 +653,7 @@ const financialKernelMonthlyRecordSummarySchema =
   legacyMonthlyRecordSummarySchema
     .extend({
       financialKernelVersion: z.literal("2.0.0"),
+      outcomePolicyVersion: z.literal("1.0.0").optional(),
       openingNetWorthCents: signedCentsSchema,
       closingNetWorthCents: signedCentsSchema,
       openingAutomaticLiquidityCents: nonNegativeCentsSchema,
@@ -837,21 +1002,6 @@ const pendingDecisionV2Schema = z
   })
   .strict();
 
-const outcomeKindV2Schema = z.enum([
-  "financial_independence",
-  "retirement_age",
-  "bankruptcy",
-]);
-const finalGradeV2Schema = z.enum(["S", "A", "B", "C", "D", "E", "F"]);
-const legacyGameOutcomeV2Schema = z
-  .object({
-    kind: outcomeKindV2Schema,
-    grade: finalGradeV2Schema,
-    reachedMonth: brandedSimulationMonthSchema,
-    reasonCode: z.string().trim().min(1).max(128),
-  })
-  .strict();
-
 export const advanceTimeV2ResponseSchema = getRunV2ResponseSchema
   .extend({
     idempotentReplay: z.boolean(),
@@ -860,7 +1010,7 @@ export const advanceTimeV2ResponseSchema = getRunV2ResponseSchema
     pendingEvent: pendingEventV2Schema.nullable(),
     pendingDecision: pendingDecisionV2Schema.nullable(),
     checkpointInput: checkpointEvidenceV2Schema.nullable(),
-    endCondition: legacyGameOutcomeV2Schema.nullable(),
+    endCondition: gameOutcomeV2Schema.nullable(),
     uiChanges: timeControllerUiChangesV2Schema,
   })
   .strict();

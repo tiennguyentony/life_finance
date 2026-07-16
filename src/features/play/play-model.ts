@@ -4,9 +4,11 @@ import type { CreateRunV2Request } from "@/server/api/contracts-v2";
 
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
 import {
+  calculateAgeYearsAtMonth,
   calculateInvestableAssets as calculateCanonicalInvestableAssets,
   calculateNetWorth as calculateCanonicalNetWorth,
 } from "../../core/game-state";
+import { simulationMonth } from "../../core/domain/month";
 import {
   selectionForPreset,
   type PlayerPresetId,
@@ -81,15 +83,26 @@ export function calculateInvestableAssets(state: GameStateV2): number {
 }
 
 export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
+  goalSource: "player_selected" | "current_lifestyle_default";
   investableAssetsCents: number;
   targetCents: number;
   progressPpm: number;
 }> {
+  if (state.outcome && "outcomePolicyVersion" in state.outcome) {
+    return {
+      goalSource: state.outcome.financialIndependence.goalSource,
+      investableAssetsCents:
+        state.outcome.financialIndependence.investableAssetsCents,
+      targetCents: state.outcome.financialIndependence.targetCents,
+      progressPpm: state.outcome.financialIndependence.progressPpm,
+    };
+  }
   const projection = projectFinancialGoal(
     state.finances,
     state.gameplay.financialGoal,
   );
   return {
+    goalSource: projection.goal.source,
     investableAssetsCents: projection.investableAssetsCents,
     targetCents: projection.targetCents,
     progressPpm: projection.progressPpm,
@@ -97,12 +110,9 @@ export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
 }
 
 export function calculateAgeYears(birthMonth: string, currentMonth: string): number {
-  const [birthYear, birthMonthNumber] = birthMonth.split("-").map(Number);
-  const [currentYear, currentMonthNumber] = currentMonth.split("-").map(Number);
-  return (
-    currentYear! -
-    birthYear! -
-    (currentMonthNumber! < birthMonthNumber! ? 1 : 0)
+  return calculateAgeYearsAtMonth(
+    simulationMonth(birthMonth),
+    simulationMonth(currentMonth),
   );
 }
 

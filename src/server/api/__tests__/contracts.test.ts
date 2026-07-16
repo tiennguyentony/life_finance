@@ -238,6 +238,7 @@ describe("v2 API contracts", () => {
     ).toBe(2);
     for (const payload of [
       { taxEvidence: { totalTaxCents: 0 } },
+      { outcomePolicyVersion: "1.0.0" },
       {
         resolvedCashFlows: [
           {
@@ -463,6 +464,36 @@ describe("time advance v2 contracts", () => {
       reachedMonth: "2026-07",
       reasonCode: "legacy_retirement",
     };
+    const richEndCondition = {
+      outcomePolicyVersion: "1.0.0",
+      kind: "retirement_age",
+      grade: "B",
+      reachedMonth: "2026-07",
+      reasonCode: "configured_retirement_age_reached",
+      reasonCodes: [
+        "configured_retirement_age_reached",
+        "financial_independence_target_not_reached",
+      ],
+      financialIndependence: {
+        goalSource: "current_lifestyle_default",
+        investableAssetsCents: 6_000_000,
+        targetCents: 10_000_000,
+        progressPpm: 600_000,
+      },
+      displayedNetWorthCents: 5_000_000,
+      automaticLiquidSolvency: {
+        requiredCashCents: 100_000,
+        automaticLiquidityCents: 500_000,
+        residualShortfallCents: 0,
+        isSolvent: true,
+      },
+      retirementReadiness: {
+        retirementAgeYears: 65,
+        currentAgeYears: 65,
+        reachedRetirementAge: true,
+        gradeIfRetiredNow: "B",
+      },
+    };
 
     expect(
       advanceTimeV2ResponseSchema.parse({
@@ -472,6 +503,24 @@ describe("time advance v2 contracts", () => {
         endCondition,
       }),
     ).toMatchObject({ pendingEvent, pendingDecision, endCondition });
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: richEndCondition,
+      }).endCondition,
+    ).toEqual(richEndCondition);
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          retirementReadiness: {
+            ...richEndCondition.retirementReadiness,
+            currentAgeYears: 121,
+          },
+        },
+      }).endCondition,
+    ).toMatchObject({ retirementReadiness: { currentAgeYears: 121 } });
     expect(() =>
       advanceTimeV2ResponseSchema.parse({
         ...base,
@@ -493,6 +542,51 @@ describe("time advance v2 contracts", () => {
       advanceTimeV2ResponseSchema.parse({
         ...base,
         endCondition: { ...endCondition, inventedGradeReason: "AI says so" },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          retirementReadiness: {
+            ...richEndCondition.retirementReadiness,
+            inventedProjection: 700_000,
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          kind: "financial_independence",
+          grade: "S",
+          reasonCode: "financial_independence_target_reached",
+          reasonCodes: ["financial_independence_target_reached"],
+          financialIndependence: {
+            ...richEndCondition.financialIndependence,
+            progressPpm: 1_000_000,
+          },
+          automaticLiquidSolvency: {
+            ...richEndCondition.automaticLiquidSolvency,
+            residualShortfallCents: 1,
+            isSolvent: false,
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          financialIndependence: {
+            ...richEndCondition.financialIndependence,
+            progressPpm: 1_000_000,
+          },
+        },
       }),
     ).toThrow();
   });

@@ -12,7 +12,11 @@ import {
 } from "../financial-kernel-v2";
 import { projectFinancialGoal } from "../financial-goals-v2";
 import { calculateInvestableAssets, calculateNetWorth } from "../game-state";
-import { validateGameStateV2, type GameStateV2 } from "../game-state-v2";
+import {
+  finalizeGameStateV2,
+  validateGameStateV2,
+  type GameStateV2,
+} from "../game-state-v2";
 import {
   marketSimulationState,
   simulateMarketMonth,
@@ -21,9 +25,11 @@ import { activeMacroReturnModifiersV2 } from "../macro-story-v2";
 import * as monthlyTurnV2Module from "../monthly-turn-v2";
 import {
   financialKernelVersionForCommandV2,
+  outcomePolicyVersionForCommandV2,
   processMonthlyTurnV2,
   type ProcessMonthV2Command,
 } from "../monthly-turn-v2";
+import { OUTCOME_POLICY_V1_VERSION } from "../outcome-policy-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import { setRecurringStrategy } from "../recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
@@ -252,6 +258,90 @@ describe("atomic v2 monthly turn", () => {
       }),
     );
     expect(initial.revision).toBe(1);
+  });
+
+  it("defaults missing outcome policy to frozen history and accepts policy 1.0.0", () => {
+    const initial = configuredState();
+    expect(outcomePolicyVersionForCommandV2(command(initial))).toBe(
+      "legacy-unversioned",
+    );
+    expect(
+      outcomePolicyVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        }),
+      ),
+    ).toBe("1.0.0");
+  });
+
+  it("rejects invented or legacy-kernel outcome policies", () => {
+    const initial = configuredState();
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: "invented-policy",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_OUTCOME_POLICY_VERSION" }),
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "legacy-4.1.0",
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_OUTCOME_POLICY_VERSION" }),
+    );
+  });
+
+  it("uses player target age only for historical commands, never policy 1.0.0", () => {
+    const initial = configuredState();
+    const ageForty = finalizeGameStateV2({
+      ...initial,
+      player: { ...initial.player, birthMonth: simulationMonth("1986-01") },
+      gameplay: {
+        ...initial.gameplay,
+        financialGoal: {
+          version: "financial-goal-v1",
+          desiredAnnualSpendingCents: moneyCents(100_000_000),
+          safeWithdrawalRatePpm: ratePpm(40_000),
+          targetAgeYears: 40,
+          source: "player_selected",
+        },
+      },
+    });
+    const historical = processMonthlyTurnV2(
+      ageForty,
+      command(ageForty, { financialKernelVersion: "2.0.0" }, "cmd.month.old"),
+      NO_FOLLOW_UP_EVENTS,
+    );
+    const current = processMonthlyTurnV2(
+      ageForty,
+      command(
+        ageForty,
+        {
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        },
+        "cmd.month.current",
+      ),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(historical.state.outcome).toMatchObject({
+      kind: "retirement_age",
+      reasonCode: "reached_player_target_age",
+    });
+    expect(historical.record).not.toHaveProperty("outcomePolicyVersion");
+    expect(current.state.outcome).toBeNull();
+    expect(current.record.outcomePolicyVersion).toBe("1.0.0");
   });
 
   it("composes market, payroll, obligations, debt, strategy, and outcome once", () => {
@@ -513,6 +603,42 @@ describe("atomic v2 monthly turn", () => {
         ].includes(reasonCode),
       ),
     ).toBe(false);
+  });
+
+  it("persists rich policy 1.0.0 evidence from the actual kernel shortfall", () => {
+    const initial = configuredState({
+      retirement401kCents: moneyCents(100_000_000),
+    });
+    const exactClaimCents = exactLiquidityClaim(initial, 1);
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        insuranceClaim: {
+          type: "health",
+          grossAmountCents: exactClaimCents,
+          covered: false,
+        },
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.record.outcomePolicyVersion).toBe("1.0.0");
+    expect(result.state.outcome).toMatchObject({
+      outcomePolicyVersion: "1.0.0",
+      kind: "bankruptcy",
+      grade: "F",
+      displayedNetWorthCents: result.record.closingNetWorthCents,
+      automaticLiquidSolvency: {
+        residualShortfallCents: 1,
+        isSolvent: false,
+      },
+      reasonCodes: [
+        "actual_required_obligation_shortfall",
+        "automatic_liquidity_exhausted",
+      ],
+    });
   });
 
   it("declares bankruptcy when high positive net worth is restricted", () => {
