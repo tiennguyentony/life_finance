@@ -178,6 +178,32 @@ export class MarketDomainError extends Error {
   }
 }
 
+export function assertValidMarketReturnModifiers(
+  modifiers: MarketReturnModifiers,
+): void {
+  const expectedKeys = ["bonds", "cash", "equity", "housing"] as const;
+  const keys =
+    modifiers !== null && typeof modifiers === "object"
+      ? Object.keys(modifiers).toSorted()
+      : [];
+  if (
+    modifiers === null ||
+    typeof modifiers !== "object" ||
+    keys.length !== expectedKeys.length ||
+    expectedKeys.some((key, index) => keys[index] !== key) ||
+    expectedKeys.map((key) => modifiers[key]).some(
+      (modifier) =>
+        !Number.isSafeInteger(modifier) ||
+        modifier < -500_000 ||
+        modifier > 500_000,
+    )
+  ) {
+    throw new MarketDomainError(
+      "market return modifiers must remain within bounds",
+    );
+  }
+}
+
 export function marketSimulationState(
   regime: MarketRegime,
   random: RandomState,
@@ -248,16 +274,7 @@ export function simulateMarketMonth(
     throw new MarketDomainError(`unsupported market model ${state.modelVersion}`);
   }
   marketSimulationState(state.regime, state.random, state.monthsInRegime);
-  if (
-    Object.values(modifiers).some(
-      (modifier) =>
-        !Number.isSafeInteger(modifier) ||
-        modifier < -500_000 ||
-        modifier > 500_000,
-    )
-  ) {
-    throw new MarketDomainError("market return modifiers must remain within bounds");
-  }
+  assertValidMarketReturnModifiers(modifiers);
 
   // Draw order is replay-critical: macro, equity, bond, housing, transition.
   const macro = drawBinomialShock(state.random);

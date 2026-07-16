@@ -17,7 +17,6 @@ import {
 } from "./debt-service-v2";
 import type { FinancialSnapshot, GameState } from "./game-state";
 import {
-  FINANCIAL_CLOSING_STATE_V2_KIND,
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
   type FinancialClosingStateV2,
@@ -56,7 +55,6 @@ import {
   advanceMacroStoriesV2,
   type MacroStoryPolicyV2,
 } from "./macro-story-v2";
-import { ownForDeepFreeze } from "./immutable-ownership";
 import {
   assessV2Liquidity,
   prepareV2ObligationCash,
@@ -66,7 +64,10 @@ import {
   evaluateTerminalOutcome,
   evaluateTerminalOutcomeV2,
 } from "./outcomes";
-import { acceptFinancialMonthCommandV2 } from "./financial-transition-v2";
+import {
+  acceptFinancialMonthCommandV2,
+  rehydrateFinancialClosingStateV2,
+} from "./financial-transition-v2";
 import { recordExposureSnapshotV2 } from "./exposure-v2";
 import { applyMonthlyPayroll, type MonthlyTaxEvidence } from "./payroll-v2";
 import {
@@ -710,28 +711,6 @@ function processMonthlyTurnV2Kernel200(
       cause,
     );
   }
-}
-
-function rehydrateFinancialClosingStateV2(
-  previous: GameStateV2,
-  financialState: FinancialClosingStateV2,
-): GameStateV2 {
-  const {
-    closingStateKind,
-    ...financialEvidence
-  } = financialState;
-  if (closingStateKind !== FINANCIAL_CLOSING_STATE_V2_KIND) {
-    throw new MonthlyTurnV2Error(
-      "TRANSITION_INVARIANT",
-      "financial kernel returned an invalid closing-state kind",
-    );
-  }
-  return {
-    ...financialEvidence,
-    revision: previous.revision,
-    acceptedCommandIds: ownForDeepFreeze(previous.acceptedCommandIds),
-    outcome: ownForDeepFreeze(previous.outcome),
-  };
 }
 
 function processMonthlyTurnV2Legacy410(
