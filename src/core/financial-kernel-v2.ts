@@ -151,6 +151,27 @@ const FLOW_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const SOURCE_SYSTEM = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const ZERO = moneyCents(0);
 const VERIFIED_DEEP_FROZEN_GRAPHS = new WeakSet<object>();
+const FNV_1A_64_OFFSET = BigInt("0xcbf29ce484222325");
+const FNV_1A_64_ALT_OFFSET = BigInt("0x84222325cbf29ce4");
+const FNV_1A_64_PRIME = BigInt("0x100000001b3");
+const UINT64_MASK = BigInt("0xffffffffffffffff");
+
+function fnv1a64(value: string, offset: bigint): string {
+  let hash = offset;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= BigInt(value.charCodeAt(index));
+    hash = (hash * FNV_1A_64_PRIME) & UINT64_MASK;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+function resolvedFlowTransactionId(commandId: string, flowId: string): string {
+  const payload = `v1:c${commandId.length}:${commandId}f${flowId.length}:${flowId}`;
+  const digest =
+    fnv1a64(payload, FNV_1A_64_OFFSET) +
+    fnv1a64(payload, FNV_1A_64_ALT_OFFSET);
+  return `txn.flow.${digest}`;
+}
 
 function isDeepFrozenGraph(value: unknown): boolean {
   const visited = new WeakSet<object>();
@@ -482,7 +503,7 @@ function applyResolvedIncome(
   for (const flow of flows) {
     if (!isIncome(flow) || flow.amountCents === 0) continue;
     const ledger = appendTransaction(working.ledger, {
-      id: `txn.${commandId}.flow.${flow.id}`,
+      id: resolvedFlowTransactionId(commandId, flow.id),
       commandId,
       effectiveMonth: state.currentMonth,
       reasonCode: "monthly_resolved_income_v2",
@@ -519,7 +540,7 @@ function payResolvedExpenses(
       );
     }
     const ledger = appendTransaction(working.ledger, {
-      id: `txn.${commandId}.flow.${flow.id}`,
+      id: resolvedFlowTransactionId(commandId, flow.id),
       commandId,
       effectiveMonth: state.currentMonth,
       reasonCode: "monthly_resolved_expense_v2",
