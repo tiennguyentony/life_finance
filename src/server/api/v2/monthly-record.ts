@@ -23,6 +23,9 @@ export function summarizeMonthlyRecord(record: MonthlyTurnV2Record) {
   return {
     ...summary,
     financialKernelVersion: record.financialKernelVersion,
+    ...(record.outcomePolicyVersion === undefined
+      ? {}
+      : { outcomePolicyVersion: record.outcomePolicyVersion }),
     openingNetWorthCents: record.openingNetWorthCents,
     closingNetWorthCents: record.closingNetWorthCents,
     openingAutomaticLiquidityCents: record.openingAutomaticLiquidityCents,

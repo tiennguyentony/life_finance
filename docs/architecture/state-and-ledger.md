@@ -31,7 +31,7 @@ importing React, Next.js, PostgreSQL, tax transports, or AI clients.
 | Employment, benefits, insurance, recurring policies, market lifecycle, events, milestones, learning memory, goals, catalog selection, and external evidence references | Versioned fields in `GameStateV2` and associated immutable evidence rows | Persisted facts required for deterministic gameplay or replay. Each owning subsystem validates its fields. |
 | Exposure and aggregate financial fields | Persisted bounded values | Explicit caches used by current gameplay. Their history/current pointers and aggregate totals are validated to prevent silent staleness. |
 | Runtime Balance state | `state.gameplay.runtimeBalance` | Versioned persisted container only. Prompt 09 owns pressure, cooldown, recovery, catastrophe, and approval behavior. Older v2 saves receive a zero-value selector default without changing their stored checksum. |
-| Age, net worth, remaining credit, investable assets, goal/grade projections, checkpoint summaries, and debrief aggregates | Computed selectors or evidence builders | Derived. Consumers should call the owning selector instead of persisting or reimplementing the value. Existing UI/AI selector duplication remains Prompt 04 work. |
+| Age, net worth, remaining credit, investable assets, active goal projections, checkpoint summaries, and debrief aggregates | Computed selectors or evidence builders | Derived. Consumers call the owning selector instead of persisting or reimplementing the value. A policy-versioned terminal outcome is the exception: its complete cross-validated grade and evidence are persisted so save/load, API, UI, and AI explanation cannot drift. |
 | Historical state anchors and accepted commands | `run_state_snapshots`, `run_state_migrations`, and `accepted_commands` | Replay and audit evidence. They do not replace `current_state` as the current save authority. |
 
 ## Exact money and rounding
@@ -144,8 +144,8 @@ grading, or other financial-engine formulas.
 - Prompt 02 owns financial formula consolidation and monthly calculation order.
 - Prompt 03 owns multi-month orchestration and the current browser/API-per-month
   loop.
-- Prompt 04 owns goal/outcome selector consolidation and removal of duplicate
-  UI/AI calculations.
+- Prompt 04 completed goal/outcome selector consolidation, structured terminal
+  evidence, and removal of duplicate UI age and terminal AI/display calculations.
 - Prompts 06 and 08 own risk/event causality and exact event-effect boundaries.
 - Prompt 09 owns Runtime Balance behavior; Prompt 01 only created its state
   container.

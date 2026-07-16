@@ -582,6 +582,7 @@ export function PlayConsole() {
         <DebriefPanel
           busy={busy}
           consented={aiConsent}
+          outcome={state.outcome}
           result={aiDebrief}
           onConsentChange={setAiConsent}
           onCreate={() => void createAiDebrief()}

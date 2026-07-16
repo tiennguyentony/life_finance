@@ -72,7 +72,7 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | 3 | Time and Turn Controller | partial | time-controller-v2.ts, RunApiServiceV2 advance path, atomic repository batch | Prompt 03 orchestration is repaired; Runtime Balance pressure/cooldown ordering cannot be complete until Prompt 09 supplies its versioned monthly step. | Finish integration in Prompt 09 |
 | 4 | Deterministic Financial Simulation Engine | complete | financial-kernel-v2.ts, financial-transition-v2.ts, obligation-funding-v2.ts, financial-projection-v2.ts, versioned monthly wrapper | New months, projections, Web/AI/goal/checkpoint consumers, and replay have one documented financial authority; old formulas are frozen compatibility only. | Complete in Prompt 02 |
 | 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; legacy v1 action reducers remain reusable compatibility code. | Prompt 05 |
-| 6 | Goals, End Conditions, and Grading | partial | financial-goals-v2.ts and evaluateTerminalOutcomeV2 | v2 goal consumers share canonical selectors and bankruptcy consumes actual shortfall; the full Prompt 04 outcome/grade audit remains pending. Frozen v1 rules are replay compatibility. | Prompt 04 |
+| 6 | Goals, End Conditions, and Grading | complete | financial-goals-v2.ts, outcome-policy-v2.ts, and assessTerminalOutcomeV2 | Outcome policy `1.0.0` centralizes exact grades, retirement age, terminal precedence, and rich cross-validated evidence. New commands are stamped; missing versions retain frozen replay semantics. | Complete in Prompt 04 |
 | 7 | Risk and Resilience Analyzer | incorrectly coupled | exposure-v2.ts and event-scheduler-v2.ts | Exposure measures vulnerability but also causes event eligibility, frequency, and catastrophe access. | Prompt 06 |
 | 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
 | 9 | Personal Event and Trap System | incorrectly coupled | event scheduler, lifecycle, templates, and events.ts | Deterministic and bounded, but event cause is vulnerability-driven and financial effects bypass a dedicated financial-effect interface. | Prompt 08 after Prompt 06 |
@@ -167,19 +167,20 @@ Status: duplicated.
 
 ### 6. Goals, End Conditions, and Grading
 
-Status: partial.
+Status: complete for Prompt 04.
 
-- Authoritative files and entry points: src/core/financial-goals-v2.ts, src/core/outcomes.ts, outcome checks in monthly-turn-v2.ts, legacy hasReachedFinancialIndependence in game-state.ts, onboarding goal fields, and debrief display.
-- Inputs: player-selected FI target/age or legacy living-cost target, canonical investable assets, age/current month, and the completed month's actual `FinancialShortfallV2 | null`.
-- Outputs: progress projection, terminal FI/retirement/bankruptcy outcome, immutable grade, reason code, and reached month.
-- State owned: financialGoal and terminal outcome on the run aggregate.
-- Dependencies: financial snapshot, canonical investable-asset selector, kernel shortfall evidence, calendar, onboarding, checkpoint/debrief.
-- Tests found: financial-goals-v2, outcomes boundary tests, game-state FI tests, monthly-turn bankruptcy/FI tests, and API contract tests.
-- Determinism/performance risks: exact integer comparisons are deterministic. New-product investable assets and net worth now have one selector authority; age display logic still needs the Prompt 04 boundary audit.
-- Missing requirements: the full configured outcome/grade matrix and exact interval audit, one age selector surface, and counterfactual grading evidence for debrief.
-- Duplicate formulas or authority: Web, AI, goal, and checkpoint financial sums now delegate to canonical selectors/evidence. The 25-times-living-cost helper and v1 outcome rules are frozen compatibility paths; UI age calculation remains a later-system duplicate.
-- AI boundary: the final grade is immutable and code-owned, which is correct; AI may explain but not alter it.
-- Next action: Prompt 04 should complete the configured goal/outcome/grade matrix and consolidate age evidence without reintroducing financial formulas.
+- Authoritative files and entry points: `src/core/financial-goals-v2.ts`, `src/core/outcome-policy-v2.ts`, `assessTerminalOutcomeV2` in `src/core/outcomes.ts`, policy dispatch in `monthly-turn-v2.ts`, rich state validation, strict persisted/API contracts, and the play/debrief and AI-context consumers.
+- Inputs: a responsive current-lifestyle default or fixed player-selected goal, canonical investable assets and net worth, canonical age, persisted outcome-policy version, and the completed financial kernel's required-cash/funding/shortfall evidence.
+- Outputs: active FI projection or immutable structured bankruptcy/FI/retirement outcome with grade, bounded reason codes, target/progress, displayed net worth, automatic-liquid-solvency evidence, and retirement readiness.
+- State owned: the versioned financial goal and terminal outcome on the run aggregate. Policy configuration is a frozen registry, not caller-owned state.
+- Dependencies: cents/PPM primitives, canonical selectors, calendar, financial-kernel `2.0.0` record, monthly wrapper, persistence/API schemas, checkpoint, UI, and AI debrief context.
+- Tests found: all exact A/B/C/D/E thresholds, FI equality, invalid/zero expense cases, retirement-age start, net-worth-versus-liquidity cases, restricted assets, home-equity exclusion, responsive and fixed lifestyle behavior, actual shortfall exhaustion, precedence, policy dispatch, rich-state tampering, save/load checksum, API/service round-trip, consumer display, and AI evidence.
+- Determinism/performance risks: calculations use safe integer cents/PPM and policy registry lookup. The persisted rich evidence is cross-validated instead of trusted field-by-field. No stochastic or remote input assigns a grade.
+- Missing requirements: no Prompt 04 goal, end-condition, grading, replay-compatibility, or consumer-authority requirement remains open. Causal turning-point and counterfactual teaching evidence belongs to Prompts 11 and 12, not grade calculation.
+- Duplicate formulas or authority: UI age now delegates to the canonical calendar selector; terminal UI and AI consume persisted rich values. Checkpoints use canonical projection, age, and net-worth selectors. The v1 25-times/configured-target-age outcome path is private frozen history only.
+- AI boundary: AI receives the immutable engine grade and bounded persisted facts, may explain them, and is rejected if it returns a different grade.
+- Historical boundary: new `2.0.0` commands carry outcome policy `1.0.0`; missing version preserves historical configured-spending/target-age semantics and fixed checksums. Unknown combinations reject.
+- Next action: keep policy `1.0.0` immutable; any tuning requires a new registered policy version and replay fixtures.
 
 ### 7. Risk and Resilience Analyzer
 
@@ -425,9 +426,9 @@ An AI request is not itself deterministic. Once the selected candidate and param
 | Concept | Intended authority | Other implementation found | Risk |
 | --- | --- | --- | --- |
 | Net worth | src/core/game-state.ts `calculateNetWorth` | No active duplicate; Web, AI, checkpoint, and kernel import it. | Resolved in Prompt 02; parity includes large restricted-wealth cancellation. |
-| Age | src/core/outcomes.ts calculateAgeYears | UI calculation | Pause/end/display boundaries can disagree. |
+| Age | game-state.ts calculateAgeYearsAtMonth, exposed through outcomes.ts | No active duplicate; UI, checkpoint, outcome, and AI delegate to it. | Resolved in Prompt 04 with invalid-month and birthday-boundary tests. |
 | Salary bounds | core scenario catalog using money/rate primitives | onboarding-model floating multiplication | Rounding or validation preview mismatch. |
-| FI investable input/target/progress | game-state.ts selector plus financial-goals-v2.ts projection | v1 25x helper is frozen compatibility | New Web/AI/checkpoint/outcome consumers share the versioned projection; Prompt 04 still owns the complete goal/grade audit. |
+| FI investable input/target/progress | game-state.ts selector plus financial-goals-v2.ts projection | v1 25x/configured-age path is frozen compatibility | Prompt 04 completed responsive-default/fixed-selected semantics, policy-versioned grading, and rich terminal consumer parity. |
 | Automatic liquidity and gross liquidation | obligation-funding-v2.ts immutable plan | v1 outcomes.ts functions are frozen compatibility | New assessment, execution, kernel shortfall, record, and outcome evidence cannot drift. |
 | Monthly simulation | financial-kernel-v2.ts through the 2.0.0 wrapper | monthly-turn.ts and private legacy-4.1.0 body are replay-only | New commands cannot select or import the compatibility reducers; fixed checksums protect history. |
 | Multi-month control | future v2 controller | v1 checkpoints.ts and v2 browser loop | Different stop rules and performance behavior. |
@@ -473,7 +474,7 @@ The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 2. Prompt 13 — Onboarding and State Initialization. Create only the canonical state and persist normalized assumptions/provenance.
 3. Prompt 02 — Deterministic Financial Simulation Engine. Complete: one 2.0.0 kernel, funding authority, versioned replay boundary, event-free projection, consumer parity, and measured 480-month gate.
 4. Prompt 03 — Time and Turn Controller. Add one in-process v2 controller with tagged stop reasons and sequential-parity tests.
-5. Prompt 04 — Goals, End Conditions, and Grading. Centralize goal, age, net-worth, outcome, and display selectors.
+5. Prompt 04 — Goals, End Conditions, and Grading. Complete: policy-versioned grades and precedence, responsive/default and fixed/player goals, rich validated terminal evidence, historical replay, and canonical consumers.
 6. Prompt 05 — Player Actions and Persistent Policies. Route all mutations and previews through the canonical engine/state interfaces.
 7. Prompt 06 — Risk and Resilience Analyzer. Make exposure measurement-only and add an impact-estimation contract.
 8. Prompt 07 — Macro and Market System. Add explicit difficulty/calibration inputs without weakening deterministic draw order.
@@ -490,7 +491,7 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 ## Recommended immediate next prompts
 
 1. Prompt 03 should now replace the browser/network month loop with one tagged, deterministic in-process controller that calls the 2.0.0 wrapper exactly once per tick.
-2. Prompt 04 should finish the complete goal/end-condition/grade matrix while consuming actual shortfall and canonical selector evidence.
+2. Prompt 04 is complete; keep outcome policy `1.0.0` and its historical compatibility boundary immutable while later systems consume its evidence.
 3. Prompt 13 can later consume the authoritative v2 state and remove remaining onboarding/UI initialization duplication.
 4. Prompts 06 then 08, followed by Prompt 09 before Prompt 10, must repair event causality and add independent fairness approval before changing director authority.
 5. Prompt 14 remains required before tuning or release claims because the financial projection benchmark does not prove distributional fairness or full-run storage performance.
@@ -502,8 +503,9 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 - Probability, severity, exposure, and difficulty are analyzed separately.
 - Save/load, external evidence, seeded replay, and command-identity boundaries are documented.
 - Duplicate formulas and remaining legacy compatibility implementations are identified without treating them as mutable state authority.
-- Prompt 01 and Prompt 02 findings are updated from verified implementations;
-  Prompts 03-14 remain incomplete unless their own requirements are proven.
+- Prompt 01, Prompt 02, Prompt 03 orchestration, and Prompt 04 findings are
+  updated from verified implementations; Prompt 03's Runtime Balance step and
+  Prompts 05-14 remain incomplete unless their own requirements are proven.
 - Prompt 02's active formulas, frozen compatibility paths, schemas/fixtures,
   presentation fields, local integration boundaries, mocked remote tax client,
   measured projection, and unavailable conditional PostgreSQL gate are

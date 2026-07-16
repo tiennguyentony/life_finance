@@ -61,9 +61,14 @@ import {
   type V2FundingRecord,
 } from "./obligation-funding-v2";
 import {
+  assessTerminalOutcomeV2,
   evaluateTerminalOutcome,
   evaluateTerminalOutcomeV2,
 } from "./outcomes";
+import {
+  LEGACY_UNVERSIONED_OUTCOME_POLICY,
+  OUTCOME_POLICY_V1_VERSION,
+} from "./outcome-policy-v2";
 import {
   acceptFinancialMonthCommandV2,
   rehydrateFinancialClosingStateV2,
@@ -92,6 +97,10 @@ export type FinancialKernelVersionV2 =
   | "legacy-4.1.0"
   | typeof FINANCIAL_KERNEL_V2_VERSION;
 
+export type OutcomePolicyVersionV2 =
+  | typeof LEGACY_UNVERSIONED_OUTCOME_POLICY
+  | typeof OUTCOME_POLICY_V1_VERSION;
+
 export type ProcessMonthV2Command = Readonly<{
   schemaVersion: 2;
   id: string;
@@ -100,6 +109,7 @@ export type ProcessMonthV2Command = Readonly<{
   effectiveMonth: SimulationMonth;
   payload: Readonly<{
     financialKernelVersion?: FinancialKernelVersionV2;
+    outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
     taxEvidence: MonthlyTaxEvidence;
     taxableLiquidationCostRatePpm: RatePpm;
     insuranceClaim?: MonthlyInsuranceClaim;
@@ -127,6 +137,7 @@ export type MonthlyTurnV2Record = Readonly<{
   scheduledEvent: PendingEventV2 | null;
   outcome: GameStateV2["outcome"];
   financialKernelVersion?: typeof FINANCIAL_KERNEL_V2_VERSION;
+  outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
   openingNetWorthCents?: MoneyCents;
   closingNetWorthCents?: MoneyCents;
   openingAutomaticLiquidityCents?: MoneyCents;
@@ -154,6 +165,7 @@ export class MonthlyTurnV2Error extends Error {
     | "PENDING_EVENT"
     | "INVALID_LIQUIDATION_RATE"
     | "UNSUPPORTED_FINANCIAL_KERNEL_VERSION"
+    | "UNSUPPORTED_OUTCOME_POLICY_VERSION"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
 
@@ -180,6 +192,18 @@ export function financialKernelVersionForCommandV2(
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
     `unsupported financial kernel version: ${String(version)}`,
+  );
+}
+
+export function outcomePolicyVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): OutcomePolicyVersionV2 {
+  const version = command.payload.outcomePolicyVersion;
+  if (version === undefined) return LEGACY_UNVERSIONED_OUTCOME_POLICY;
+  if (version === OUTCOME_POLICY_V1_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_OUTCOME_POLICY_VERSION",
+    `unsupported outcome policy version: ${String(version)}`,
   );
 }
 
@@ -630,8 +654,23 @@ export function processMonthlyTurnV2(
   dependencies: MonthlyTurnV2Dependencies = {},
 ): MonthlyTurnV2Result {
   const version = financialKernelVersionForCommandV2(command);
+  const outcomePolicyVersion = outcomePolicyVersionForCommandV2(command);
+  if (
+    outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION &&
+    version !== FINANCIAL_KERNEL_V2_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_OUTCOME_POLICY_VERSION",
+      "outcome policy 1.0.0 requires financial kernel 2.0.0",
+    );
+  }
   if (version === FINANCIAL_KERNEL_V2_VERSION) {
-    return processMonthlyTurnV2Kernel200(state, command, dependencies);
+    return processMonthlyTurnV2Kernel200(
+      state,
+      command,
+      dependencies,
+      outcomePolicyVersion,
+    );
   }
   return processMonthlyTurnV2Legacy410(state, command, dependencies);
 }
@@ -653,6 +692,7 @@ function processMonthlyTurnV2Kernel200(
   state: GameStateV2,
   command: ProcessMonthV2Command,
   dependencies: MonthlyTurnV2Dependencies,
+  outcomePolicyVersion: OutcomePolicyVersionV2,
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   try {
@@ -677,7 +717,14 @@ function processMonthlyTurnV2Kernel200(
       command.id,
     );
     const exposed = recordExposureSnapshotV2(accepted, financial.nextMonth);
-    const outcome = evaluateTerminalOutcomeV2(exposed, financial.shortfall);
+    const outcome =
+      outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION
+        ? assessTerminalOutcomeV2(
+            exposed,
+            financial.record,
+            outcomePolicyVersion,
+          )
+        : evaluateTerminalOutcomeV2(exposed, financial.shortfall);
     let nextState = finalizeGameStateV2({ ...exposed, outcome });
     if (outcome === null) {
       nextState = advanceMacroStoriesV2(
@@ -699,6 +746,9 @@ function processMonthlyTurnV2Kernel200(
     const record = Object.freeze({
       ...financial.record,
       financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      ...(outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION
+        ? { outcomePolicyVersion }
+        : {}),
       scheduledEvent: nextState.gameplay.eventLifecycle.pending,
       outcome,
     }) satisfies MonthlyTurnV2Record;

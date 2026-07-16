@@ -12,6 +12,7 @@ import {
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import {
   buildCreateRequest,
+  calculateAgeYears,
   calculateFinancialIndependence,
   calculateInvestableAssets as calculatePlayInvestableAssets,
   calculateNetWorth as calculatePlayNetWorth,
@@ -75,6 +76,14 @@ describe("developer play UI model", () => {
     expect(percentToPpm(Number.POSITIVE_INFINITY)).toBe(0);
   });
 
+  it("delegates age boundaries and validation to the canonical calendar selector", () => {
+    expect(calculateAgeYears("2000-07", "2026-06")).toBe(25);
+    expect(calculateAgeYears("2000-07", "2026-07")).toBe(26);
+    expect(() => calculateAgeYears("2000-7", "2026-07")).toThrow(
+      /YYYY-MM/,
+    );
+  });
+
   it("adds optional student debt and established-household choices", () => {
     const request = buildCreateRequest(
       "established",
@@ -116,6 +125,7 @@ describe("developer play UI model", () => {
     } as Parameters<typeof calculateFinancialIndependence>[0];
 
     expect(calculateFinancialIndependence(state)).toEqual({
+      goalSource: "current_lifestyle_default",
       investableAssetsCents: 1_000,
       targetCents: 1_000,
       progressPpm: 1_000_000,
@@ -123,6 +133,57 @@ describe("developer play UI model", () => {
     expect(calculatePlayInvestableAssets(state)).toBe(
       calculateCanonicalInvestableAssets(state.finances),
     );
+  });
+
+  it("presents persisted terminal FI evidence instead of recalculating it", () => {
+    const state = {
+      finances: {
+        cashCents: 100,
+        taxableInvestmentsCents: 200,
+        retirementCents: 300,
+        otherInvestableAssetsCents: 400,
+        homeValueCents: 0,
+        annualLivingCostCents: 40,
+      },
+      gameplay: {},
+      outcome: {
+        outcomePolicyVersion: "1.0.0",
+        kind: "retirement_age",
+        grade: "B",
+        reachedMonth: "2065-07",
+        reasonCode: "configured_retirement_age_reached",
+        reasonCodes: [
+          "configured_retirement_age_reached",
+          "financial_independence_target_not_reached",
+        ],
+        financialIndependence: {
+          goalSource: "player_selected",
+          investableAssetsCents: 600,
+          targetCents: 1_000,
+          progressPpm: 600_000,
+        },
+        displayedNetWorthCents: 600,
+        automaticLiquidSolvency: {
+          requiredCashCents: 20,
+          automaticLiquidityCents: 100,
+          residualShortfallCents: 0,
+          isSolvent: true,
+        },
+        retirementReadiness: {
+          retirementAgeYears: 65,
+          currentAgeYears: 65,
+          reachedRetirementAge: true,
+          gradeIfRetiredNow: "B",
+        },
+      },
+    } as unknown as Parameters<typeof calculateFinancialIndependence>[0];
+
+    expect(calculateFinancialIndependence(state)).toEqual({
+      goalSource: "player_selected",
+      investableAssetsCents: 600,
+      targetCents: 1_000,
+      progressPpm: 600_000,
+    });
   });
 
   it("uses exact canonical net worth for high restricted wealth", () => {
