@@ -101,6 +101,39 @@ describe("annual tax contribution projection", () => {
     });
     expect(projectAnnualPretaxContributions(august)).toEqual(julyProjection);
   });
+
+  it("builds tax requests from explicit CPI instead of lifestyle spending", () => {
+    const initial = stateWithStrategy();
+    const state = {
+      ...initial,
+      finances: {
+        ...initial.finances,
+        annualLivingCostCents: moneyCents(13_000_000),
+      },
+      gameplay: {
+        ...initial.gameplay,
+        market: {
+          ...initial.gameplay.market,
+          cumulativePriceIndexPpm: 1_234_567,
+        },
+      },
+    };
+
+    expect(buildTaxRequest(state, "month.explicit-cpi").cumulativePriceIndexPpm).toBe(
+      1_234_567,
+    );
+
+    const { cumulativePriceIndexPpm: _ignored, ...oldMarket } =
+      initial.gameplay.market;
+    const oldState = {
+      ...initial,
+      gameplay: { ...initial.gameplay, market: oldMarket },
+    };
+    expect(
+      buildTaxRequest(oldState, "month.old-state-cpi")
+        .cumulativePriceIndexPpm,
+    ).toBe(1_000_000);
+  });
 });
 
 describe("annual tax context cache", () => {

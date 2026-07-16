@@ -188,6 +188,8 @@ export type GameplayStateV2 = Readonly<{
   market: Readonly<{
     modelVersion: "regime-v1";
     monthsInRegime: number;
+    /** Optional only for backward compatibility with earlier schema-v2 runs. */
+    cumulativePriceIndexPpm?: number;
   }>;
   recurringStrategy: RecurringStrategy;
   exposure: Readonly<{

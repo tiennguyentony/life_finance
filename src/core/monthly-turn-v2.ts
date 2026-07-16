@@ -2,7 +2,6 @@ import { safeBigIntToNumber } from "./domain/integer";
 import { completeCareerDevelopmentV2 } from "./detailed-actions-v2";
 import {
   addMoney,
-  allocateMoney,
   moneyCents,
   multiplyMoneyByRate,
   negateMoney,
@@ -11,7 +10,11 @@ import {
   type RatePpm,
 } from "./domain/money";
 import { addMonths, type SimulationMonth } from "./domain/month";
-import { planMonthlyDebtService, settleMonthlyDebtService } from "./debt-service-v2";
+import {
+  applyDebtPaymentV2,
+  planMonthlyDebtService,
+  settleMonthlyDebtService,
+} from "./debt-service-v2";
 import type { FinancialSnapshot, GameState } from "./game-state";
 import {
   finalizeGameStateV2,
@@ -19,6 +22,7 @@ import {
   type PendingEventV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import { calculateMonthlyLivingCostInflationV2 } from "./inflation-v2";
 import { queueScheduledPersonalEventV2 } from "./event-lifecycle-v2";
 import {
   schedulePersonalEventV2,
@@ -519,16 +523,7 @@ function applyAfterTaxPlan(
   const termDebts = state.gameplay.debts.termDebts.map((debt) => {
     const payment = paymentByDebt.get(debt.id) ?? ZERO;
     if (payment === 0) return debt;
-    const principal = subtractMoney(debt.principalCents, payment);
-    return {
-      ...debt,
-      principalCents: principal,
-      minimumPaymentCents:
-        principal === 0
-          ? ZERO
-          : moneyCents(Math.min(debt.minimumPaymentCents, principal)),
-      remainingTermMonths: principal === 0 ? 0 : debt.remainingTermMonths,
-    };
+    return applyDebtPaymentV2(debt, ZERO, payment).debt;
   });
   const nextMinimum = sumMoney(
     termDebts.map(({ minimumPaymentCents }) => minimumPaymentCents),
@@ -619,14 +614,9 @@ function processMonthlyTurnV2Legacy410(
   try {
     const claim = applyInsuranceClaim(state, command.payload.insuranceClaim);
     const market = applyMarketMonthV2(claim.state, command.id);
-    const annualInflationIncreaseCents = multiplyMoneyByRate(
+    const inflation = calculateMonthlyLivingCostInflationV2(
       market.state.finances.annualLivingCostCents,
       market.month.inflationPpm,
-    );
-    const monthlyInflationIncreaseCents = allocateMoney(
-      annualInflationIncreaseCents,
-      1,
-      12,
     );
     let working = finalizeGameStateV2({
       ...market.state,
@@ -634,11 +624,11 @@ function processMonthlyTurnV2Legacy410(
         ...market.state.finances,
         annualLivingCostCents: addMoney(
           market.state.finances.annualLivingCostCents,
-          annualInflationIncreaseCents,
+          inflation.annualIncreaseCents,
         ),
         requiredObligationsCents: addMoney(
           market.state.finances.requiredObligationsCents,
-          monthlyInflationIncreaseCents,
+          inflation.monthlyObligationIncreaseCents,
         ),
       },
     });
@@ -698,7 +688,7 @@ function processMonthlyTurnV2Legacy410(
             command.payload.taxEvidence.afterTaxCashIncomeCents,
           market: market.month,
           marketValueChangeCents: market.marketValueChangeCents,
-          annualInflationIncreaseCents,
+          annualInflationIncreaseCents: inflation.annualIncreaseCents,
           insurancePlayerCostCents: claim.playerCostCents,
           requiredCashCents: requiredCash,
           nonDebtObligationsPaidCents: ZERO,
@@ -788,7 +778,7 @@ function processMonthlyTurnV2Legacy410(
           command.payload.taxEvidence.afterTaxCashIncomeCents,
         market: market.month,
         marketValueChangeCents: market.marketValueChangeCents,
-        annualInflationIncreaseCents,
+        annualInflationIncreaseCents: inflation.annualIncreaseCents,
         insurancePlayerCostCents: claim.playerCostCents,
         requiredCashCents: requiredCash,
         nonDebtObligationsPaidCents: nonDebtObligations,

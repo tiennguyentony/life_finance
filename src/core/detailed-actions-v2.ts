@@ -12,6 +12,7 @@ import {
   compareMonths,
   monthsBetween,
 } from "./domain/month";
+import { applyDebtPaymentV2 } from "./debt-service-v2";
 import {
   finalizeGameStateV2,
   type GameStateV2,
@@ -214,17 +215,11 @@ function applyTermDebtPayment(
       "payment exceeds remaining principal",
     );
   }
-  const nextPrincipal = subtractMoney(debt.principalCents, action.amountCents);
-  const nextMinimum =
-    nextPrincipal === 0
-      ? moneyCents(0)
-      : moneyCents(Math.min(debt.minimumPaymentCents, nextPrincipal));
-  const nextDebt = {
-    ...debt,
-    principalCents: nextPrincipal,
-    minimumPaymentCents: nextMinimum,
-    remainingTermMonths: nextPrincipal === 0 ? 0 : debt.remainingTermMonths,
-  };
+  const nextDebt = applyDebtPaymentV2(
+    debt,
+    moneyCents(0),
+    action.amountCents,
+  ).debt;
   const termDebts = [...state.gameplay.debts.termDebts];
   termDebts[index] = nextDebt;
   const aggregate = appendAction(
@@ -236,7 +231,7 @@ function applyTermDebtPayment(
   );
   const obligationReduction = subtractMoney(
     debt.minimumPaymentCents,
-    nextMinimum,
+    nextDebt.minimumPaymentCents,
   );
   return accept(state, command, {
     ...aggregate,

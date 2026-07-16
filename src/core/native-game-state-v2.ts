@@ -1,4 +1,5 @@
 import { sha256Canonical } from "./canonical";
+import { calculateTotalMinimumDebtPaymentV2 } from "./debt-service-v2";
 import { safeBigIntToNumber } from "./domain/integer";
 import {
   addMoney,
@@ -180,9 +181,8 @@ export function createNativeGameStateV2(
     1,
     12,
   );
-  const minimumDebtPayments = sumMoney(
-    input.finances.termDebts.map(({ minimumPaymentCents }) => minimumPaymentCents),
-    "opening minimum debt payments",
+  const minimumDebtPayments = calculateTotalMinimumDebtPaymentV2(
+    input.finances.termDebts,
   );
   const monthlyInsurancePremiums = sumMoney(
     selectedInsurancePremiums,
@@ -321,7 +321,11 @@ export function createNativeGameStateV2(
           usedCents: moneyCents(0),
         })),
       },
-      market: { modelVersion: "regime-v1", monthsInRegime: 0 },
+      market: {
+        modelVersion: "regime-v1",
+        monthsInRegime: 0,
+        cumulativePriceIndexPpm: 1_000_000,
+      },
       recurringStrategy: {
         effectiveMonth: input.startMonth,
         preTax401kSalaryRatePpm: 0 as RatePpm,

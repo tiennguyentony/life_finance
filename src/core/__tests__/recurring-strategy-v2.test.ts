@@ -5,6 +5,7 @@ import { simulationMonth } from "../domain/month";
 import { finalizeGameStateV2, type GameStateV2 } from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import {
+  calculateEmployerMatchV2,
   planRecurringAllocations,
   setRecurringStrategy,
   type SetRecurringStrategyCommand,
@@ -102,6 +103,48 @@ function strategyCommand(
 }
 
 describe("v2 recurring strategy planning", () => {
+  it.each([
+    [20_000, 20_000],
+    [30_000, 30_000],
+    [40_000, 35_000],
+    [50_000, 40_000],
+    [100_000, 40_000],
+  ])(
+    "applies employer-match tiers to an employee contribution of %i cents",
+    (employeeContributionCents, expectedMatchCents) => {
+      expect(
+        calculateEmployerMatchV2(
+          initialState(),
+          moneyCents(1_000_000),
+          moneyCents(employeeContributionCents),
+        ),
+      ).toBe(expectedMatchCents);
+    },
+  );
+
+  it("caps employee plus employer additions at the defined-contribution limit", () => {
+    const initial = initialState();
+    const nearAdditionLimit = {
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        contributions: {
+          ...initial.gameplay.contributions,
+          employee401kCents: moneyCents(2_400_000),
+          employer401kCents: moneyCents(4_790_000),
+        },
+      },
+    } as GameStateV2;
+
+    expect(
+      calculateEmployerMatchV2(
+        nearAdditionLimit,
+        moneyCents(1_000_000),
+        moneyCents(8_000),
+      ),
+    ).toBe(2_000);
+  });
+
   it("uses gross and after-obligation bases, tiered match, and debt avalanche", () => {
     const initial = initialState();
     const configured = setRecurringStrategy(initial, strategyCommand(initial));

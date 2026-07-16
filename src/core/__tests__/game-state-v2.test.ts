@@ -119,4 +119,34 @@ describe("game state v1 to v2 migration", () => {
       ]),
     );
   });
+
+  it("allows missing or positive CPI and rejects non-positive or unsafe CPI", () => {
+    const migrated = migrateGameStateV1ToV2(createV1Fixture());
+    expect("cumulativePriceIndexPpm" in migrated.gameplay.market).toBe(false);
+    expect(validateGameStateV2(migrated)).toEqual([]);
+
+    const withIndex = (cumulativePriceIndexPpm: number) =>
+      ({
+        ...migrated,
+        gameplay: {
+          ...migrated.gameplay,
+          market: {
+            ...migrated.gameplay.market,
+            cumulativePriceIndexPpm,
+          },
+        },
+      }) as GameStateV2;
+
+    expect(validateGameStateV2(withIndex(1_234_567))).toEqual([]);
+    for (const value of [0, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(validateGameStateV2(withIndex(value))).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "gameplay.market.cumulativePriceIndexPpm",
+            code: "invalid_cumulative_price_index",
+          }),
+        ]),
+      );
+    }
+  });
 });
