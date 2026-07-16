@@ -553,6 +553,76 @@ describe("simulateFinancialMonthV2", () => {
     expect(Object.isFrozen(result.state)).toBe(true);
   });
 
+  it("does not freeze a mutable deserialized state input", () => {
+    const mutableState = structuredClone(configuredState());
+    const observedNodes = [
+      mutableState,
+      mutableState.ledger,
+      mutableState.ledger.transactions,
+      mutableState.ledger.transactions[0]!,
+      mutableState.gameplay,
+      mutableState.gameplay.portfolio,
+    ];
+    const openingOwnership = observedNodes.map((value) => ({
+      frozen: Object.isFrozen(value),
+      extensible: Object.isExtensible(value),
+    }));
+    const openingChecksum = sha256Canonical(mutableState);
+
+    simulateFinancialMonthV2(successfulInput(mutableState));
+
+    expect(
+      observedNodes.map((value) => ({
+        frozen: Object.isFrozen(value),
+        extensible: Object.isExtensible(value),
+      })),
+    ).toEqual(openingOwnership);
+    expect(sha256Canonical(mutableState)).toBe(openingChecksum);
+  });
+
+  it("owns and deeply freezes mutable supplied market output", () => {
+    const base = successfulInput();
+    const mutableMarketStep = structuredClone(base.marketStep);
+    const observedNodes = [
+      mutableMarketStep,
+      mutableMarketStep.month,
+      mutableMarketStep.month.appliedReturnModifiersPpm,
+      mutableMarketStep.month.shocks,
+      mutableMarketStep.nextState,
+      mutableMarketStep.nextState.random,
+    ];
+    const openingOwnership = observedNodes.map((value) => ({
+      frozen: Object.isFrozen(value),
+      extensible: Object.isExtensible(value),
+    }));
+    const openingChecksum = sha256Canonical(mutableMarketStep);
+
+    const result = simulateFinancialMonthV2({
+      ...base,
+      marketStep: mutableMarketStep,
+    });
+
+    expect(
+      observedNodes.map((value) => ({
+        frozen: Object.isFrozen(value),
+        extensible: Object.isExtensible(value),
+      })),
+    ).toEqual(openingOwnership);
+    expect(sha256Canonical(mutableMarketStep)).toBe(openingChecksum);
+    expect(result.record.market).not.toBe(mutableMarketStep.month);
+    expect(result.state.random).not.toBe(mutableMarketStep.nextState.random);
+    expect(Object.isFrozen(result.record.market)).toBe(true);
+    expect(Object.isFrozen(result.record.market.appliedReturnModifiersPpm)).toBe(
+      true,
+    );
+    expect(Object.isFrozen(result.record.market.shocks)).toBe(true);
+    const originalMacroShock = result.record.market.shocks.macro;
+    expect(
+      Reflect.set(result.record.market.shocks, "macro", originalMacroShock + 1),
+    ).toBe(false);
+    expect(result.record.market.shocks.macro).toBe(originalMacroShock);
+  });
+
   it("rejects a bad kernel version", () => {
     const input = successfulInput();
     expect(() =>
