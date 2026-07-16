@@ -322,6 +322,10 @@ export const onboardingResponseSchema = z
         z
           .object({
             field: z.enum([
+              "gross_income",
+              "take_home_income",
+              "essential_expenses",
+              "discretionary_expenses",
               "cash",
               "taxable_investments",
               "retirement",
@@ -334,6 +338,8 @@ export const onboardingResponseSchema = z
             ]),
             valueAsStated: z.string().trim().min(1).max(80),
             sourceExcerpt: z.string().trim().min(1).max(200),
+            period: z.enum(["monthly", "annual"]).nullable(),
+            basis: z.enum(["gross", "take_home"]).nullable(),
           })
           .strict(),
       )

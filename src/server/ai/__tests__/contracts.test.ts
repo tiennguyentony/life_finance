@@ -201,7 +201,13 @@ describe("AI role contracts", () => {
       careerTrackId: "software",
       filingStatus: "single",
       statedAmounts: [
-        { field: "cash", valueAsStated: "$12,500", sourceExcerpt: "I have $12,500 in cash" },
+        {
+          field: "cash",
+          valueAsStated: "$12,500",
+          sourceExcerpt: "I have $12,500 in cash",
+          period: null,
+          basis: null,
+        },
       ],
       missingFields: ["annual_living_cost"],
       clarificationQuestion: "About how much do you spend in a year?",

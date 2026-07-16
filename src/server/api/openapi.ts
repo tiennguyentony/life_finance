@@ -40,6 +40,13 @@ import {
   playerPolicyPreviewV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
+import {
+  onboardingConfirmRequestV1Schema,
+  onboardingParseRequestV1Schema,
+  onboardingParseResponseV1Schema,
+  onboardingReviewRequestV1Schema,
+  onboardingReviewResponseV1Schema,
+} from "./onboarding-contracts-v1";
 
 const registry = new OpenAPIRegistry();
 registry.registerComponent("securitySchemes", "runBearer", {
@@ -106,6 +113,65 @@ registry.registerPath({
     },
     400: errorResponses[400],
     500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/onboarding/review",
+  operationId: "reviewOnboardingV1",
+  summary: "Validate and preview onboarding without creating a run",
+  request: {
+    body: {
+      content: { "application/json": { schema: onboardingReviewRequestV1Schema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Deterministic review; only ready reviews may be confirmed",
+      content: { "application/json": { schema: onboardingReviewResponseV1Schema } },
+    },
+    400: errorResponses[400],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/from-onboarding",
+  operationId: "confirmOnboardingV1",
+  summary: "Recompute and confirm a reviewed onboarding draft",
+  request: {
+    body: {
+      content: { "application/json": { schema: onboardingConfirmRequestV1Schema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Authoritative schema-v2 run created from the confirmed review",
+      content: { "application/json": { schema: createRunV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    409: errorResponses[409],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/onboarding/parse",
+  operationId: "parseOnboardingV1",
+  summary: "Optionally extract allow-listed onboarding candidates from transient text",
+  request: {
+    body: {
+      content: { "application/json": { schema: onboardingParseRequestV1Schema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Ready, rejected, or unavailable extraction result",
+      content: { "application/json": { schema: onboardingParseResponseV1Schema } },
+    },
+    400: errorResponses[400],
   },
 });
 
