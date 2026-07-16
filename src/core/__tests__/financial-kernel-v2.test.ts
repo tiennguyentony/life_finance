@@ -6,10 +6,14 @@ import {
   simulateFinancialMonthV2,
   type FinancialMonthInputV2,
 } from "../financial-kernel-v2";
-import { moneyCents, ratePpm } from "../domain/money";
-import { simulationMonth } from "../domain/month";
+import { moneyCents, ratePpm, type MoneyCents } from "../domain/money";
+import { simulationMonth, type SimulationMonth } from "../domain/month";
+import { finalizeGameStateV2 } from "../game-state-v2";
 import { marketSimulationState, simulateMarketMonth } from "../market";
-import { createNativeGameStateV2 } from "../native-game-state-v2";
+import {
+  createNativeGameStateV2,
+  type NativeGameStateV2Input,
+} from "../native-game-state-v2";
 import { setRecurringStrategy } from "../recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
 import {
@@ -17,29 +21,46 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function configuredState() {
+type ConfiguredStateOptions = Readonly<{
+  startMonth?: SimulationMonth;
+  annualGrossSalaryCents?: MoneyCents;
+  finances?: Partial<NativeGameStateV2Input["finances"]>;
+  scenarioSelection?: Partial<
+    Parameters<typeof resolveScenarioCatalogSelection>[1]
+  >;
+  strategy?: Partial<
+    Parameters<typeof setRecurringStrategy>[1]["payload"]["strategy"]
+  >;
+}>;
+
+function configuredState(options: ConfiguredStateOptions = {}) {
+  const scenarioSelection: Parameters<
+    typeof resolveScenarioCatalogSelection
+  >[1] = {
+    catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
+    locationId: "location.seattle",
+    careerId: "career.software",
+    householdId: "household.single",
+    benefitsPackageId: "benefits.corporate_flex",
+    healthPlanId: "health.hdhp_hsa",
+    retirementPlanId: "retirement.401k_standard",
+    insuranceCoverageIds: ["insurance.renters"],
+    scenarioId: "scenario.fresh_start",
+    ...options.scenarioSelection,
+  };
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
-    {
-      catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
-      locationId: "location.seattle",
-      careerId: "career.software",
-      householdId: "household.single",
-      benefitsPackageId: "benefits.corporate_flex",
-      healthPlanId: "health.hdhp_hsa",
-      retirementPlanId: "retirement.401k_standard",
-      insuranceCoverageIds: ["insurance.renters"],
-      scenarioId: "scenario.fresh_start",
-    },
+    scenarioSelection,
   );
   const initial = createNativeGameStateV2({
     runId: "run.financial-kernel-v2",
     playerId: "player.financial-kernel-v2",
     birthMonth: simulationMonth("1995-01"),
-    startMonth: simulationMonth("2026-07"),
+    startMonth: options.startMonth ?? simulationMonth("2026-07"),
     randomSeed: "financial-kernel-v2-golden",
     resolvedScenario,
-    annualGrossSalaryCents: moneyCents(12_000_000),
+    annualGrossSalaryCents:
+      options.annualGrossSalaryCents ?? moneyCents(12_000_000),
     finances: {
       cashCents: moneyCents(2_000_000),
       taxableBroadIndexCents: moneyCents(1_000_000),
@@ -62,6 +83,7 @@ function configuredState() {
       ],
       revolvingCreditLimitCents: moneyCents(1_000_000),
       revolvingCreditUsedCents: moneyCents(0),
+      ...options.finances,
     },
     wellbeing: {
       burnoutPpm: ratePpm(100_000),
@@ -83,9 +105,52 @@ function configuredState() {
         afterTaxSpeculativeRatePpm: ratePpm(0),
         afterTaxIraRatePpm: ratePpm(100_000),
         afterTaxExtraDebtRatePpm: ratePpm(200_000),
+        ...options.strategy,
       },
     },
   });
+}
+
+const ZERO_STRATEGY = Object.freeze({
+  preTax401kSalaryRatePpm: ratePpm(0),
+  preTaxHsaSalaryRatePpm: ratePpm(0),
+  afterTaxBroadIndexRatePpm: ratePpm(0),
+  afterTaxSectorRatePpm: ratePpm(0),
+  afterTaxSpeculativeRatePpm: ratePpm(0),
+  afterTaxIraRatePpm: ratePpm(0),
+  afterTaxExtraDebtRatePpm: ratePpm(0),
+});
+
+function deepFreezeFixture<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreezeFixture(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function creditBoundaryInput(extraExpenseCents = 0): FinancialMonthInputV2 {
+  const state = configuredState({
+    finances: {
+      cashCents: moneyCents(100_000),
+      taxableBroadIndexCents: moneyCents(0),
+      taxableSectorCents: moneyCents(0),
+      taxableSpeculativeCents: moneyCents(0),
+      revolvingCreditLimitCents: moneyCents(34_467),
+    },
+  });
+  const input = successfulInput(state);
+  return {
+    ...input,
+    resolvedCashFlows: [
+      {
+        id: "flow.subscription",
+        kind: "recurring_expense",
+        amountCents: moneyCents(115_000 + extraExpenseCents),
+        sourceSystem: "boundary_fixture",
+      },
+    ],
+  };
 }
 
 function zeroMarketStep(state = configuredState()) {
@@ -105,6 +170,30 @@ function zeroMarketStep(state = configuredState()) {
       cashReturnPpm: ratePpm(0),
       housingReturnPpm: ratePpm(0),
       inflationPpm: ratePpm(0),
+    }),
+  });
+}
+
+function marketStepWithReturns(
+  state: ReturnType<typeof configuredState>,
+  returns: Readonly<{
+    equityReturnPpm?: number;
+    bondReturnPpm?: number;
+    cashReturnPpm?: number;
+    housingReturnPpm?: number;
+    inflationPpm?: number;
+  }>,
+) {
+  const step = zeroMarketStep(state);
+  return Object.freeze({
+    ...step,
+    month: Object.freeze({
+      ...step.month,
+      equityReturnPpm: ratePpm(returns.equityReturnPpm ?? 0),
+      bondReturnPpm: ratePpm(returns.bondReturnPpm ?? 0),
+      cashReturnPpm: ratePpm(returns.cashReturnPpm ?? 0),
+      housingReturnPpm: ratePpm(returns.housingReturnPpm ?? 0),
+      inflationPpm: ratePpm(returns.inflationPpm ?? 0),
     }),
   });
 }
@@ -156,6 +245,855 @@ function successfulInput(state = configuredState()): FinancialMonthInputV2 {
 }
 
 describe("simulateFinancialMonthV2", () => {
+  it("fully funds when required cash exactly exhausts remaining credit", () => {
+    const result = simulateFinancialMonthV2(creditBoundaryInput());
+
+    expect(result.shortfall).toBeNull();
+    expect(result.record.fundingPlan).toMatchObject({
+      requiredCashCents: 864_467,
+      cashAvailableCents: 830_000,
+      remainingCreditCents: 34_467,
+      creditUsedCents: 34_467,
+      residualShortfallCents: 0,
+      fullyFunded: true,
+    });
+    expect(result.state.finances.creditUsedCents).toBe(34_467);
+  });
+
+  it("returns a one-cent typed shortfall when required cash exceeds remaining credit", () => {
+    const boundary = creditBoundaryInput(1);
+    const input = structuredClone({
+      ...boundary,
+      resolvedCashFlows: [
+        {
+          id: "flow.shortfall-income",
+          kind: "temporary_income" as const,
+          amountCents: moneyCents(10_000),
+          sourceSystem: "boundary_fixture",
+        },
+        {
+          ...boundary.resolvedCashFlows![0]!,
+          amountCents: moneyCents(125_001),
+        },
+      ],
+    });
+    const inputChecksum = sha256Canonical(input);
+    const openingLedgerLength = input.state.ledger.transactions.length;
+    const observedInputs = [
+      input,
+      input.state,
+      input.state.ledger,
+      input.state.gameplay,
+      input.marketStep,
+    ];
+    const openingOwnership = observedInputs.map((value) => ({
+      frozen: Object.isFrozen(value),
+      extensible: Object.isExtensible(value),
+    }));
+    const result = simulateFinancialMonthV2(input);
+
+    expect(result.shortfall).toEqual({
+      requiredCashCents: 874_468,
+      residualShortfallCents: 1,
+      fundingPlan: result.record.fundingPlan,
+      netWorthCents: 1_480_000,
+      automaticLiquidityCents: 874_467,
+    });
+    expect(result.record.shortfall).toBe(result.shortfall);
+    expect(result.shortfall?.fundingPlan).toBe(result.record.fundingPlan);
+    expect(result.record).toMatchObject({
+      processedMonth: "2026-07",
+      nextMonth: "2026-08",
+      openingNetWorthCents: 630_000,
+      closingNetWorthCents: 1_480_000,
+      openingAutomaticLiquidityCents: 134_467,
+      closingAutomaticLiquidityCents: 874_467,
+      resolvedIncomeCents: 10_000,
+      resolvedExpenseCents: 125_001,
+      nonDebtObligationsPaidCents: 0,
+      requiredCashCents: 874_468,
+      funding: null,
+      recurringAllocations: null,
+    });
+    expect(result.record.fundingPlan).toEqual({
+      requiredCashCents: 874_468,
+      cashAvailableCents: 840_000,
+      cashUsedCents: 840_000,
+      taxableLiquidations: [],
+      grossLiquidationCents: 0,
+      liquidationCostCents: 0,
+      netLiquidationProceedsCents: 0,
+      remainingCreditCents: 34_467,
+      creditUsedCents: 34_467,
+      residualShortfallCents: 1,
+      fullyFunded: false,
+    });
+    expect(result.record.debtService).toMatchObject({
+      totalInterestCents: 1_200,
+      totalScheduledPaymentCents: 11_000,
+    });
+    expect(result.state).toMatchObject({
+      currentMonth: "2026-08",
+      revision: input.state.revision,
+      acceptedCommandIds: input.state.acceptedCommandIds,
+      outcome: input.state.outcome,
+      finances: {
+        cashCents: 840_000,
+        taxableInvestmentsCents: 0,
+        retirementCents: 690_000,
+        otherInvestableAssetsCents: 70_000,
+        nonCreditLiabilitiesCents: 120_000,
+        creditUsedCents: 0,
+      },
+      gameplay: {
+        debts: {
+          termDebts: input.state.gameplay.debts.termDebts,
+          revolvingCreditUsedCents: 0,
+        },
+        contributions: {
+          employee401kCents: 50_000,
+          employer401kCents: 40_000,
+          iraCents: 0,
+          hsaCents: 20_000,
+        },
+        insurance: {
+          healthDeductiblePaidCents: 180_000,
+          healthOutOfPocketPaidCents: 184_000,
+        },
+        exposure: input.state.gameplay.exposure,
+        employment: input.state.gameplay.employment,
+        careerDevelopment: input.state.gameplay.careerDevelopment,
+        eventLifecycle: input.state.gameplay.eventLifecycle,
+      },
+    });
+    expect(
+      result.state.ledger.transactions
+        .slice(openingLedgerLength)
+        .map(({ reasonCode }) => reasonCode),
+    ).toEqual(["monthly_payroll_v2", "monthly_resolved_income_v2"]);
+    expect(
+      result.state.ledger.transactions.find(
+        ({ id }) =>
+          id === `txn.${input.commandId}.flow.flow.shortfall-income`,
+      )?.postings,
+    ).toEqual([
+      { accountId: "asset.cash", debitCents: 10_000, creditCents: 0 },
+      { accountId: "income.other", debitCents: 0, creditCents: 10_000 },
+    ]);
+    expect(
+      result.state.ledger.transactions.some(
+        ({ id }) => id === `txn.${input.commandId}.flow.flow.subscription`,
+      ),
+    ).toBe(false);
+    expect(Object.isFrozen(result.shortfall)).toBe(true);
+    expect(Object.isFrozen(result.shortfall?.fundingPlan)).toBe(true);
+    expect(Object.isFrozen(result.record)).toBe(true);
+    expect(Object.isFrozen(result.state)).toBe(true);
+    expect(sha256Canonical(input)).toBe(inputChecksum);
+    expect(
+      observedInputs.map((value) => ({
+        frozen: Object.isFrozen(value),
+        extensible: Object.isExtensible(value),
+      })),
+    ).toEqual(openingOwnership);
+  });
+
+  it("funds a zero-after-tax-income month through cash, taxable assets, then credit", () => {
+    const state = configuredState({
+      finances: {
+        cashCents: moneyCents(100_000),
+        taxableBroadIndexCents: moneyCents(300_000),
+        taxableSectorCents: moneyCents(0),
+        taxableSpeculativeCents: moneyCents(0),
+        revolvingCreditLimitCents: moneyCents(200_000),
+      },
+    });
+    const base = successfulInput(state);
+    const result = simulateFinancialMonthV2({
+      ...base,
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+      taxEvidence: {
+        ...base.taxEvidence,
+        totalTaxCents: 930_000,
+        afterTaxCashIncomeCents: moneyCents(0),
+      },
+    });
+
+    expect(result.shortfall).toBeNull();
+    expect(result.record.afterTaxCashIncomeCents).toBe(0);
+    expect(result.record.fundingPlan).toEqual({
+      requiredCashCents: 565_467,
+      cashAvailableCents: 100_000,
+      cashUsedCents: 100_000,
+      taxableLiquidations: [
+        {
+          bucket: "taxableBroadIndexCents",
+          grossCents: 300_000,
+          costCents: 3_000,
+          netCents: 297_000,
+        },
+      ],
+      grossLiquidationCents: 300_000,
+      liquidationCostCents: 3_000,
+      netLiquidationProceedsCents: 297_000,
+      remainingCreditCents: 200_000,
+      creditUsedCents: 168_467,
+      residualShortfallCents: 0,
+      fullyFunded: true,
+    });
+    expect(result.record.funding).toMatchObject({
+      grossLiquidationCents: 300_000,
+      liquidationCostCents: 3_000,
+      netLiquidationProceedsCents: 297_000,
+      creditDrawnCents: 168_467,
+    });
+    expect(result.state.finances).toMatchObject({
+      cashCents: 0,
+      taxableInvestmentsCents: 0,
+      creditUsedCents: 168_467,
+    });
+    expect(result.record.recurringAllocations).toMatchObject({
+      afterTaxDiscretionaryCents: 0,
+      afterTax: { extraDebtPayments: [] },
+    });
+  });
+
+  it.each([
+    {
+      direction: "gain",
+      returns: {
+        equityReturnPpm: 100_000,
+        bondReturnPpm: 200_000,
+        cashReturnPpm: 50_000,
+      },
+      marketValueChangeCents: 300_000,
+      portfolio: {
+        taxableBroadIndexCents: 1_100_000,
+        taxableSectorCents: 220_000,
+        taxableSpeculativeCents: 110_000,
+        retirement401kCents: 550_000,
+        retirementIraCents: 110_000,
+        hsaCents: 60_000,
+      },
+      postings: [
+        { accountId: "asset.cash", debitCents: 100_000, creditCents: 0 },
+        {
+          accountId: "asset.taxable_investments",
+          debitCents: 130_000,
+          creditCents: 0,
+        },
+        {
+          accountId: "asset.retirement",
+          debitCents: 60_000,
+          creditCents: 0,
+        },
+        {
+          accountId: "asset.other_investable",
+          debitCents: 10_000,
+          creditCents: 0,
+        },
+        {
+          accountId: "equity.adjustment",
+          debitCents: 0,
+          creditCents: 300_000,
+        },
+      ],
+    },
+    {
+      direction: "loss",
+      returns: {
+        equityReturnPpm: -100_000,
+        bondReturnPpm: -200_000,
+        cashReturnPpm: -50_000,
+      },
+      marketValueChangeCents: -300_000,
+      portfolio: {
+        taxableBroadIndexCents: 900_000,
+        taxableSectorCents: 180_000,
+        taxableSpeculativeCents: 90_000,
+        retirement401kCents: 450_000,
+        retirementIraCents: 90_000,
+        hsaCents: 40_000,
+      },
+      postings: [
+        { accountId: "asset.cash", debitCents: 0, creditCents: 100_000 },
+        {
+          accountId: "asset.taxable_investments",
+          debitCents: 0,
+          creditCents: 130_000,
+        },
+        {
+          accountId: "asset.retirement",
+          debitCents: 0,
+          creditCents: 60_000,
+        },
+        {
+          accountId: "asset.other_investable",
+          debitCents: 0,
+          creditCents: 10_000,
+        },
+        {
+          accountId: "equity.adjustment",
+          debitCents: 300_000,
+          creditCents: 0,
+        },
+      ],
+    },
+  ])("applies an exact supplied market $direction", ({
+    returns,
+    marketValueChangeCents,
+    portfolio,
+    postings,
+  }) => {
+    const state = configuredState({ strategy: ZERO_STRATEGY });
+    const base = successfulInput(state);
+    const result = simulateFinancialMonthV2({
+      ...base,
+      marketStep: marketStepWithReturns(state, returns),
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+      taxEvidence: {
+        ...base.taxEvidence,
+        filingStatus: state.player.filingStatus,
+        employee401kContributionCents: moneyCents(0),
+        employeeHsaContributionCents: moneyCents(0),
+        afterTaxCashIncomeCents: moneyCents(800_000),
+      },
+    });
+    const marketTransaction = result.state.ledger.transactions.find(
+      ({ id }) => id === `txn.${base.commandId}.market`,
+    );
+
+    expect(result.record.marketValueChangeCents).toBe(marketValueChangeCents);
+    expect(result.state.gameplay.portfolio).toMatchObject(portfolio);
+    expect(marketTransaction).toMatchObject({
+      reasonCode: "monthly_market_revaluation_v2",
+      category: "asset.market_revaluation",
+      sourceSystem: "financial_kernel_v2",
+      causalReference: { kind: "command", id: base.commandId },
+      postings,
+    });
+  });
+
+  it("forces a taxable sale from the post-loss balance with exact transaction cost", () => {
+    const state = configuredState({
+      strategy: ZERO_STRATEGY,
+      finances: {
+        cashCents: moneyCents(100_000),
+        taxableBroadIndexCents: moneyCents(1_000_000),
+        taxableSectorCents: moneyCents(0),
+        taxableSpeculativeCents: moneyCents(0),
+        revolvingCreditLimitCents: moneyCents(100_000),
+      },
+    });
+    const base = successfulInput(state);
+    const result = simulateFinancialMonthV2({
+      ...base,
+      taxableLiquidationCostRatePpm: ratePpm(100_000),
+      marketStep: marketStepWithReturns(state, {
+        equityReturnPpm: -500_000,
+      }),
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+      taxEvidence: {
+        ...base.taxEvidence,
+        filingStatus: state.player.filingStatus,
+        employee401kContributionCents: moneyCents(0),
+        employeeHsaContributionCents: moneyCents(0),
+        totalTaxCents: 1_000_000,
+        afterTaxCashIncomeCents: moneyCents(0),
+      },
+    });
+    const fundingTransaction = result.state.ledger.transactions.find(
+      ({ id }) => id === `txn.${base.commandId}.liquidity`,
+    );
+
+    expect(result.record.fundingPlan).toMatchObject({
+      cashAvailableCents: 100_000,
+      grossLiquidationCents: 500_000,
+      liquidationCostCents: 50_000,
+      netLiquidationProceedsCents: 450_000,
+      creditUsedCents: 15_467,
+      residualShortfallCents: 0,
+    });
+    expect(result.record.fundingPlan.taxableLiquidations).toEqual([
+      {
+        bucket: "taxableBroadIndexCents",
+        grossCents: 500_000,
+        costCents: 50_000,
+        netCents: 450_000,
+      },
+    ]);
+    expect(result.state.finances.taxableInvestmentsCents).toBe(0);
+    expect(fundingTransaction?.postings).toEqual([
+      { accountId: "asset.cash", debitCents: 465_467, creditCents: 0 },
+      { accountId: "expense.living", debitCents: 50_000, creditCents: 0 },
+      {
+        accountId: "asset.taxable_investments",
+        debitCents: 0,
+        creditCents: 500_000,
+      },
+      { accountId: "liability.credit", debitCents: 0, creditCents: 15_467 },
+    ]);
+  });
+
+  it("returns shortfall for positive net worth held only in restricted assets", () => {
+    const configured = configuredState({
+      startMonth: simulationMonth("2026-01"),
+      scenarioSelection: {
+        householdId: "household.married",
+        scenarioId: "scenario.established_household",
+      },
+      strategy: ZERO_STRATEGY,
+      finances: {
+        cashCents: moneyCents(500_000),
+        taxableBroadIndexCents: moneyCents(0),
+        taxableSectorCents: moneyCents(0),
+        taxableSpeculativeCents: moneyCents(0),
+        retirement401kCents: moneyCents(10_000_000),
+        retirementIraCents: moneyCents(5_000_000),
+        hsaCents: moneyCents(1_000_000),
+        homeValueCents: moneyCents(50_000_000),
+        otherAssetsCents: moneyCents(5_000_000),
+        termDebts: [],
+        revolvingCreditLimitCents: moneyCents(0),
+      },
+    });
+    const state = finalizeGameStateV2({
+      ...configured,
+      gameplay: {
+        ...configured.gameplay,
+        contributions: {
+          policyYear: 2025,
+          employee401kCents: moneyCents(1_000_000),
+          employer401kCents: moneyCents(500_000),
+          iraCents: moneyCents(250_000),
+          hsaCents: moneyCents(200_000),
+        },
+        insurance: {
+          policyYear: 2025,
+          healthDeductiblePaidCents: moneyCents(100_000),
+          healthOutOfPocketPaidCents: moneyCents(120_000),
+          coverageUsage: [
+            { coverageId: "insurance.renters", usedCents: moneyCents(12_345) },
+          ],
+        },
+      },
+    });
+    const base = successfulInput(state);
+    const marketStep = marketStepWithReturns(state, {
+      cashReturnPpm: -1_000_000,
+      inflationPpm: 100_000,
+    });
+    const result = simulateFinancialMonthV2({
+      ...base,
+      marketStep,
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+      taxEvidence: {
+        ...base.taxEvidence,
+        filingStatus: state.player.filingStatus,
+        employee401kContributionCents: moneyCents(0),
+        employeeHsaContributionCents: moneyCents(0),
+        totalTaxCents: 1_000_000,
+        afterTaxCashIncomeCents: moneyCents(0),
+      },
+    });
+
+    expect(result.shortfall).not.toBeNull();
+    expect(result.processedMonth).toBe("2026-01");
+    expect(result.nextMonth).toBe("2026-02");
+    expect(result.shortfall?.netWorthCents).toBe(71_000_000);
+    expect(result.shortfall?.automaticLiquidityCents).toBe(0);
+    expect(result.shortfall?.residualShortfallCents).toBe(
+      result.record.requiredCashCents,
+    );
+    expect(result.record.closingNetWorthCents).toBe(71_000_000);
+    expect(result.record.marketValueChangeCents).toBe(-500_000);
+    expect(result.record.cumulativePriceIndexPpm).toBe(1_100_000);
+    expect(result.record.annualInflationIncreaseCents).toBeGreaterThan(0);
+    expect(result.record.fundingPlan).toMatchObject({
+      cashAvailableCents: 0,
+      grossLiquidationCents: 0,
+      netLiquidationProceedsCents: 0,
+      remainingCreditCents: 0,
+      creditUsedCents: 0,
+      fullyFunded: false,
+    });
+    expect(result.state.finances).toMatchObject({
+      cashCents: 0,
+      taxableInvestmentsCents: 0,
+      retirementCents: 15_000_000,
+      otherInvestableAssetsCents: 1_000_000,
+      homeValueCents: 50_000_000,
+      otherAssetsCents: 5_000_000,
+      creditLimitCents: 0,
+    });
+    expect(result.state.finances.annualLivingCostCents).toBeGreaterThan(
+      state.finances.annualLivingCostCents,
+    );
+    expect(result.state.random).toEqual(marketStep.nextState.random);
+    expect(result.state.marketRegime).toBe(marketStep.nextState.regime);
+    expect(result.state.gameplay.market).toEqual({
+      modelVersion: "regime-v1",
+      monthsInRegime: marketStep.nextState.monthsInRegime,
+      cumulativePriceIndexPpm: 1_100_000,
+    });
+    expect(result.state.gameplay.contributions).toEqual({
+      policyYear: 2026,
+      employee401kCents: 0,
+      employer401kCents: 0,
+      iraCents: 0,
+      hsaCents: 0,
+    });
+    expect(result.state.gameplay.insurance).toEqual({
+      policyYear: 2026,
+      healthDeductiblePaidCents: 0,
+      healthOutOfPocketPaidCents: 0,
+      coverageUsage: [
+        { coverageId: "insurance.renters", usedCents: 12_345 },
+      ],
+    });
+    expect(result.record.funding).toBeNull();
+    expect(result.record.nonDebtObligationsPaidCents).toBe(0);
+  });
+
+  it.each([
+    {
+      boundary: "below",
+      afterTaxCashIncomeCents: 615_467,
+      optionalPaymentCents: 50_000,
+      closingPrincipalCents: 60_200,
+      unallocatedAfterTaxCents: 0,
+    },
+    {
+      boundary: "exact",
+      afterTaxCashIncomeCents: 675_667,
+      optionalPaymentCents: 110_200,
+      closingPrincipalCents: 0,
+      unallocatedAfterTaxCents: 0,
+    },
+    {
+      boundary: "above",
+      afterTaxCashIncomeCents: 765_467,
+      optionalPaymentCents: 110_200,
+      closingPrincipalCents: 0,
+      unallocatedAfterTaxCents: 89_800,
+    },
+  ])("caps a $boundary debt-payoff request through the kernel", ({
+    afterTaxCashIncomeCents,
+    optionalPaymentCents,
+    closingPrincipalCents,
+    unallocatedAfterTaxCents,
+  }) => {
+    const state = configuredState({
+      strategy: {
+        ...ZERO_STRATEGY,
+        afterTaxExtraDebtRatePpm: ratePpm(1_000_000),
+      },
+    });
+    const base = successfulInput(state);
+    const result = simulateFinancialMonthV2({
+      ...base,
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+      taxEvidence: {
+        ...base.taxEvidence,
+        employee401kContributionCents: moneyCents(0),
+        employeeHsaContributionCents: moneyCents(0),
+        totalTaxCents: 1_000_000 - afterTaxCashIncomeCents,
+        afterTaxCashIncomeCents: moneyCents(afterTaxCashIncomeCents),
+      },
+    });
+    const optionalTransaction = result.state.ledger.transactions.find(
+      ({ id }) => id === `txn.${base.commandId}.after-tax-strategy`,
+    );
+    const mandatoryTransaction = result.state.ledger.transactions.find(
+      ({ id }) => id === `txn.${base.commandId}.debt-payment`,
+    );
+
+    expect(result.record.debtService.lines[0]).toMatchObject({
+      openingPrincipalCents: 120_000,
+      interestCents: 1_200,
+      scheduledPaymentCents: 11_000,
+      principalPaidCents: 9_800,
+      closingPrincipalCents: 110_200,
+    });
+    expect(result.record.recurringAllocations?.afterTax.extraDebtPayments).toEqual(
+      [{ debtId: "debt.student.1", amountCents: optionalPaymentCents }],
+    );
+    expect(result.record.recurringAllocations?.unallocatedAfterTaxCents).toBe(
+      unallocatedAfterTaxCents,
+    );
+    expect(result.state.gameplay.debts.termDebts[0]?.principalCents ?? 0).toBe(
+      closingPrincipalCents,
+    );
+    expect(result.state.finances.nonCreditLiabilitiesCents).toBe(
+      closingPrincipalCents,
+    );
+    expect(mandatoryTransaction?.postings).toEqual([
+      {
+        accountId: "liability.non_credit",
+        debitCents: 11_000,
+        creditCents: 0,
+      },
+      { accountId: "asset.cash", debitCents: 0, creditCents: 11_000 },
+    ]);
+    expect(optionalTransaction?.postings).toEqual([
+      {
+        accountId: "liability.non_credit",
+        debitCents: optionalPaymentCents,
+        creditCents: 0,
+      },
+      {
+        accountId: "asset.cash",
+        debitCents: 0,
+        creditCents: optionalPaymentCents,
+      },
+    ]);
+    expect(optionalPaymentCents).toBeLessThanOrEqual(110_200);
+    expect(closingPrincipalCents).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps employee, employer, HSA, and IRA contributions at annual caps", () => {
+    const configured = configuredState({
+      strategy: {
+        ...ZERO_STRATEGY,
+        preTax401kSalaryRatePpm: ratePpm(500_000),
+        preTaxHsaSalaryRatePpm: ratePpm(500_000),
+        afterTaxIraRatePpm: ratePpm(1_000_000),
+      },
+    });
+    const state = finalizeGameStateV2({
+      ...configured,
+      gameplay: {
+        ...configured.gameplay,
+        contributions: {
+          policyYear: 2026,
+          employee401kCents: moneyCents(2_449_900),
+          employer401kCents: moneyCents(4_749_900),
+          iraCents: moneyCents(749_900),
+          hsaCents: moneyCents(439_900),
+        },
+      },
+    });
+    const base = successfulInput(state);
+    const result = simulateFinancialMonthV2({
+      ...base,
+      insuranceClaim: undefined,
+      resolvedCashFlows: [],
+      taxEvidence: {
+        ...base.taxEvidence,
+        employee401kContributionCents: moneyCents(100),
+        employeeHsaContributionCents: moneyCents(100),
+        afterTaxCashIncomeCents: moneyCents(799_800),
+      },
+    });
+
+    expect(result.record.recurringAllocations).toMatchObject({
+      preTax: {
+        employee401kCents: 100,
+        employer401kMatchCents: 100,
+        hsaCents: 100,
+      },
+      afterTax: { iraCents: 100 },
+    });
+    expect(result.state.gameplay.contributions).toEqual({
+      policyYear: 2026,
+      employee401kCents: 2_450_000,
+      employer401kCents: 4_750_000,
+      iraCents: 750_000,
+      hsaCents: 440_000,
+    });
+    expect(
+      result.state.gameplay.contributions.employee401kCents +
+        result.state.gameplay.contributions.employer401kCents,
+    ).toBe(7_200_000);
+  });
+
+  it("resets prior-year counters before January payroll and health claim", () => {
+    const configured = configuredState({
+      startMonth: simulationMonth("2026-01"),
+      strategy: {
+        ...ZERO_STRATEGY,
+        preTax401kSalaryRatePpm: ratePpm(50_000),
+        preTaxHsaSalaryRatePpm: ratePpm(20_000),
+      },
+    });
+    const state = finalizeGameStateV2({
+      ...configured,
+      gameplay: {
+        ...configured.gameplay,
+        contributions: {
+          policyYear: 2025,
+          employee401kCents: moneyCents(2_000_000),
+          employer401kCents: moneyCents(1_000_000),
+          iraCents: moneyCents(500_000),
+          hsaCents: moneyCents(400_000),
+        },
+        insurance: {
+          policyYear: 2025,
+          healthDeductiblePaidCents: moneyCents(100_000),
+          healthOutOfPocketPaidCents: moneyCents(120_000),
+          coverageUsage: configured.gameplay.insurance.coverageUsage.map(
+            ({ coverageId }) => ({
+              coverageId,
+              usedCents: moneyCents(12_345),
+            }),
+          ),
+        },
+      },
+    });
+    const base = successfulInput(state);
+    const result = simulateFinancialMonthV2({
+      ...base,
+      commandId: "cmd.financial-kernel-v2.2026-01",
+      resolvedCashFlows: [],
+    });
+
+    expect(result.processedMonth).toBe("2026-01");
+    expect(result.nextMonth).toBe("2026-02");
+    expect(result.state.gameplay.contributions).toEqual({
+      policyYear: 2026,
+      employee401kCents: 50_000,
+      employer401kCents: 40_000,
+      iraCents: 0,
+      hsaCents: 20_000,
+    });
+    expect(result.record.insurancePlayerCostCents).toBe(184_000);
+    expect(result.state.gameplay.insurance).toEqual({
+      policyYear: 2026,
+      healthDeductiblePaidCents: 180_000,
+      healthOutOfPocketPaidCents: 184_000,
+      coverageUsage: [
+        { coverageId: "insurance.renters", usedCents: 12_345 },
+      ],
+    });
+  });
+
+  it("applies every resolved flow kind once with stable balanced evidence", () => {
+    const state = configuredState({
+      strategy: {
+        ...ZERO_STRATEGY,
+        afterTaxBroadIndexRatePpm: ratePpm(1_000_000),
+      },
+    });
+    const base = successfulInput(state);
+    const flows = [
+      {
+        id: "flow.other",
+        kind: "other_income" as const,
+        amountCents: moneyCents(10_000),
+        sourceSystem: "resolved_flow_fixture",
+      },
+      {
+        id: "flow.temporary-income",
+        kind: "temporary_income" as const,
+        amountCents: moneyCents(20_000),
+        sourceSystem: "resolved_flow_fixture",
+      },
+      {
+        id: "flow.recurring-expense",
+        kind: "recurring_expense" as const,
+        amountCents: moneyCents(3_000),
+        sourceSystem: "resolved_flow_fixture",
+      },
+      {
+        id: "flow.temporary-expense",
+        kind: "temporary_expense" as const,
+        amountCents: moneyCents(4_000),
+        sourceSystem: "resolved_flow_fixture",
+      },
+      {
+        id: "flow.zero",
+        kind: "temporary_expense" as const,
+        amountCents: moneyCents(0),
+        sourceSystem: "resolved_flow_fixture",
+      },
+    ];
+    const result = simulateFinancialMonthV2({
+      ...base,
+      insuranceClaim: undefined,
+      resolvedCashFlows: flows,
+      taxEvidence: {
+        ...base.taxEvidence,
+        employee401kContributionCents: moneyCents(0),
+        employeeHsaContributionCents: moneyCents(0),
+        afterTaxCashIncomeCents: moneyCents(800_000),
+      },
+    });
+    const flowTransactions = result.state.ledger.transactions.filter(
+      ({ id }) => id.startsWith(`txn.${base.commandId}.flow.`),
+    );
+
+    expect(result.record).toMatchObject({
+      resolvedIncomeCents: 30_000,
+      resolvedExpenseCents: 7_000,
+      requiredCashCents: 572_467,
+      nonDebtObligationsPaidCents: 554_467,
+      recurringAllocations: {
+        afterTaxDiscretionaryCents: 257_533,
+        afterTax: { broadIndexCents: 257_533 },
+      },
+    });
+    expect(flowTransactions).toHaveLength(4);
+    for (const flow of flows.filter(({ amountCents }) => amountCents > 0)) {
+      const transactionId = `txn.${base.commandId}.flow.${flow.id}`;
+      const matches = flowTransactions.filter(({ id }) => id === transactionId);
+      const transaction = matches[0]!;
+      const income =
+        flow.kind === "other_income" || flow.kind === "temporary_income";
+      expect(matches).toHaveLength(1);
+      expect(transaction).toMatchObject({
+        id: transactionId,
+        commandId: base.commandId,
+        sourceSystem: flow.sourceSystem,
+        category: income
+          ? "income.resolved_cash_flow"
+          : "expense.resolved_cash_flow",
+        causalReference: { kind: "system", id: flow.id },
+        postings: income
+          ? [
+              {
+                accountId: "asset.cash",
+                debitCents: flow.amountCents,
+                creditCents: 0,
+              },
+              {
+                accountId: "income.other",
+                debitCents: 0,
+                creditCents: flow.amountCents,
+              },
+            ]
+          : [
+              {
+                accountId: "expense.living",
+                debitCents: flow.amountCents,
+                creditCents: 0,
+              },
+              {
+                accountId: "asset.cash",
+                debitCents: 0,
+                creditCents: flow.amountCents,
+              },
+            ],
+      });
+      expect(
+        transaction.postings.reduce(
+          (total, posting) =>
+            total + posting.debitCents - posting.creditCents,
+          0,
+        ),
+      ).toBe(0);
+    }
+    expect(
+      result.state.ledger.transactions.some(
+        ({ id }) => id === `txn.${base.commandId}.flow.flow.zero`,
+      ),
+    ).toBe(false);
+  });
+
   it("processes one fully funded native month from supplied evidence", () => {
     const initial = configuredState();
     const input = successfulInput(initial);
@@ -551,6 +1489,77 @@ describe("simulateFinancialMonthV2", () => {
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.record)).toBe(true);
     expect(Object.isFrozen(result.state)).toBe(true);
+  });
+
+  it("produces equivalent output from deep, mutable, and shallow-frozen inputs", () => {
+    const base = successfulInput();
+    const inputs = [
+      deepFreezeFixture(structuredClone(base)),
+      structuredClone(base),
+      Object.freeze(structuredClone(base)),
+    ];
+    const observedNodes = inputs.map((input) => [
+      input,
+      input.state,
+      input.state.ledger,
+      input.state.ledger.transactions,
+      input.state.gameplay,
+      input.marketStep,
+      input.marketStep.month,
+      input.taxEvidence,
+      input.resolvedCashFlows!,
+    ]);
+    const openingOwnership = observedNodes.map((nodes) =>
+      nodes.map((value) => ({
+        frozen: Object.isFrozen(value),
+        extensible: Object.isExtensible(value),
+      })),
+    );
+    const openingChecksums = inputs.map(sha256Canonical);
+
+    const results = inputs.map(simulateFinancialMonthV2);
+
+    expect(results[1]!.record).toEqual(results[0]!.record);
+    expect(results[2]!.record).toEqual(results[0]!.record);
+    expect(results.map(({ record }) => sha256Canonical(record))).toEqual([
+      sha256Canonical(results[0]!.record),
+      sha256Canonical(results[0]!.record),
+      sha256Canonical(results[0]!.record),
+    ]);
+    expect(results.map(({ state }) => sha256Canonical(state))).toEqual([
+      sha256Canonical(results[0]!.state),
+      sha256Canonical(results[0]!.state),
+      sha256Canonical(results[0]!.state),
+    ]);
+    expect(inputs.map(sha256Canonical)).toEqual(openingChecksums);
+    expect(
+      observedNodes.map((nodes) =>
+        nodes.map((value) => ({
+          frozen: Object.isFrozen(value),
+          extensible: Object.isExtensible(value),
+        })),
+      ),
+    ).toEqual(openingOwnership);
+  });
+
+  it("reruns deterministically from fresh equivalent native inputs", () => {
+    const firstInput = successfulInput(configuredState());
+    const secondInput = successfulInput(configuredState());
+    expect(firstInput).not.toBe(secondInput);
+    expect(firstInput.state).not.toBe(secondInput.state);
+    expect(sha256Canonical(firstInput)).toBe(sha256Canonical(secondInput));
+
+    const first = simulateFinancialMonthV2(firstInput);
+    const second = simulateFinancialMonthV2(secondInput);
+
+    expect(second.record).toEqual(first.record);
+    expect(second.state.ledger.transactions).toEqual(
+      first.state.ledger.transactions,
+    );
+    expect(
+      second.state.ledger.transactions.map(({ id }) => id),
+    ).toEqual(first.state.ledger.transactions.map(({ id }) => id));
+    expect(sha256Canonical(second.state)).toBe(sha256Canonical(first.state));
   });
 
   it("does not freeze a mutable deserialized state input", () => {
