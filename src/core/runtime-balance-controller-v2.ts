@@ -135,6 +135,10 @@ export type RuntimeBalanceChoiceOptionsV2 = Readonly<{
   estimateImpact?: typeof estimatePersonalEventImpactV2;
   scenarioDirectorInput?: ScenarioDirectorInputV2;
   scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
+  /** Named-world mode supplies gross keyed parameters without consuming the legacy cursor. */
+  parameterSampler?: (
+    template: PersonalEventTemplateV2,
+  ) => Readonly<Record<string, number>>;
 }>;
 
 type ScoredCandidate = Readonly<{
@@ -694,7 +698,14 @@ export function chooseBalancedEventV2(
       ...assessCandidatePacingV2(state, balance, candidate, eventCatalog),
     );
     if (item.rejectionCodes.length > 0) continue;
-    const sampled = sampleParameters(candidate.template, cursor);
+    const sampled = options.parameterSampler === undefined
+      ? sampleParameters(candidate.template, cursor)
+      : Object.freeze({
+          parameters: Object.freeze({
+            ...options.parameterSampler(candidate.template),
+          }),
+          nextRandom: cursor,
+        });
     cursor = sampled.nextRandom;
     item.parameters = sampled.parameters;
     let impact: PersonalEventImpactEstimateV2;

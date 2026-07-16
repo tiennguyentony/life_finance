@@ -36,3 +36,5 @@ pnpm-debug.log*
 
 # Local implementation-planning scratch
 .superpowers/
+.balance-lab-dist/
+.artifacts/balance-lab/

@@ -116,6 +116,9 @@ export function queueScheduledPersonalEventV2(
 export function queueScheduledDeclarativePersonalEventV2(
   state: GameStateV2,
   scheduled: ScheduledDeclarativePersonalEventV2,
+  options: Readonly<{
+    personalEventCatalog?: readonly PersonalEventTemplateV2[];
+  }> = {},
 ): GameStateV2 {
   if (state.outcome) {
     throw new EventLifecycleV2Error("RUN_TERMINAL", "terminal runs reject new events");
@@ -129,7 +132,11 @@ export function queueScheduledDeclarativePersonalEventV2(
   const { proposal, template, targetedWeakness } = scheduled;
   let canonicalTemplate: PersonalEventTemplateV2 | null;
   try {
-    canonicalTemplate = getPersonalEventTemplateV2(template.id, template.version);
+    canonicalTemplate = options.personalEventCatalog === undefined
+      ? getPersonalEventTemplateV2(template.id, template.version)
+      : options.personalEventCatalog.find(
+          ({ id, version }) => id === template.id && version === template.version,
+        ) ?? null;
   } catch {
     canonicalTemplate = null;
   }
@@ -190,7 +197,7 @@ export function queueScheduledDeclarativePersonalEventV2(
             }),
       },
     },
-  });
+  }, { personalEventCatalog: options.personalEventCatalog });
 }
 
 function validateChoiceCommand(
@@ -223,6 +230,9 @@ function validateChoiceCommand(
 export function resolveEventChoiceV2(
   state: GameStateV2,
   command: ResolveEventChoiceV2Command,
+  options: Readonly<{
+    personalEventCatalog?: readonly PersonalEventTemplateV2[];
+  }> = {},
 ): GameStateV2 {
   validateChoiceCommand(state, command);
   const pending = state.gameplay.eventLifecycle.pending;
@@ -242,10 +252,18 @@ export function resolveEventChoiceV2(
     );
   }
   if (pending.eventSchemaVersion === 2) {
-    const template = getPersonalEventTemplateV2(
-      pending.templateId,
-      pending.templateVersion,
-    );
+    const template = options.personalEventCatalog === undefined
+      ? getPersonalEventTemplateV2(pending.templateId, pending.templateVersion)
+      : options.personalEventCatalog.find(
+          ({ id, version }) =>
+            id === pending.templateId && version === pending.templateVersion,
+        );
+    if (template === undefined || validatePersonalEventTemplateV2(template).length > 0) {
+      throw new EventLifecycleV2Error(
+        "INVALID_COMMAND",
+        "pending declarative event is absent from the validated resolver catalog",
+      );
+    }
     const proposal = {
       eventId: pending.eventId,
       templateId: pending.templateId,
@@ -327,7 +345,7 @@ export function resolveEventChoiceV2(
           activeCashFlows: application.activeCashFlows,
         },
       },
-    });
+    }, { personalEventCatalog: options.personalEventCatalog });
   }
   const template = getEventTemplate(pending.templateId, pending.templateVersion);
   const proposal = {
