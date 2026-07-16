@@ -1,5 +1,5 @@
-import { sha256Canonical } from "./canonical";
-import { compareMonths, simulationMonth } from "./domain/month";
+import { canonicalJson, sha256Canonical } from "./canonical";
+import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
 import {
   assertValidGameState,
   calculateAgeYearsAtMonth,
@@ -13,7 +13,11 @@ import {
   GAME_STATE_V2_SCHEMA_VERSION,
   V1_TO_V2_MIGRATION_VERSION,
 } from "./game-state-v2-constants";
-import type { GameStateV2 } from "./game-state-v2";
+import type {
+  GameStateV2,
+  PendingEventV2,
+  ResolvedEventEvidenceV2,
+} from "./game-state-v2";
 import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-validation";
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
 import {
@@ -23,6 +27,10 @@ import {
 import { validateLifeMilestoneState } from "./life-milestones-v2";
 import { validateAiLearningMemory } from "./ai-learning-memory-v2";
 import { validateRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
+import {
+  validateRuntimeBalanceStateV2,
+  type RuntimeBalanceRecentEventV2,
+} from "./runtime-balance-state-v2";
 import {
   validateMacroMarketSnapshotV2,
   type MacroMarketSnapshotV2,
@@ -196,14 +204,211 @@ function validateDeterministicOutcomeAgainstState(
   }
 }
 
+function runtimeBalanceEventMatchesLifecycle(
+  cached: RuntimeBalanceRecentEventV2,
+  lifecycle: PendingEventV2 | ResolvedEventEvidenceV2,
+): boolean {
+  const lifecycleLessons = lifecycle.lessonTags === undefined
+    ? null
+    : [lifecycle.lessonTags.primary, ...lifecycle.lessonTags.secondary];
+  return cached.eventId === lifecycle.eventId &&
+    cached.templateId === lifecycle.templateId &&
+    cached.templateVersion === lifecycle.templateVersion &&
+    cached.tier === lifecycle.tier &&
+    cached.targetedWeakness === lifecycle.targetedWeakness &&
+    cached.approvedMonth === lifecycle.scheduledMonth &&
+    (lifecycle.category === undefined || cached.category === lifecycle.category) &&
+    (lifecycleLessons === null ||
+      canonicalJson(cached.lessonTags) === canonicalJson(lifecycleLessons));
+}
+
+function validateRuntimeBalanceLifecycleV2(
+  state: GameStateV2,
+  violations: StateInvariantViolation[],
+): void {
+  const balance = state.gameplay.runtimeBalance;
+  if (balance?.version !== 2) return;
+  if (!Array.isArray(balance.recentEvents)) return;
+  const indexedRecentEvents = balance.recentEvents.flatMap((event, index) => {
+    if (
+      event === null ||
+      typeof event !== "object" ||
+      typeof event.eventId !== "string"
+    ) return [];
+    try {
+      simulationMonth(event.approvedMonth);
+      if (compareMonths(event.approvedMonth, state.currentMonth) > 0) {
+        violations.push(violation(
+          `gameplay.runtimeBalance.recentEvents.${index}.approvedMonth`,
+          "runtime_balance_future_approval",
+          "cached approval month cannot be later than the authoritative current month",
+        ));
+      }
+      return [{ event, index }];
+    } catch {
+      return [];
+    }
+  });
+  const recentEvents = indexedRecentEvents.map(({ event }) => event);
+  const lifecycleEvidence = [
+    ...(state.gameplay.eventLifecycle.pending === null
+      ? []
+      : [state.gameplay.eventLifecycle.pending]),
+    ...state.gameplay.eventLifecycle.history,
+  ];
+  const cachedByEventId = new Map(
+    recentEvents.map((event) => [event.eventId, event]),
+  );
+
+  indexedRecentEvents.forEach(({ event: cached, index }) => {
+    const lifecycle = lifecycleEvidence.find(
+      ({ eventId }) => eventId === cached.eventId,
+    );
+    if (
+      lifecycle === undefined ||
+      !runtimeBalanceEventMatchesLifecycle(cached, lifecycle)
+    ) {
+      violations.push(violation(
+        `gameplay.runtimeBalance.recentEvents.${index}`,
+        "runtime_balance_lifecycle_mismatch",
+        "cached Runtime Balance event evidence must match pending or resolved lifecycle evidence",
+      ));
+    }
+  });
+
+  const validLegacyCarryover = balance.legacyCarryover !== undefined &&
+    balance.legacyCarryover !== null &&
+    typeof balance.legacyCarryover === "object" &&
+    (balance.legacyCarryover.lastApprovedEventMonth === null ||
+      (() => {
+        try {
+          simulationMonth(balance.legacyCarryover!.lastApprovedEventMonth!);
+          return true;
+        } catch {
+          return false;
+        }
+      })()) &&
+    Number.isSafeInteger(balance.legacyCarryover.catastropheCount) &&
+    balance.legacyCarryover.catastropheCount >= 0
+      ? balance.legacyCarryover
+      : null;
+  const latestApprovedMonth = (
+    events: readonly RuntimeBalanceRecentEventV2[],
+    legacyMonth: GameStateV2["currentMonth"] | null = null,
+  ) => {
+    const months = [
+      ...(legacyMonth === null ? [] : [legacyMonth]),
+      ...events.map(({ approvedMonth }) => approvedMonth),
+    ];
+    return months.reduce<GameStateV2["currentMonth"] | null>(
+      (latest, month) =>
+        latest === null || compareMonths(month, latest) > 0 ? month : latest,
+      null,
+    );
+  };
+  const expectedElapsed = (approvedMonth: GameStateV2["currentMonth"] | null) =>
+    approvedMonth === null
+      ? null
+      : Math.max(0, monthsBetween(approvedMonth, state.currentMonth));
+  const timerChecks = [
+    {
+      path: "monthsSinceAnyEvent",
+      actual: balance.monthsSinceAnyEvent,
+      expected: expectedElapsed(latestApprovedMonth(
+        recentEvents,
+        validLegacyCarryover?.lastApprovedEventMonth ?? null,
+      )),
+    },
+    {
+      path: "monthsSinceMediumEvent",
+      actual: balance.monthsSinceMediumEvent,
+      expected: expectedElapsed(latestApprovedMonth(
+        recentEvents.filter(({ tier }) => tier === "medium"),
+      )),
+    },
+    {
+      path: "monthsSinceLargeEvent",
+      actual: balance.monthsSinceLargeEvent,
+      expected: expectedElapsed(latestApprovedMonth(
+        recentEvents.filter(({ tier }) => tier === "large"),
+      )),
+    },
+    {
+      path: "monthsSinceCatastrophicEvent",
+      actual: balance.monthsSinceCatastrophicEvent,
+      expected: expectedElapsed(latestApprovedMonth(
+        recentEvents.filter(({ tier }) => tier === "catastrophe"),
+      )),
+    },
+  ];
+  for (const { path, actual, expected } of timerChecks) {
+    if (actual !== expected) {
+      violations.push(violation(
+        `gameplay.runtimeBalance.${path}`,
+        "runtime_balance_timer_mismatch",
+        "event spacing counters must derive from retained lifecycle-backed approval evidence",
+      ));
+    }
+  }
+  const expectedCatastropheCount =
+    (validLegacyCarryover?.catastropheCount ?? 0) +
+    recentEvents.filter(({ tier }) => tier === "catastrophe").length;
+  if (balance.catastropheCount !== expectedCatastropheCount) {
+    violations.push(violation(
+      "gameplay.runtimeBalance.catastropheCount",
+      "runtime_balance_catastrophe_count_mismatch",
+      "catastrophe count must equal legacy carryover plus retained lifecycle-backed approvals",
+    ));
+  }
+
+  const pending = state.gameplay.eventLifecycle.pending;
+  if (pending !== null && !cachedByEventId.has(pending.eventId)) {
+    violations.push(violation(
+      "gameplay.eventLifecycle.pending",
+      "runtime_balance_pending_cache_mismatch",
+      "a pending event in Runtime Balance v2 must appear in the bounded recent-event cache",
+    ));
+  }
+
+  if (
+    balance.recovery !== null &&
+    balance.recovery !== undefined &&
+    typeof balance.recovery === "object" &&
+    balance.recovery.sourceEventId !== "legacy.runtime-balance-v1"
+  ) {
+    const cached = cachedByEventId.get(balance.recovery.sourceEventId);
+    const lifecycle = lifecycleEvidence.find(
+      ({ eventId }) => eventId === balance.recovery?.sourceEventId,
+    );
+    if (
+      cached === undefined ||
+      lifecycle === undefined ||
+      cached.tier !== balance.recovery.sourceTier ||
+      cached.targetedWeakness !== balance.recovery.targetedWeakness ||
+      !runtimeBalanceEventMatchesLifecycle(cached, lifecycle)
+    ) {
+      violations.push(violation(
+        "gameplay.runtimeBalance.recovery",
+        "runtime_balance_recovery_source_mismatch",
+        "active recovery must reference matching cached and lifecycle event evidence",
+      ));
+    }
+  }
+}
+
 export function validateGameStateV2(
   state: GameStateV2,
 ): readonly StateInvariantViolation[] {
   const violations: StateInvariantViolation[] = [];
 
   if (state.gameplay.runtimeBalance !== undefined) {
+    const runtimeViolations = state.gameplay.runtimeBalance?.version === 2
+      ? validateRuntimeBalanceStateV2(state.gameplay.runtimeBalance)
+      : validateRuntimeBalanceStateV1(
+          state.gameplay.runtimeBalance as import("./runtime-balance-state-v1").RuntimeBalanceStateV1,
+        );
     violations.push(
-      ...validateRuntimeBalanceStateV1(state.gameplay.runtimeBalance).map(
+      ...runtimeViolations.map(
         (runtimeViolation) => ({
           ...runtimeViolation,
           path:
@@ -213,6 +418,7 @@ export function validateGameStateV2(
         }),
       ),
     );
+    validateRuntimeBalanceLifecycleV2(state, violations);
   }
 
   if (state.gameplay.financialGoal !== undefined) {

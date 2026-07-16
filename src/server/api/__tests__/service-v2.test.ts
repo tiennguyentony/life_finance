@@ -11,6 +11,7 @@ import {
   type ProcessMonthV2Command,
 } from "../../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
+import { createInitialRuntimeBalanceStateV2 } from "../../../core/runtime-balance-state-v2";
 import { setRecurringStrategy } from "../../../core/recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../../../core/scenario-catalog";
 import {
@@ -331,7 +332,14 @@ describe("annual tax contribution projection", () => {
 
 describe("annual tax context cache", () => {
   it("reuses persisted evidence without calling PolicyEngine", async () => {
-    let state = stateWithStrategy();
+    const legacyState = stateWithStrategy();
+    let state = {
+      ...legacyState,
+      gameplay: {
+        ...legacyState.gameplay,
+        runtimeBalance: createInitialRuntimeBalanceStateV2("guided"),
+      },
+    } as ReturnType<typeof stateWithStrategy>;
     const commandId = "month.cached-tax";
     const contextFingerprint = fingerprintAnnualTaxContext(
       buildTaxRequest(state, commandId),
@@ -377,8 +385,9 @@ describe("annual tax context cache", () => {
         );
         expect(command.payload).toMatchObject({
           financialKernelVersion: "2.0.0",
+          runtimeBalanceControllerVersion: "runtime-balance-v1",
           marketModelVersion: "regime-v2",
-          macroDifficulty: "normal",
+          macroDifficulty: "guided",
           resolvedCashFlows: [],
         });
         const applied = processMonthlyTurnV2(state, command);
@@ -406,6 +415,14 @@ describe("annual tax context cache", () => {
     expect(response.state.revision).toBe(2);
     expect(response.monthlyRecord).toMatchObject({
       financialKernelVersion: "2.0.0",
+      runtimeBalanceControllerVersion: "runtime-balance-v1",
+      runtimeBalanceDecision: {
+        version: "runtime-balance-decision-v1",
+        controllerVersion: "runtime-balance-v1",
+        status: expect.stringMatching(/^(approved|none)$/),
+        pressureBeforeUnits: expect.any(Number),
+        pressureAfterUnits: expect.any(Number),
+      },
       taxTraceId: `tax.cache.${commandId}`,
       openingNetWorthCents: expect.any(Number),
       closingNetWorthCents: expect.any(Number),
@@ -420,7 +437,7 @@ describe("annual tax context cache", () => {
       market: {
         modelVersion: "regime-v2",
         calibrationVersion: "us-balanced-2026-v1",
-        difficulty: "normal",
+        difficulty: "guided",
       },
       fundingPlan: {
         requiredCashCents: expect.any(Number),
@@ -739,6 +756,7 @@ describe("monthly record response compatibility", () => {
       }
       expect(command.payload.outcomePolicyVersion).toBe("1.0.0");
       expect(command.payload.eventSchedulerVersion).toBe("declarative-events-v2");
+      expect(command.payload.runtimeBalanceControllerVersion).toBe("runtime-balance-v1");
       expect(command.payload.marketModelVersion).toBe("regime-v2");
       expect(command.payload.macroDifficulty).toBe("normal");
       const applied = processMonthlyTurnV2(state, command);
@@ -783,6 +801,7 @@ describe("monthly record response compatibility", () => {
     });
     expect(response.monthlyRecord).toMatchObject({
       outcomePolicyVersion: "1.0.0",
+      runtimeBalanceControllerVersion: "runtime-balance-v1",
       outcome: response.state.outcome,
     });
   });

@@ -153,6 +153,19 @@ export type DeclarativePersonalEventScheduleV2 = Readonly<{
   candidateTemplateIds: readonly string[];
 }>;
 
+export type DeclarativePersonalEventCandidateV2 = Readonly<{
+  template: PersonalEventTemplateV2;
+  targetedWeakness: typeof UNRELATED_HAZARD_TARGET;
+  followUpSourceEventId?: string;
+}>;
+
+export type DeclarativePersonalEventCandidatesV2 = Readonly<{
+  candidates: readonly DeclarativePersonalEventCandidateV2[];
+  nextRandom: RandomState;
+  eligibleTemplateIds: readonly string[];
+  candidateTemplateIds: readonly string[];
+}>;
+
 const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const CATEGORIES = new Set<string>([
   "maintenance", "health", "housing", "career", "caregiving", "social",
@@ -568,7 +581,10 @@ export function validatePersonalEventCatalogV2(
   return Object.freeze(violations);
 }
 
-function eligibilityReasons(template: PersonalEventTemplateV2, state: GameStateV2): string[] {
+export function personalEventEligibilityReasonsV2(
+  template: PersonalEventTemplateV2,
+  state: GameStateV2,
+): string[] {
   const reasons: string[] = [];
   for (const rule of template.eligibility) {
     if (rule.type === "home_owned" && (state.finances.homeValueCents > 0) !== rule.expected) reasons.push(rule.type);
@@ -596,24 +612,101 @@ function allLessonTags(template: PersonalEventTemplateV2): readonly string[] {
   return [template.lessonTags.primary, ...template.lessonTags.secondary];
 }
 
-function isAvailableByHistory(
+export function personalEventHistoryAvailabilityReasonsV2(
   template: PersonalEventTemplateV2,
   state: GameStateV2,
   catalog: readonly PersonalEventTemplateV2[],
-): boolean {
+): readonly string[] {
+  const reasons: string[] = [];
   const matching = state.gameplay.eventLifecycle.history.filter(({ templateId }) => templateId === template.id);
-  if (matching.length >= template.maximumOccurrences) return false;
+  if (matching.length >= template.maximumOccurrences) reasons.push("maximum_occurrences");
   const currentLessons = new Set(allLessonTags(template));
   for (const event of state.gameplay.eventLifecycle.history) {
     const elapsed = monthsBetween(event.resolvedMonth, state.currentMonth);
     if (elapsed < 0) continue;
     const prior = catalog.find(({ id, version }) => id === event.templateId && version === event.templateVersion);
     if (!prior) continue;
-    if (event.templateId === template.id && elapsed < template.cooldowns.eventMonths) return false;
-    if (prior.category === template.category && elapsed < template.cooldowns.categoryMonths) return false;
-    if (allLessonTags(prior).some((tag) => currentLessons.has(tag)) && elapsed < template.cooldowns.lessonMonths) return false;
+    if (event.templateId === template.id && elapsed < template.cooldowns.eventMonths) reasons.push("event_cooldown");
+    if (prior.category === template.category && elapsed < template.cooldowns.categoryMonths) reasons.push("category_cooldown");
+    if (allLessonTags(prior).some((tag) => currentLessons.has(tag)) && elapsed < template.cooldowns.lessonMonths) reasons.push("lesson_cooldown");
   }
-  return true;
+  return Object.freeze([...new Set(reasons)]);
+}
+
+export function generateDeclarativePersonalEventCandidatesV2(
+  state: GameStateV2,
+  catalog: readonly PersonalEventTemplateV2[],
+): DeclarativePersonalEventCandidatesV2 {
+  if (state.outcome || state.gameplay.eventLifecycle.pending) {
+    return Object.freeze({
+      candidates: [],
+      nextRandom: state.random,
+      eligibleTemplateIds: [],
+      candidateTemplateIds: [],
+    });
+  }
+  const dueFollowUp = [...(state.gameplay.eventLifecycle.scheduledFollowUps ?? [])]
+    .filter(({ eligibleMonth }) => compareMonths(eligibleMonth, state.currentMonth) <= 0)
+    .toSorted((left, right) =>
+      left.eligibleMonth.localeCompare(right.eligibleMonth) ||
+      left.sourceEventId.localeCompare(right.sourceEventId) ||
+      left.templateId.localeCompare(right.templateId) ||
+      left.templateVersion - right.templateVersion,
+    )
+    .find((followUp) => {
+      const target = catalog.find(
+        ({ id, version }) =>
+          id === followUp.templateId && version === followUp.templateVersion,
+      );
+      return Boolean(
+        target &&
+        validatePersonalEventTemplateV2(target).length === 0 &&
+        personalEventEligibilityReasonsV2(target, state).length === 0 &&
+        personalEventHistoryAvailabilityReasonsV2(target, state, catalog).length === 0,
+      );
+    });
+  if (dueFollowUp) {
+    const template = catalog.find(
+      ({ id, version }) =>
+        id === dueFollowUp.templateId && version === dueFollowUp.templateVersion,
+    );
+    if (!template) {
+      throw new RangeError("scheduled follow-up target is absent from the exact event catalog");
+    }
+    return Object.freeze({
+      candidates: Object.freeze([Object.freeze({
+        template,
+        targetedWeakness: UNRELATED_HAZARD_TARGET,
+        followUpSourceEventId: dueFollowUp.sourceEventId,
+      })]),
+      nextRandom: state.random,
+      eligibleTemplateIds: Object.freeze([template.id]),
+      candidateTemplateIds: Object.freeze([template.id]),
+    });
+  }
+  const eligible = catalog
+    .filter((template) => validatePersonalEventTemplateV2(template).length === 0)
+    .filter((template) => personalEventEligibilityReasonsV2(template, state).length === 0)
+    .filter((template) => personalEventHistoryAvailabilityReasonsV2(template, state, catalog).length === 0)
+    .toSorted((left, right) => left.id.localeCompare(right.id) || left.version - right.version);
+  let random = state.random;
+  const candidates: DeclarativePersonalEventCandidateV2[] = [];
+  for (const template of eligible) {
+    const draw = nextInt(random, 1, 1_000_000);
+    random = draw.nextState;
+    if (draw.value <= hazardChancePpm(template, state)) {
+      candidates.push(Object.freeze({
+        template,
+        targetedWeakness: UNRELATED_HAZARD_TARGET,
+      }));
+    }
+  }
+  return Object.freeze({
+    candidates: Object.freeze(candidates),
+    nextRandom: random,
+    eligibleTemplateIds: Object.freeze(eligible.map(({ id }) => id)),
+    candidateTemplateIds: Object.freeze(candidates.map(({ template }) => template.id)),
+  });
 }
 
 export function scheduleDeclarativePersonalEventV2(
@@ -639,8 +732,8 @@ export function scheduleDeclarativePersonalEventV2(
       return Boolean(
         target &&
         validatePersonalEventTemplateV2(target).length === 0 &&
-        eligibilityReasons(target, state).length === 0 &&
-        isAvailableByHistory(target, state, catalog),
+        personalEventEligibilityReasonsV2(target, state).length === 0 &&
+        personalEventHistoryAvailabilityReasonsV2(target, state, catalog).length === 0,
       );
     });
   if (dueFollowUp) {
@@ -677,8 +770,8 @@ export function scheduleDeclarativePersonalEventV2(
   }
   const eligible = catalog
     .filter((template) => validatePersonalEventTemplateV2(template).length === 0)
-    .filter((template) => eligibilityReasons(template, state).length === 0)
-    .filter((template) => isAvailableByHistory(template, state, catalog))
+    .filter((template) => personalEventEligibilityReasonsV2(template, state).length === 0)
+    .filter((template) => personalEventHistoryAvailabilityReasonsV2(template, state, catalog).length === 0)
     .toSorted((left, right) => left.id.localeCompare(right.id) || left.version - right.version);
   let random = state.random;
   const candidates: PersonalEventTemplateV2[] = [];

@@ -419,6 +419,9 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           eventSchedulerVersion: z
             .enum(["causal-hazard-v1", "declarative-events-v2"])
             .optional(),
+          runtimeBalanceControllerVersion: z
+            .literal("runtime-balance-v1")
+            .optional(),
           marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
           macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
           taxEvidence: taxEvidenceSchema,
@@ -459,6 +462,18 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               path: ["eventSchedulerVersion"],
               message:
                 "causal event scheduling requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.runtimeBalanceControllerVersion !== undefined &&
+            (payload.financialKernelVersion !== "2.0.0" ||
+              payload.eventSchedulerVersion !== "declarative-events-v2")
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["runtimeBalanceControllerVersion"],
+              message:
+                "runtime-balance-v1 requires financial kernel 2.0.0 and declarative-events-v2",
             });
           }
           if (
