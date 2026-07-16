@@ -26,6 +26,8 @@ import {
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
 import type { RunApiServiceV2 } from "./service-v2";
@@ -331,6 +333,32 @@ export async function handleSubmitCommandV2(
     return jsonResponse(
       commandV2ResponseSchema.parse(
         await service.submitCommand(path.runId, secret, command),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handlePreviewPlayerPolicyCommandV2(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const command = playerPolicyPreviewV2RequestSchema.parse(
+      await readJson(request),
+    );
+    return jsonResponse(
+      playerPolicyPreviewV2ResponseSchema.parse(
+        await service.previewPlayerPolicyCommand(
+          path.runId,
+          secret,
+          command,
+        ),
       ),
       200,
     );

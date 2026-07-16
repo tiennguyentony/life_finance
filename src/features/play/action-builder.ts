@@ -35,7 +35,6 @@ export function buildDetailedAction(
         type: "liquidate_taxable",
         bucket: "taxableBroadIndexCents",
         amountCents,
-        liquidationCostRatePpm: 10_000,
       };
     case "contribute_ira":
       return { type: "contribute_ira", amountCents };

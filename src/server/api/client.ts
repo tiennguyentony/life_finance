@@ -24,6 +24,8 @@ import {
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
   runIdV2PathSchema,
   type AdvanceTimeV2Request,
   type AdvanceTimeV2Response,
@@ -34,6 +36,8 @@ import {
   type GameCommandV2Public,
   type GetRunV2Response,
   type MigrateRunV2Response,
+  type PlayerPolicyPreviewV2Request,
+  type PlayerPolicyPreviewV2Response,
 } from "./contracts-v2";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -211,6 +215,27 @@ export class LifeFinanceApiClient {
     return this.#request(
       `/api/v2/runs/${encodeURIComponent(path.runId)}/commands`,
       commandV2ResponseSchema,
+      {
+        method: "POST",
+        headers: {
+          ...this.#authorization(accessSecret),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  async previewPlayerPolicyCommandV2(
+    runId: string,
+    accessSecret: string,
+    command: PlayerPolicyPreviewV2Request,
+  ): Promise<PlayerPolicyPreviewV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    const body = playerPolicyPreviewV2RequestSchema.parse(command);
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}/commands/preview`,
+      playerPolicyPreviewV2ResponseSchema,
       {
         method: "POST",
         headers: {

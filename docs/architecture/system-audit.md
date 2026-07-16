@@ -5,6 +5,7 @@ Date: 2026-07-16
 Scope: current repository behavior, with emphasis on the v2 browser game, server application layer, deterministic core, persistence, tax adapter, and optional AI adapters. The original audit was read-only; this document now includes the verified Prompt 01 authority, ledger, replay, and migration repair.
 It also includes the verified Prompt 02 financial-kernel, replay, projection, integration, and consumer-authority repair.
 It now includes the Prompt 03 pure time controller, segmented tax-evidence boundary, atomic batch persistence, and aggregate play-UI repair.
+It now includes the Prompt 04 goal/outcome policy and Prompt 05 action-policy, no-write preview, and exact-approval repair.
 
 ## Status legend
 
@@ -19,7 +20,7 @@ It now includes the Prompt 03 pure time controller, segmented tax-evidence bound
 ## Executive findings
 
 1. The `2.0.0` financial kernel is now the sole new-product financial authority: money is integer cents, rates are PPM, market input is complete and seeded, tax enters as persisted evidence, one funding plan owns liquidity, and event-free projection reuses the production kernel. Web, AI, goal, and checkpoint consumers use canonical selectors/evidence.
-2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas are private frozen replay compatibility, not a competing new-product engine. Legacy action interfaces still belong to Prompt 05.
+2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas and absent-version action semantics are frozen replay compatibility, not competing new-product authorities.
 3. Personal-event causality is wrong for the intended simulation. Exposure weaknesses decide which bad events may occur, the exposure score raises monthly event chance, and the same score unlocks catastrophe-tier templates. A weak emergency fund can therefore make bad luck more available and more frequent, rather than only making an independently caused shock more damaging.
 4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
 5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
@@ -54,7 +55,7 @@ The financial reducer does not call the network or database. The application ser
 
 ### Legacy compatibility path
 
-GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 monthly reducer, v1 outcome/checkpoint formulas, and the module-private `legacy-4.1.0` reducer are frozen compatibility paths covered by fixed replay checksums. They are not available as alternate new-product financial entry points. Legacy action interfaces remain for Prompt 05.
+GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 monthly reducer, v1 outcome/checkpoint formulas, the module-private `legacy-4.1.0` reducer, and absent-version internal action commands are frozen compatibility paths covered by replay checksums. They are not available as alternate public new-product entry points.
 
 ### External and optional services
 
@@ -71,7 +72,7 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | 2 | Authoritative Game State and Ledger | complete | state-authority-v2.ts, game-state-v2.ts, ledger.ts, repository/replay modules | GameStateV2 is the sole mutable gameplay authority; v1 is decode/migrate/read-only; current state is the save authority and sparse verified anchors support historical reconstruction. | Complete in Prompt 01 |
 | 3 | Time and Turn Controller | partial | time-controller-v2.ts, RunApiServiceV2 advance path, atomic repository batch | Prompt 03 orchestration is repaired; Runtime Balance pressure/cooldown ordering cannot be complete until Prompt 09 supplies its versioned monthly step. | Finish integration in Prompt 09 |
 | 4 | Deterministic Financial Simulation Engine | complete | financial-kernel-v2.ts, financial-transition-v2.ts, obligation-funding-v2.ts, financial-projection-v2.ts, versioned monthly wrapper | New months, projections, Web/AI/goal/checkpoint consumers, and replay have one documented financial authority; old formulas are frozen compatibility only. | Complete in Prompt 02 |
-| 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; legacy v1 action reducers remain reusable compatibility code. | Prompt 05 |
+| 5 | Player Actions and Persistent Policies | complete | detailed-actions-v2.ts, recurring-strategy-v2.ts, action-policy-v2.ts, action-preview-v2.ts | New public actions use one versioned policy and reducer-backed no-write preview; recurring protection policy includes emergency target and active insurance; the UI applies only an explicitly approved exact command. Historical absent-version behavior is replay compatibility. | Complete in Prompt 05 |
 | 6 | Goals, End Conditions, and Grading | complete | financial-goals-v2.ts, outcome-policy-v2.ts, and assessTerminalOutcomeV2 | Outcome policy `1.0.0` centralizes exact grades, retirement age, terminal precedence, and rich cross-validated evidence. New commands are stamped; missing versions retain frozen replay semantics. | Complete in Prompt 04 |
 | 7 | Risk and Resilience Analyzer | incorrectly coupled | exposure-v2.ts and event-scheduler-v2.ts | Exposure measures vulnerability but also causes event eligibility, frequency, and catastrophe access. | Prompt 06 |
 | 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
@@ -151,19 +152,20 @@ Status: complete for Prompt 02.
 
 ### 5. Player Actions and Persistent Policies
 
-Status: duplicated.
+Status: complete for Prompt 05.
 
-- Authoritative files and entry points: src/core/actions.ts, detailed-actions-v2.ts and support modules, recurring-strategy-v2.ts, life-milestones-v2.ts, command contracts/mappers, and play action-builder/decision panels.
-- Inputs: typed one-time action or policy change, current state, command/revision identity, and any selected milestone/event choice.
-- Outputs: ledger-backed transfers and debt/investment changes, updated recurring allocation policy, lifestyle obligations, career state, or milestone lifecycle state.
-- State owned: recurring strategy, career/progression, insurance decisions, detailed debts/assets, lifestyle cost, milestone choices, and action-derived ledger history.
-- Dependencies: state/ledger, finance primitives, debt/payroll/insurance modules, validation contracts, and UI builders.
-- Tests found: actions, detailed actions, recurring strategy, debt service, payroll, insurance, milestones, command mapping, and API service tests.
-- Determinism/performance risks: actions are deterministic after validation. The principal risk is semantic drift between legacy v1 action code retained for compatibility and the v2 detailed command families.
-- Missing requirements: one action taxonomy, one policy interface, explicit affordability/effect previews derived from core formulas, and removal or isolation of alternate legacy action implementations.
-- Duplicate formulas or authority: legacy v1 actions remain callable compatibility code while v2 detailed actions own production mutation; some UI previews reconstruct values rather than call selectors.
-- AI boundary: AI must not create or execute financial actions without typed player confirmation; current authoritative actions remain code-driven.
-- Next action: Prompt 05 after Prompts 01-04.
+- Authoritative files and entry points: `detailed-actions-v2.ts` and support modules, `recurring-strategy-v2.ts`, immutable `action-policy-v2.ts`, reducer-backed `action-preview-v2.ts`, strict public/internal command contracts, mapper/service/repository routes, and the play preview/approval model.
+- Inputs: typed public one-time action or recurring-strategy intent, current state, command/revision/month identity, and server-selected action policy `1.0.0`. Client commands do not own fee, withholding, penalty, or home-transaction rates.
+- Outputs: ledger-backed transfers and debt/investment changes, persistent recurring allocation or lifestyle policy, exact effect preview, updated state checksum, and normalized audit evidence on approval.
+- State owned: recurring allocations, emergency-fund target, active insurance selection, detailed debts/assets, lifestyle cost, career/upskill progression, and action-derived ledger history. Event and milestone commands remain separate bounded decision families.
+- Dependencies: authoritative state/ledger, money/rate primitives, action policy registry, transition finalizer, strict API mapper, transactional repository, and UI intent adapters.
+- Tests found: detailed action taxonomy, recurring strategy, action-policy boundaries, historical compatibility, preview parity/no-write behavior, command mapping/contracts/client/service, repository integration, approval model, rendered effects, UI flow, debt/payroll/insurance, and milestones.
+- Determinism/performance risks: preview and apply deliberately run the same deterministic reducer. Preview is not a reservation, so optimistic revision checking must reject an intervening write and require a fresh preview. Preview cost grows with returned journal evidence but is capped by the strict API schema.
+- Missing requirements: no Prompt 05 behavior is open. The environment lacks `TEST_DATABASE_URL`, so the defined real-PostgreSQL integration suite is skipped; it remains a deployment gate rather than a claimed local pass.
+- Duplicate formulas or authority: active UI preview contains no financial formulas and new public liquidation intent contains no cost rate. The deprecated rate is accepted only for an exact retry of a matching historical command. `actions.ts` and absent-version internal fields remain frozen compatibility inputs for old replay/fixture paths, not public authorities for new commands.
+- AI boundary: AI cannot preview, approve, or execute a financial action. Only an explicit player approval sends the exact previewed public command to the mutation endpoint.
+- Historical boundary: new detailed actions persist policy `1.0.0`; missing policy versions retain frozen replay semantics, including an already-persisted historical liquidation rate. Registered policy values cannot be overridden.
+- Next action: keep action policy `1.0.0` immutable. Future action economics require a new policy version and replay fixtures; Prompt 11 may later consume command/ledger evidence for causal history without changing action authority.
 
 ### 6. Goals, End Conditions, and Grading
 
@@ -475,7 +477,7 @@ The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 3. Prompt 02 — Deterministic Financial Simulation Engine. Complete: one 2.0.0 kernel, funding authority, versioned replay boundary, event-free projection, consumer parity, and measured 480-month gate.
 4. Prompt 03 — Time and Turn Controller. Add one in-process v2 controller with tagged stop reasons and sequential-parity tests.
 5. Prompt 04 — Goals, End Conditions, and Grading. Complete: policy-versioned grades and precedence, responsive/default and fixed/player goals, rich validated terminal evidence, historical replay, and canonical consumers.
-6. Prompt 05 — Player Actions and Persistent Policies. Route all mutations and previews through the canonical engine/state interfaces.
+6. Prompt 05 — Player Actions and Persistent Policies. Complete: immutable action policy, strict public intent, reducer-backed no-write preview, exact explicit approval, replay compatibility, and effect/ledger evidence.
 7. Prompt 06 — Risk and Resilience Analyzer. Make exposure measurement-only and add an impact-estimation contract.
 8. Prompt 07 — Macro and Market System. Add explicit difficulty/calibration inputs without weakening deterministic draw order.
 9. Prompt 08 — Personal Event and Trap System. Separate event cause/hazard from vulnerability and route exact effects through typed financial interfaces.

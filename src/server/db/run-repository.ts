@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, lte } from "drizzle-orm";
 
 import { canonicalJson, sha256Canonical } from "../../core/canonical";
+import {
+  buildPlayerPolicyCommandPreviewV2,
+  type PlayerPolicyCommandV2,
+} from "../../core/action-preview-v2";
 import type { CheckpointEvidenceV2 } from "../../core/checkpoint-v2";
 import {
   reduceGameCommand,
@@ -29,6 +33,7 @@ import type { LifeFinanceDatabase } from "./client";
 import {
   loadAuthorizedRun,
   loadAuthorizedRunV2,
+  loadAcceptedCommandV2,
   loadAcceptedMonthlyCommandV2,
   loadCheckpointEvidenceV2,
   loadMonthlyTaxEvidenceForCommand,
@@ -612,6 +617,30 @@ export class RunRepository {
       accessSecret,
       commandId,
     );
+  }
+
+  async loadAcceptedCommandV2(
+    runId: string,
+    accessSecret: string,
+    commandId: string,
+  ) {
+    return loadAcceptedCommandV2(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+      commandId,
+    );
+  }
+
+  async previewPlayerPolicyCommandV2(
+    runId: string,
+    accessSecret: string,
+    command: PlayerPolicyCommandV2,
+  ) {
+    const state = await this.loadAuthorizedRunV2(runId, accessSecret);
+    const resulting = reduceGameCommandV2(state, command).state;
+    return buildPlayerPolicyCommandPreviewV2(state, command, resulting);
   }
 
   async loadMonthlyTaxEvidenceForCommand(

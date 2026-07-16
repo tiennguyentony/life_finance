@@ -18,6 +18,8 @@ import {
   createRunV2RequestSchema,
   gameCommandV2PublicSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
 } from "../contracts-v2";
 
 const finances = {
@@ -190,6 +192,52 @@ describe("v1 API contracts", () => {
 });
 
 describe("v2 API contracts", () => {
+  it("strictly validates no-write player policy previews", () => {
+    const request = {
+      schemaVersion: 2 as const,
+      id: "action.preview.contract",
+      expectedRevision: 1,
+      effectiveMonth: "2026-08",
+      type: "take_detailed_action" as const,
+      payload: {
+        action: {
+          type: "invest_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+    expect(playerPolicyPreviewV2RequestSchema.parse(request)).toEqual(request);
+    const preview = {
+      schemaVersion: 1 as const,
+      commandType: "take_detailed_action" as const,
+      actionPolicyVersion: "1.0.0" as const,
+      commandChecksum: "1".repeat(64),
+      openingStateChecksum: "2".repeat(64),
+      resultingStateChecksum: "3".repeat(64),
+      openingRevision: 1,
+      resultingRevision: 2,
+      effects: {
+        cashChangeCents: -100_000,
+        automaticLiquidityChangeCents: -100_000,
+        termDebtPrincipalChangeCents: 0,
+        revolvingCreditUsedChangeCents: 0,
+        annualLivingCostChangeCents: 0,
+        requiredObligationsChangeCents: 0,
+      },
+      policyChanges: [],
+      appendedLedgerTransactionIds: [],
+      appendedLedgerTransactions: [],
+    };
+    expect(playerPolicyPreviewV2ResponseSchema.parse(preview)).toEqual(preview);
+    expect(() =>
+      playerPolicyPreviewV2ResponseSchema.parse({
+        ...preview,
+        inventedApproval: true,
+      }),
+    ).toThrow();
+  });
+
   it("validates successful and idempotent migration responses", () => {
     const state = migrateGameStateV1ToV2(v1State());
 
@@ -274,6 +322,34 @@ describe("v2 API contracts", () => {
         },
       }).type,
     ).toBe("resolve_event_choice");
+    const liquidation = {
+      schemaVersion: 2 as const,
+      id: "cmd.public-v2.liquidate",
+      expectedRevision: 1,
+      effectiveMonth: "2026-08",
+      type: "take_detailed_action" as const,
+      payload: {
+        action: {
+          type: "liquidate_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+    expect(gameCommandV2PublicSchema.parse(liquidation)).toEqual(liquidation);
+    expect(
+      gameCommandV2PublicSchema.parse({
+        ...liquidation,
+        payload: {
+          action: {
+            ...liquidation.payload.action,
+            liquidationCostRatePpm: 999_999,
+          },
+        },
+      }),
+    ).toMatchObject({
+      payload: { action: { liquidationCostRatePpm: 999_999 } },
+    });
     expect(
       gameCommandV2PublicSchema.parse({
         schemaVersion: 2,
@@ -312,6 +388,7 @@ describe("generated OpenAPI", () => {
       "/api/v2/runs/{runId}/ai/world-event",
       "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
+      "/api/v2/runs/{runId}/commands/preview",
       "/api/v2/runs/{runId}/migrate",
     ].toSorted());
     expect(

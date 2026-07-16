@@ -6,6 +6,8 @@ import {
   type DetailedFinanceCommand,
   type DetailedFinancialAction,
 } from "../detailed-actions-v2";
+import { ACTION_POLICY_V1_VERSION } from "../action-policy-v2";
+import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import {
@@ -92,6 +94,66 @@ function command(
 }
 
 describe("detailed v2 financial commands", () => {
+  it("uses a versioned liquidation policy while replaying absent-version rates", () => {
+    const initial = state();
+    const historical = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.historical-rate", {
+        type: "liquidate_taxable",
+        bucket: "taxableSectorCents",
+        amountCents: moneyCents(50_000),
+        liquidationCostRatePpm: ratePpm(100_000),
+      }),
+    );
+    expect(historical.finances.cashCents).toBe(2_545_000);
+
+    const versioned = {
+      ...command(initial, "cmd.policy-rate", {
+        type: "liquidate_taxable" as const,
+        bucket: "taxableSectorCents" as const,
+        amountCents: moneyCents(50_000),
+        liquidationCostRatePpm: ratePpm(10_000),
+      }),
+      payload: {
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+        action: {
+          type: "liquidate_taxable" as const,
+          bucket: "taxableSectorCents" as const,
+          amountCents: moneyCents(50_000),
+          liquidationCostRatePpm: ratePpm(10_000),
+        },
+      },
+    } satisfies DetailedFinanceCommand;
+    const applied = reduceDetailedFinanceCommand(initial, versioned);
+    expect(applied.finances.cashCents).toBe(2_549_500);
+
+    const openingChecksum = sha256Canonical(initial);
+    expect(() =>
+      reduceDetailedFinanceCommand(initial, {
+        ...versioned,
+        id: "cmd.policy-rate.tampered",
+        payload: {
+          ...versioned.payload,
+          action: {
+            ...versioned.payload.action,
+            liquidationCostRatePpm: ratePpm(100_000),
+          },
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_COMMAND" }));
+    expect(() =>
+      reduceDetailedFinanceCommand(initial, {
+        ...versioned,
+        id: "cmd.policy-rate.unknown",
+        payload: {
+          ...versioned.payload,
+          actionPolicyVersion: "invented" as "1.0.0",
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_COMMAND" }));
+    expect(sha256Canonical(initial)).toBe(openingChecksum);
+  });
+
   it("invests and liquidates exact taxable buckets with balanced aggregate journals", () => {
     const initial = state();
     const invested = reduceDetailedFinanceCommand(

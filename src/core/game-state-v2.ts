@@ -82,6 +82,10 @@ export type BenefitsSelection = Readonly<{
 
 export type RecurringStrategy = Readonly<{
   effectiveMonth: SimulationMonth;
+  /** Optional for historical replay; new commands persist an explicit target. */
+  emergencyFundTargetMonthsPpm?: RatePpm;
+  /** Optional for historical replay; absence uses the onboarding selection. */
+  insuranceCoverageIds?: readonly string[];
   preTax401kSalaryRatePpm: RatePpm;
   preTaxHsaSalaryRatePpm: RatePpm;
   afterTaxBroadIndexRatePpm: RatePpm;

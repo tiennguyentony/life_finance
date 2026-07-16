@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { sha256Canonical } from "../../core/canonical";
+import { canonicalJson, sha256Canonical } from "../../core/canonical";
 import { buildCheckpointEvidenceV2 } from "../../core/checkpoint-v2";
+import { DetailedFinanceError } from "../../core/detailed-actions-v2";
 import { safeBigIntToNumber } from "../../core/domain/integer";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { monthsBetween, simulationMonth } from "../../core/domain/month";
@@ -31,6 +32,7 @@ import {
   createRunV2ResponseSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2ResponseSchema,
   type AdvanceTimeV2Request,
   type AdvanceTimeV2Response,
   type CommandV2Response,
@@ -39,6 +41,8 @@ import {
   type GameCommandV2Public,
   type GetRunV2Response,
   type MigrateRunV2Response,
+  type PlayerPolicyPreviewV2Request,
+  type PlayerPolicyPreviewV2Response,
 } from "./contracts-v2";
 import { mapPlayerCommand } from "./v2/command-mapper";
 import { RunApiV2Error } from "./v2/errors";
@@ -420,10 +424,28 @@ export class RunApiServiceV2 {
     command: GameCommandV2Public,
   ): Promise<CommandV2Response> {
     if (command.type !== "process_month") {
+      const mapped = mapPlayerCommand(command);
+      const accepted = this.#repository.loadAcceptedCommandV2
+        ? await this.#repository.loadAcceptedCommandV2(
+            runId,
+            accessSecret,
+            command.id,
+          )
+        : null;
+      const replay =
+        accepted && publicCommandMatchesAcceptedV2(command, accepted)
+          ? accepted
+          : null;
+      if (!replay && legacyLiquidationRateV2(command) !== undefined) {
+        throw new DetailedFinanceError(
+          "INVALID_RATE",
+          "taxable liquidation cost is server-owned for new actions",
+        );
+      }
       const result = await this.#repository.applyCommandV2(
         runId,
         accessSecret,
-        mapPlayerCommand(command),
+        replay ?? mapped,
       );
       return commandV2ResponseSchema.parse({ ...result, monthlyRecord: null });
     }
@@ -481,6 +503,33 @@ export class RunApiServiceV2 {
     });
   }
 
+  async previewPlayerPolicyCommand(
+    runId: string,
+    accessSecret: string,
+    command: PlayerPolicyPreviewV2Request,
+  ): Promise<PlayerPolicyPreviewV2Response> {
+    if (legacyLiquidationRateV2(command) !== undefined) {
+      throw new DetailedFinanceError(
+        "INVALID_RATE",
+        "taxable liquidation cost is server-owned and cannot be previewed",
+      );
+    }
+    const preview = this.#repository.previewPlayerPolicyCommandV2;
+    if (!preview) {
+      throw new Error("player policy preview repository capability is unavailable");
+    }
+    const internal = mapPlayerCommand(command);
+    if (
+      internal.type !== "take_detailed_action" &&
+      internal.type !== "set_recurring_strategy"
+    ) {
+      throw new TypeError("only player action and strategy commands can be previewed");
+    }
+    return playerPolicyPreviewV2ResponseSchema.parse(
+      await preview.call(this.#repository, runId, accessSecret, internal),
+    );
+  }
+
   #validateMonthlyCommand(
     current: Awaited<ReturnType<V2Repository["loadAuthorizedRunV2"]>>,
     command: Extract<GameCommandV2Public, { type: "process_month" }>,
@@ -530,6 +579,84 @@ export class RunApiServiceV2 {
       );
     }
   }
+}
+
+type StoredGameCommandV2 = Parameters<V2Repository["applyCommandV2"]>[2];
+
+function publicCommandProjectionV2(
+  command: StoredGameCommandV2,
+): unknown | null {
+  const envelope = {
+    schemaVersion: command.schemaVersion,
+    id: command.id,
+    expectedRevision: command.expectedRevision,
+    effectiveMonth: command.effectiveMonth,
+  };
+  if (command.type === "set_recurring_strategy") {
+    return { ...envelope, type: command.type, payload: command.payload };
+  }
+  if (command.type === "take_detailed_action") {
+    const storedAction = command.payload.action;
+    const action =
+      storedAction.type === "liquidate_taxable"
+        ? {
+            type: storedAction.type,
+            bucket: storedAction.bucket,
+            amountCents: storedAction.amountCents,
+          }
+        : storedAction;
+    return { ...envelope, type: command.type, payload: { action } };
+  }
+  if (
+    command.type === "resolve_event_choice" ||
+    command.type === "manage_life_milestone"
+  ) {
+    return { ...envelope, type: command.type, payload: command.payload };
+  }
+  return null;
+}
+
+function publicCommandMatchesAcceptedV2(
+  command: Exclude<GameCommandV2Public, { type: "process_month" }>,
+  accepted: StoredGameCommandV2,
+): boolean {
+  const projection = publicCommandProjectionV2(accepted);
+  if (projection === null) return false;
+  const legacyRate = legacyLiquidationRateV2(command);
+  if (legacyRate !== undefined) {
+    if (
+      accepted.type !== "take_detailed_action" ||
+      accepted.payload.actionPolicyVersion !== undefined ||
+      accepted.payload.action.type !== "liquidate_taxable" ||
+      accepted.payload.action.liquidationCostRatePpm !== legacyRate
+    ) {
+      return false;
+    }
+  }
+  const normalizedPublic =
+    command.type === "take_detailed_action" &&
+    command.payload.action.type === "liquidate_taxable"
+      ? {
+          ...command,
+          payload: {
+            action: {
+              type: command.payload.action.type,
+              bucket: command.payload.action.bucket,
+              amountCents: command.payload.action.amountCents,
+            },
+          },
+        }
+      : command;
+  return canonicalJson(projection) === canonicalJson(normalizedPublic);
+}
+
+function legacyLiquidationRateV2(
+  command: Exclude<GameCommandV2Public, { type: "process_month" }>,
+): number | undefined {
+  return command.type === "take_detailed_action" &&
+    command.payload.action.type === "liquidate_taxable"
+    ? command.payload.action.liquidationCostRatePpm
+    : undefined;
 }
 
 function monthlyBatchCommandId(batchId: string, sequence: number): string {
