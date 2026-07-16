@@ -1,5 +1,6 @@
 import { sha256Canonical } from "./canonical";
 import type { RatePpm } from "./domain/money";
+import { addMonths, compareMonths } from "./domain/month";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
@@ -240,16 +241,29 @@ function assertSupportedNonfinancialLifecycle(
 ): void {
   if (months === 0) return;
   const lifecycle = state.gameplay.eventLifecycle;
+  const horizonEndMonth = addMonths(state.currentMonth, months);
+  const careerCompletesWithinHorizon =
+    state.gameplay.careerDevelopment.pending.some(
+      ({ completesMonth }) =>
+        compareMonths(completesMonth, horizonEndMonth) <= 0,
+    );
+  const macroStoryExpiresBeforeHorizonEnd = lifecycle.macroStories.some(
+    ({ expiresMonth }) => compareMonths(expiresMonth, horizonEndMonth) < 0,
+  );
+  const lifeMilestoneDueWithinHorizon =
+    state.gameplay.lifeMilestones?.scheduled.some(
+      ({ targetMonth }) => compareMonths(targetMonth, horizonEndMonth) <= 0,
+    ) ?? false;
   const hasUnsupportedEvidence =
     state.outcome !== null ||
     lifecycle.pending !== null ||
-    lifecycle.activeStoryIds.length > 0 ||
-    lifecycle.macroStories.length > 0 ||
-    state.gameplay.careerDevelopment.pending.length > 0;
+    careerCompletesWithinHorizon ||
+    macroStoryExpiresBeforeHorizonEnd ||
+    lifeMilestoneDueWithinHorizon;
   if (hasUnsupportedEvidence) {
     throw new FinancialProjectionV2Error(
       "UNSUPPORTED_NONFINANCIAL_LIFECYCLE",
-      "event-free projection cannot advance pending events, career work, macro stories, or terminal outcomes",
+      "event-free projection cannot cross pending events, career completions, macro-story expiry, life-milestone decisions, or terminal outcomes",
     );
   }
 }
