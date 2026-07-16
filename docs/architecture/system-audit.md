@@ -6,6 +6,7 @@ Scope: current repository behavior, with emphasis on the v2 browser game, server
 It also includes the verified Prompt 02 financial-kernel, replay, projection, integration, and consumer-authority repair.
 It now includes the Prompt 03 pure time controller, segmented tax-evidence boundary, atomic batch persistence, and aggregate play-UI repair.
 It now includes the Prompt 04 goal/outcome policy and Prompt 05 action-policy, no-write preview, and exact-approval repair.
+It now includes the Prompt 06 transparent risk analyzer and Prompt 07 versioned macro/market repair.
 
 ## Status legend
 
@@ -22,12 +23,13 @@ It now includes the Prompt 04 goal/outcome policy and Prompt 05 action-policy, n
 1. The `2.0.0` financial kernel is now the sole new-product financial authority: money is integer cents, rates are PPM, market input is complete and seeded, tax enters as persisted evidence, one funding plan owns liquidity, and event-free projection reuses the production kernel. Web, AI, goal, and checkpoint consumers use canonical selectors/evidence.
 2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas and absent-version action semantics are frozen replay compatibility, not competing new-product authorities.
 3. New automatic personal-event occurrence is now risk-independent: service-created commands persist `causal-hazard-v1`, which uses a fixed base chance and intrinsic applicability. Historical absent-version scheduling remains exposure-driven for exact replay; vulnerability-gated template redesign, consequence amplification, and optional director insertion remain for Prompt 08/10.
-4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
-5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
-6. Time advancement now has one v2 core authority with tagged pauses. The server resolves tax evidence outside pure annual segments, persists every accepted hidden tick in one transaction, and returns one aggregate response to the browser. Runtime Balance pressure remains intentionally deferred to Prompt 09.
-7. Persistence is robust but may not scale linearly. A Web fast-forward now locks and updates the current save once per batch, but it still validates, checksums, and records every growing hidden-month state inside the transaction. Full database/storage long-run budgets remain open for Prompt 14.
-8. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
-9. The Offline Balance Lab is missing. A deterministic 480-month financial projection benchmark now exists, but there is no matched-seed strategy runner, difficulty comparison, bot set, or distributional balance report.
+4. New monthly commands now persist macro model `regime-v2` and an explicit difficulty. A seeded, calibrated regime model owns correlated broad/sector/speculative/bond/cash/housing returns plus inflation, borrowing, labor, and volatility facts. Historical absent-version commands remain on `regime-v1`; headlines cannot mutate finance.
+5. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
+6. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
+7. Time advancement now has one v2 core authority with tagged pauses. The server resolves tax evidence outside pure annual segments, persists every accepted hidden tick in one transaction, and returns one aggregate response to the browser. Runtime Balance pressure remains intentionally deferred to Prompt 09.
+8. Persistence is robust but may not scale linearly. A Web fast-forward now locks and updates the current save once per batch, but it still validates, checksums, and records every growing hidden-month state inside the transaction. Full database/storage long-run budgets remain open for Prompt 14.
+9. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
+10. The Offline Balance Lab is missing. A deterministic 480-month financial projection benchmark now exists, but there is no matched-seed strategy runner, difficulty comparison, bot set, or distributional balance report.
 
 ## Actual architecture
 
@@ -75,7 +77,7 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | 5 | Player Actions and Persistent Policies | complete | detailed-actions-v2.ts, recurring-strategy-v2.ts, action-policy-v2.ts, action-preview-v2.ts | New public actions use one versioned policy and reducer-backed no-write preview; recurring protection policy includes emergency target and active insurance; the UI applies only an explicitly approved exact command. Historical absent-version behavior is replay compatibility. | Complete in Prompt 05 |
 | 6 | Goals, End Conditions, and Grading | complete | financial-goals-v2.ts, outcome-policy-v2.ts, and assessTerminalOutcomeV2 | Outcome policy `1.0.0` centralizes exact grades, retirement age, terminal precedence, and rich cross-validated evidence. New commands are stamped; missing versions retain frozen replay semantics. | Complete in Prompt 04 |
 | 7 | Risk and Resilience Analyzer | complete | risk-v1.ts, risk-policy-v1.ts, versioned event scheduler boundary | Fourteen transparent pure metrics expose raw units, bands, facts, tags, and separately weighted analytics; new monthly commands use risk-independent causal hazard while absent-version commands retain frozen replay. | Complete in Prompt 06 |
-| 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
+| 8 | Macro and Market System | complete | market.ts, macro-story-v2.ts, financial-kernel-v2.ts, versioned monthly command | `regime-v2` persists explicit calibration/difficulty and structured macro facts; correlated asset channels, inflation, and new-mortgage quotes are deterministic, bounded, ledger-backed, and replay-versioned. | Complete in Prompt 07 |
 | 9 | Personal Event and Trap System | partial | event scheduler, lifecycle, templates, and events.ts | New automatic scheduling has a causal hazard boundary, but vulnerability-gated legacy templates, effect routing, severity, and optional director insertion still require Prompt 08. | Prompt 08 |
 | 10 | Adaptive Scenario Director | incorrectly coupled | world-director-service.ts and ai-world-event-v2.ts | AI selects an event and parameter values, then the service queues it without an independent fairness gate. | Prompt 10 after Prompt 09 |
 | 11 | Runtime Balance Controller | missing | None; scheduler contains fragments | Cooldown is not a balance controller. No pressure, recovery, catastrophe, difficulty, or impact policy exists. | Prompt 09 |
@@ -103,7 +105,7 @@ Status: duplicated.
 
 ### 2. Authoritative Game State and Ledger
 
-Status: complete.
+Status: complete for Prompt 07.
 
 - Authoritative files and entry points: src/core/state-authority-v2.ts, src/core/game-state-v2.ts, src/core/state-transition-v2.ts, src/core/ledger.ts, canonical serialization/decoder modules, src/server/db/run-repository.ts, run-repository-read.ts, run-state-replay-v2.ts, snapshot-policy-v2.ts, and database schema/migrations.
 - Inputs: initial state or prior persisted revision, validated command, external evidence, and deterministic reducer output.
@@ -205,17 +207,18 @@ Status: complete for Prompt 06.
 
 Status: complete.
 
-- Authoritative files and entry points: src/core/market.ts, src/core/macro-story-v2.ts, shared RNG/config types, and monthly-turn-v2.ts.
-- Inputs: prior macro regime, portfolio/assets, active macro story, explicit configuration, current month, and serialized RNG.
-- Outputs: bounded market returns, regime transition, asset repricing, optional time-bounded macro modifiers/story, and updated RNG.
-- State owned: market/macro regime and active story in the run aggregate.
-- Dependencies: shared RNG, rates/money, asset model, event template definitions for macro stories, and monthly engine.
-- Tests found: market fixed-seed/long-path tests, macro-story tests, monthly-turn checksums, and state validation tests.
-- Determinism/performance risks: draw order is explicit and RNG state is persisted. Configuration needs long-horizon statistical tests, not just path correctness.
-- Missing requirements: difficulty-profile inputs, documented calibration targets, matched-seed distributions, and a boundary separating macro-story metadata from the personal-event lifecycle.
-- Duplicate formulas or authority: no duplicate market return engine found.
-- AI boundary: macro generation is code-owned; optional AI does not set market returns.
-- Next action: Prompt 07, followed by Prompt 14 for calibration proof.
+- Authoritative files and entry points: `market.ts`, `macro-story-v2.ts`, `monthly-turn-v2.ts`, `financial-kernel-v2.ts`, and `macro-and-market-v2.md`.
+- Inputs: accepted model/calibration/difficulty evidence, prior regime/duration, active macro-story modifiers, and serialized seeded RNG.
+- Outputs: distinct correlated broad, sector, speculative, bond, cash, and housing returns; inflation, borrowing, labor, volatility, next regime, structured fallback facts, and updated RNG.
+- State owned: current regime/duration, cumulative price index, latest structured macro/asset conditions, and active time-bounded macro modifiers.
+- Dependencies: seeded RNG, integer PPM/money primitives, the financial kernel, action policy for new mortgage quotes, and the monthly command/replay boundary.
+- Tests found: deterministic paths, different-seed bounds, transition/duration configuration, difficulty draw parity, regime tendencies, positive broad-sector covariance, 10,000-month performance, narrative facts, strict persistence, service stamping, inflation/asset/ledger integration, fixed-debt protection, and macro-derived mortgage pricing.
+- Determinism/performance risks: draw order and calibration are replay-critical and must be changed only under a new version. Prompt 14 still owns broad matched-seed distributional calibration proof.
+- Missing requirements: no Prompt 07 requirement remains open. The current product intentionally has one aggregate sector channel and no variable-rate debt product; future additions require explicit versioned mappings/reset rules.
+- Duplicate formulas or authority: `regime-v1` remains frozen historical replay only. The v2 financial kernel consumes accepted market evidence; headlines and AI have no mutation authority.
+- AI boundary: no network or AI call exists in the authoritative monthly path. AI may describe cited structured facts but cannot supply returns, regimes, or rates.
+- Historical boundary: absent/explicit-v1 commands retain `regime-v1`; v2 requires a persisted difficulty and current financial kernel. Existing checksum fixtures remain unchanged.
+- Next action: preserve `us-balanced-2026-v1`; Prompt 14 should run matched-seed balance distributions without changing accepted replay.
 
 ### 9. Personal Event and Trap System
 
@@ -480,7 +483,7 @@ The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 5. Prompt 04 — Goals, End Conditions, and Grading. Complete: policy-versioned grades and precedence, responsive/default and fixed/player goals, rich validated terminal evidence, historical replay, and canonical consumers.
 6. Prompt 05 — Player Actions and Persistent Policies. Complete: immutable action policy, strict public intent, reducer-backed no-write preview, exact explicit approval, replay compatibility, and effect/ledger evidence.
 7. Prompt 06 — Risk and Resilience Analyzer. Complete: pure transparent dimensions, versioned thresholds/weights/facts, active-policy insurance gaps, monotonic action integration, and risk-independent causal scheduling for new commands.
-8. Prompt 07 — Macro and Market System. Add explicit difficulty/calibration inputs without weakening deterministic draw order.
+8. Prompt 07 — Macro and Market System. Complete: versioned calibration/difficulty, structured macro state, correlated bounded channels, financial propagation, narrative separation, replay compatibility, and performance proof.
 9. Prompt 08 — Personal Event and Trap System. Separate event cause/hazard from vulnerability and route exact effects through typed financial interfaces.
 10. Prompt 09 — Runtime Balance Controller. Add deterministic approve/reject/defer policy, pressure/recovery state, catastrophe limits, and difficulty.
 11. Prompt 10 — Adaptive Scenario Director / Hostile Fed. Make the director ranking-only and subordinate every proposal to core sampling and balance approval.

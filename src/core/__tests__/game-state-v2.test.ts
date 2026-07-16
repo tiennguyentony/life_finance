@@ -153,6 +153,67 @@ describe("game state v1 to v2 migration", () => {
     }
   });
 
+  it("requires a complete structured macro snapshot for regime-v2 states", () => {
+    const migrated = migrateGameStateV1ToV2(createV1Fixture());
+    const valid = {
+      ...migrated,
+      gameplay: {
+        ...migrated.gameplay,
+        market: {
+          modelVersion: "regime-v2",
+          calibrationVersion: "us-balanced-2026-v1",
+          macroDifficulty: "normal",
+          observedRegime: "recession",
+          observedMonth: migrated.currentMonth,
+          monthsInRegime: 3,
+          cumulativePriceIndexPpm: 1_010_000,
+          borrowingRatePpm: 70_000,
+          laborDemandChangePpm: -10_000,
+          volatilityPpm: 400_000,
+          lastInflationPpm: 4_000,
+          broadMarketReturnPpm: -12_000,
+          sectorMarketReturnPpm: -18_000,
+          speculativeMarketReturnPpm: -30_000,
+          housingReturnPpm: 1_000,
+          cashYieldPpm: 3_000,
+        },
+      },
+    } as GameStateV2;
+    expect(validateGameStateV2(valid)).toEqual([]);
+    expect(
+      validateGameStateV2({
+        ...valid,
+        gameplay: {
+          ...valid.gameplay,
+          market: {
+            ...valid.gameplay.market,
+            laborDemandChangePpm: undefined,
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_structured_macro_state" }),
+      ]),
+    );
+    expect(
+      validateGameStateV2({
+        ...valid,
+        gameplay: {
+          ...valid.gameplay,
+          market: {
+            ...valid.gameplay.market,
+            sectorMarketReturnPpm: 900_000,
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_structured_macro_state" }),
+      ]),
+    );
+  });
+
   it("validates rich outcome evidence while accepting its exact structure", () => {
     const migrated = migrateGameStateV1ToV2(createV1Fixture());
     const valid = {

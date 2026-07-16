@@ -22,6 +22,7 @@ import {
   type GameStateV2,
 } from "../game-state-v2";
 import {
+  MACRO_MARKET_MODEL_V2_VERSION,
   marketSimulationState,
   simulateMarketMonth,
 } from "../market";
@@ -30,6 +31,7 @@ import * as monthlyTurnV2Module from "../monthly-turn-v2";
 import {
   financialKernelVersionForCommandV2,
   eventSchedulerVersionForCommandV2,
+  marketModelVersionForCommandV2,
   outcomePolicyVersionForCommandV2,
   processMonthlyTurnV2,
   type ProcessMonthV2Command,
@@ -341,6 +343,42 @@ describe("atomic v2 monthly turn", () => {
     ).toThrow(
       expect.objectContaining({ code: "UNSUPPORTED_EVENT_SCHEDULER_VERSION" }),
     );
+  });
+
+  it("defaults historical commands to regime-v1 and requires explicit v2 difficulty", () => {
+    const initial = configuredState();
+    expect(marketModelVersionForCommandV2(command(initial))).toEqual({
+      modelVersion: "regime-v1",
+      difficulty: null,
+    });
+    expect(
+      marketModelVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "normal",
+        }),
+      ),
+    ).toEqual({ modelVersion: "regime-v2", difficulty: "normal" });
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+        } as never),
+      ),
+    ).toThrow(expect.objectContaining({ code: "UNSUPPORTED_MARKET_MODEL_VERSION" }));
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "legacy-4.1.0",
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "normal",
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "UNSUPPORTED_MARKET_MODEL_VERSION" }));
   });
 
   it("uses player target age only for historical commands, never policy 1.0.0", () => {

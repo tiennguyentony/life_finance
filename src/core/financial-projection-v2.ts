@@ -12,11 +12,14 @@ import {
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
 import { ownForDeepFreeze } from "./immutable-ownership";
 import {
+  MACRO_MARKET_MODEL_V2_VERSION,
   assertValidMarketReturnModifiers,
   marketSimulationState,
+  marketSimulationStateV2,
   simulateMarketMonth,
+  simulateMarketMonthV2,
   type MarketReturnModifiers,
-  type MarketSimulationResult,
+  type SupportedMarketSimulationResult,
 } from "./market";
 import type { MonthlyTaxEvidence } from "./payroll-v2";
 import { acceptFinancialClosingStateV2 } from "./financial-transition-v2";
@@ -63,7 +66,7 @@ export type FinancialProjectionAssumptionsV2 = Readonly<{
   market:
     | Readonly<{
         kind: "fixed";
-        steps: readonly MarketSimulationResult[];
+        steps: readonly SupportedMarketSimulationResult[];
       }>
     | Readonly<{
         kind: "state_seeded";
@@ -221,9 +224,20 @@ function marketStepForMonth(
   state: GameStateV2,
   assumptions: FinancialProjectionAssumptionsV2,
   monthIndex: number,
-): MarketSimulationResult {
+): SupportedMarketSimulationResult {
   if (assumptions.market.kind === "fixed") {
     return assumptions.market.steps[monthIndex]!;
+  }
+  if (state.gameplay.market.modelVersion === MACRO_MARKET_MODEL_V2_VERSION) {
+    return simulateMarketMonthV2(
+      marketSimulationStateV2(
+        state.marketRegime,
+        state.random,
+        state.gameplay.market.macroDifficulty!,
+        state.gameplay.market.monthsInRegime,
+      ),
+      assumptions.market.returnModifiersPpm,
+    );
   }
   return simulateMarketMonth(
     marketSimulationState(

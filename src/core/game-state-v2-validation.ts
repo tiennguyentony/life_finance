@@ -24,6 +24,10 @@ import { validateLifeMilestoneState } from "./life-milestones-v2";
 import { validateAiLearningMemory } from "./ai-learning-memory-v2";
 import { validateRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
 import {
+  validateMacroMarketSnapshotV2,
+  type MacroMarketSnapshotV2,
+} from "./market";
+import {
   gradeRetirementProgressV1,
   outcomePolicyForVersionV2,
 } from "./outcome-policy-v2";
@@ -421,7 +425,9 @@ export function validateGameStateV2(
 
   const strategy = state.gameplay.recurringStrategy;
   if (
-    state.gameplay.market.modelVersion !== "regime-v1" ||
+    !["regime-v1", "regime-v2"].includes(
+      state.gameplay.market.modelVersion,
+    ) ||
     !Number.isSafeInteger(state.gameplay.market.monthsInRegime) ||
     state.gameplay.market.monthsInRegime < 0
   ) {
@@ -432,6 +438,22 @@ export function validateGameStateV2(
         "market model and months in regime must be persisted",
       ),
     );
+  }
+  const macroMarket = state.gameplay.market;
+  if (macroMarket.modelVersion === "regime-v2") {
+    try {
+      validateMacroMarketSnapshotV2(
+        macroMarket as MacroMarketSnapshotV2,
+      );
+    } catch {
+      violations.push(
+        violation(
+          "gameplay.market",
+          "invalid_structured_macro_state",
+          "regime-v2 requires its calibration, difficulty, borrowing, labor, inflation, volatility, and asset-condition facts",
+        ),
+      );
+    }
   }
   const cumulativePriceIndexPpm =
     state.gameplay.market.cumulativePriceIndexPpm;

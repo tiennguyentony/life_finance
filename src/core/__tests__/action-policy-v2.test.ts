@@ -20,6 +20,7 @@ describe("action policy v2", () => {
       homePurchaseClosingCostRatePpm: 30_000,
       homeSaleCostRatePpm: 60_000,
       homeRefinanceCostRatePpm: 20_000,
+      newMortgageSpreadPpm: 20_000,
     });
     expect(Object.isFrozen(policy)).toBe(true);
     expect(() => actionPolicyForVersionV2("invented" as "1.0.0")).toThrow(
@@ -37,6 +38,7 @@ describe("action policy v2", () => {
       homePurchaseClosingCostRatePpm: 30_000,
       homeSaleCostRatePpm: 60_000,
       homeRefinanceCostRatePpm: 20_000,
+      newMortgageSpreadPpm: 20_000,
     });
   });
 });

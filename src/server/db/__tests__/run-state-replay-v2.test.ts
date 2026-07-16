@@ -752,6 +752,52 @@ describe("verified v2 run-state replay", () => {
     ).toMatchObject({ code: "CORRUPT_STATE" });
   });
 
+  it("strictly decodes regime-v2 with explicit difficulty and preserves absent historical market evidence", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: "regime-v2",
+          macroDifficulty: "hard",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        marketModelVersion: "regime-v2",
+        macroDifficulty: "hard",
+      },
+    });
+    for (const invalid of [
+      { financialKernelVersion: "2.0.0", marketModelVersion: "regime-v2" },
+      { financialKernelVersion: "2.0.0", macroDifficulty: "normal" },
+      {
+        financialKernelVersion: "legacy-4.1.0",
+        marketModelVersion: "regime-v2",
+        macroDifficulty: "normal",
+      },
+    ]) {
+      expect(
+        captureError(() =>
+          rebuildGameCommandV2(
+            storedRow("process_month_v2", {
+              ...processMonthPayload,
+              ...invalid,
+            }),
+          ),
+        ),
+      ).toMatchObject({ code: "CORRUPT_STATE" });
+    }
+    const historical = rebuildGameCommandV2(
+      storedRow("process_month_v2", processMonthPayload),
+    );
+    if (historical.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(historical.payload.marketModelVersion).toBeUndefined();
+    expect(historical.payload.macroDifficulty).toBeUndefined();
+  });
+
   it.each([
     [
       "unknown outcome policy",

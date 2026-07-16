@@ -15,7 +15,12 @@ import {
 } from "../domain/money";
 import { simulationMonth, type SimulationMonth } from "../domain/month";
 import { finalizeGameStateV2 } from "../game-state-v2";
-import { marketSimulationState, simulateMarketMonth } from "../market";
+import {
+  marketSimulationState,
+  marketSimulationStateV2,
+  simulateMarketMonth,
+  simulateMarketMonthV2,
+} from "../market";
 import {
   createNativeGameStateV2,
   type NativeGameStateV2Input,
@@ -1908,6 +1913,30 @@ describe("simulateFinancialMonthV2", () => {
           nextState: {
             ...input.marketStep.nextState,
             monthsInRegime: input.marketStep.nextState.monthsInRegime + 1,
+          },
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_MARKET_STEP" }));
+  });
+
+  it("rejects regime-v2 fixed evidence outside the accepted calibration", () => {
+    const input = successfulInput();
+    const sampled = simulateMarketMonthV2(
+      marketSimulationStateV2(
+        input.state.marketRegime,
+        input.state.random,
+        "normal",
+        input.state.gameplay.market.monthsInRegime,
+      ),
+    );
+    expect(() =>
+      simulateFinancialMonthV2({
+        ...input,
+        marketStep: {
+          ...sampled,
+          month: {
+            ...sampled.month,
+            sectorReturnPpm: ratePpm(900_000),
           },
         },
       }),

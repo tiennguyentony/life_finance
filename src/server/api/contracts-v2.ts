@@ -5,6 +5,10 @@ import type { GameStateV2 } from "../../core/game-state-v2";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
 import { decodePersistedGameState } from "../../core/persisted-game-state";
+import {
+  validateMacroMarketMonthV2,
+  type MarketMonthV2,
+} from "../../core/market";
 import { US_2026_SCENARIO_CATALOG_VERSION } from "../../data/scenario-catalog";
 import {
   boundedRatePpmSchema,
@@ -326,7 +330,7 @@ export const playerPolicyPreviewV2RequestSchema = z.discriminatedUnion(
   [setStrategyV2CommandSchema, detailedActionV2CommandSchema],
 );
 
-const monthlyMarketEvidenceSchema = z
+const monthlyMarketEvidenceV1Schema = z
   .object({
     modelVersion: z.literal("regime-v1"),
     regime: marketRegimeSchema,
@@ -355,6 +359,63 @@ const monthlyMarketEvidenceSchema = z
       .strict(),
   })
   .strict();
+
+const monthlyMarketEvidenceV2Schema = z
+  .object({
+    modelVersion: z.literal("regime-v2"),
+    calibrationVersion: z.literal("us-balanced-2026-v1"),
+    difficulty: z.enum(["guided", "normal", "hard"]),
+    regime: marketRegimeSchema,
+    nextRegime: marketRegimeSchema,
+    equityReturnPpm: ratePpmSchema,
+    broadIndexReturnPpm: ratePpmSchema,
+    sectorReturnPpm: ratePpmSchema,
+    speculativeReturnPpm: ratePpmSchema,
+    bondReturnPpm: ratePpmSchema,
+    cashReturnPpm: ratePpmSchema,
+    housingReturnPpm: ratePpmSchema,
+    inflationPpm: ratePpmSchema,
+    borrowingRatePpm: boundedRatePpmSchema,
+    laborDemandChangePpm: ratePpmSchema,
+    volatilityPpm: boundedRatePpmSchema,
+    appliedReturnModifiersPpm: z
+      .object({
+        equity: ratePpmSchema,
+        bonds: ratePpmSchema,
+        cash: ratePpmSchema,
+        housing: ratePpmSchema,
+      })
+      .strict(),
+    shocks: z
+      .object({
+        macro: z.int().min(-2).max(2),
+        broadIdiosyncratic: z.int().min(-2).max(2),
+        sectorIdiosyncratic: z.int().min(-2).max(2),
+        speculativeIdiosyncratic: z.int().min(-2).max(2),
+        bondIdiosyncratic: z.int().min(-2).max(2),
+        housingIdiosyncratic: z.int().min(-2).max(2),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((month, context) => {
+    try {
+      validateMacroMarketMonthV2(month as MarketMonthV2);
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message:
+          error instanceof Error
+            ? error.message
+            : "invalid regime-v2 market evidence",
+      });
+    }
+  });
+
+const monthlyMarketEvidenceSchema = z.discriminatedUnion("modelVersion", [
+  monthlyMarketEvidenceV1Schema,
+  monthlyMarketEvidenceV2Schema,
+]);
 
 const debtServiceLineSchema = z
   .object({

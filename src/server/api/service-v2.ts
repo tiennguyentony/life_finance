@@ -7,6 +7,7 @@ import { safeBigIntToNumber } from "../../core/domain/integer";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { monthsBetween, simulationMonth } from "../../core/domain/month";
 import { CAUSAL_EVENT_SCHEDULER_V1_VERSION } from "../../core/event-scheduler-v2";
+import { MACRO_MARKET_MODEL_V2_VERSION } from "../../core/market";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
   type ProcessMonthV2Command,
@@ -216,6 +217,8 @@ export class RunApiServiceV2 {
             financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
             outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
             eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+            marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+            macroDifficulty: "normal" as const,
             taxEvidence:
               offset === 0
                 ? evidence
@@ -487,6 +490,8 @@ export class RunApiServiceV2 {
           financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
           outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
           eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "normal",
           taxEvidence: evidence,
           taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
           resolvedCashFlows: [],

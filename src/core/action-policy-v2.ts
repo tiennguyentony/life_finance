@@ -13,6 +13,7 @@ export type ActionPolicyV2 = Readonly<{
   homePurchaseClosingCostRatePpm: RatePpm;
   homeSaleCostRatePpm: RatePpm;
   homeRefinanceCostRatePpm: RatePpm;
+  newMortgageSpreadPpm: RatePpm;
 }>;
 
 export type ResolvedDetailedActionPolicyV2 = Readonly<{
@@ -24,6 +25,7 @@ export type ResolvedDetailedActionPolicyV2 = Readonly<{
   homePurchaseClosingCostRatePpm: RatePpm;
   homeSaleCostRatePpm: RatePpm;
   homeRefinanceCostRatePpm: RatePpm;
+  newMortgageSpreadPpm: RatePpm;
 }>;
 
 const ACTION_POLICY_V1 = Object.freeze({
@@ -35,6 +37,7 @@ const ACTION_POLICY_V1 = Object.freeze({
   homePurchaseClosingCostRatePpm: ratePpm(30_000),
   homeSaleCostRatePpm: ratePpm(60_000),
   homeRefinanceCostRatePpm: ratePpm(20_000),
+  newMortgageSpreadPpm: ratePpm(20_000),
 }) satisfies ActionPolicyV2;
 
 const ACTION_POLICY_REGISTRY_V2 = Object.freeze({
@@ -76,6 +79,7 @@ export function resolveDetailedActionPolicyV2(
       homeSaleCostRatePpm: ACTION_POLICY_V1.homeSaleCostRatePpm,
       homeRefinanceCostRatePpm:
         ACTION_POLICY_V1.homeRefinanceCostRatePpm,
+      newMortgageSpreadPpm: ACTION_POLICY_V1.newMortgageSpreadPpm,
     });
   }
 
@@ -97,5 +101,6 @@ export function resolveDetailedActionPolicyV2(
     homePurchaseClosingCostRatePpm: policy.homePurchaseClosingCostRatePpm,
     homeSaleCostRatePpm: policy.homeSaleCostRatePpm,
     homeRefinanceCostRatePpm: policy.homeRefinanceCostRatePpm,
+    newMortgageSpreadPpm: policy.newMortgageSpreadPpm,
   });
 }

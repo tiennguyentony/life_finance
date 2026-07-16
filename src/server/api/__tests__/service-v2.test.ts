@@ -377,6 +377,8 @@ describe("annual tax context cache", () => {
         );
         expect(command.payload).toMatchObject({
           financialKernelVersion: "2.0.0",
+          marketModelVersion: "regime-v2",
+          macroDifficulty: "normal",
           resolvedCashFlows: [],
         });
         const applied = processMonthlyTurnV2(state, command);
@@ -415,6 +417,11 @@ describe("annual tax context cache", () => {
       monthlyObligationInflationIncreaseCents: expect.any(Number),
       cumulativePriceIndexPpm: expect.any(Number),
       baseNonDebtObligationsCents: expect.any(Number),
+      market: {
+        modelVersion: "regime-v2",
+        calibrationVersion: "us-balanced-2026-v1",
+        difficulty: "normal",
+      },
       fundingPlan: {
         requiredCashCents: expect.any(Number),
         cashAvailableCents: expect.any(Number),
@@ -436,6 +443,19 @@ describe("annual tax context cache", () => {
     if (!("fundingPlan" in response.monthlyRecord)) {
       throw new Error("expected new-kernel monthly evidence");
     }
+    const parsedMonthlyRecord = response.monthlyRecord;
+    expect(() =>
+      commandV2ResponseSchema.parse({
+        ...response,
+        monthlyRecord: {
+          ...parsedMonthlyRecord,
+          market: {
+            ...parsedMonthlyRecord.market,
+            sectorReturnPpm: 900_000,
+          },
+        },
+      }),
+    ).toThrow();
     expect(() =>
       commandV2ResponseSchema.parse({
         ...response,
@@ -719,6 +739,8 @@ describe("monthly record response compatibility", () => {
       }
       expect(command.payload.outcomePolicyVersion).toBe("1.0.0");
       expect(command.payload.eventSchedulerVersion).toBe("causal-hazard-v1");
+      expect(command.payload.marketModelVersion).toBe("regime-v2");
+      expect(command.payload.macroDifficulty).toBe("normal");
       const applied = processMonthlyTurnV2(state, command);
       state = applied.state;
       return {
