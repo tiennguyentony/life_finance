@@ -69,9 +69,15 @@ function salaryTransaction(
 }
 
 function ledgerWith(transaction: JournalTransaction): Ledger {
+  return ledgerWithTransactions([transaction]);
+}
+
+function ledgerWithTransactions(
+  transactions: readonly JournalTransaction[],
+): Ledger {
   return {
     accounts: createLedger(accounts).accounts,
-    transactions: [transaction],
+    transactions,
   };
 }
 
@@ -88,6 +94,33 @@ function withoutProvenance(
     ...(transaction.reversesTransactionId
       ? { reversesTransactionId: transaction.reversesTransactionId }
       : {}),
+  };
+}
+
+function exactReversal(
+  original: JournalTransaction,
+  overrides: Partial<NewJournalTransaction> = {},
+): NewJournalTransaction {
+  const commandId = overrides.commandId ?? "cmd.correct.1";
+  return {
+    id: "txn.salary.reversal.1",
+    commandId,
+    effectiveMonth: original.effectiveMonth,
+    reasonCode: "correct_salary",
+    description: "Reverse an incorrectly posted salary",
+    sourceSystem: original.sourceSystem ?? "ledger",
+    category: original.category ?? "ledger.legacy_reversal",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
+    reversesTransactionId: original.id,
+    postings: original.postings.map((posting) => ({
+      accountId: posting.accountId,
+      debitCents: posting.creditCents,
+      creditCents: posting.debitCents,
+    })),
+    ...overrides,
   };
 }
 
@@ -237,6 +270,102 @@ describe("ledger", () => {
       }),
     ).toThrow(/ledger violates/);
   });
+
+  it.each([
+    ["source system", { sourceSystem: "command_reducer" }, "sourceSystem"],
+    ["category", { category: "income.other" }, "category"],
+    [
+      "causal kind",
+      {
+        causalReference: {
+          kind: "event" as const,
+          id: "cmd.correct.1",
+        },
+      },
+      "causalReference",
+    ],
+    [
+      "causal id",
+      {
+        causalReference: {
+          kind: "command" as const,
+          id: "cmd.different.1",
+        },
+      },
+      "causalReference",
+    ],
+  ])(
+    "rejects a handcrafted reversal with mismatched %s",
+    (_label, overrides, pathSuffix) => {
+      const original = salaryTransaction();
+      const violations = validateLedger(
+        ledgerWithTransactions([
+          original,
+          exactReversal(original, overrides),
+        ]),
+      );
+
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: `transactions.1.${pathSuffix}`,
+            code: "invalid_reversal_provenance",
+          }),
+        ]),
+      );
+    },
+  );
+
+  it("accepts the explicit provenance fallback for a legacy reversal", () => {
+    const original = withoutProvenance(salaryTransaction());
+    const reversal = exactReversal(original);
+
+    expect(reversal).toMatchObject({
+      sourceSystem: "ledger",
+      category: "ledger.legacy_reversal",
+      causalReference: {
+        kind: "command",
+        id: reversal.commandId,
+      },
+    });
+    expect(
+      validateLedger(ledgerWithTransactions([original, reversal])),
+    ).toEqual([]);
+  });
+
+  it("accepts a persisted legacy reversal with no provenance", () => {
+    const original = withoutProvenance(salaryTransaction());
+    const reversal = withoutProvenance(exactReversal(original));
+
+    expect(
+      validateLedger(ledgerWithTransactions([original, reversal])),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["source system", { sourceSystem: "monthly_turn" }, "sourceSystem"],
+    ["category", { category: "income.employment" }, "category"],
+  ])(
+    "rejects a legacy reversal without the fallback %s",
+    (_label, overrides, pathSuffix) => {
+      const original = withoutProvenance(salaryTransaction());
+      const violations = validateLedger(
+        ledgerWithTransactions([
+          original,
+          exactReversal(original, overrides),
+        ]),
+      );
+
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: `transactions.1.${pathSuffix}`,
+            code: "invalid_reversal_provenance",
+          }),
+        ]),
+      );
+    },
+  );
 
   it("enforces normal account sides", () => {
     expect(() =>

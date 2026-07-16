@@ -172,8 +172,12 @@ function postTransaction(
     effectiveMonth: command.effectiveMonth,
     reasonCode: command.payload.reasonCode,
     description: command.payload.description,
-    sourceSystem: reversalTarget?.sourceSystem ?? "command_reducer",
-    category: reversalTarget?.category ?? "command.post_transaction",
+    sourceSystem: reversalTarget
+      ? (reversalTarget.sourceSystem ?? "ledger")
+      : "command_reducer",
+    category: reversalTarget
+      ? (reversalTarget.category ?? "ledger.legacy_reversal")
+      : "command.post_transaction",
     causalReference: {
       kind: "command",
       id: command.id,
