@@ -373,8 +373,8 @@ describe("simulateFinancialMonthV2", () => {
     ).toEqual(["monthly_payroll_v2", "monthly_resolved_income_v2"]);
     expect(
       result.state.ledger.transactions.find(
-        ({ id }) =>
-          id === `txn.${input.commandId}.flow.flow.shortfall-income`,
+        ({ causalReference }) =>
+          causalReference?.id === "flow.shortfall-income",
       )?.postings,
     ).toEqual([
       { accountId: "asset.cash", debitCents: 10_000, creditCents: 0 },
@@ -1024,7 +1024,9 @@ describe("simulateFinancialMonthV2", () => {
       },
     });
     const flowTransactions = result.state.ledger.transactions.filter(
-      ({ id }) => id.startsWith(`txn.${base.commandId}.flow.`),
+      ({ reasonCode }) =>
+        reasonCode === "monthly_resolved_income_v2" ||
+        reasonCode === "monthly_resolved_expense_v2",
     );
 
     expect(result.record).toMatchObject({
@@ -1039,14 +1041,14 @@ describe("simulateFinancialMonthV2", () => {
     });
     expect(flowTransactions).toHaveLength(4);
     for (const flow of flows.filter(({ amountCents }) => amountCents > 0)) {
-      const transactionId = `txn.${base.commandId}.flow.${flow.id}`;
-      const matches = flowTransactions.filter(({ id }) => id === transactionId);
+      const matches = flowTransactions.filter(
+        ({ causalReference }) => causalReference?.id === flow.id,
+      );
       const transaction = matches[0]!;
       const income =
         flow.kind === "other_income" || flow.kind === "temporary_income";
       expect(matches).toHaveLength(1);
       expect(transaction).toMatchObject({
-        id: transactionId,
         commandId: base.commandId,
         sourceSystem: flow.sourceSystem,
         category: income
@@ -1079,6 +1081,10 @@ describe("simulateFinancialMonthV2", () => {
               },
             ],
       });
+      expect(transaction.id).toMatch(
+        /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/,
+      );
+      expect(transaction.id.length).toBeLessThanOrEqual(128);
       expect(
         transaction.postings.reduce(
           (total, posting) =>
@@ -1089,9 +1095,71 @@ describe("simulateFinancialMonthV2", () => {
     }
     expect(
       result.state.ledger.transactions.some(
-        ({ id }) => id === `txn.${base.commandId}.flow.flow.zero`,
+        ({ causalReference }) => causalReference?.id === "flow.zero",
       ),
     ).toBe(false);
+  });
+
+  it("bounds a resolved-flow transaction id at maximum valid input lengths", () => {
+    const commandId = `c${"x".repeat(95)}`;
+    const flowId = `f${"y".repeat(63)}`;
+    const base = successfulInput();
+    let result: ReturnType<typeof simulateFinancialMonthV2> | undefined;
+
+    expect(commandId).toHaveLength(96);
+    expect(flowId).toHaveLength(64);
+    expect(() => {
+      result = simulateFinancialMonthV2({
+        ...base,
+        commandId,
+        resolvedCashFlows: [
+          {
+            id: flowId,
+            kind: "other_income",
+            amountCents: moneyCents(1),
+            sourceSystem: "resolved_flow_fixture",
+          },
+        ],
+      });
+    }).not.toThrow();
+
+    const transaction = result?.state.ledger.transactions.find(
+      ({ causalReference }) => causalReference?.id === flowId,
+    );
+    expect(transaction).toMatchObject({
+      commandId,
+      causalReference: { kind: "system", id: flowId },
+    });
+    expect(transaction?.id).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/);
+    expect(transaction?.id.length).toBeLessThanOrEqual(128);
+  });
+
+  it("uses distinct deterministic ids for delimiter-ambiguous flow pairs", () => {
+    function transactionId(commandId: string, flowId: string): string {
+      const base = successfulInput(configuredState());
+      const result = simulateFinancialMonthV2({
+        ...base,
+        commandId,
+        resolvedCashFlows: [
+          {
+            id: flowId,
+            kind: "temporary_income",
+            amountCents: moneyCents(1),
+            sourceSystem: "resolved_flow_fixture",
+          },
+        ],
+      });
+      return result.state.ledger.transactions.find(
+        ({ causalReference }) => causalReference?.id === flowId,
+      )!.id;
+    }
+
+    const first = transactionId("a", "b.flow.c");
+    const rerun = transactionId("a", "b.flow.c");
+    const second = transactionId("a.flow.b", "c");
+
+    expect(rerun).toBe(first);
+    expect(second).not.toBe(first);
   });
 
   it("processes one fully funded native month from supplied evidence", () => {
