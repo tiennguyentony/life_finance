@@ -2,6 +2,8 @@ import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import type { GameStateV2 } from "../../core/game-state-v2";
+import { moneyCents, ratePpm } from "../../core/domain/money";
+import { simulationMonth } from "../../core/domain/month";
 import { decodePersistedGameState } from "../../core/persisted-game-state";
 import { US_2026_SCENARIO_CATALOG_VERSION } from "../../data/scenario-catalog";
 import {
@@ -23,6 +25,15 @@ const commandIdSchema = z
   .min(1)
   .max(96)
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/);
+
+const brandedSimulationMonthSchema = simulationMonthSchema.transform(
+  simulationMonth,
+);
+const brandedMoneyCentsSchema = signedCentsSchema.transform(moneyCents);
+const brandedNonNegativeMoneyCentsSchema = nonNegativeCentsSchema.transform(
+  moneyCents,
+);
+const brandedBoundedRatePpmSchema = boundedRatePpmSchema.transform(ratePpm);
 
 const rateGroupSchema = z
   .object({
@@ -614,6 +625,246 @@ export const checkpointV2ResponseSchema = z
   .object({ evidence: checkpointEvidenceV2Schema })
   .strict();
 
+const timeAdvanceModeV2Schema = z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("one_month") }).strict(),
+    z
+      .object({ kind: z.literal("months"), months: z.int().min(1).max(480) })
+      .strict(),
+    z.object({ kind: z.literal("until_event") }).strict(),
+    z
+      .object({
+        kind: z.literal("until_checkpoint"),
+        intervalMonths: z.int().min(1).max(12),
+      })
+      .strict(),
+    z.object({ kind: z.literal("until_decision") }).strict(),
+    z.object({ kind: z.literal("until_end") }).strict(),
+    z
+      .object({
+        kind: z.literal("resume"),
+        resolvedDecisionId: commandIdSchema,
+        months: z.int().min(1).max(480),
+      })
+      .strict(),
+    z.object({ kind: z.literal("stop") }).strict(),
+]);
+
+export const advanceTimeV2RequestSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    id: commandIdSchema,
+    expectedRevision: z.int().min(0),
+    effectiveMonth: simulationMonthSchema,
+    maxMonths: z.int().min(1).max(480),
+    mode: timeAdvanceModeV2Schema,
+    checkpointIntervalMonths: z.int().min(1).max(12).optional(),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const requested =
+      request.mode.kind === "months" || request.mode.kind === "resume"
+        ? request.mode.months
+        : null;
+    if (requested !== null && requested > request.maxMonths) {
+      context.addIssue({
+        code: "custom",
+        path: ["mode", "months"],
+        message: "requested months cannot exceed maxMonths",
+      });
+    }
+    if (
+      request.mode.kind === "until_checkpoint" &&
+      request.checkpointIntervalMonths !== undefined &&
+      request.checkpointIntervalMonths !== request.mode.intervalMonths
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["checkpointIntervalMonths"],
+        message: "checkpoint intervals must agree",
+      });
+    }
+  });
+
+const pauseReasonV2Schema = z.discriminatedUnion(
+  "kind",
+  [
+    z
+      .object({
+        kind: z.literal("requested_duration"),
+        requestedMonths: z.int().min(1).max(480),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("periodic_checkpoint"),
+        checkpointMonth: brandedSimulationMonthSchema,
+      })
+      .strict(),
+    z
+      .object({ kind: z.literal("event_response"), eventId: identifierSchema })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("policy_decision"),
+        decisionKind: z.literal("life_milestone"),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("financial_warning"),
+        warning: z
+          .object({
+            kind: z.literal("monthly_cash_flow_deficit"),
+            cashFlowDeficitCents: nonNegativeCentsSchema.transform(moneyCents),
+          })
+          .strict(),
+      })
+      .strict(),
+    z.object({ kind: z.literal("financial_independence") }).strict(),
+    z.object({ kind: z.literal("retirement") }).strict(),
+    z.object({ kind: z.literal("bankruptcy") }).strict(),
+    z.object({ kind: z.literal("explicit_user_stop") }).strict(),
+    z
+      .object({
+        kind: z.literal("bounded_limit"),
+        maxMonths: z.int().min(1).max(480),
+      })
+      .strict(),
+  ],
+);
+
+const timeControllerUiChangesV2Schema = z
+  .object({
+    kind: z.literal("time_advance_summary_v2"),
+    fromMonth: brandedSimulationMonthSchema,
+    toMonth: brandedSimulationMonthSchema,
+    monthsAdvanced: z.int().min(0).max(480),
+    pauseKind: z.enum([
+      "requested_duration",
+      "periodic_checkpoint",
+      "event_response",
+      "policy_decision",
+      "financial_warning",
+      "financial_independence",
+      "retirement",
+      "bankruptcy",
+      "explicit_user_stop",
+      "bounded_limit",
+    ]),
+    cashChangeCents: brandedMoneyCentsSchema,
+    netWorthChangeCents: brandedMoneyCentsSchema,
+    totalGrossIncomeCents: brandedMoneyCentsSchema,
+    totalTaxCents: brandedMoneyCentsSchema,
+    totalAfterTaxCashIncomeCents: brandedMoneyCentsSchema,
+    totalRequiredCashCents: brandedMoneyCentsSchema,
+    totalMarketValueChangeCents: brandedMoneyCentsSchema,
+  })
+  .strict();
+
+const eventWeaknessV2Schema = z.enum([
+  "low_emergency_fund",
+  "high_credit_utilization",
+  "job_portfolio_correlation",
+  "portfolio_concentration",
+  "uninsured_property",
+  "high_fixed_costs",
+  "lifestyle_fragility",
+  "market_timing",
+]);
+
+const pendingEventV2Schema = z
+  .object({
+    eventId: identifierSchema,
+    templateId: identifierSchema,
+    templateVersion: z.int().min(1),
+    tier: z.enum(["micro", "medium", "large", "catastrophe"]),
+    targetedWeakness: eventWeaknessV2Schema,
+    parameters: z.record(z.string().min(1), z.int()),
+    choiceIds: z
+      .array(identifierSchema)
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length),
+    scheduledMonth: brandedSimulationMonthSchema,
+    expiresMonth: brandedSimulationMonthSchema,
+    aiNarrative: z
+      .object({
+        source: z.enum([
+          "openai",
+          "hosted_oss",
+          "local_oss",
+          "deterministic_fallback",
+        ]),
+        headline: z.string().trim().min(1).max(240),
+        narrative: z.string().trim().min(1).max(2_000),
+        rationale: z.string().trim().min(1).max(800),
+        citedEvidenceIds: z
+          .array(identifierSchema)
+          .refine((ids) => new Set(ids).size === ids.length),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const scheduledLifeMilestoneV1Schema = z
+  .object({
+    version: z.literal("life-milestone-v1"),
+    milestoneId: identifierSchema,
+    kind: z.enum([
+      "move",
+      "vehicle",
+      "wedding",
+      "child",
+      "education",
+      "travel",
+      "caregiving",
+      "custom",
+    ]),
+    label: z.string().trim().min(1).max(80),
+    targetMonth: brandedSimulationMonthSchema,
+    estimatedCostCents: brandedNonNegativeMoneyCentsSchema.refine(
+      (value) => value > 0,
+    ),
+    postponementCount: z.int().min(0),
+    createdMonth: brandedSimulationMonthSchema,
+  })
+  .strict();
+
+const pendingDecisionV2Schema = z
+  .object({
+    kind: z.literal("life_milestone"),
+    milestones: z.array(scheduledLifeMilestoneV1Schema).min(1).max(12),
+  })
+  .strict();
+
+const outcomeKindV2Schema = z.enum([
+  "financial_independence",
+  "retirement_age",
+  "bankruptcy",
+]);
+const finalGradeV2Schema = z.enum(["S", "A", "B", "C", "D", "E", "F"]);
+const legacyGameOutcomeV2Schema = z
+  .object({
+    kind: outcomeKindV2Schema,
+    grade: finalGradeV2Schema,
+    reachedMonth: brandedSimulationMonthSchema,
+    reasonCode: z.string().trim().min(1).max(128),
+  })
+  .strict();
+
+export const advanceTimeV2ResponseSchema = getRunV2ResponseSchema
+  .extend({
+    idempotentReplay: z.boolean(),
+    monthsAdvanced: z.int().min(0).max(480),
+    pauseReason: pauseReasonV2Schema,
+    pendingEvent: pendingEventV2Schema.nullable(),
+    pendingDecision: pendingDecisionV2Schema.nullable(),
+    checkpointInput: checkpointEvidenceV2Schema.nullable(),
+    endCondition: legacyGameOutcomeV2Schema.nullable(),
+    uiChanges: timeControllerUiChangesV2Schema,
+  })
+  .strict();
+
 export { runIdPathSchema as runIdV2PathSchema };
 
 export type CreateRunV2Request = z.infer<typeof createRunV2RequestSchema>;
@@ -623,3 +874,5 @@ export type GetRunV2Response = z.infer<typeof getRunV2ResponseSchema>;
 export type MigrateRunV2Response = z.infer<typeof migrateRunV2ResponseSchema>;
 export type CommandV2Response = z.infer<typeof commandV2ResponseSchema>;
 export type CheckpointV2Response = z.infer<typeof checkpointV2ResponseSchema>;
+export type AdvanceTimeV2Request = z.infer<typeof advanceTimeV2RequestSchema>;
+export type AdvanceTimeV2Response = z.infer<typeof advanceTimeV2ResponseSchema>;

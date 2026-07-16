@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../../../core/domain/money";
+import { simulationMonth } from "../../../core/domain/month";
 import {
   calculateInvestableAssets as calculateCanonicalInvestableAssets,
   calculateNetWorth as calculateCanonicalNetWorth,
@@ -12,12 +15,45 @@ import {
   calculateFinancialIndependence,
   calculateInvestableAssets as calculatePlayInvestableAssets,
   calculateNetWorth as calculatePlayNetWorth,
+  describeTimePauseV2,
   dollarsToCents,
   percentToPpm,
 } from "../play-model";
 import { selectionForPreset } from "../onboarding-model";
 
 describe("developer play UI model", () => {
+  it("uses one advance request and one pause activity for hidden months", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+    const runMonths = source.slice(
+      source.indexOf("const runMonths"),
+      source.indexOf("const takeAction"),
+    );
+
+    expect(runMonths).toContain("/advance");
+    expect(runMonths).not.toContain("/commands");
+    expect(runMonths).not.toMatch(/for\s*\(/);
+    expect(runMonths.match(/apiRequest</g)).toHaveLength(1);
+    expect(runMonths.match(/describeTimePauseV2/g)).toHaveLength(1);
+  });
+
+  it.each([
+    [{ kind: "requested_duration", requestedMonths: 12 }, "Requested 12-month advance completed."],
+    [{ kind: "periodic_checkpoint", checkpointMonth: simulationMonth("2027-07") }, "Checkpoint reached at 2027-07."],
+    [{ kind: "event_response", eventId: "event.1" }, "Progress paused for a required event response."],
+    [{ kind: "policy_decision", decisionKind: "life_milestone" }, "Progress paused for a required life milestone decision."],
+    [{ kind: "financial_warning", warning: { kind: "monthly_cash_flow_deficit", cashFlowDeficitCents: moneyCents(12_345) } }, "Progress paused for a monthly cash-flow warning."],
+    [{ kind: "financial_independence" }, "Financial independence reached."],
+    [{ kind: "retirement" }, "Configured retirement age reached."],
+    [{ kind: "bankruptcy" }, "Progress stopped after liquidity was exhausted."],
+    [{ kind: "explicit_user_stop" }, "Time advance stopped by the player."],
+    [{ kind: "bounded_limit", maxMonths: 480 }, "Safe 480-month processing limit reached."],
+  ] as const)("describes tagged time pause %#", (pause, expected) => {
+    expect(describeTimePauseV2(pause)).toBe(expected);
+  });
+
   it("builds a catalog-compatible starter request", () => {
     const request = buildCreateRequest("nurse", 85_000, 20_000, "test-seed");
 

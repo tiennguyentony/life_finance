@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type {
+  AdvanceTimeV2Response,
   CheckpointV2Response,
   CommandV2Response,
   GameCommandV2Public,
@@ -29,6 +30,7 @@ import {
   buildCreateRequest,
   calculateAgeYears,
   calculateNetWorth,
+  describeTimePauseV2,
   formatMoney,
   percentToPpm,
   PLAYER_PRESETS,
@@ -122,6 +124,7 @@ export function PlayConsole() {
   const [tab, setTab] = useState<PlayTab>("overview");
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
+  const [resumeDecisionId, setResumeDecisionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<string[]>([]);
 
@@ -196,6 +199,7 @@ export function PlayConsole() {
       setCredential(saved);
       setState(result.state);
       setCheckpoint(null);
+      setResumeDecisionId(null);
       setTurnHistory([]);
       sessionStorage.removeItem(RECAP_SESSION_KEY);
       setActivity([`Created ${PLAYER_PRESETS[onboarding.presetId].label} run.`]);
@@ -208,7 +212,7 @@ export function PlayConsole() {
   };
 
   const submit = async (command: GameCommandV2Public, message: string) => {
-    if (!credential) return;
+    if (!credential) return null;
     setBusy(true);
     setBusyLabel("Applying your decision…");
     setError(null);
@@ -223,12 +227,15 @@ export function PlayConsole() {
       );
       setState(result.state);
       setCheckpoint(null);
+      setResumeDecisionId(null);
       addActivity(message);
       if (result.monthlyRecord) {
         setTurnHistory((current) => [result.monthlyRecord!, ...current].slice(0, 12));
       }
+      return result;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Command failed");
+      return null;
     } finally {
       setBusy(false);
       setBusyLabel("");
@@ -266,46 +273,40 @@ export function PlayConsole() {
     if (!state || !credential) return;
     setBusy(true);
     setError(null);
-    let working = state;
-    const recaps: MonthlyRecap[] = [];
     try {
-      for (let index = 0; index < count; index += 1) {
-        if (
-          working.outcome ||
-          working.gameplay.eventLifecycle.pending ||
-          dueLifeMilestones(working).length > 0
-        ) break;
-        setBusyLabel(`Simulating ${working.currentMonth} · ${index + 1}/${count}…`);
-        const result = await apiRequest<CommandV2Response>(
-          `/api/v2/runs/${credential.runId}/commands`,
-          {
-            method: "POST",
-            headers: authHeaders(credential.accessSecret),
-            body: JSON.stringify({
-              schemaVersion: 2,
-              id: commandId("month"),
-              expectedRevision: working.revision,
-              effectiveMonth: working.currentMonth,
-              type: "process_month",
-              payload: {},
-            }),
-          },
-        );
-        working = result.state;
-        if (result.monthlyRecord) recaps.unshift(result.monthlyRecord);
-      }
-      setState(working);
-      setCheckpoint(null);
-      setTurnHistory((current) => [...recaps, ...current].slice(0, 12));
-      addActivity(
-        `Processed ${recaps.length} month${recaps.length === 1 ? "" : "s"}; now ${working.currentMonth}.`,
+      setBusyLabel(`Simulating up to ${count} month${count === 1 ? "" : "s"}…`);
+      const result = await apiRequest<AdvanceTimeV2Response>(
+        `/api/v2/runs/${credential.runId}/advance`,
+        {
+          method: "POST",
+          headers: authHeaders(credential.accessSecret),
+          body: JSON.stringify({
+            schemaVersion: 2,
+            id: commandId("advance"),
+            expectedRevision: state.revision,
+            effectiveMonth: state.currentMonth,
+            maxMonths: count,
+            mode: resumeDecisionId
+              ? {
+                  kind: "resume",
+                  resolvedDecisionId: resumeDecisionId,
+                  months: count,
+                }
+              : { kind: "months", months: count },
+          }),
+        },
       );
-      if (working.gameplay.eventLifecycle.pending) {
-        addActivity("Progress paused for a required personal decision.");
-      }
+      setState(result.state);
+      setCheckpoint(
+        result.checkpointInput ? { evidence: result.checkpointInput } : null,
+      );
+      setTurnHistory([]);
+      setResumeDecisionId(null);
+      addActivity(
+        `Advanced ${result.monthsAdvanced} month${result.monthsAdvanced === 1 ? "" : "s"} to ${result.state.currentMonth}; cash ${formatMoney(result.uiChanges.cashChangeCents)}, net worth ${formatMoney(result.uiChanges.netWorthChangeCents)}.`,
+      );
+      addActivity(describeTimePauseV2(result.pauseReason));
     } catch (caught) {
-      setState(working);
-      setTurnHistory((current) => [...recaps, ...current].slice(0, 12));
       setError(caught instanceof Error ? caught.message : "Monthly simulation failed");
     } finally {
       setBusy(false);
@@ -331,17 +332,20 @@ export function PlayConsole() {
   const resolveChoice = (choiceId: string) => {
     const pending = state?.gameplay.eventLifecycle.pending;
     if (!state || !pending) return;
+    const command = {
+      schemaVersion: 2 as const,
+      id: commandId("event"),
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      type: "resolve_event_choice" as const,
+      payload: { eventId: pending.eventId, choiceId },
+    };
     void submit(
-      {
-        schemaVersion: 2,
-        id: commandId("event"),
-        expectedRevision: state.revision,
-        effectiveMonth: state.currentMonth,
-        type: "resolve_event_choice",
-        payload: { eventId: pending.eventId, choiceId },
-      },
+      command,
       `Event choice accepted: ${choiceId.replaceAll("_", " ")}.`,
-    );
+    ).then((result) => {
+      if (result) setResumeDecisionId(command.id);
+    });
   };
 
   const scheduleMilestone = () => {
@@ -368,14 +372,22 @@ export function PlayConsole() {
     resolution: "pay_cash" | "postpone_6_months" | "cancel",
   ) => {
     if (!state) return;
-    void submit({
+    const command = {
       schemaVersion: 2,
       id: commandId("milestone"),
       expectedRevision: state.revision,
       effectiveMonth: state.currentMonth,
       type: "manage_life_milestone",
       payload: { action: "resolve", milestoneId, resolution },
-    }, `Milestone decision accepted: ${resolution.replaceAll("_", " ")}.`);
+    } as const;
+    void submit(
+      command,
+      `Milestone decision accepted: ${resolution.replaceAll("_", " ")}.`,
+    ).then((result) => {
+      if (result && resolution !== "postpone_6_months") {
+        setResumeDecisionId(command.id);
+      }
+    });
   };
 
   const askAiLesson = async () => {
@@ -495,6 +507,7 @@ export function PlayConsole() {
     setCredential(null);
     setState(null);
     setCheckpoint(null);
+    setResumeDecisionId(null);
     setTurnHistory([]);
     setActivity([]);
     setAiLesson(null);

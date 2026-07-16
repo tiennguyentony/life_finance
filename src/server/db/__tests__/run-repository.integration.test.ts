@@ -14,6 +14,7 @@ import {
 } from "../../../core/game-state-v2";
 import { sha256Canonical } from "../../../core/canonical";
 import type { ProcessMonthV2Command } from "../../../core/monthly-turn-v2";
+import { advanceTimeV2 } from "../../../core/time-controller-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
 import {
   planRecurringAllocations,
@@ -278,6 +279,71 @@ function sparseMonthCommandV2(state: GameStateV2): ProcessMonthV2Command {
   };
 }
 
+function preparedTimeAdvanceV2(
+  state: GameStateV2,
+  batchId: string,
+  months = 2,
+) {
+  const basePayload = sparseMonthCommandV2(state).payload;
+  const monthlyInputs = Array.from({ length: months }, (_, index) => {
+    const commandId = `${batchId}.month.${index + 1}`;
+    return {
+      commandId,
+      payload: {
+        ...basePayload,
+        taxEvidence: {
+          ...basePayload.taxEvidence,
+          traceId: `tax.${commandId}`,
+        },
+      },
+    };
+  });
+  const controllerResult = advanceTimeV2(
+    state,
+    {
+      schemaVersion: 2,
+      id: batchId,
+      type: "advance_time_v2",
+      maxMonths: months,
+      mode: { kind: "months", months },
+      monthlyInputs,
+    },
+    {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+      macroStoryPolicy: {
+        version: "macro-story-v1",
+        monthlyChancePpm: 0,
+        minimumDurationMonths: 1,
+        maximumDurationMonths: 1,
+      },
+    },
+  );
+  const request = Object.freeze({
+    schemaVersion: 2 as const,
+    id: batchId,
+    expectedRevision: state.revision,
+    effectiveMonth: state.currentMonth,
+    maxMonths: months,
+    mode: Object.freeze({ kind: "months" as const, months }),
+  });
+  return Object.freeze({
+    controllerVersion: "time-controller-v2.0.0" as const,
+    engineVersion: state.engineVersion,
+    request,
+    batchId,
+    requestFingerprint: sha256Canonical(request),
+    openingRevision: state.revision,
+    openingStateChecksum: sha256Canonical(state),
+    steps: controllerResult.steps,
+    controllerResult,
+    finalStateChecksum: sha256Canonical(controllerResult.state),
+  });
+}
+
 function strategyCommandV2(): SetRecurringStrategyCommand {
   return {
     schemaVersion: 2,
@@ -429,6 +495,11 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000023",
     "10000000-0000-4000-8000-000000000024",
     "10000000-0000-4000-8000-000000000025",
+    "10000000-0000-4000-8000-000000000026",
+    "10000000-0000-4000-8000-000000000027",
+    "10000000-0000-4000-8000-000000000028",
+    "10000000-0000-4000-8000-000000000029",
+    "10000000-0000-4000-8000-000000000030",
   ];
   let runIndex = 0;
 
@@ -447,6 +518,179 @@ databaseDescribe("Postgres run repository", () => {
 
   afterAll(async () => {
     await connection?.close();
+  });
+
+  it("persists and idempotently replays one atomic multi-month advance", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.batch");
+
+    const applied = await repository.applyTimeAdvanceV2(
+      created.runId,
+      created.accessSecret,
+      prepared,
+    );
+    const replayed = await repository.applyTimeAdvanceV2(
+      created.runId,
+      created.accessSecret,
+      prepared,
+    );
+
+    expect(applied.monthsAdvanced).toBe(2);
+    expect(applied.state.revision).toBe(2);
+    expect(applied.idempotentReplay).toBe(false);
+    expect(replayed).toEqual({ ...applied, idempotentReplay: true });
+    const [[commands], [evidence], [records], outbox] = await Promise.all([
+      connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId)),
+      connection.db.select({ value: count() }).from(monthlyTaxEvidence).where(eq(monthlyTaxEvidence.runId, created.runId)),
+      connection.db.select({ value: count() }).from(monthlyTurnRecords).where(eq(monthlyTurnRecords.runId, created.runId)),
+      connection.db.select({ topic: transactionalOutbox.topic }).from(transactionalOutbox).where(eq(transactionalOutbox.runId, created.runId)),
+    ]);
+    expect(commands.value).toBe(2);
+    expect(evidence.value).toBe(2);
+    expect(records.value).toBe(2);
+    expect(outbox.map(({ topic }) => topic).toSorted()).toEqual([
+      "run.v2.created",
+      "run.v2.time_advanced",
+    ]);
+  });
+
+  it("rejects a conflicting aggregate id before writing monthly rows", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.rollback");
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.collision",
+      idempotencyKey: `${created.runId}:v2:advance:${prepared.batchId}`,
+      payload: { conflicting: true },
+      status: "pending",
+      availableAt: new Date("2026-07-14T12:00:00.000Z"),
+      createdAt: new Date("2026-07-14T12:00:00.000Z"),
+    });
+
+    await expect(
+      repository.applyTimeAdvanceV2(
+        created.runId,
+        created.accessSecret,
+        prepared,
+      ),
+    ).rejects.toThrow();
+
+    const [run] = await connection.db.select().from(gameRuns).where(eq(gameRuns.id, created.runId));
+    const [commands] = await connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId));
+    expect(run?.currentRevision).toBe(0);
+    expect(commands.value).toBe(0);
+  });
+
+  it("rolls back earlier monthly rows when a later prepared record mismatches replay", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.tampered");
+    const [first, second] = prepared.steps;
+    if (!first || !second) throw new Error("expected two prepared monthly steps");
+    const tamperedRecord = {
+      ...second.record,
+      totalTaxCents: moneyCents(second.record.totalTaxCents + 1),
+    };
+    const tamperedSteps = [
+      first,
+      { ...second, record: tamperedRecord },
+    ] as const;
+    const tampered = {
+      ...prepared,
+      steps: tamperedSteps,
+      controllerResult: {
+        ...prepared.controllerResult,
+        steps: tamperedSteps,
+        records: [first.record, tamperedRecord],
+      },
+    };
+
+    await expect(
+      repository.applyTimeAdvanceV2(
+        created.runId,
+        created.accessSecret,
+        tampered,
+      ),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+
+    const [run] = await connection.db.select().from(gameRuns).where(eq(gameRuns.id, created.runId));
+    const [commands] = await connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId));
+    const [records] = await connection.db.select({ value: count() }).from(monthlyTurnRecords).where(eq(monthlyTurnRecords.runId, created.runId));
+    expect(run?.currentRevision).toBe(0);
+    expect(commands.value).toBe(0);
+    expect(records.value).toBe(0);
+  });
+
+  it("rejects an unversioned or non-canonical prepared batch envelope", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.envelope");
+
+    await expect(
+      repository.applyTimeAdvanceV2(created.runId, created.accessSecret, {
+        ...prepared,
+        controllerVersion:
+          "time-controller-v3.0.0" as typeof prepared.controllerVersion,
+      }),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+    await expect(
+      repository.applyTimeAdvanceV2(created.runId, created.accessSecret, {
+        ...prepared,
+        engineVersion: "future-engine",
+      }),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+    await expect(
+      repository.applyTimeAdvanceV2(created.runId, created.accessSecret, {
+        ...prepared,
+        request: {
+          ...prepared.request,
+          inventedModeAuthority: true,
+        } as unknown as typeof prepared.request,
+      }),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+
+    const [run] = await connection.db.select().from(gameRuns).where(eq(gameRuns.id, created.runId));
+    const [commands] = await connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId));
+    expect(run?.currentRevision).toBe(0);
+    expect(commands.value).toBe(0);
+  });
+
+  it("rejects a corrupted stored controller version during idempotent replay", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.corrupt-version");
+    await repository.applyTimeAdvanceV2(
+      created.runId,
+      created.accessSecret,
+      prepared,
+    );
+    const [row] = await connection.db
+      .select({ id: transactionalOutbox.id, payload: transactionalOutbox.payload })
+      .from(transactionalOutbox)
+      .where(
+        eq(
+          transactionalOutbox.idempotencyKey,
+          `${created.runId}:v2:advance:${prepared.batchId}`,
+        ),
+      );
+    if (!row || !row.payload || typeof row.payload !== "object") {
+      throw new Error("expected aggregate time-advance outbox payload");
+    }
+    await connection.db
+      .update(transactionalOutbox)
+      .set({
+        payload: {
+          ...row.payload,
+          controllerVersion: "time-controller-v3.0.0",
+        },
+      })
+      .where(eq(transactionalOutbox.id, row.id));
+
+    await expect(
+      repository.loadAcceptedTimeAdvanceV2(
+        created.runId,
+        created.accessSecret,
+        prepared.batchId,
+        prepared.requestFingerprint,
+      ),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
   });
 
   it("creates, authorizes, applies, and idempotently replays one atomic command", async () => {

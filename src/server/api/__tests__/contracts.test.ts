@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { sha256Canonical } from "../../../core/canonical";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { createInitialGameState } from "../../../core/game-state";
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
@@ -12,6 +13,8 @@ import {
 } from "../contracts";
 import { generateOpenApiDocument } from "../openapi";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   createRunV2RequestSchema,
   gameCommandV2PublicSchema,
   migrateRunV2ResponseSchema,
@@ -302,6 +305,7 @@ describe("generated OpenAPI", () => {
       "/api/v1/runs/{runId}/commands",
       "/api/v2/runs",
       "/api/v2/runs/{runId}",
+      "/api/v2/runs/{runId}/advance",
       "/api/v2/runs/{runId}/ai/explanation",
       "/api/v2/runs/{runId}/ai/debrief",
       "/api/v2/runs/{runId}/ai/world-event",
@@ -318,6 +322,9 @@ describe("generated OpenAPI", () => {
     );
     expect(
       document.paths?.["/api/v2/runs/{runId}/commands"]?.post?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/advance"]?.post?.security,
     ).toEqual([{ runBearer: [] }]);
     expect(
       document.paths?.["/api/v2/runs/{runId}/checkpoint"]?.get?.security,
@@ -340,5 +347,153 @@ describe("generated OpenAPI", () => {
         document.paths?.["/api/v1/runs/{runId}/commands"]?.post?.responses ?? {},
       ),
     ).toEqual(["410"]);
+  });
+});
+
+describe("time advance v2 contracts", () => {
+  const request = {
+    schemaVersion: 2 as const,
+    id: "advance.contract.1",
+    expectedRevision: 3,
+    effectiveMonth: "2026-10",
+    maxMonths: 12,
+    mode: { kind: "months" as const, months: 12 },
+  };
+
+  it("accepts every public mode and rejects unknown fields", () => {
+    const modes = [
+      { kind: "one_month" },
+      { kind: "months", months: 12 },
+      { kind: "until_event" },
+      { kind: "until_checkpoint", intervalMonths: 6 },
+      { kind: "until_decision" },
+      { kind: "until_end" },
+      { kind: "resume", resolvedDecisionId: "decision.accepted", months: 3 },
+      { kind: "stop" },
+    ] as const;
+
+    for (const mode of modes) {
+      expect(advanceTimeV2RequestSchema.parse({ ...request, mode }).mode).toEqual(
+        mode,
+      );
+    }
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({ ...request, taxEvidence: {} }),
+    ).toThrow();
+  });
+
+  it("enforces the 1..480 bound and mode-specific duration bounds", () => {
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({ ...request, maxMonths: 0 }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({ ...request, maxMonths: 481 }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({
+        ...request,
+        maxMonths: 6,
+        mode: { kind: "months", months: 7 },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({
+        ...request,
+        mode: { kind: "until_checkpoint", intervalMonths: 13 },
+      }),
+    ).toThrow();
+  });
+
+  it("strictly validates pending event, pending decision, and end-condition payloads", () => {
+    const state = migrateGameStateV1ToV2(v1State());
+    const base = {
+      state,
+      stateChecksum: sha256Canonical(state),
+      idempotentReplay: false,
+      monthsAdvanced: 0,
+      pauseReason: { kind: "explicit_user_stop" },
+      pendingEvent: null,
+      pendingDecision: null,
+      checkpointInput: null,
+      endCondition: null,
+      uiChanges: {
+        kind: "time_advance_summary_v2",
+        fromMonth: state.currentMonth,
+        toMonth: state.currentMonth,
+        monthsAdvanced: 0,
+        pauseKind: "explicit_user_stop",
+        cashChangeCents: 0,
+        netWorthChangeCents: 0,
+        totalGrossIncomeCents: 0,
+        totalTaxCents: 0,
+        totalAfterTaxCashIncomeCents: 0,
+        totalRequiredCashCents: 0,
+        totalMarketValueChangeCents: 0,
+      },
+    };
+    const pendingEvent = {
+      eventId: "event.contract",
+      templateId: "template.contract",
+      templateVersion: 1,
+      tier: "medium",
+      targetedWeakness: "low_emergency_fund",
+      parameters: { costCents: 20_000 },
+      choiceIds: ["choice.pay"],
+      scheduledMonth: "2026-07",
+      expiresMonth: "2026-08",
+    };
+    const pendingDecision = {
+      kind: "life_milestone",
+      milestones: [
+        {
+          version: "life-milestone-v1",
+          milestoneId: "milestone.contract",
+          kind: "move",
+          label: "Move home",
+          targetMonth: "2026-07",
+          estimatedCostCents: 100_000,
+          postponementCount: 0,
+          createdMonth: "2026-01",
+        },
+      ],
+    };
+    const endCondition = {
+      kind: "retirement_age",
+      grade: "B",
+      reachedMonth: "2026-07",
+      reasonCode: "legacy_retirement",
+    };
+
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingEvent,
+        pendingDecision,
+        endCondition,
+      }),
+    ).toMatchObject({ pendingEvent, pendingDecision, endCondition });
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingEvent: { ...pendingEvent, inventedSeverity: 99 },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingDecision: {
+          ...pendingDecision,
+          milestones: [
+            { ...pendingDecision.milestones[0], inventedCost: 500_000 },
+          ],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: { ...endCondition, inventedGradeReason: "AI says so" },
+      }),
+    ).toThrow();
   });
 });
