@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../../../core/canonical";
+import { buildCausalHistoryV1, causalNodeV1 } from "../../../core/causal-history-v1";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { DetailedFinanceCommand } from "../../../core/detailed-actions-v2";
+import type { DeterministicGameOutcomeV1 } from "../../../core/game-state";
 import { queueScheduledDeclarativePersonalEventV2 } from "../../../core/event-lifecycle-v2";
 import {
   DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
@@ -15,10 +17,14 @@ import type { ProcessMonthV2Command } from "../../../core/monthly-turn-v2";
 import { FINANCIAL_KERNEL_V2_VERSION } from "../../../core/monthly-turn-v2";
 import type { RecordLearningInteractionV2Command } from "../../../core/learning-interaction-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
+import {
+  OUTCOME_POLICY_V1_VERSION,
+} from "../../../core/outcome-policy-v2";
 import type { SetRecurringStrategyCommand } from "../../../core/recurring-strategy-v2";
 import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../../core/runtime-balance-policy-v2";
 import { resolveScenarioCatalogSelection } from "../../../core/scenario-catalog";
 import { SCENARIO_DIRECTOR_V2_VERSION } from "../../../core/scenario-director-policy-v2";
+import { buildTeachingDebriefV2 } from "../../../core/teaching-debrief-v2";
 import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
@@ -432,6 +438,73 @@ describe("persisted replay -> causal history integration", () => {
         ]),
       }),
     ]));
+    const outcome: DeterministicGameOutcomeV1 = {
+      outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+      kind: "retirement_age",
+      grade: "C",
+      reachedMonth: closing.currentMonth,
+      reasonCode: "configured_retirement_age_reached",
+      reasonCodes: [
+        "configured_retirement_age_reached",
+        "financial_independence_target_not_reached",
+      ],
+      financialIndependence: {
+        goalSource: "current_lifestyle_default",
+        targetCents: moneyCents(90_000_000),
+        investableAssetsCents: moneyCents(1_000_000),
+        progressPpm: ratePpm(11_111),
+      },
+      displayedNetWorthCents: moneyCents(3_000_000),
+      automaticLiquidSolvency: {
+        requiredCashCents: moneyCents(100_000),
+        automaticLiquidityCents: moneyCents(2_000_000),
+        residualShortfallCents: moneyCents(0),
+        isSolvent: true,
+      },
+      retirementReadiness: {
+        retirementAgeYears: 65,
+        currentAgeYears: 65,
+        reachedRetirementAge: true,
+        gradeIfRetiredNow: "C",
+      },
+    };
+    const outcomeNode = causalNodeV1({
+      kind: "end_condition",
+      primarySourceEvidenceId: "outcome:2:retirement_age",
+      month: closing.currentMonth,
+      resultingRevision: closing.revision,
+      sourceEvidenceIds: ["outcome:2:retirement_age"],
+      lessonTags: ["retirement_readiness"],
+      affectedValues: [],
+    });
+    const debriefHistory = buildCausalHistoryV1({
+      runId: history.runId,
+      fromRevision: history.fromRevision,
+      toRevision: history.toRevision,
+      sourceStateChecksum: history.sourceStateChecksum,
+      nodes: [...history.nodes, outcomeNode],
+      links: history.edges.map((edge) => ({
+        parentNodeId: edge.parentNodeId,
+        childNodeId: edge.childNodeId,
+        ruleCode: edge.ruleCode,
+        sourceEvidenceIds: edge.sourceEvidenceIds,
+      })),
+      turningPoints: history.turningPoints,
+      coverage: history.coverage,
+    });
+    const teachingDebrief = buildTeachingDebriefV2({
+      outcome,
+      outcomeStateChecksum: sha256Canonical(closing),
+      causalHistory: debriefHistory,
+      counterfactuals: [result],
+    });
+    expect(teachingDebrief.counterfactualStatus.status).toBe("verified_results");
+    expect(teachingDebrief.counterfactuals[0]).toMatchObject({
+      resultChecksum: result.resultChecksum,
+      sourceCommandId: strategy.id,
+      comparedMonths: 1,
+      difference: result.difference,
+    });
     expect(() =>
       deriveCausalHistoryFromReplayV1({
         anchor,

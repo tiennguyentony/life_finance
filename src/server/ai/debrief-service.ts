@@ -1,4 +1,5 @@
 import type { GameStateV2 } from "../../core/game-state-v2";
+import { sha256Canonical } from "../../core/canonical";
 import { lifeMilestoneState } from "../../core/life-milestones-v2";
 import type { V2Repository } from "../api/v2/repository-port";
 import type { AiRoleClient } from "./client";
@@ -63,6 +64,30 @@ function fallback(state: GameStateV2, requestDecisions: TeacherRequest["decision
   };
 }
 
+function groundedDebrief(
+  candidate: TeacherResponse,
+  template: TeacherResponse,
+  evidenceIds: ReadonlySet<string>,
+): TeacherResponse | null {
+  if (
+    candidate.grade !== template.grade ||
+    candidate.title !== template.title ||
+    candidate.summary !== template.summary ||
+    sha256Canonical(candidate.nextSteps) !== sha256Canonical(template.nextSteps) ||
+    candidate.decisiveMoments.length !== template.decisiveMoments.length
+  ) return null;
+  for (const [index, moment] of candidate.decisiveMoments.entries()) {
+    const trusted = template.decisiveMoments[index]!;
+    if (
+      moment.decisionId !== trusted.decisionId ||
+      moment.lesson !== trusted.lesson ||
+      new Set(moment.citedEvidenceIds).size !== moment.citedEvidenceIds.length ||
+      moment.citedEvidenceIds.some((id) => !evidenceIds.has(id))
+    ) return null;
+  }
+  return candidate;
+}
+
 export class AiDebriefService {
   constructor(
     private readonly repository: V2Repository,
@@ -77,10 +102,15 @@ export class AiDebriefService {
     const evidence = [...contextEvidence(context)];
     const requestDecisions = decisions(state, evidence.map(({ id }) => id));
     let source: AiDebriefApiResponse["source"] = "deterministic_fallback";
-    let debrief = fallback(state, requestDecisions, evidence.map(({ id }) => id));
+    const deterministicDebrief = fallback(
+      state,
+      requestDecisions,
+      evidence.map(({ id }) => id),
+    );
+    let debrief = deterministicDebrief;
     try {
       const client = this.clientFactory(runId);
-      debrief = await client.generate<"teacher">({
+      const candidate = await client.generate<"teacher">({
         contractVersion: AI_CONTRACT_VERSION,
         privacyNoticeVersion: request.privacyNoticeVersion,
         dataUseAccepted: request.dataUseAccepted,
@@ -93,7 +123,15 @@ export class AiDebriefService {
         evidence,
         decisions: requestDecisions,
       });
-      source = client.responseSource?.() ?? "openai";
+      const validated = groundedDebrief(
+        candidate,
+        deterministicDebrief,
+        new Set(evidence.map(({ id }) => id)),
+      );
+      if (validated) {
+        debrief = validated;
+        source = client.responseSource?.() ?? "openai";
+      }
     } catch {
       // Preserve the deterministic grade and evidence when AI is unavailable.
     }
