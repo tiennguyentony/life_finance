@@ -16,6 +16,7 @@ import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation"
 import { validateFinancialGoal } from "./financial-goals-v2";
 import { validateLifeMilestoneState } from "./life-milestones-v2";
 import { validateAiLearningMemory } from "./ai-learning-memory-v2";
+import { validateRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
 
 export class InvalidGameStateV2Error extends Error {
   readonly violations: readonly StateInvariantViolation[];
@@ -79,6 +80,20 @@ export function validateGameStateV2(
   state: GameStateV2,
 ): readonly StateInvariantViolation[] {
   const violations: StateInvariantViolation[] = [];
+
+  if (state.gameplay.runtimeBalance !== undefined) {
+    violations.push(
+      ...validateRuntimeBalanceStateV1(state.gameplay.runtimeBalance).map(
+        (runtimeViolation) => ({
+          ...runtimeViolation,
+          path:
+            runtimeViolation.path.length === 0
+              ? "gameplay.runtimeBalance"
+              : `gameplay.runtimeBalance.${runtimeViolation.path}`,
+        }),
+      ),
+    );
+  }
 
   if (state.gameplay.financialGoal !== undefined) {
     try {
