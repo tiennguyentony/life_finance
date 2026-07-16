@@ -11,6 +11,10 @@ import {
   type ResolvedCashFlowV2,
 } from "../financial-kernel-v2";
 import { projectFinancialGoal } from "../financial-goals-v2";
+import {
+  CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  LEGACY_EXPOSURE_EVENT_SCHEDULER,
+} from "../event-scheduler-v2";
 import { calculateInvestableAssets, calculateNetWorth } from "../game-state";
 import {
   finalizeGameStateV2,
@@ -25,6 +29,7 @@ import { activeMacroReturnModifiersV2 } from "../macro-story-v2";
 import * as monthlyTurnV2Module from "../monthly-turn-v2";
 import {
   financialKernelVersionForCommandV2,
+  eventSchedulerVersionForCommandV2,
   outcomePolicyVersionForCommandV2,
   processMonthlyTurnV2,
   type ProcessMonthV2Command,
@@ -298,6 +303,43 @@ describe("atomic v2 monthly turn", () => {
       ),
     ).toThrow(
       expect.objectContaining({ code: "UNSUPPORTED_OUTCOME_POLICY_VERSION" }),
+    );
+  });
+
+  it("defaults historical commands to exposure scheduling and accepts causal scheduling", () => {
+    const initial = configuredState();
+    expect(eventSchedulerVersionForCommandV2(command(initial))).toBe(
+      LEGACY_EXPOSURE_EVENT_SCHEDULER,
+    );
+    expect(
+      eventSchedulerVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+        }),
+      ),
+    ).toBe(CAUSAL_EVENT_SCHEDULER_V1_VERSION);
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "invented-scheduler",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_EVENT_SCHEDULER_VERSION" }),
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "legacy-4.1.0",
+          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_EVENT_SCHEDULER_VERSION" }),
     );
   });
 

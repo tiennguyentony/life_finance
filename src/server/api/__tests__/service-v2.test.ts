@@ -718,6 +718,7 @@ describe("monthly record response compatibility", () => {
         throw new Error("expected a monthly command");
       }
       expect(command.payload.outcomePolicyVersion).toBe("1.0.0");
+      expect(command.payload.eventSchedulerVersion).toBe("causal-hazard-v1");
       const applied = processMonthlyTurnV2(state, command);
       state = applied.state;
       return {

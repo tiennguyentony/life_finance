@@ -11,7 +11,7 @@ import type { LifeMilestoneStateV1 } from "./life-milestones-v2";
 import type { AiLearningMemoryV1 } from "./ai-learning-memory-v2";
 import type {
   EventTier,
-  EventWeakness,
+  EventTargetV2,
   MarketAssetClass,
 } from "./events";
 
@@ -114,7 +114,7 @@ export type PendingEventV2 = Readonly<{
   templateId: string;
   templateVersion: number;
   tier: Exclude<EventTier, "ambient">;
-  targetedWeakness: EventWeakness;
+  targetedWeakness: EventTargetV2;
   parameters: Readonly<Record<string, number>>;
   choiceIds: readonly string[];
   scheduledMonth: SimulationMonth;
@@ -135,7 +135,7 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   templateId: string;
   templateVersion: number;
   tier: Exclude<EventTier, "ambient">;
-  targetedWeakness: EventWeakness;
+  targetedWeakness: EventTargetV2;
   parameters: Readonly<Record<string, number>>;
   choiceId: string;
   availableChoiceIds: readonly string[];
