@@ -233,16 +233,30 @@ describe("v2 API contracts", () => {
         wellbeing: { burnoutPpm: 0, happinessPpm: 1_000_000 },
       }).schemaVersion,
     ).toBe(2);
-    expect(() =>
-      gameCommandV2PublicSchema.parse({
-        schemaVersion: 2,
-        id: "cmd.public-v2.month",
-        expectedRevision: 0,
-        effectiveMonth: "2026-07",
-        type: "process_month",
-        payload: { taxEvidence: { totalTaxCents: 0 } },
-      }),
-    ).toThrow();
+    for (const payload of [
+      { taxEvidence: { totalTaxCents: 0 } },
+      {
+        resolvedCashFlows: [
+          {
+            id: "flow.client-injected",
+            kind: "other_income",
+            amountCents: 100_000,
+            sourceSystem: "client",
+          },
+        ],
+      },
+    ]) {
+      expect(() =>
+        gameCommandV2PublicSchema.parse({
+          schemaVersion: 2,
+          id: "cmd.public-v2.month",
+          expectedRevision: 0,
+          effectiveMonth: "2026-07",
+          type: "process_month",
+          payload,
+        }),
+      ).toThrow();
+    }
     expect(
       gameCommandV2PublicSchema.parse({
         schemaVersion: 2,

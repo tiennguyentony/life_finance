@@ -10,7 +10,9 @@ import {
   identifierSchema,
   marketRegimeSchema,
   nonNegativeCentsSchema,
+  ratePpmSchema,
   runIdPathSchema,
+  signedCentsSchema,
   simulationMonthSchema,
 } from "./contracts";
 
@@ -299,89 +301,201 @@ export const gameCommandV2PublicSchema = z.discriminatedUnion("type", [
   processMonthV2PublicCommandSchema,
 ]);
 
-const monthlyRecordSummarySchema = z
+const monthlyMarketEvidenceSchema = z
+  .object({
+    modelVersion: z.literal("regime-v1"),
+    regime: marketRegimeSchema,
+    nextRegime: marketRegimeSchema,
+    equityReturnPpm: ratePpmSchema,
+    bondReturnPpm: ratePpmSchema,
+    cashReturnPpm: ratePpmSchema,
+    housingReturnPpm: ratePpmSchema,
+    inflationPpm: ratePpmSchema,
+    laborDemandChangePpm: ratePpmSchema,
+    appliedReturnModifiersPpm: z
+      .object({
+        equity: ratePpmSchema,
+        bonds: ratePpmSchema,
+        cash: ratePpmSchema,
+        housing: ratePpmSchema,
+      })
+      .strict(),
+    shocks: z
+      .object({
+        macro: z.int().min(-2).max(2),
+        equityIdiosyncratic: z.int().min(-2).max(2),
+        bondIdiosyncratic: z.int().min(-2).max(2),
+        housingIdiosyncratic: z.int().min(-2).max(2),
+      })
+      .strict(),
+  })
+  .strict();
+
+const debtServiceLineSchema = z
+  .object({
+    debtId: identifierSchema,
+    openingPrincipalCents: nonNegativeCentsSchema,
+    interestCents: nonNegativeCentsSchema,
+    scheduledPaymentCents: nonNegativeCentsSchema,
+    principalPaidCents: nonNegativeCentsSchema,
+    closingPrincipalCents: nonNegativeCentsSchema,
+    closingMinimumPaymentCents: nonNegativeCentsSchema,
+    closingRemainingTermMonths: z.int().min(0).max(1_200),
+  })
+  .strict();
+
+const debtServiceEvidenceSchema = z
+  .object({
+    lines: z.array(debtServiceLineSchema).max(32),
+    totalInterestCents: nonNegativeCentsSchema,
+    totalScheduledPaymentCents: nonNegativeCentsSchema,
+  })
+  .strict();
+
+const taxableBucketSchema = z.enum([
+  "taxableLegacyUnclassifiedCents",
+  "taxableSpeculativeCents",
+  "taxableSectorCents",
+  "taxableBroadIndexCents",
+]);
+
+const taxableLiquidationSchema = z
+  .object({
+    bucket: taxableBucketSchema,
+    grossCents: nonNegativeCentsSchema,
+    costCents: nonNegativeCentsSchema,
+    netCents: nonNegativeCentsSchema,
+  })
+  .strict();
+
+const fundingPlanSchema = z
+  .object({
+    requiredCashCents: nonNegativeCentsSchema,
+    cashAvailableCents: nonNegativeCentsSchema,
+    cashUsedCents: nonNegativeCentsSchema,
+    taxableLiquidations: z.array(taxableLiquidationSchema).max(4),
+    grossLiquidationCents: nonNegativeCentsSchema,
+    liquidationCostCents: nonNegativeCentsSchema,
+    netLiquidationProceedsCents: nonNegativeCentsSchema,
+    remainingCreditCents: nonNegativeCentsSchema,
+    creditUsedCents: nonNegativeCentsSchema,
+    residualShortfallCents: nonNegativeCentsSchema,
+    fullyFunded: z.boolean(),
+  })
+  .strict();
+
+const fundingRecordSchema = z
+  .object({
+    grossLiquidationCents: nonNegativeCentsSchema,
+    liquidationCostCents: nonNegativeCentsSchema,
+    netLiquidationProceedsCents: nonNegativeCentsSchema,
+    creditDrawnCents: nonNegativeCentsSchema,
+    liquidatedBuckets: z
+      .object({
+        taxableLegacyUnclassifiedCents: nonNegativeCentsSchema,
+        taxableSpeculativeCents: nonNegativeCentsSchema,
+        taxableSectorCents: nonNegativeCentsSchema,
+        taxableBroadIndexCents: nonNegativeCentsSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const recurringAllocationEvidenceSchema = z
+  .object({
+    grossSalaryCents: nonNegativeCentsSchema,
+    afterTaxDiscretionaryCents: nonNegativeCentsSchema,
+    preTax: z
+      .object({
+        employee401kCents: nonNegativeCentsSchema,
+        employer401kMatchCents: nonNegativeCentsSchema,
+        hsaCents: nonNegativeCentsSchema,
+      })
+      .strict(),
+    afterTax: z
+      .object({
+        broadIndexCents: nonNegativeCentsSchema,
+        sectorCents: nonNegativeCentsSchema,
+        speculativeCents: nonNegativeCentsSchema,
+        iraCents: nonNegativeCentsSchema,
+        extraDebtPayments: z
+          .array(
+            z
+              .object({
+                debtId: identifierSchema,
+                amountCents: nonNegativeCentsSchema,
+              })
+              .strict(),
+          )
+          .max(32),
+      })
+      .strict(),
+    unallocatedAfterTaxCents: nonNegativeCentsSchema,
+  })
+  .strict();
+
+const outcomeEvidenceSchema = z
+  .object({
+    kind: z.enum(["financial_independence", "retirement_age", "bankruptcy"]),
+    grade: z.enum(["S", "A", "B", "C", "D", "E", "F"]),
+    reachedMonth: simulationMonthSchema,
+    reasonCode: identifierSchema,
+  })
+  .strict();
+
+const legacyMonthlyRecordSummarySchema = z
   .object({
     processedMonth: simulationMonthSchema,
     nextMonth: simulationMonthSchema,
     taxTraceId: identifierSchema,
     grossIncomeCents: nonNegativeCentsSchema,
-    totalTaxCents: z.int(),
+    totalTaxCents: signedCentsSchema,
     afterTaxCashIncomeCents: nonNegativeCentsSchema,
-    market: z
-      .object({
-        modelVersion: z.literal("regime-v1"),
-        regime: marketRegimeSchema,
-        nextRegime: marketRegimeSchema,
-        equityReturnPpm: z.int(),
-        bondReturnPpm: z.int(),
-        cashReturnPpm: z.int(),
-        housingReturnPpm: z.int(),
-        inflationPpm: z.int(),
-        laborDemandChangePpm: z.int(),
-      })
-      .passthrough(),
-    marketValueChangeCents: z.int(),
-    annualInflationIncreaseCents: z.int(),
+    market: monthlyMarketEvidenceSchema,
+    marketValueChangeCents: signedCentsSchema,
+    annualInflationIncreaseCents: signedCentsSchema,
     insurancePlayerCostCents: nonNegativeCentsSchema,
     requiredCashCents: nonNegativeCentsSchema,
     nonDebtObligationsPaidCents: nonNegativeCentsSchema,
-    debtService: z
-      .object({
-        totalInterestCents: nonNegativeCentsSchema,
-        totalScheduledPaymentCents: nonNegativeCentsSchema,
-      })
-      .passthrough(),
-    funding: z
-      .object({
-        grossLiquidationCents: nonNegativeCentsSchema,
-        liquidationCostCents: nonNegativeCentsSchema,
-        netLiquidationProceedsCents: nonNegativeCentsSchema,
-        creditDrawnCents: nonNegativeCentsSchema,
-      })
-      .passthrough()
-      .nullable(),
-    recurringAllocations: z
-      .object({
-        grossSalaryCents: nonNegativeCentsSchema,
-        afterTaxDiscretionaryCents: nonNegativeCentsSchema,
-        preTax: z
-          .object({
-            employee401kCents: nonNegativeCentsSchema,
-            employer401kMatchCents: nonNegativeCentsSchema,
-            hsaCents: nonNegativeCentsSchema,
-          })
-          .strict(),
-        afterTax: z
-          .object({
-            broadIndexCents: nonNegativeCentsSchema,
-            sectorCents: nonNegativeCentsSchema,
-            speculativeCents: nonNegativeCentsSchema,
-            iraCents: nonNegativeCentsSchema,
-            extraDebtPayments: z.array(
-              z
-                .object({
-                  debtId: identifierSchema,
-                  amountCents: nonNegativeCentsSchema,
-                })
-                .strict(),
-            ),
-          })
-          .strict(),
-        unallocatedAfterTaxCents: nonNegativeCentsSchema,
-      })
-      .strict()
-      .nullable(),
-    outcome: z
-      .object({
-        kind: z.enum(["financial_independence", "retirement_age", "bankruptcy"]),
-        grade: z.enum(["S", "A", "B", "C", "D", "E", "F"]),
-        reachedMonth: simulationMonthSchema,
-        reasonCode: identifierSchema,
-      })
-      .strict()
-      .nullable(),
+    debtService: debtServiceEvidenceSchema,
+    funding: fundingRecordSchema.nullable(),
+    recurringAllocations: recurringAllocationEvidenceSchema.nullable(),
+    outcome: outcomeEvidenceSchema.nullable(),
   })
   .strict();
+
+const financialShortfallSchema = z
+  .object({
+    requiredCashCents: nonNegativeCentsSchema,
+    residualShortfallCents: nonNegativeCentsSchema,
+    fundingPlan: fundingPlanSchema,
+    netWorthCents: signedCentsSchema,
+    automaticLiquidityCents: nonNegativeCentsSchema,
+  })
+  .strict();
+
+const financialKernelMonthlyRecordSummarySchema =
+  legacyMonthlyRecordSummarySchema
+    .extend({
+      financialKernelVersion: z.literal("2.0.0"),
+      openingNetWorthCents: signedCentsSchema,
+      closingNetWorthCents: signedCentsSchema,
+      openingAutomaticLiquidityCents: nonNegativeCentsSchema,
+      closingAutomaticLiquidityCents: nonNegativeCentsSchema,
+      resolvedIncomeCents: nonNegativeCentsSchema,
+      resolvedExpenseCents: nonNegativeCentsSchema,
+      monthlyObligationInflationIncreaseCents: signedCentsSchema,
+      cumulativePriceIndexPpm: z.int().min(1).max(Number.MAX_SAFE_INTEGER),
+      baseNonDebtObligationsCents: nonNegativeCentsSchema,
+      fundingPlan: fundingPlanSchema,
+      shortfall: financialShortfallSchema.nullable(),
+    })
+    .strict();
+
+const monthlyRecordSummarySchema = z.union([
+  financialKernelMonthlyRecordSummarySchema,
+  legacyMonthlyRecordSummarySchema,
+]);
 
 export const getRunV2ResponseSchema = z
   .object({ state: gameStateV2WireSchema, stateChecksum: checksumSchema })
