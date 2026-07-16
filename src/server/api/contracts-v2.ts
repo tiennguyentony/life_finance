@@ -387,6 +387,10 @@ export const getRunV2ResponseSchema = z
   .object({ state: gameStateV2WireSchema, stateChecksum: checksumSchema })
   .strict();
 
+export const migrateRunV2ResponseSchema = getRunV2ResponseSchema
+  .extend({ idempotentReplay: z.boolean() })
+  .strict();
+
 export const createRunV2ResponseSchema = getRunV2ResponseSchema
   .extend({
     runId: z.uuid(),
@@ -502,5 +506,6 @@ export type CreateRunV2Request = z.infer<typeof createRunV2RequestSchema>;
 export type CreateRunV2Response = z.infer<typeof createRunV2ResponseSchema>;
 export type GameCommandV2Public = z.infer<typeof gameCommandV2PublicSchema>;
 export type GetRunV2Response = z.infer<typeof getRunV2ResponseSchema>;
+export type MigrateRunV2Response = z.infer<typeof migrateRunV2ResponseSchema>;
 export type CommandV2Response = z.infer<typeof commandV2ResponseSchema>;
 export type CheckpointV2Response = z.infer<typeof checkpointV2ResponseSchema>;

@@ -8,6 +8,7 @@ export type V2Repository = Pick<
   | "loadMonthlyTaxEvidenceForCommand"
   | "loadMonthlyTaxEvidenceForContext"
   | "loadCheckpointEvidenceV2"
+  | "migrateRunStateToV2"
 >;
 
 export type AuthorizedV2State = Awaited<

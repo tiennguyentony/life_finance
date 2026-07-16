@@ -11,10 +11,6 @@ import { RunRepositoryError } from "../db/run-repository";
 import { TaxServiceError } from "../tax/client";
 import {
   apiErrorSchema,
-  commandResponseSchema,
-  createRunRequestSchema,
-  createRunResponseSchema,
-  gameCommandSchema,
   getRunResponseSchema,
   runIdPathSchema,
 } from "./contracts";
@@ -27,6 +23,7 @@ import {
   createRunV2ResponseSchema,
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
+  migrateRunV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
 import type { RunApiServiceV2 } from "./service-v2";
@@ -76,6 +73,18 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
+export function handleDeprecatedLegacyWrite(): Response {
+  return jsonResponse(
+    apiErrorSchema.parse({
+      error: {
+        code: "STATE_SCHEMA_DEPRECATED",
+        message: "Legacy state is read-only; create or migrate a v2 run.",
+      },
+    }),
+    410,
+  );
+}
+
 function errorResponse(error: unknown): Response {
   let status = 500;
   let code = "INTERNAL_ERROR";
@@ -106,8 +115,10 @@ function errorResponse(error: unknown): Response {
     message = "Run was not found or the credential is invalid";
   } else if (error instanceof RunRepositoryError) {
     code = error.code;
-    if (error.code === "NOT_FOUND_OR_UNAUTHORIZED") status = 401;
-    else if (
+    if (error.code === "NOT_FOUND_OR_UNAUTHORIZED") {
+      status = 401;
+      message = "Run was not found or the credential is invalid";
+    } else if (
       error.code === "IDEMPOTENCY_MISMATCH" ||
       error.code === "OPTIMISTIC_CONFLICT"
     ) {
@@ -238,18 +249,10 @@ export async function handleAiDebriefV2(
 }
 
 export async function handleCreateRun(
-  request: Request,
-  service: RunApiService,
+  _request: Request,
+  _service: RunApiService,
 ): Promise<Response> {
-  try {
-    const input = createRunRequestSchema.parse(await readJson(request));
-    return jsonResponse(
-      createRunResponseSchema.parse(await service.createRun(input)),
-      201,
-    );
-  } catch (error) {
-    return errorResponse(error);
-  }
+  return handleDeprecatedLegacyWrite();
 }
 
 export async function handleGetRun(
@@ -270,23 +273,11 @@ export async function handleGetRun(
 }
 
 export async function handleSubmitCommand(
-  request: Request,
-  runId: string,
-  service: RunApiService,
+  _request: Request,
+  _runId: string,
+  _service: RunApiService,
 ): Promise<Response> {
-  try {
-    const path = runIdPathSchema.parse({ runId });
-    const secret = extractRunSecret(request.headers.get("authorization"));
-    const command = gameCommandSchema.parse(await readJson(request));
-    return jsonResponse(
-      commandResponseSchema.parse(
-        await service.submitCommand(path.runId, secret, command),
-      ),
-      200,
-    );
-  } catch (error) {
-    return errorResponse(error);
-  }
+  return handleDeprecatedLegacyWrite();
 }
 
 export async function handleCreateRunV2(
@@ -333,6 +324,25 @@ export async function handleSubmitCommandV2(
     return jsonResponse(
       commandV2ResponseSchema.parse(
         await service.submitCommand(path.runId, secret, command),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleMigrateRunV2(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    return jsonResponse(
+      migrateRunV2ResponseSchema.parse(
+        await service.migrateRun(path.runId, secret),
       ),
       200,
     );

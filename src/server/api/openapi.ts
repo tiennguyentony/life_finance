@@ -18,10 +18,6 @@ import {
 
 import {
   apiErrorSchema,
-  commandResponseSchema,
-  createRunRequestSchema,
-  createRunResponseSchema,
-  gameCommandSchema,
   getRunResponseSchema,
   runIdPathSchema,
 } from "./contracts";
@@ -33,6 +29,7 @@ import {
   createRunV2ResponseSchema,
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
+  migrateRunV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
 
@@ -61,6 +58,12 @@ const errorResponses = {
     description: "Internal persistence failure",
     content: { "application/json": { schema: apiErrorSchema } },
   },
+} as const;
+
+const legacyWriteDeprecatedResponse = {
+  description:
+    "Legacy state is read-only; create a v2 run or migrate an existing save.",
+  content: { "application/json": { schema: apiErrorSchema } },
 } as const;
 
 registry.registerPath({
@@ -134,6 +137,22 @@ registry.registerPath({
     400: errorResponses[400],
     401: errorResponses[401],
     500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/migrate",
+  operationId: "migrateRunV2",
+  summary: "Migrate an authenticated legacy save to authoritative schema v2",
+  security: [{ runBearer: [] }],
+  request: { params: runIdV2PathSchema },
+  responses: {
+    200: {
+      description: "Migrated state, or the identical result of an earlier migration",
+      content: { "application/json": { schema: migrateRunV2ResponseSchema } },
+    },
+    ...errorResponses,
   },
 });
 
@@ -233,17 +252,10 @@ registry.registerPath({
   method: "post",
   path: "/api/v1/runs",
   operationId: "createRun",
-  summary: "Create an anonymous financial simulation run",
-  request: {
-    body: { content: { "application/json": { schema: createRunRequestSchema } } },
-  },
+  summary: "Legacy schema-v1 creation is retired",
+  deprecated: true,
   responses: {
-    201: {
-      description: "Run created; the access secret is returned only here",
-      content: { "application/json": { schema: createRunResponseSchema } },
-    },
-    400: errorResponses[400],
-    500: errorResponses[500],
+    410: legacyWriteDeprecatedResponse,
   },
 });
 
@@ -269,18 +281,13 @@ registry.registerPath({
   method: "post",
   path: "/api/v1/runs/{runId}/commands",
   operationId: "submitCommand",
-  summary: "Submit one optimistic, idempotent game command",
-  security: [{ runBearer: [] }],
+  summary: "Legacy schema-v1 commands are retired",
+  deprecated: true,
   request: {
     params: runIdPathSchema,
-    body: { content: { "application/json": { schema: gameCommandSchema } } },
   },
   responses: {
-    200: {
-      description: "Command accepted or replayed idempotently",
-      content: { "application/json": { schema: commandResponseSchema } },
-    },
-    ...errorResponses,
+    410: legacyWriteDeprecatedResponse,
   },
 });
 

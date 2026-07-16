@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { createInitialGameState } from "../../../core/game-state";
+import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import {
   createRunRequestSchema,
   gameCommandSchema,
@@ -13,6 +14,7 @@ import { generateOpenApiDocument } from "../openapi";
 import {
   createRunV2RequestSchema,
   gameCommandV2PublicSchema,
+  migrateRunV2ResponseSchema,
 } from "../contracts-v2";
 
 const finances = {
@@ -28,6 +30,25 @@ const finances = {
   annualLivingCostCents: 60_000_00,
   requiredObligationsCents: 5_000_00,
 };
+
+function v1State() {
+  return createInitialGameState({
+    runId: "10000000-0000-4000-8000-000000000001",
+    startMonth: "2026-07",
+    randomSeed: "api",
+    player: {
+      playerId: "player_api",
+      birthMonth: "1990-01",
+      locationId: "US-CA",
+      careerTrackId: "engineer",
+      filingStatus: "single",
+    },
+    finances: Object.fromEntries(
+      Object.entries(finances).map(([key, value]) => [key, moneyCents(value)]),
+    ) as Parameters<typeof createInitialGameState>[0]["finances"],
+    wellbeing: { burnoutPpm: ratePpm(0), happinessPpm: ratePpm(1_000_000) },
+  });
+}
 
 describe("v1 API contracts", () => {
   it("accepts a complete initial-state request and rejects unknown nested fields", () => {
@@ -84,22 +105,7 @@ describe("v1 API contracts", () => {
   });
 
   it("parses actual engine state and a strict monthly event command", () => {
-    const state = createInitialGameState({
-      runId: "10000000-0000-4000-8000-000000000001",
-      startMonth: "2026-07",
-      randomSeed: "api",
-      player: {
-        playerId: "player_api",
-        birthMonth: "1990-01",
-        locationId: "US-CA",
-        careerTrackId: "engineer",
-        filingStatus: "single",
-      },
-      finances: Object.fromEntries(
-        Object.entries(finances).map(([key, value]) => [key, moneyCents(value)]),
-      ) as Parameters<typeof createInitialGameState>[0]["finances"],
-      wellbeing: { burnoutPpm: ratePpm(0), happinessPpm: ratePpm(1_000_000) },
-    });
+    const state = v1State();
     expect(gameStateSchema.parse(state)).toEqual(state);
     expect(
       internalGameCommandSchema.parse({
@@ -181,6 +187,18 @@ describe("v1 API contracts", () => {
 });
 
 describe("v2 API contracts", () => {
+  it("validates successful and idempotent migration responses", () => {
+    const state = migrateGameStateV1ToV2(v1State());
+
+    expect(
+      migrateRunV2ResponseSchema.parse({
+        state,
+        stateChecksum: "0".repeat(64),
+        idempotentReplay: true,
+      }).idempotentReplay,
+    ).toBe(true);
+  });
+
   it("accepts catalog-backed creation and rejects authoritative month inputs", () => {
     expect(
       createRunV2RequestSchema.parse({
@@ -275,6 +293,7 @@ describe("generated OpenAPI", () => {
       "/api/v2/runs/{runId}/ai/world-event",
       "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
+      "/api/v2/runs/{runId}/migrate",
     ].toSorted());
     expect(
       document.paths?.["/api/v1/runs/{runId}"]?.get?.security,
@@ -290,7 +309,22 @@ describe("generated OpenAPI", () => {
       document.paths?.["/api/v2/runs/{runId}/checkpoint"]?.get?.security,
     ).toEqual([{ runBearer: [] }]);
     expect(
+      document.paths?.["/api/v2/runs/{runId}/migrate"]?.post?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
       JSON.stringify(document.paths?.["/api/v2/runs/{runId}/commands"]),
     ).not.toContain("taxEvidence");
+    expect(document.paths?.["/api/v1/runs"]?.post?.deprecated).toBe(true);
+    expect(
+      Object.keys(document.paths?.["/api/v1/runs"]?.post?.responses ?? {}),
+    ).toEqual(["410"]);
+    expect(
+      document.paths?.["/api/v1/runs/{runId}/commands"]?.post?.deprecated,
+    ).toBe(true);
+    expect(
+      Object.keys(
+        document.paths?.["/api/v1/runs/{runId}/commands"]?.post?.responses ?? {},
+      ),
+    ).toEqual(["410"]);
   });
 });
