@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
 import { buildCheckpointEvidenceV2 } from "../checkpoint-v2";
@@ -11,7 +11,7 @@ import {
   type ResolvedCashFlowV2,
 } from "../financial-kernel-v2";
 import { projectFinancialGoal } from "../financial-goals-v2";
-import { validateGameStateV2 } from "../game-state-v2";
+import { validateGameStateV2, type GameStateV2 } from "../game-state-v2";
 import {
   marketSimulationState,
   simulateMarketMonth,
@@ -344,7 +344,59 @@ describe("atomic v2 monthly turn", () => {
     expect(left.state.gameplay.market.monthsInRegime).toBe(
       expected.nextState.monthsInRegime,
     );
+    expect(left.state.random).toEqual({
+      algorithm: "mulberry32-v1",
+      value: 2_209_615_456,
+    });
+    expect(sha256Canonical(left.state)).toBe(
+      "de37add20665a53f9de5f2f8080b22195a5a2a148d77c18e812603c9fd552200",
+    );
+    expect(sha256Canonical(left.record)).toBe(
+      "3f8499e6d045b3eba3c514b841471c91e0136317df1214c9c5381f73b81ecca6",
+    );
     expect(sha256Canonical(left.record)).toBe(sha256Canonical(right.record));
+  });
+
+  it("rejects invalid 2.0.0 tax evidence atomically", () => {
+    const initial = configuredState();
+    const valid = command(initial, { financialKernelVersion: "2.0.0" });
+    const invalid = command(initial, {
+      financialKernelVersion: "2.0.0",
+      taxEvidence: {
+        ...valid.payload.taxEvidence,
+        afterTaxCashIncomeCents: moneyCents(1),
+      },
+    });
+    const openingChecksum = sha256Canonical(initial);
+
+    expect(() => processMonthlyTurnV2(initial, invalid)).toThrow(
+      expect.objectContaining({
+        code: "TRANSITION_INVARIANT",
+        cause: expect.objectContaining({ code: "INVALID_TAX_EVIDENCE" }),
+      }),
+    );
+    expect(sha256Canonical(initial)).toBe(openingChecksum);
+    expect(initial).toMatchObject({
+      currentMonth: "2026-07",
+      revision: 1,
+      acceptedCommandIds: ["cmd.strategy.initial"],
+    });
+  });
+
+  it("does not freeze authoritative metadata owned by a mutable dispatcher input", () => {
+    const mutable = structuredClone(configuredState());
+    const openingChecksum = sha256Canonical(mutable);
+    const acceptedCommandIds = mutable.acceptedCommandIds;
+
+    processMonthlyTurnV2(
+      mutable,
+      command(mutable, { financialKernelVersion: "2.0.0" }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(Object.isFrozen(mutable)).toBe(false);
+    expect(Object.isFrozen(acceptedCommandIds)).toBe(false);
+    expect(sha256Canonical(mutable)).toBe(openingChecksum);
   });
 
   it("passes every resolved cash-flow kind through the command once with provenance", () => {
@@ -534,9 +586,12 @@ describe("atomic v2 monthly turn", () => {
       },
     });
 
-    expect(direct.state.revision).toBe(initial.revision);
-    expect(direct.state.acceptedCommandIds).toEqual(initial.acceptedCommandIds);
-    expect(direct.state.outcome).toBe(initial.outcome);
+    expect(direct.state).toMatchObject({
+      closingStateKind: "financial_closing_v2",
+    });
+    expect(direct.state).not.toHaveProperty("revision");
+    expect(direct.state).not.toHaveProperty("acceptedCommandIds");
+    expect(direct.state).not.toHaveProperty("outcome");
     expect(direct.state.gameplay.careerDevelopment).toEqual(
       initial.gameplay.careerDevelopment,
     );
@@ -606,7 +661,7 @@ describe("atomic v2 monthly turn", () => {
     ).toThrow(expect.objectContaining({ code: "RECORD_GAP" }));
   });
 
-  it("materializes a completed upskill before the following month's tax context", () => {
+  it("exposes due career evidence only as a transitional financial close", () => {
     let current = configuredState();
     current = reduceDetailedFinanceCommand(current, {
       schemaVersion: 2,
@@ -625,7 +680,7 @@ describe("atomic v2 monthly turn", () => {
         maximumChancePpm: 0,
       },
     };
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 2; index += 1) {
       current = processMonthlyTurnV2(
         current,
         command(
@@ -637,12 +692,75 @@ describe("atomic v2 monthly turn", () => {
       ).state;
     }
 
+    const closingCommand = command(
+      current,
+      { financialKernelVersion: "2.0.0" },
+      `cmd.upskill.month.${current.currentMonth}`,
+    );
+    const direct = directFinancialMonth(current, closingCommand);
+
+    expectTypeOf(direct.state).not.toMatchTypeOf<GameStateV2>();
+    expect(direct.state).toMatchObject({
+      closingStateKind: "financial_closing_v2",
+      currentMonth: "2026-10",
+    });
+    expect(direct.state).not.toHaveProperty("revision");
+    expect(direct.state).not.toHaveProperty("acceptedCommandIds");
+    expect(direct.state).not.toHaveProperty("outcome");
+    expect(direct.state.gameplay.careerDevelopment.pending).toHaveLength(1);
+
+    current = processMonthlyTurnV2(
+      current,
+      closingCommand,
+      noEvents,
+    ).state;
+
     expect(current.currentMonth).toBe("2026-10");
     expect(current.gameplay.careerDevelopment.pending).toEqual([]);
     expect(current.gameplay.careerDevelopment.history).toHaveLength(1);
     expect(current.gameplay.employment).toMatchObject({
       annualGrossSalaryCents: 12_300_000,
     });
+    expect(validateGameStateV2(current)).toEqual([]);
+  });
+
+  it("exposes an expiring macro story only as a transitional financial close", () => {
+    const initial = configuredState();
+    const first = processMonthlyTurnV2(
+      initial,
+      command(initial, { financialKernelVersion: "2.0.0" }),
+      {
+        eventSchedulingPolicy: NO_FOLLOW_UP_EVENTS.eventSchedulingPolicy,
+        macroStoryPolicy: {
+          version: "macro-story-v1",
+          monthlyChancePpm: 1_000_000,
+          minimumDurationMonths: 1,
+          maximumDurationMonths: 1,
+        },
+      },
+    );
+    const nextCommand = command(first.state, {
+      financialKernelVersion: "2.0.0",
+    });
+    const direct = directFinancialMonth(first.state, nextCommand);
+
+    expectTypeOf(direct.state).not.toMatchTypeOf<GameStateV2>();
+    expect(direct.state).toMatchObject({
+      closingStateKind: "financial_closing_v2",
+      currentMonth: "2026-09",
+    });
+    expect(direct.state).not.toHaveProperty("revision");
+    expect(direct.state).not.toHaveProperty("acceptedCommandIds");
+    expect(direct.state).not.toHaveProperty("outcome");
+    expect(direct.state.gameplay.eventLifecycle.macroStories).toHaveLength(1);
+
+    const wrapped = processMonthlyTurnV2(
+      first.state,
+      nextCommand,
+      NO_FOLLOW_UP_EVENTS,
+    );
+    expect(wrapped.state.gameplay.eventLifecycle.macroStories).toEqual([]);
+    expect(validateGameStateV2(wrapped.state)).toEqual([]);
   });
 
   it("applies a persisted macro story on the following monthly market draw", () => {
