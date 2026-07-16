@@ -1,6 +1,7 @@
 import { getEducationConcept } from "@/data/education-content";
 
 import { formatMoney } from "./play-model";
+import { useAnimatedNumber } from "./use-animated-number";
 
 export const SESSION_KEY = "life-finance.developer-run.v1";
 export const RECAP_SESSION_KEY = "life-finance.developer-recaps.v1";
@@ -117,11 +118,56 @@ export function formatRunway(ppm: number): string {
 
 export function formatOutflow(cents: number): string {
   if (cents === 0) return formatMoney(0);
-  return cents > 0 ? `−${formatMoney(cents)}` : `+${formatMoney(-cents)}`;
+  return cents > 0 ? `-${formatMoney(cents)}` : `+${formatMoney(-cents)}`;
+}
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+/** Humanizes engine months ("2027-03") for players ("Mar 2027"). */
+export function formatMonthLabel(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const name = monthNumber ? MONTH_NAMES[monthNumber - 1] : undefined;
+  if (!year || !name) return month;
+  return `${name} ${year}`;
+}
+
+export type MoneyTone = "positive" | "negative" | "neutral";
+
+export function signedMoney(cents: number): Readonly<{
+  tone: MoneyTone;
+  label: string;
+}> {
+  if (cents > 0) return { tone: "positive", label: `+${formatMoney(cents)}` };
+  if (cents < 0) return { tone: "negative", label: `-${formatMoney(-cents)}` };
+  return { tone: "neutral", label: formatMoney(0) };
+}
+
+/** Roving-focus keyboard order for the ARIA tabs pattern. */
+export function cycleTab<T extends string>(
+  tabs: readonly T[],
+  current: T,
+  key: string,
+): T {
+  const index = tabs.indexOf(current);
+  if (index === -1) return current;
+  if (key === "Home") return tabs[0]!;
+  if (key === "End") return tabs.at(-1)!;
+  const step = key === "ArrowRight" ? 1 : key === "ArrowLeft" ? -1 : 0;
+  if (step === 0) return current;
+  return tabs[(index + step + tabs.length) % tabs.length]!;
 }
 
 export function titleFromId(id: string): string {
   return id.split(".").at(-1)!.replaceAll("_", " ");
+}
+
+/** Live balances count toward their new value; printed records never do. */
+export function AnimatedMoney({ cents }: Readonly<{ cents: number }>) {
+  const animated = useAnimatedNumber(cents);
+  return <>{formatMoney(animated)}</>;
 }
 
 export function ConceptButton({
