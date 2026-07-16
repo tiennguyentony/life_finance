@@ -3,72 +3,67 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-import { EventCard } from "@/components/event-card";
+import { LoadingState } from "@/components/async-state";
 import { useGame } from "@/components/game-provider";
-import { Sprout } from "@/components/sprout";
 
-import { DashboardBoard } from "./dashboard-board";
+import { EventConsequenceView } from "./event-consequence";
+import { NewspaperEvent } from "./newspaper-event";
 
 export function EventScreen() {
   const router = useRouter();
-  const {
-    continueAfterEvent,
-    dashboard,
-    decisionId,
-    pendingEvent,
-    revealEvent,
-    status,
-  } = useGame();
-  const requested = useRef(false);
+  const { machine, operation, error, openEvent, chooseEventDecision, startReturn } = useGame();
+  const opened = useRef(false);
 
   useEffect(() => {
-    if (!decisionId) {
+    if (!machine) {
       router.replace("/game");
       return;
     }
-    if (!requested.current) {
-      requested.current = true;
-      void revealEvent();
+    if (machine.phase === "pending-event" && !opened.current) {
+      opened.current = true;
+      openEvent();
+      return;
     }
-  }, [decisionId, revealEvent, router]);
+    if (machine.phase === "active-simulation" || machine.phase === "fast-forwarding") {
+      router.replace("/game");
+    }
+  }, [machine, openEvent, router]);
 
-  function handleContinue() {
-    continueAfterEvent();
-    router.replace("/game");
+  if (!machine || machine.phase === "pending-event") {
+    return <LoadingState label="Unfolding The City Ledger..." />;
   }
 
-  if (!dashboard) {
-    return null;
+  if (machine.phase === "showing-consequence" && machine.consequence) {
+    return (
+      <div className="screen event-screen">
+        <EventConsequenceView
+          consequence={machine.consequence}
+          onContinue={() => {
+            startReturn();
+            router.push("/game");
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (machine.phase === "returning-to-simulation") {
+    return <LoadingState label="Returning to August..." />;
+  }
+
+  if (!machine.pendingEvent) {
+    return <LoadingState label="The newspaper missed delivery..." />;
   }
 
   return (
-    <div className="screen game-screen event-impact">
-      <DashboardBoard dashboard={dashboard} muted />
-      <div className="modal-backdrop event-backdrop">
-        <section aria-live="polite" aria-modal="true" className="modal-panel event-modal" role="dialog">
-          {!pendingEvent || status === "loading" ? (
-            <div className="event-loading" role="status">
-              <div className="impact-lines" aria-hidden="true" />
-              <Sprout emotion="shocked" size="large" />
-              <p>Life is happening...</p>
-              <span className="loading-line" />
-            </div>
-          ) : (
-            <>
-              <div className="event-sprout-column">
-                <span className={`severity severity-${pendingEvent.event.severity}`}>{pendingEvent.event.severity}</span>
-                <Sprout emotion={pendingEvent.event.emotion} size="large" />
-              </div>
-              <div className="event-content">
-                <EventCard result={pendingEvent} />
-                <button className="button button-primary button-large" onClick={handleContinue} type="button">
-                  Face the consequences
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      </div>
+    <div className="screen event-screen event-impact">
+      <NewspaperEvent
+        error={error}
+        event={machine.pendingEvent}
+        isResolving={operation === "resolving-event"}
+        onChoose={(decisionId) => void chooseEventDecision(decisionId)}
+        selectedDecisionId={machine.selectedDecisionId}
+      />
     </div>
   );
 }

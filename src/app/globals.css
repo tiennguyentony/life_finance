@@ -2,6 +2,7 @@
 @import "./styles/play.css";
 @import "./styles/site.css";
 @import "./styles/responsive.css";
+@import "./styles/game.css";
 
 :root {
   --paper: #f6f1da;
@@ -358,7 +359,6 @@ textarea:focus-visible {
   gap: 1rem;
 }
 
-.landing-login,
 .landing-start {
   display: inline-flex;
   min-width: 124px;
@@ -372,24 +372,17 @@ textarea:focus-visible {
   transition: box-shadow 150ms ease, transform 150ms ease;
 }
 
-.landing-login {
-  background: rgb(255 253 246 / 82%);
-  box-shadow: 0 8px 24px rgb(84 52 23 / 10%);
-}
-
 .landing-start {
   background: #171526;
   color: #fffaf0;
   box-shadow: 0 10px 24px rgb(23 21 38 / 24%);
 }
 
-.landing-login:hover,
 .landing-start:hover {
   box-shadow: 0 14px 28px rgb(23 21 38 / 20%);
   transform: translateY(-3px);
 }
 
-.landing-login:active,
 .landing-start:active {
   transform: translateY(2px) scale(0.98);
 }
@@ -1785,7 +1778,6 @@ textarea:focus-visible {
     font-size: 2rem;
   }
 
-  .landing-login,
   .landing-rail {
     display: none;
   }
@@ -1856,6 +1848,23 @@ textarea:focus-visible {
     position: static;
   }
 
+  .header-inner {
+    width: calc(100vw - 1.25rem);
+    max-width: none;
+    gap: 0.75rem;
+  }
+
+  .site-nav {
+    flex: none;
+    margin-right: 0.5rem;
+  }
+
+  .site-nav button,
+  .site-nav a {
+    padding-inline: 0.65rem;
+    font-size: 0.72rem;
+  }
+
   .brand small,
   .turn-note {
     display: none;
@@ -1919,6 +1928,7 @@ textarea:focus-visible {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-delay: 0ms !important;
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;

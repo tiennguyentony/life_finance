@@ -9,7 +9,7 @@ describe("player service", () => {
     expect(personas.map((persona) => persona.name)).toEqual([
       "Burnt-out Junior Developer",
       "Debt-free Educator",
-      "Big-city Survivor",
+      "Big City Survivor",
     ]);
   });
 
@@ -31,7 +31,8 @@ describe("player service", () => {
       location: "Seattle, WA",
       career: "Junior developer",
     });
-    expect(result.dashboard.playerName).toBe("Mina");
+    expect(result.scenario.player.name).toBe("Mina");
+    expect(result.scenario.scenarioId).toBe("big-city-survivor");
   });
 
   it("falls back to safe display values for incomplete profile input", async () => {
