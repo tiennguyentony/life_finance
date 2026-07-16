@@ -8,7 +8,9 @@ import { simulationMonth } from "../domain/month";
 import { projectFinancialGoal } from "../financial-goals-v2";
 import { validateGameStateV2 } from "../game-state-v2";
 import {
+  financialKernelVersionForCommandV2,
   processMonthlyTurnV2,
+  processMonthlyTurnV2Legacy410,
   type ProcessMonthV2Command,
 } from "../monthly-turn-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
@@ -126,6 +128,50 @@ function command(
 }
 
 describe("atomic v2 monthly turn", () => {
+  it("exposes the named legacy reducer and financial-kernel discriminator", () => {
+    const initial = configuredState();
+    const explicitLegacy = command(initial, {
+      financialKernelVersion: "legacy-4.1.0",
+    });
+
+    expect(processMonthlyTurnV2Legacy410).toBeTypeOf("function");
+    expect(financialKernelVersionForCommandV2(command())).toBe(
+      "legacy-4.1.0",
+    );
+    expect(financialKernelVersionForCommandV2(explicitLegacy)).toBe(
+      "legacy-4.1.0",
+    );
+    expect(
+      sha256Canonical(processMonthlyTurnV2(initial, explicitLegacy).state),
+    ).toBe(
+      sha256Canonical(
+        processMonthlyTurnV2Legacy410(initial, explicitLegacy).state,
+      ),
+    );
+    expect(
+      financialKernelVersionForCommandV2(
+        command(configuredState(), { financialKernelVersion: "2.0.0" }),
+      ),
+    ).toBe("2.0.0");
+  });
+
+  it.each(["2.0.0", "invented-kernel"])(
+    "rejects the unsupported %s financial kernel without legacy fallback",
+    (financialKernelVersion) => {
+      const initial = configuredState();
+      const versioned = command(initial, {
+        financialKernelVersion,
+      } as never);
+
+      expect(() => processMonthlyTurnV2(initial, versioned)).toThrow(
+        expect.objectContaining({
+          code: "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
+        }),
+      );
+      expect(initial.revision).toBe(1);
+    },
+  );
+
   it("composes market, payroll, obligations, debt, strategy, and outcome once", () => {
     const initial = configuredState();
     const result = processMonthlyTurnV2(initial, command(initial));

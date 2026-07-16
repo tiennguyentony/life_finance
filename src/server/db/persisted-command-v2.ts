@@ -352,6 +352,9 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
       type: z.literal("process_month_v2"),
       payload: z
         .object({
+          financialKernelVersion: z
+            .enum(["legacy-4.1.0", "2.0.0"])
+            .optional(),
           taxEvidence: taxEvidenceSchema,
           taxableLiquidationCostRatePpm: boundedRatePpmSchema,
           insuranceClaim: insuranceClaimSchema.optional(),
