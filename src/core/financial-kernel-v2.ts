@@ -137,8 +137,7 @@ export class FinancialKernelV2Error extends Error {
   readonly code:
     | "INVALID_INPUT"
     | "INVALID_MARKET_STEP"
-    | "INVALID_RESOLVED_CASH_FLOW"
-    | "SHORTFALL_NOT_IMPLEMENTED";
+    | "INVALID_RESOLVED_CASH_FLOW";
 
   constructor(code: FinancialKernelV2Error["code"], message: string) {
     super(message);
@@ -770,10 +769,62 @@ export function simulateFinancialMonthV2(
     input.taxableLiquidationCostRatePpm,
   );
   if (fundingPlan.residualShortfallCents > 0) {
-    throw new FinancialKernelV2Error(
-      "SHORTFALL_NOT_IMPLEMENTED",
-      "residual obligation shortfall handling is not implemented",
+    const automaticLiquidityCents = sumMoney(
+      [
+        fundingPlan.cashAvailableCents,
+        fundingPlan.netLiquidationProceedsCents,
+        fundingPlan.remainingCreditCents,
+      ],
+      "financial kernel shortfall automatic liquidity",
     );
+    const state = finalizeGameStateV2({ ...working, currentMonth: nextMonth });
+    const closingNetWorthCents = calculateNetWorth(state.finances);
+    const shortfall = Object.freeze({
+      requiredCashCents,
+      residualShortfallCents: fundingPlan.residualShortfallCents,
+      fundingPlan,
+      netWorthCents: closingNetWorthCents,
+      automaticLiquidityCents,
+    }) satisfies FinancialShortfallV2;
+    const record = Object.freeze({
+      version: FINANCIAL_KERNEL_V2_VERSION,
+      commandId: input.commandId,
+      processedMonth,
+      nextMonth,
+      openingNetWorthCents,
+      closingNetWorthCents,
+      openingAutomaticLiquidityCents,
+      closingAutomaticLiquidityCents: automaticLiquidityCents,
+      taxTraceId: input.taxEvidence.traceId,
+      grossIncomeCents: input.taxEvidence.grossIncomeCents,
+      totalTaxCents: moneyCents(input.taxEvidence.totalTaxCents),
+      afterTaxCashIncomeCents: input.taxEvidence.afterTaxCashIncomeCents,
+      resolvedIncomeCents,
+      resolvedExpenseCents,
+      market: market.month,
+      marketValueChangeCents: market.marketValueChangeCents,
+      annualInflationIncreaseCents: inflation.annualIncreaseCents,
+      monthlyObligationInflationIncreaseCents:
+        inflation.monthlyObligationIncreaseCents,
+      cumulativePriceIndexPpm: market.cumulativePriceIndexPpm,
+      insurancePlayerCostCents: claim.playerCostCents,
+      baseNonDebtObligationsCents,
+      nonDebtObligationsPaidCents: ZERO,
+      debtService,
+      requiredCashCents,
+      fundingPlan,
+      funding: null,
+      recurringAllocations: null,
+      shortfall,
+    }) satisfies FinancialMonthRecordV2;
+    return Object.freeze({
+      version: FINANCIAL_KERNEL_V2_VERSION,
+      processedMonth,
+      nextMonth,
+      state,
+      record,
+      shortfall,
+    });
   }
   const funding = executeV2ObligationFunding(
     working,
