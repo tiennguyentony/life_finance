@@ -185,6 +185,17 @@ describe("monthly term-debt service", () => {
     expect(withSmallDebt.finances.requiredObligationsCents).toBe(
       noDebt.finances.requiredObligationsCents + 500,
     );
+    expect(
+      withSmallDebt.gameplay.debts.termDebts[0]?.minimumPaymentCents,
+    ).toBe(500);
+
+    const settled = settleMonthlyDebtService(
+      withSmallDebt,
+      "turn.opening-payoff-boundary",
+    ).state;
+    expect(settled.finances.requiredObligationsCents).toBe(
+      withSmallDebt.finances.requiredObligationsCents - 500,
+    );
   });
 
   it("preserves raw minimum accounting for a historical persisted debt", () => {
@@ -205,6 +216,18 @@ describe("monthly term-debt service", () => {
         requiredObligationsCents: moneyCents(
           native.finances.requiredObligationsCents + 100,
         ),
+      },
+      gameplay: {
+        ...native.gameplay,
+        debts: {
+          ...native.gameplay.debts,
+          termDebts: [
+            {
+              ...native.gameplay.debts.termDebts[0]!,
+              minimumPaymentCents: moneyCents(600),
+            },
+          ],
+        },
       },
     });
 

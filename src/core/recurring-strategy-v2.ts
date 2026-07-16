@@ -243,13 +243,25 @@ export function planRecurringAllocations(
     );
   }
   const strategy = state.gameplay.recurringStrategy;
+  const employee401kAvailable = moneyCents(
+    Math.min(
+      remaining(
+        snapshot.selected.benefitPolicy.employeeRetirementContributionLimitCents,
+        state.gameplay.contributions.employee401kCents,
+      ),
+      remaining(
+        snapshot.selected.benefitPolicy.definedContributionAdditionLimitCents,
+        addMoney(
+          state.gameplay.contributions.employee401kCents,
+          state.gameplay.contributions.employer401kCents,
+        ),
+      ),
+    ),
+  );
   const employee401k = cappedAllocation(
     grossSalaryCents,
     strategy.preTax401kSalaryRatePpm,
-    remaining(
-      snapshot.selected.benefitPolicy.employeeRetirementContributionLimitCents,
-      state.gameplay.contributions.employee401kCents,
-    ),
+    employee401kAvailable,
   );
   const employerMatch = calculateEmployerMatchV2(
     state,

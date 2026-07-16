@@ -145,6 +145,42 @@ describe("v2 recurring strategy planning", () => {
     ).toBe(2_000);
   });
 
+  it("caps the employee deferral at the remaining combined addition limit", () => {
+    const initial = initialState();
+    const configured = setRecurringStrategy(
+      initial,
+      strategyCommand(initial, {
+        preTax401kSalaryRatePpm: ratePpm(20_000),
+        preTaxHsaSalaryRatePpm: ratePpm(0),
+        afterTaxBroadIndexRatePpm: ratePpm(0),
+        afterTaxSectorRatePpm: ratePpm(0),
+        afterTaxSpeculativeRatePpm: ratePpm(0),
+        afterTaxIraRatePpm: ratePpm(0),
+        afterTaxExtraDebtRatePpm: ratePpm(0),
+      }),
+    );
+    const nearAdditionLimit = {
+      ...configured,
+      gameplay: {
+        ...configured.gameplay,
+        contributions: {
+          ...configured.gameplay.contributions,
+          employee401kCents: moneyCents(2_400_000),
+          employer401kCents: moneyCents(4_790_000),
+        },
+      },
+    } as GameStateV2;
+
+    const plan = planRecurringAllocations(
+      nearAdditionLimit,
+      moneyCents(1_000_000),
+      moneyCents(0),
+    );
+
+    expect(plan.preTax.employee401kCents).toBe(10_000);
+    expect(plan.preTax.employer401kMatchCents).toBe(0);
+  });
+
   it("uses gross and after-obligation bases, tiered match, and debt avalanche", () => {
     const initial = initialState();
     const configured = setRecurringStrategy(initial, strategyCommand(initial));

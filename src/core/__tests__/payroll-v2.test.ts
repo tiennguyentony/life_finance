@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
+import { finalizeGameStateV2 } from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import {
   applyMonthlyPayroll,
@@ -123,6 +124,66 @@ describe("v2 monthly payroll with persisted tax evidence", () => {
       { accountId: "income.other", debitCents: 0, creditCents: 40_000 },
     ]);
     expect(result.state.revision).toBe(configured.revision);
+  });
+
+  it("caps payroll deferral at the remaining combined contribution limit", () => {
+    const initial = state();
+    const configured = setRecurringStrategy(initial, {
+      schemaVersion: 2,
+      id: "cmd.strategy.combined-limit",
+      type: "set_recurring_strategy",
+      expectedRevision: 0,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        strategy: {
+          preTax401kSalaryRatePpm: ratePpm(20_000),
+          preTaxHsaSalaryRatePpm: ratePpm(0),
+          afterTaxBroadIndexRatePpm: ratePpm(0),
+          afterTaxSectorRatePpm: ratePpm(0),
+          afterTaxSpeculativeRatePpm: ratePpm(0),
+          afterTaxIraRatePpm: ratePpm(0),
+          afterTaxExtraDebtRatePpm: ratePpm(0),
+        },
+      },
+    });
+    const nearAdditionLimit = finalizeGameStateV2({
+      ...configured,
+      gameplay: {
+        ...configured.gameplay,
+        contributions: {
+          ...configured.gameplay.contributions,
+          employee401kCents: moneyCents(2_400_000),
+          employer401kCents: moneyCents(4_790_000),
+        },
+      },
+    });
+
+    const result = applyMonthlyPayroll(
+      nearAdditionLimit,
+      "turn.combined-limit",
+      evidence({
+        traceId: "tax.run-payroll.combined-limit",
+        employee401kContributionCents: moneyCents(10_000),
+        employeeHsaContributionCents: moneyCents(0),
+        afterTaxCashIncomeCents: moneyCents(790_000),
+      }),
+    );
+
+    expect(result.allocationPlan.preTax).toEqual({
+      employee401kCents: 10_000,
+      employer401kMatchCents: 0,
+      hsaCents: 0,
+    });
+    expect(result.state.gameplay.contributions.employee401kCents).toBe(
+      2_410_000,
+    );
+    expect(result.state.gameplay.contributions.employer401kCents).toBe(
+      4_790_000,
+    );
+    expect(
+      result.state.gameplay.contributions.employee401kCents +
+        result.state.gameplay.contributions.employer401kCents,
+    ).toBe(7_200_000);
   });
 
   it("supports a modeled negative tax while preserving balanced payroll", () => {
