@@ -23,6 +23,8 @@ export type V2Repository = Pick<
       requestFingerprint: string,
     ) => Promise<AppliedTimeAdvanceV2 | null>;
     loadAcceptedCommandV2?: RunRepository["loadAcceptedCommandV2"];
+    loadCausalHistoryV1?: RunRepository["loadCausalHistoryV1"];
+    runCounterfactualV1?: RunRepository["runCounterfactualV1"];
     previewPlayerPolicyCommandV2?:
       RunRepository["previewPlayerPolicyCommandV2"];
     applyTimeAdvanceV2?: (

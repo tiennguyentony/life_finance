@@ -389,6 +389,8 @@ describe("generated OpenAPI", () => {
       "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
       "/api/v2/runs/{runId}/commands/preview",
+      "/api/v2/runs/{runId}/counterfactual",
+      "/api/v2/runs/{runId}/history",
       "/api/v2/runs/{runId}/migrate",
     ].toSorted());
     expect(
@@ -406,6 +408,12 @@ describe("generated OpenAPI", () => {
     ).toEqual([{ runBearer: [] }]);
     expect(
       document.paths?.["/api/v2/runs/{runId}/checkpoint"]?.get?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/history"]?.get?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/counterfactual"]?.post?.security,
     ).toEqual([{ runBearer: [] }]);
     expect(
       document.paths?.["/api/v2/runs/{runId}/migrate"]?.post?.security,

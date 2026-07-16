@@ -31,6 +31,12 @@ import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import { RunSecretCodec, type RunCredential } from "../auth/run-secret";
 import type { LifeFinanceDatabase } from "./client";
 import {
+  loadCausalHistoryV1,
+  type CausalHistoryRevisionRangeV1,
+} from "./causal-history-repository-v1";
+import { runCounterfactualV1 } from "./counterfactual-repository-v1";
+import type { CounterfactualRequestV1 } from "../../core/counterfactual-v1";
+import {
   loadAuthorizedRun,
   loadAuthorizedRunV2,
   loadAcceptedCommandV2,
@@ -602,6 +608,34 @@ export class RunRepository {
       runId,
       accessSecret,
       fromRevision,
+    );
+  }
+
+  async loadCausalHistoryV1(
+    runId: string,
+    accessSecret: string,
+    range: CausalHistoryRevisionRangeV1 = {},
+  ) {
+    return loadCausalHistoryV1(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+      range,
+    );
+  }
+
+  async runCounterfactualV1(
+    runId: string,
+    accessSecret: string,
+    request: CounterfactualRequestV1,
+  ) {
+    return runCounterfactualV1(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+      request,
     );
   }
 

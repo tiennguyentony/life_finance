@@ -91,6 +91,7 @@ export type MigratedRun = Readonly<{
 export class RunRepositoryError extends Error {
   readonly code:
     | "INVALID_RUN_ID"
+    | "INVALID_RANGE"
     | "NOT_FOUND_OR_UNAUTHORIZED"
     | "IDEMPOTENCY_MISMATCH"
     | "CORRUPT_STATE"
