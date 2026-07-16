@@ -12,6 +12,10 @@ This document defines only the screens and overlays required to complete the Big
 
 Several steps may share a route or shell, but every screen state must be refresh-safe once backend persistence is connected.
 
+The first implementation combines the Main Simulation, Event Interruption, Decision Selection, and Consequence states into one refresh-safe playable loop across `/game` and `/game/event`.
+
+It intentionally excludes login and keeps financial systems in contextual overlays instead of separate navigation destinations.
+
 ## Required Flow
 
 ```text
@@ -62,7 +66,7 @@ Landing
 - Player mindset: Curious and ready to play, without needing financial knowledge.
 - Required information: Life Finance identity, one-line promise, scenario entry action, and visual focus on Sprout.
 - Primary action: Start a new scenario.
-- Secondary actions: Log in only if authentication is available, or continue a locally saved scenario when one exists.
+- Secondary actions: Continue a locally saved scenario when one exists; login is excluded from the MVP.
 - Character used: Sprout in the approved landing idle or confident presentation.
 - Loading state: Keep the primary action disabled only while checking for an existing run, with a short inline loading label.
 - Empty state: Not applicable.
@@ -138,9 +142,9 @@ Landing
 
 - Purpose: Provide the primary game state and control time progression.
 - Player mindset: Monitoring pressure, looking for risk, and deciding whether to adjust strategy before advancing.
-- Required information: Current scenario month, age, attempt number, net-worth history, cash runway, monthly cash flow, assets, liabilities, lifestyle or happiness, exposure or vulnerability, macro news, fast-forward control, and strategy control.
+- Required information: Current scenario month, attempt number, available cash, monthly surplus or deficit, cash runway, net-worth trend, vulnerability, recent state change, fast-forward control, and restrained Sprout reaction. Detailed assets, liabilities, cash flow, banking, and investments remain contextual.
 - Primary action: Advance time or fast-forward to the next interruption.
-- Secondary actions: Open Actions / Allocation Panel, inspect a metric, review attempt history, or pause the run.
+- Secondary actions: Open contextual financial-position or monthly-plan details, then open Actions / Allocation Panel when that increment is implemented.
 - Character used: Sprout as a restrained emotional reaction near the current-state summary.
 - Loading state: Preserve the confirmed dashboard, animate the time control, and block duplicate progression.
 - Empty state: If no active run exists, explain that the scenario has not started and return to Start Method.

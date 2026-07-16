@@ -15,6 +15,20 @@ The backend owns financial calculations, event eligibility, state mutation, bank
 
 The frontend renders backend-generated state and submits player intent through transport-independent service contracts.
 
+## First Implementation Boundary
+
+The first frontend implementation proves one complete event loop only: Month 1 Main Game, mocked fast-forward processing, The Small Stuff Multiplies newspaper interruption, one player response, consequence feedback, and the updated Month 2 Main Game.
+
+The Main Game is the primary playable surface, not a navigation hub.
+
+Portfolio, cash flow, banking, and investments are contextual drill-downs from that surface.
+
+The newspaper is the event-delivery system and is never a passive destination.
+
+Login is excluded from this MVP, and the local mocked scenario remains recoverable after refresh.
+
+This implementation boundary does not replace the documented 24-month scenario, retries, bankruptcy, or final reports; those remain later MVP increments.
+
 ## Scenario Lifecycle
 
 ```text
