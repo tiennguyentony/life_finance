@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
 
 import { sha256Canonical } from "../../core/canonical";
 import type { GameStateV2 } from "../../core/game-state-v2";
+import type { MonthlyTurnV2Record } from "../../core/monthly-turn-v2";
 import type { LifeFinanceDatabase } from "./client";
 import { decodePersistedGameCommandV2 } from "./persisted-command-v2";
 import type { GameCommandV2 } from "./run-repository-contracts";
@@ -42,6 +43,20 @@ export type ReplayedRunStateV2 = Readonly<{
   state: GameStateV2;
   stateChecksum: string;
 }>;
+
+export type AcceptedCommandReplayTransitionV2 = Readonly<{
+  row: AcceptedCommandReplayRowV2;
+  command: GameCommandV2;
+  before: GameStateV2;
+  beforeStateChecksum: string;
+  after: GameStateV2;
+  afterStateChecksum: string;
+  monthlyRecord: MonthlyTurnV2Record | null;
+}>;
+
+export type AcceptedCommandReplayVisitorV2 = (
+  transition: AcceptedCommandReplayTransitionV2,
+) => void;
 
 export function selectLatestRunStateReplayAnchorV2(
   snapshotAnchor: RunStateReplayAnchorV2 | null,
@@ -195,6 +210,20 @@ export function replayAcceptedCommandsV2(
   rows: readonly AcceptedCommandReplayRowV2[],
   targetRevision: number,
 ): ReplayedRunStateV2 {
+  return visitAcceptedCommandsV2(anchor, rows, targetRevision, () => undefined);
+}
+
+/**
+ * Strict replay with an observation seam. The visitor sees verified immutable
+ * transitions only after each stored checksum has matched. It cannot replace
+ * the production reducer and this function does not retain historical states.
+ */
+export function visitAcceptedCommandsV2(
+  anchor: RunStateReplayAnchorV2,
+  rows: readonly AcceptedCommandReplayRowV2[],
+  targetRevision: number,
+  visitor: AcceptedCommandReplayVisitorV2,
+): ReplayedRunStateV2 {
   if (
     !Number.isSafeInteger(targetRevision) ||
     targetRevision < 0 ||
@@ -236,8 +265,13 @@ export function replayAcceptedCommandsV2(
       throw corrupt("accepted v2 commands are not a contiguous revision sequence");
     }
     const command = rebuildGameCommandV2(row);
+    const before = state;
+    const beforeStateChecksum = checksum;
+    let monthlyRecord: MonthlyTurnV2Record | null;
     try {
-      state = reduceGameCommandV2(state, command).state;
+      const reduced = reduceGameCommandV2(state, command);
+      state = reduced.state;
+      monthlyRecord = reduced.monthlyRecord;
     } catch (cause) {
       throw normalizeCorruption("stored v2 command could not be replayed", cause);
     }
@@ -248,6 +282,15 @@ export function replayAcceptedCommandsV2(
     ) {
       throw corrupt("replayed v2 command revision or checksum drifted");
     }
+    visitor(Object.freeze({
+      row,
+      command,
+      before,
+      beforeStateChecksum,
+      after: state,
+      afterStateChecksum: checksum,
+      monthlyRecord,
+    }));
     expectedRevision = row.resultingRevision;
   }
 

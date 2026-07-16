@@ -25,10 +25,14 @@ import {
   advanceTimeV2RequestSchema,
   advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
+  causalHistoryV1ResponseSchema,
+  causalHistoryV1QuerySchema,
   checkpointV2QuerySchema,
   checkpointV2ResponseSchema,
   createRunV2RequestSchema,
   createRunV2ResponseSchema,
+  counterfactualV1RequestSchema,
+  counterfactualV1ResponseSchema,
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
@@ -119,6 +123,47 @@ registry.registerPath({
     200: {
       description: "Deterministic checkpoint evidence",
       content: { "application/json": { schema: checkpointV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v2/runs/{runId}/history",
+  operationId: "getCausalHistoryV1",
+  summary: "Derive bounded causal history from verified accepted-command replay",
+  security: [{ runBearer: [] }],
+  request: { params: runIdV2PathSchema, query: causalHistoryV1QuerySchema },
+  responses: {
+    200: {
+      description: "Checksummed causal graph, sparse turning points, and coverage",
+      content: { "application/json": { schema: causalHistoryV1ResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/counterfactual",
+  operationId: "runCounterfactualV1",
+  summary: "Compare one bounded alternative through the production reducer",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: {
+      content: { "application/json": { schema: counterfactualV1RequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Read-only verified branch comparison and explicit assumptions",
+      content: { "application/json": { schema: counterfactualV1ResponseSchema } },
     },
     400: errorResponses[400],
     401: errorResponses[401],

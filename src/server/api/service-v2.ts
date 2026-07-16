@@ -34,6 +34,8 @@ import type { TaxCalculator } from "../tax/client";
 import {
   advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
+  causalHistoryV1ResponseSchema,
+  counterfactualV1ResponseSchema,
   createRunV2ResponseSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
@@ -41,6 +43,10 @@ import {
   type AdvanceTimeV2Request,
   type AdvanceTimeV2Response,
   type CommandV2Response,
+  type CausalHistoryV1Response,
+  type CausalHistoryV1Query,
+  type CounterfactualV1Request,
+  type CounterfactualV1Response,
   type CreateRunV2Request,
   type CreateRunV2Response,
   type GameCommandV2Public,
@@ -437,6 +443,34 @@ export class RunApiServiceV2 {
         fromRevision,
       ),
     };
+  }
+
+  async getCausalHistory(
+    runId: string,
+    accessSecret: string,
+    range: CausalHistoryV1Query,
+  ): Promise<CausalHistoryV1Response> {
+    const load = this.#repository.loadCausalHistoryV1;
+    if (!load) {
+      throw new Error("causal history repository capability is unavailable");
+    }
+    return causalHistoryV1ResponseSchema.parse({
+      history: await load.call(this.#repository, runId, accessSecret, range),
+    });
+  }
+
+  async runCounterfactual(
+    runId: string,
+    accessSecret: string,
+    request: CounterfactualV1Request,
+  ): Promise<CounterfactualV1Response> {
+    const run = this.#repository.runCounterfactualV1;
+    if (!run) {
+      throw new Error("counterfactual repository capability is unavailable");
+    }
+    return counterfactualV1ResponseSchema.parse({
+      result: await run.call(this.#repository, runId, accessSecret, request),
+    });
   }
 
   async submitCommand(

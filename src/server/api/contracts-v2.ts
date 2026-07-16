@@ -2,6 +2,10 @@ import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
 import type { GameStateV2 } from "../../core/game-state-v2";
+import {
+  CAUSAL_NODE_KINDS_V1,
+  CAUSAL_RULE_CODES_V1,
+} from "../../core/causal-history-v1";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
 import { decodePersistedGameState } from "../../core/persisted-game-state";
@@ -1264,6 +1268,323 @@ export const advanceTimeV2ResponseSchema = getRunV2ResponseSchema
   })
   .strict();
 
+const causalSourceEvidenceIdV1Schema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/);
+
+const causalAffectedValueV1Schema = z
+  .object({
+    metricId: identifierSchema,
+    unit: z.enum([
+      "money_cents",
+      "ratio_ppm",
+      "months_ppm",
+      "months",
+      "count",
+      "integer",
+      "boolean",
+    ]),
+    before: z.int().nullable(),
+    after: z.int().nullable(),
+    delta: z.int().nullable(),
+    factIds: z.array(causalSourceEvidenceIdV1Schema).min(1).max(64),
+  })
+  .strict();
+
+const causalNodeV1Schema = z
+  .object({
+    id: causalSourceEvidenceIdV1Schema,
+    kind: z.enum(CAUSAL_NODE_KINDS_V1),
+    month: simulationMonthSchema,
+    resultingRevision: z.int().nonnegative(),
+    sourceEvidenceIds: z.array(causalSourceEvidenceIdV1Schema).min(1).max(128),
+    lessonTags: z.array(identifierSchema).max(32),
+    affectedValues: z.array(causalAffectedValueV1Schema).max(64),
+  })
+  .strict();
+
+const causalEdgeV1Schema = z
+  .object({
+    id: z.string().min(1).max(1024),
+    parentNodeId: causalSourceEvidenceIdV1Schema,
+    childNodeId: causalSourceEvidenceIdV1Schema,
+    role: z.enum(["direct_cause", "contributing_condition", "correlation"]),
+    ruleCode: z.enum(CAUSAL_RULE_CODES_V1),
+    sourceEvidenceIds: z.array(causalSourceEvidenceIdV1Schema).min(1).max(128),
+  })
+  .strict();
+
+const causalTurningPointV1Schema = z
+  .object({
+    version: z.literal("turning-points-v1"),
+    nodeId: causalSourceEvidenceIdV1Schema,
+    primarySignature: z.enum([
+      "net_worth_reversal",
+      "liquidity_drop",
+      "high_interest_debt",
+      "forced_sale",
+      "new_revolving_credit",
+      "fi_progress",
+      "recovery_start",
+      "recovery",
+      "life_milestone",
+      "terminal_outcome",
+    ]),
+    resultingRevision: z.int().nonnegative(),
+    month: simulationMonthSchema,
+    score: z.int().nonnegative(),
+    reasonCodes: z.array(identifierSchema).min(1).max(16),
+    sourceEvidenceIds: z.array(causalSourceEvidenceIdV1Schema).min(1).max(128),
+  })
+  .strict();
+
+const causalCoverageV1Schema = z
+  .object({
+    beginsAtRevision: z.int().nonnegative(),
+    endsAtRevision: z.int().nonnegative(),
+    preMigrationHistoryAvailable: z.boolean(),
+    summarizedCommandRanges: z
+      .array(
+        z
+          .object({
+            firstRevision: z.int().nonnegative(),
+            lastRevision: z.int().nonnegative(),
+            commandIds: z.array(identifierSchema).min(1).max(256),
+            aggregateMetricIds: z.array(identifierSchema).min(1).max(64),
+            sourceChecksum: checksumSchema,
+          })
+          .strict(),
+      )
+      .max(64),
+    missingEvidence: z
+      .array(
+        z
+          .object({
+            code: z.enum([
+              "pre_migration_history_unavailable",
+              "stable_source_id_absent",
+              "monthly_record_absent",
+              "runtime_balance_decision_absent",
+              "scenario_director_decision_absent",
+              "risk_snapshot_unavailable",
+              "event_response_evidence_absent",
+              "ledger_provenance_absent",
+            ]),
+            fromRevision: z.int().nonnegative(),
+            toRevision: z.int().nonnegative(),
+            sourceEvidenceIds: z.array(causalSourceEvidenceIdV1Schema).max(128),
+          })
+          .strict(),
+      )
+      .max(1024),
+  })
+  .strict();
+
+export const causalHistoryV1ResponseSchema = z
+  .object({
+    history: z
+      .object({
+        version: z.literal("causal-history-v1"),
+        runId: identifierSchema,
+        fromRevision: z.int().nonnegative(),
+        toRevision: z.int().nonnegative(),
+        sourceStateChecksum: checksumSchema,
+        historyChecksum: checksumSchema,
+        nodes: z.array(causalNodeV1Schema).max(10_000),
+        edges: z.array(causalEdgeV1Schema).max(25_000),
+        turningPoints: z.array(causalTurningPointV1Schema).max(5),
+        coverage: causalCoverageV1Schema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const optionalRevisionQuerySchema = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(z.int().nonnegative())
+  .nullable()
+  .transform((value) => value ?? undefined);
+
+export const causalHistoryV1QuerySchema = z
+  .object({
+    fromRevision: optionalRevisionQuerySchema,
+    toRevision: optionalRevisionQuerySchema,
+  })
+  .strict()
+  .superRefine((query, context) => {
+    if (
+      query.fromRevision !== undefined &&
+      query.toRevision !== undefined &&
+      (query.fromRevision > query.toRevision ||
+        query.toRevision - query.fromRevision > 120)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["fromRevision"],
+        message: "history range must be ordered and span at most 120 revisions",
+      });
+    }
+  });
+
+const counterfactualInterventionV1Schema = z.union([
+  z
+    .object({
+      kind: z.literal("recurring_strategy_field"),
+      commandId: commandIdSchema,
+      field: z.enum([
+        "emergencyFundTargetMonthsPpm",
+        "afterTaxBroadIndexRatePpm",
+        "afterTaxSectorRatePpm",
+        "afterTaxSpeculativeRatePpm",
+        "afterTaxIraRatePpm",
+        "afterTaxExtraDebtRatePpm",
+      ]),
+      value: z.int().min(0).max(24_000_000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("recurring_strategy_field"),
+      commandId: commandIdSchema,
+      field: z.literal("insuranceCoverageIds"),
+      value: z
+        .array(identifierSchema)
+        .max(16)
+        .refine((ids) => new Set(ids).size === ids.length, {
+          message: "insurance coverage IDs must be unique",
+        }),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("event_response"),
+      commandId: commandIdSchema,
+      eventId: identifierSchema,
+      choiceId: identifierSchema,
+    })
+    .strict(),
+]);
+
+export const counterfactualV1RequestSchema = z
+  .object({
+    version: z.literal("counterfactual-v1"),
+    sourceCommandId: commandIdSchema,
+    intervention: counterfactualInterventionV1Schema,
+    horizonMonths: z.int().min(1).max(24),
+  })
+  .strict()
+  .refine(
+    (request) => request.sourceCommandId === request.intervention.commandId,
+    {
+      path: ["intervention", "commandId"],
+      message: "intervention command must match the source command",
+    },
+  );
+
+const counterfactualBranchV1Schema = z
+  .object({
+    revision: z.int().nonnegative(),
+    month: simulationMonthSchema,
+    cashCents: z.int(),
+    totalDebtCents: z.int().nonnegative(),
+    netWorthCents: z.int(),
+    recoveryRemainingMonths: z.int().nonnegative().nullable(),
+    fiProgressPpm: z.int().min(0).max(1_000_000),
+    outcomeKind: identifierSchema.nullable(),
+    outcomeReasonCode: identifierSchema.nullable(),
+    forcedSaleGrossCents: z.int().nonnegative(),
+    forcedSaleCount: z.int().nonnegative(),
+    newRevolvingCreditCents: z.int().nonnegative(),
+    residualShortfallCents: z.int().nonnegative(),
+    finalStateChecksum: checksumSchema,
+  })
+  .strict();
+
+export const counterfactualV1ResponseSchema = z
+  .object({
+    result: z
+      .object({
+        version: z.literal("counterfactual-v1"),
+        sourceCommandId: commandIdSchema,
+        sourceRevision: z.int().nonnegative(),
+        interventionPath: z.string().min(1).max(256),
+        originalValue: z.union([
+          z.int(),
+          identifierSchema,
+          z.array(identifierSchema).max(16),
+        ]),
+        alternateValue: z.union([
+          z.int(),
+          identifierSchema,
+          z.array(identifierSchema).max(16),
+        ]),
+        changedPaths: z.array(z.string().min(1).max(256)).length(1),
+        requestedHorizonMonths: z.int().min(1).max(24),
+        comparedMonths: z.int().nonnegative().max(24),
+        acceptedCommandCount: z.int().nonnegative().max(256),
+        lastComparableRevision: z.int().nonnegative(),
+        lastComparableMonth: simulationMonthSchema,
+        stopReason: z.enum([
+          "requested_horizon_reached",
+          "actual_history_exhausted",
+          "actual_terminal",
+          "alternate_terminal",
+          "future_command_no_longer_valid",
+          "tax_evidence_not_valid_for_alternative",
+          "seed_control_unavailable_after_rng_divergence",
+          "command_limit_reached",
+        ]),
+        seedControl: z
+          .object({
+            mode: z.enum([
+              "matched_named_world",
+              "matched_shared_cursor_through_horizon",
+              "partial_shared_cursor_then_diverged",
+              "named_world_control_unavailable",
+              "not_applicable_no_future_month",
+            ]),
+            lastComparableRevision: z.int().nonnegative(),
+            lastComparableMonth: simulationMonthSchema,
+          })
+          .strict(),
+        assumptions: z
+          .array(
+            z.enum([
+              "deterministic_simulation_comparison_not_real_life_prediction",
+              "future_player_commands_held_unchanged_until_stop_reason",
+              "tax_evidence_reused_only_while_context_fingerprint_matches",
+              "future_seed_control_reported_from_verified_seed_evidence",
+            ]),
+          )
+          .length(4),
+        actual: counterfactualBranchV1Schema,
+        alternative: counterfactualBranchV1Schema,
+        difference: z
+          .object({
+            direction: z.literal("alternative_minus_actual"),
+            cashCents: z.int(),
+            totalDebtCents: z.int(),
+            netWorthCents: z.int(),
+            forcedSaleGrossCents: z.int(),
+            forcedSaleCount: z.int(),
+            newRevolvingCreditCents: z.int(),
+            residualShortfallCents: z.int(),
+            recoveryRemainingMonths: z.int().nullable(),
+            fiProgressPpm: z.int(),
+            outcomeChanged: z.boolean(),
+          })
+          .strict(),
+        evidenceIds: z.array(causalSourceEvidenceIdV1Schema).min(1).max(1024),
+        resultChecksum: checksumSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
 export { runIdPathSchema as runIdV2PathSchema };
 
 export type CreateRunV2Request = z.infer<typeof createRunV2RequestSchema>;
@@ -1281,3 +1602,13 @@ export type PlayerPolicyPreviewV2Response = z.infer<
 export type CheckpointV2Response = z.infer<typeof checkpointV2ResponseSchema>;
 export type AdvanceTimeV2Request = z.infer<typeof advanceTimeV2RequestSchema>;
 export type AdvanceTimeV2Response = z.infer<typeof advanceTimeV2ResponseSchema>;
+export type CausalHistoryV1Response = z.infer<
+  typeof causalHistoryV1ResponseSchema
+>;
+export type CausalHistoryV1Query = z.infer<typeof causalHistoryV1QuerySchema>;
+export type CounterfactualV1Request = z.infer<
+  typeof counterfactualV1RequestSchema
+>;
+export type CounterfactualV1Response = z.infer<
+  typeof counterfactualV1ResponseSchema
+>;
