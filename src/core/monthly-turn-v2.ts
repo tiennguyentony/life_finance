@@ -610,7 +610,7 @@ export function processMonthlyTurnV2(
   return processMonthlyTurnV2Legacy410(state, command, dependencies);
 }
 
-export function processMonthlyTurnV2Legacy410(
+function processMonthlyTurnV2Legacy410(
   state: GameStateV2,
   command: ProcessMonthV2Command,
   dependencies: MonthlyTurnV2Dependencies = {},
