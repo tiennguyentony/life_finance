@@ -16,10 +16,10 @@ export const MOCK_PLAYER_BY_PERSONA: Record<PersonaId, PlayerView> = {
     goal: "Buy a home without becoming boring",
   },
   "city-survivor": {
-    name: "Jordan",
-    age: 29,
-    location: "New York, NY",
-    career: "Brand coordinator",
-    goal: "Build freedom in the expensive city",
+    name: "Alex",
+    age: 24,
+    location: "San Francisco, California",
+    career: "Junior Software Engineer",
+    goal: "Build enough runway to survive the city",
   },
 };

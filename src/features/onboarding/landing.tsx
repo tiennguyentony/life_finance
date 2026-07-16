@@ -35,7 +35,6 @@ export function Landing() {
           <strong>Life<br />Finance</strong>
         </div>
         <div className="landing-account-actions">
-          <Link className="landing-login" href="/game">Log in</Link>
           <Link className="landing-start" href="/start">Start</Link>
         </div>
       </header>

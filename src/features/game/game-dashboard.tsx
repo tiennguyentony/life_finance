@@ -1,55 +1,70 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 import { ErrorState, LoadingState } from "@/components/async-state";
 import { useGame } from "@/components/game-provider";
 
-import { DashboardBoard } from "./dashboard-board";
-import { DecisionModal } from "./decision-modal";
+import { MainGameStage } from "./main-game-stage";
+import { MonthAdvancePanel } from "./month-advance-panel";
 
 export function GameDashboard() {
-  const { dashboard, decisionId, ensureGame, error, status } = useGame();
-  const loaded = useRef(false);
-  const [decisionOpen, setDecisionOpen] = useState(false);
+  const router = useRouter();
+  const {
+    machine,
+    operation,
+    error,
+    ensureGame,
+    fastForward,
+    completeReturn,
+    replaySlice,
+    dismissError,
+  } = useGame();
+  const requested = useRef(false);
 
   useEffect(() => {
-    if (loaded.current) return;
-    loaded.current = true;
+    if (requested.current) return;
+    requested.current = true;
     void ensureGame();
   }, [ensureGame]);
 
-  if (status === "error") {
-    return <ErrorState message={error ?? "The run could not load."} onRetry={() => void ensureGame()} />;
-  }
+  useEffect(() => {
+    if (machine?.phase === "returning-to-simulation") {
+      completeReturn();
+    }
+  }, [completeReturn, machine?.phase]);
 
-  if (!dashboard) {
-    return <LoadingState label="Loading your tiny financial universe..." />;
-  }
+  useEffect(() => {
+    if (machine?.phase !== "pending-event") return;
+    const timer = window.setTimeout(() => router.push("/game/event"), 2400);
+    return () => window.clearTimeout(timer);
+  }, [machine?.phase, router]);
 
-  const controls = (
-    <>
-      <button className="button button-secondary" onClick={() => setDecisionOpen(true)} type="button">
-        {decisionId ? "Change decision" : "Make a decision"}
-      </button>
-      {decisionId ? (
-        <Link className="button button-primary" href="/game/event">
-          Advance one month
-        </Link>
-      ) : (
-        <button className="button button-primary" disabled type="button">
-          Pick a move first
-        </button>
-      )}
-      <span className="turn-note">{decisionId ? "Move locked. Life is ready." : "One strategic move per turn."}</span>
-    </>
-  );
+  if (!machine) {
+    if (error) {
+      return <ErrorState message={error} onRetry={() => void ensureGame()} />;
+    }
+    return <LoadingState label="Loading Big City Survivor..." />;
+  }
 
   return (
     <div className="screen game-screen">
-      <DashboardBoard controls={controls} dashboard={dashboard} />
-      {decisionOpen ? <DecisionModal onClose={() => setDecisionOpen(false)} /> : null}
+      <MainGameStage
+        error={error}
+        isFastForwarding={operation === "fast-forwarding" || machine.phase === "fast-forwarding"}
+        onDismissError={dismissError}
+        onFastForward={() => void fastForward()}
+        onReplay={() => void replaySlice()}
+        scenario={machine.snapshot}
+      />
+      {machine.phase === "pending-event" ? (
+        <MonthAdvancePanel
+          changes={machine.monthlyChanges}
+          onReadNews={() => router.push("/game/event")}
+          summary={machine.monthlySummary ?? "A new event is waiting."}
+        />
+      ) : null}
     </div>
   );
 }

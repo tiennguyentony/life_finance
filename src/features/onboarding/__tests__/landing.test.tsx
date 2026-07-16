@@ -15,4 +15,11 @@ describe("Landing", () => {
     expect(markup).toContain('data-action="confident-reset"');
     expect(markup).toContain('data-action="lucky-finale"');
   });
+
+  it("starts the MVP without presenting a login step", () => {
+    const markup = renderToStaticMarkup(<Landing />);
+
+    expect(markup).not.toContain("Log in");
+    expect(markup).toContain('href="/start"');
+  });
 });

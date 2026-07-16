@@ -12,6 +12,16 @@ This document defines the visual and interaction direction for the first complet
 
 It does not define a complete multi-scenario design system.
 
+## First Playable Slice Decision
+
+The Main Game is the primary playable surface and time progression is its dominant action.
+
+Financial position, cash flow, banking, and investments appear as contextual detail surfaces rather than separate dashboard destinations.
+
+The newspaper visually interrupts the Main Game to deliver authored events and player decisions.
+
+The first implementation covers one complete event loop and does not include login.
+
 ## Visual Direction
 
 Life Finance pairs serious financial information with warm, playful character direction.

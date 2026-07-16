@@ -1,13 +1,7 @@
-import { MOCK_STARTING_DASHBOARD } from "@/mocks/dashboard";
+import { createBigCityStartingState } from "@/mocks/big-city-scenario";
 import { MOCK_PERSONAS } from "@/mocks/personas";
 import { MOCK_PLAYER_BY_PERSONA } from "@/mocks/player";
-import type {
-  DashboardView,
-  GeneratedPlayer,
-  Persona,
-  ProfileInput,
-  ServiceOptions,
-} from "@/types/game";
+import type { GeneratedPlayer, Persona, ProfileInput, ServiceOptions } from "@/types/game";
 
 import { mockDelay } from "./mock-delay";
 
@@ -38,12 +32,7 @@ export async function generatePlayer(
     goal: input.goal.trim() || basePlayer.goal,
   };
 
-  const dashboard: DashboardView = {
-    ...MOCK_STARTING_DASHBOARD,
-    playerName: player.name,
-  };
-
-  return { player, dashboard };
+  return { player, scenario: createBigCityStartingState(player) };
 }
 
 export async function getPlayerState(
@@ -51,11 +40,11 @@ export async function getPlayerState(
 ): Promise<GeneratedPlayer> {
   return generatePlayer(
     {
-      personaId: "junior-developer",
+      personaId: "city-survivor",
       name: "Alex",
       age: "24",
-      location: "Seattle, WA",
-      goal: "Stop living one surprise away from chaos",
+      location: "San Francisco, California",
+      goal: "Build enough runway to survive the city",
     },
     options,
   );
