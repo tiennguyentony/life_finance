@@ -113,7 +113,7 @@ describe("developer play UI model", () => {
     expect(actionFlow).not.toContain("submit(");
   });
 
-  it("uses one advance request and one pause activity for hidden months", () => {
+  it("uses one advance request, one authoritative checkpoint read, and one pause activity for hidden months", () => {
     const source = readFileSync(
       new URL("../play-console.tsx", import.meta.url),
       "utf8",
@@ -126,8 +126,66 @@ describe("developer play UI model", () => {
     expect(runMonths).toContain("/advance");
     expect(runMonths).not.toContain("/commands");
     expect(runMonths).not.toMatch(/for\s*\(/);
-    expect(runMonths.match(/apiRequest</g)).toHaveLength(1);
+    expect(runMonths.match(/apiRequest</g)).toHaveLength(2);
+    expect(runMonths).toContain("if (result.checkpointInput)");
+    expect(runMonths).toContain(
+      "expectedRevision=${result.state.revision}&fromRevision=${request.expectedRevision}",
+    );
+    expect(runMonths.indexOf("teaching/checkpoint")).toBeLessThan(
+      runMonths.indexOf("acceptAuthoritativeState(result.state)"),
+    );
     expect(runMonths.match(/describeTimePauseV2/g)).toHaveLength(1);
+  });
+
+  it("wires local Teaching v2 without recursive learning-command requests or AI consent", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("/teaching/moment");
+    expect(source).toContain("/teaching/checkpoint?expectedRevision=");
+    expect(source).toContain("/teaching/debrief");
+    expect(source).toContain("TeachingMomentPanelV2");
+    expect(source).toContain("TeachingCheckpointPanelV2");
+    expect(source).toContain("TeachingDebriefPanelV2");
+
+    const automaticFlow = source.slice(
+      source.indexOf("automaticTeachingRevision.current === state.revision"),
+      source.indexOf("deterministicDebriefRevision.current === state.revision"),
+    );
+    expect(automaticFlow).toContain(
+      "automaticTeachingRevision.current = result.state.revision",
+    );
+    expect(automaticFlow).toContain("revisionCoordinator.current.run");
+    expect(source).toContain("authoritativeStateRef.current");
+    expect(source).toContain("rebaseStateBoundCommandV2");
+    expect(automaticFlow).not.toContain("aiConsent");
+
+    const deterministicDebriefFlow = source.slice(
+      source.indexOf("deterministicDebriefRevision.current === state.revision"),
+      source.indexOf("const createGame"),
+    );
+    expect(deterministicDebriefFlow).not.toContain("aiConsent");
+  });
+
+  it("discards old submit, advance, and teaching responses after a session reset", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+    const guardedFlows = [
+      source.slice(source.indexOf("const submit"), source.indexOf("const previewPolicyCommand")),
+      source.slice(source.indexOf("const runMonths"), source.indexOf("const takeAction")),
+      source.slice(source.indexOf("const requestVerifiedLesson"), source.indexOf("const requestOptionalTeachingRewrite")),
+    ];
+
+    for (const flow of guardedFlows) {
+      expect(flow).toContain("captureRevisionSession()");
+      expect(flow).toContain("isCurrentRunSession(");
+    }
+    expect(source).toContain("revisionCoordinator.current.reset()");
+    expect(source).toContain('disabled={busy} onClick={forgetGame}');
   });
 
   it.each([
