@@ -10,6 +10,7 @@ import {
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import { createInitialGameState, type GameState } from "../game-state";
+import type { JournalTransaction } from "../ledger";
 
 function initialState(): GameState {
   return createInitialGameState({
@@ -88,6 +89,22 @@ function replay(): GameState {
   );
 }
 
+function withoutProvenance(
+  transaction: JournalTransaction,
+): JournalTransaction {
+  return {
+    id: transaction.id,
+    commandId: transaction.commandId,
+    effectiveMonth: transaction.effectiveMonth,
+    reasonCode: transaction.reasonCode,
+    description: transaction.description,
+    postings: transaction.postings,
+    ...(transaction.reversesTransactionId
+      ? { reversesTransactionId: transaction.reversesTransactionId }
+      : {}),
+  };
+}
+
 describe("game command reducer", () => {
   it("posts financial movements and reconciles the immutable snapshot", () => {
     const before = initialState();
@@ -100,6 +117,57 @@ describe("game command reducer", () => {
     expect(after.revision).toBe(1);
     expect(after.acceptedCommandIds).toEqual(["cmd.salary.1"]);
     expect(Object.isFrozen(after)).toBe(true);
+  });
+
+  it("uses explicit fallback provenance when reversing a legacy transaction", () => {
+    const posted = reduceGameCommand(initialState(), salaryCommand());
+    const legacyState: GameState = {
+      ...posted,
+      ledger: {
+        ...posted.ledger,
+        transactions: [
+          posted.ledger.transactions[0],
+          withoutProvenance(posted.ledger.transactions[1]),
+        ],
+      },
+    };
+    const reversal: PostTransactionCommand = {
+      schemaVersion: 1,
+      id: "cmd.salary.reverse.1",
+      expectedRevision: 1,
+      effectiveMonth: simulationMonth("2026-07"),
+      type: "post_transaction",
+      payload: {
+        transactionId: "txn.salary.reverse.1",
+        reasonCode: "reverse_salary",
+        description: "Reverse legacy salary",
+        reversesTransactionId: "txn.salary.1",
+        postings: [
+          {
+            accountId: "asset.cash",
+            debitCents: moneyCents(0),
+            creditCents: moneyCents(500_000),
+          },
+          {
+            accountId: "income.employment",
+            debitCents: moneyCents(500_000),
+            creditCents: moneyCents(0),
+          },
+        ],
+      },
+    };
+
+    const reversed = reduceGameCommand(legacyState, reversal);
+
+    expect(reversed.ledger.transactions.at(-1)).toMatchObject({
+      sourceSystem: "ledger",
+      category: "ledger.legacy_reversal",
+      causalReference: {
+        kind: "command",
+        id: reversal.id,
+      },
+    });
+    expect(reversed.finances.cashCents).toBe(100_00);
   });
 
   it("advances exactly one calendar month", () => {
