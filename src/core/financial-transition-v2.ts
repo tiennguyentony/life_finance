@@ -1,5 +1,9 @@
 import { canonicalJson } from "./canonical";
 import { addMonths } from "./domain/month";
+import {
+  FINANCIAL_CLOSING_STATE_V2_KIND,
+  type FinancialClosingStateV2,
+} from "./financial-kernel-v2";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
 import { ownForDeepFreeze } from "./immutable-ownership";
 import { assertValidGameStateTransitionV2 } from "./state-transition-v2";
@@ -14,6 +18,8 @@ export type FinancialTransitionV2ErrorCode =
   | "REVISION_MUTATED"
   | "ACCEPTED_COMMAND_IDS_MUTATED"
   | "OUTCOME_MUTATED"
+  | "INVALID_CLOSING_STATE_KIND"
+  | "AUTHORITATIVE_METADATA_PRESENT"
   | "INVALID_FINANCIAL_STATE";
 
 export class FinancialTransitionV2Error extends Error {
@@ -48,23 +54,13 @@ function sameAcceptedCommandIds(
   );
 }
 
-export function acceptFinancialMonthCommandV2(
+function assertSameFinancialIdentityAndMonth(
   previous: GameStateV2,
-  financialState: GameStateV2,
-  commandId: string,
-): GameStateV2 {
-  if (!COMMAND_ID.test(commandId)) {
-    throw new FinancialTransitionV2Error(
-      "INVALID_COMMAND_ID",
-      "financial month command id is invalid",
-    );
-  }
-  if (previous.acceptedCommandIds.includes(commandId)) {
-    throw new FinancialTransitionV2Error(
-      "DUPLICATE_COMMAND",
-      "financial month command was already accepted",
-    );
-  }
+  financialState: Pick<
+    GameStateV2,
+    "runId" | "schemaVersion" | "engineVersion" | "currentMonth"
+  >,
+): void {
   if (financialState.runId !== previous.runId) {
     throw new FinancialTransitionV2Error(
       "RUN_MISMATCH",
@@ -89,6 +85,71 @@ export function acceptFinancialMonthCommandV2(
       "financial state must advance exactly one month",
     );
   }
+}
+
+export function rehydrateFinancialClosingStateV2(
+  previous: GameStateV2,
+  financialState: FinancialClosingStateV2,
+): GameStateV2 {
+  if (
+    "revision" in financialState ||
+    "acceptedCommandIds" in financialState ||
+    "outcome" in financialState
+  ) {
+    throw new FinancialTransitionV2Error(
+      "AUTHORITATIVE_METADATA_PRESENT",
+      "financial closing state must not contain authoritative command metadata",
+    );
+  }
+  assertSameFinancialIdentityAndMonth(previous, financialState);
+
+  const ownedFinancialState = ownForDeepFreeze(financialState);
+  const { closingStateKind, ...financialEvidence } =
+    ownedFinancialState;
+  if (closingStateKind !== FINANCIAL_CLOSING_STATE_V2_KIND) {
+    throw new FinancialTransitionV2Error(
+      "INVALID_CLOSING_STATE_KIND",
+      "financial kernel returned an invalid closing-state kind",
+    );
+  }
+  return Object.freeze({
+    ...financialEvidence,
+    revision: previous.revision,
+    acceptedCommandIds: ownForDeepFreeze(previous.acceptedCommandIds),
+    outcome: ownForDeepFreeze(previous.outcome),
+  });
+}
+
+export function acceptFinancialClosingStateV2(
+  previous: GameStateV2,
+  financialState: FinancialClosingStateV2,
+  commandId: string,
+): GameStateV2 {
+  return acceptFinancialMonthCommandV2(
+    previous,
+    rehydrateFinancialClosingStateV2(previous, financialState),
+    commandId,
+  );
+}
+
+export function acceptFinancialMonthCommandV2(
+  previous: GameStateV2,
+  financialState: GameStateV2,
+  commandId: string,
+): GameStateV2 {
+  if (!COMMAND_ID.test(commandId)) {
+    throw new FinancialTransitionV2Error(
+      "INVALID_COMMAND_ID",
+      "financial month command id is invalid",
+    );
+  }
+  if (previous.acceptedCommandIds.includes(commandId)) {
+    throw new FinancialTransitionV2Error(
+      "DUPLICATE_COMMAND",
+      "financial month command was already accepted",
+    );
+  }
+  assertSameFinancialIdentityAndMonth(previous, financialState);
   if (financialState.revision !== previous.revision) {
     throw new FinancialTransitionV2Error(
       "REVISION_MUTATED",

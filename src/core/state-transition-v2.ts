@@ -155,7 +155,10 @@ export function validateGameStateTransitionV2(
     );
   }
 
-  if (!canonicalEqual(previous.ledger.accounts, next.ledger.accounts)) {
+  if (
+    previous.ledger.accounts !== next.ledger.accounts &&
+    !canonicalEqual(previous.ledger.accounts, next.ledger.accounts)
+  ) {
     violations.push(
       violation(
         "ledger.accounts",
@@ -166,9 +169,13 @@ export function validateGameStateTransitionV2(
   }
   const ledgerPrefixPreserved =
     next.ledger.transactions.length >= previous.ledger.transactions.length &&
-    previous.ledger.transactions.every((transaction, index) =>
-      canonicalEqual(transaction, next.ledger.transactions[index]),
-    );
+    previous.ledger.transactions.every((transaction, index) => {
+      const nextTransaction = next.ledger.transactions[index];
+      return (
+        transaction === nextTransaction ||
+        canonicalEqual(transaction, nextTransaction)
+      );
+    });
   if (!ledgerPrefixPreserved) {
     violations.push(
       violation(
