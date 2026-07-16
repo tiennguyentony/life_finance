@@ -7,11 +7,15 @@ import {
 } from "../../core/checkpoint-v2";
 import type { GameState } from "../../core/game-state";
 import type { GameStateV2 } from "../../core/game-state-v2";
+import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
 import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import { RunSecretCodec } from "../auth/run-secret";
 import type { LifeFinanceDatabase } from "./client";
 import { RunRepositoryError } from "./run-repository-contracts";
-import { loadRunStateAtRevisionV2 } from "./run-state-replay-v2";
+import {
+  loadRunStateAtRevisionV2,
+  rebuildGameCommandV2,
+} from "./run-state-replay-v2";
 import {
   assertPersistedState,
   assertScenarioSnapshotRecord,
@@ -165,14 +169,13 @@ export async function loadCheckpointEvidenceV2(
   return buildCheckpointEvidenceV2(startingState, endingState, records);
 }
 
-export async function loadMonthlyTaxEvidenceForCommand(
+async function findAcceptedMonthlyCommandV2(
   db: LifeFinanceDatabase,
   secretCodec: RunSecretCodec,
-  
   runId: string,
   accessSecret: string,
   commandId: string,
-): Promise<MonthlyTaxEvidence | null> {
+): Promise<ProcessMonthV2Command | null> {
   assertUuid(runId);
   const [run] = await db
     .select()
@@ -210,6 +213,13 @@ export async function loadMonthlyTaxEvidenceForCommand(
       "command id belongs to a different accepted command",
     );
   }
+  const command = rebuildGameCommandV2(accepted);
+  if (command.type !== "process_month_v2") {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "accepted monthly command decoded to the wrong command type",
+    );
+  }
   const [stored] = await db
     .select()
     .from(monthlyTaxEvidence)
@@ -220,18 +230,57 @@ export async function loadMonthlyTaxEvidenceForCommand(
       ),
     )
     .limit(1);
-  const payload = accepted.payload as { taxEvidence?: unknown };
   if (
     !stored ||
     sha256Canonical(stored.evidence) !== stored.evidenceChecksum ||
-    canonicalJson(stored.evidence) !== canonicalJson(payload.taxEvidence)
+    canonicalJson(stored.evidence) !== canonicalJson(command.payload.taxEvidence)
   ) {
     throw new RunRepositoryError(
       "CORRUPT_STATE",
       "accepted monthly command is missing consistent tax evidence",
     );
   }
-  return stored.evidence;
+  return command;
+}
+
+export async function loadAcceptedMonthlyCommandV2(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  commandId: string,
+): Promise<ProcessMonthV2Command> {
+  const command = await findAcceptedMonthlyCommandV2(
+    db,
+    secretCodec,
+    runId,
+    accessSecret,
+    commandId,
+  );
+  if (!command) {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "accepted monthly command is missing from persisted command history",
+    );
+  }
+  return command;
+}
+
+export async function loadMonthlyTaxEvidenceForCommand(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  commandId: string,
+): Promise<MonthlyTaxEvidence | null> {
+  const command = await findAcceptedMonthlyCommandV2(
+    db,
+    secretCodec,
+    runId,
+    accessSecret,
+    commandId,
+  );
+  return command?.payload.taxEvidence ?? null;
 }
 
 export async function loadMonthlyTaxEvidenceForContext(

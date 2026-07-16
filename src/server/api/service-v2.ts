@@ -187,37 +187,41 @@ export class RunApiServiceV2 {
       runId,
       accessSecret,
     );
-    const replayEvidence = current.acceptedCommandIds.includes(command.id)
-      ? await this.#repository.loadMonthlyTaxEvidenceForCommand(
+    const acceptedReplay = current.acceptedCommandIds.includes(command.id)
+      ? await this.#repository.loadAcceptedMonthlyCommandV2(
           runId,
           accessSecret,
           command.id,
         )
       : null;
-    this.#validateMonthlyCommand(current, command, replayEvidence !== null);
-    const evidence =
-      replayEvidence ??
-      (await resolveMonthlyTaxEvidence({
+    this.#validateMonthlyCommand(current, command, acceptedReplay !== null);
+    let internal: ProcessMonthV2Command;
+    if (acceptedReplay) {
+      this.#validateMonthlyReplayEnvelope(command, acceptedReplay);
+      internal = acceptedReplay;
+    } else {
+      const evidence = await resolveMonthlyTaxEvidence({
         state: current,
         runId,
         accessSecret,
         commandId: command.id,
         repository: this.#repository,
         taxCalculator: this.#taxCalculator,
-      }));
-    const internal: ProcessMonthV2Command = {
-      schemaVersion: 2,
-      id: command.id,
-      type: "process_month_v2",
-      expectedRevision: command.expectedRevision,
-      effectiveMonth: simulationMonth(command.effectiveMonth),
-      payload: {
-        financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
-        taxEvidence: evidence,
-        taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
-        resolvedCashFlows: [],
-      },
-    };
+      });
+      internal = {
+        schemaVersion: 2,
+        id: command.id,
+        type: "process_month_v2",
+        expectedRevision: command.expectedRevision,
+        effectiveMonth: simulationMonth(command.effectiveMonth),
+        payload: {
+          financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+          taxEvidence: evidence,
+          taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
+          resolvedCashFlows: [],
+        },
+      };
+    }
     const applied = await this.#repository.applyCommandV2(
       runId,
       accessSecret,
@@ -259,6 +263,24 @@ export class RunApiServiceV2 {
       throw new RunApiV2Error(
         "INVALID_EFFECTIVE_MONTH",
         "monthly command month does not match the run",
+      );
+    }
+  }
+
+  #validateMonthlyReplayEnvelope(
+    command: Extract<GameCommandV2Public, { type: "process_month" }>,
+    accepted: ProcessMonthV2Command,
+  ): void {
+    if (command.expectedRevision !== accepted.expectedRevision) {
+      throw new RunApiV2Error(
+        "STALE_REVISION",
+        "replayed monthly command must use its accepted revision",
+      );
+    }
+    if (simulationMonth(command.effectiveMonth) !== accepted.effectiveMonth) {
+      throw new RunApiV2Error(
+        "INVALID_EFFECTIVE_MONTH",
+        "replayed monthly command must use its accepted effective month",
       );
     }
   }

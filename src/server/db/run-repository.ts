@@ -25,6 +25,7 @@ import type { LifeFinanceDatabase } from "./client";
 import {
   loadAuthorizedRun,
   loadAuthorizedRunV2,
+  loadAcceptedMonthlyCommandV2,
   loadCheckpointEvidenceV2,
   loadMonthlyTaxEvidenceForCommand,
   loadMonthlyTaxEvidenceForContext,
@@ -348,6 +349,20 @@ export class RunRepository {
       runId,
       accessSecret,
       fromRevision,
+    );
+  }
+
+  async loadAcceptedMonthlyCommandV2(
+    runId: string,
+    accessSecret: string,
+    commandId: string,
+  ) {
+    return loadAcceptedMonthlyCommandV2(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+      commandId,
     );
   }
 
