@@ -5,6 +5,7 @@ import {
   moneyCents,
 } from "../../../core/domain/money";
 import { monthsBetween } from "../../../core/domain/month";
+import { resetAnnualFinancialAccumulatorsV2 } from "../../../core/financial-year-v2";
 import { currentCumulativePriceIndexPpmV2 } from "../../../core/inflation-v2";
 import type { MonthlyTaxEvidence } from "../../../core/payroll-v2";
 import { planRecurringAllocations } from "../../../core/recurring-strategy-v2";
@@ -38,23 +39,25 @@ function emptyIncome() {
 }
 
 export function projectAnnualPretaxContributions(state: AuthorizedV2State) {
-  const employment = state.gameplay.employment;
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(state);
+  const employment = annualOpeningState.gameplay.employment;
   if (employment.status !== "employed") {
     throw new RunApiV2Error(
       "TAX_CONTEXT_MISMATCH",
       "annual contribution projection requires native employment",
     );
   }
-  const monthNumber = Number(state.currentMonth.slice(5, 7));
+  const monthNumber = Number(annualOpeningState.currentMonth.slice(5, 7));
   const remainingMonths = 13 - monthNumber;
   const monthlyGross = allocateMoney(
     employment.annualGrossSalaryCents,
     1,
     12,
   );
-  let employee401kCents = state.gameplay.contributions.employee401kCents;
-  let hsaCents = state.gameplay.contributions.hsaCents;
-  let projectionState = state;
+  let employee401kCents =
+    annualOpeningState.gameplay.contributions.employee401kCents;
+  let hsaCents = annualOpeningState.gameplay.contributions.hsaCents;
+  let projectionState = annualOpeningState;
 
   for (let month = 0; month < remainingMonths; month += 1) {
     const plan = planRecurringAllocations(
@@ -84,18 +87,26 @@ export function projectAnnualPretaxContributions(state: AuthorizedV2State) {
 }
 
 export function buildTaxRequest(state: AuthorizedV2State, commandId: string) {
-  const snapshot = state.gameplay.catalogSnapshot;
-  const employment = state.gameplay.employment;
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(state);
+  const snapshot = annualOpeningState.gameplay.catalogSnapshot;
+  const employment = annualOpeningState.gameplay.employment;
   if (!snapshot || employment.status !== "employed") {
     throw new RunApiV2Error(
       "TAX_CONTEXT_MISMATCH",
       "monthly processing requires a native employed v2 run",
     );
   }
-  const projectedContributions = projectAnnualPretaxContributions(state);
+  const projectedContributions = projectAnnualPretaxContributions(
+    annualOpeningState,
+  );
   const ageYears = Math.max(
     0,
-    Math.floor(monthsBetween(state.player.birthMonth, state.currentMonth) / 12),
+    Math.floor(
+      monthsBetween(
+        annualOpeningState.player.birthMonth,
+        annualOpeningState.currentMonth,
+      ) / 12,
+    ),
   );
   const household = snapshot.selected.household;
   const people: unknown[] = [
@@ -142,9 +153,10 @@ export function buildTaxRequest(state: AuthorizedV2State, commandId: string) {
   return taxCalculationRequestSchema.parse({
     schemaVersion: 1,
     traceId: `tax.${commandId}`,
-    economicYear: Number(state.currentMonth.slice(0, 4)),
+    economicYear: Number(annualOpeningState.currentMonth.slice(0, 4)),
     policyYear: FROZEN_POLICY_YEAR,
-    cumulativePriceIndexPpm: currentCumulativePriceIndexPpmV2(state),
+    cumulativePriceIndexPpm:
+      currentCumulativePriceIndexPpmV2(annualOpeningState),
     stateCode: snapshot.derived.stateCode,
     filingStatus: snapshot.derived.filingStatus,
     people,
@@ -195,14 +207,15 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
   repository: V2Repository;
   taxCalculator: TaxCalculator;
 }>): Promise<MonthlyTaxEvidence> {
-  const employment = input.state.gameplay.employment;
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(input.state);
+  const employment = annualOpeningState.gameplay.employment;
   if (employment.status !== "employed") {
     throw new RunApiV2Error(
       "TAX_CONTEXT_MISMATCH",
       "monthly processing requires native employment",
     );
   }
-  const request = buildTaxRequest(input.state, input.commandId);
+  const request = buildTaxRequest(annualOpeningState, input.commandId);
   const contextFingerprint = fingerprintAnnualTaxContext(request);
   const cached = await input.repository.loadMonthlyTaxEvidenceForContext(
     input.runId,
@@ -215,7 +228,7 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
     12,
   );
   const monthlyPlan = planRecurringAllocations(
-    input.state,
+    annualOpeningState,
     monthlyGross,
     moneyCents(0),
   );

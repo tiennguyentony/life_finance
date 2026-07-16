@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { sha256Canonical } from "../../../core/canonical";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
+import { resetAnnualFinancialAccumulatorsV2 } from "../../../core/financial-year-v2";
 import { processMonthlyTurnV2 } from "../../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
 import { setRecurringStrategy } from "../../../core/recurring-strategy-v2";
@@ -11,6 +12,12 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../../data/scenario-catalog";
+import {
+  POLICYENGINE_BUNDLE_VERSION,
+  POLICYENGINE_US_VERSION,
+  taxCalculationResultSchema,
+  type TaxCalculationRequest,
+} from "../../tax/contracts";
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
 import { commandV2ResponseSchema } from "../contracts-v2";
 import { RunApiServiceV2 } from "../service-v2";
@@ -265,6 +272,120 @@ describe("annual tax context cache", () => {
         monthlyRecord: incompleteKernelSummary,
       }),
     ).toThrow();
+  });
+});
+
+describe("annual tax year rollover", () => {
+  it("plans January payroll from reset contribution accumulators", async () => {
+    const priorYear = stateWithStrategy();
+    const snapshot = priorYear.gameplay.catalogSnapshot;
+    if (!snapshot || snapshot.derived.hsaAnnualContributionLimitCents === null) {
+      throw new Error("expected a native HSA-eligible scenario");
+    }
+    let state: ReturnType<typeof stateWithStrategy> = {
+      ...priorYear,
+      currentMonth: simulationMonth("2027-01"),
+      gameplay: {
+        ...priorYear.gameplay,
+        contributions: {
+          ...priorYear.gameplay.contributions,
+          policyYear: 2026,
+          employee401kCents:
+            snapshot.selected.benefitPolicy
+              .employeeRetirementContributionLimitCents,
+          hsaCents: snapshot.derived.hsaAnnualContributionLimitCents,
+        },
+      },
+    };
+    const openingState = state;
+    const commandId = "month.january-rollover";
+    const expectedContextFingerprint = fingerprintAnnualTaxContext(
+      buildTaxRequest(
+        resetAnnualFinancialAccumulatorsV2(openingState),
+        commandId,
+      ),
+    );
+    const calculate = vi.fn(async (request: TaxCalculationRequest) =>
+      taxCalculationResultSchema.parse({
+        schemaVersion: 1,
+        traceId: request.traceId,
+        economicYear: request.economicYear,
+        policyYear: request.policyYear,
+        stateCode: request.stateCode,
+        filingStatus: request.filingStatus,
+        annualGrossIncomeCents: 12_000_000,
+        federalIncomeTaxCents: 1_000_000,
+        stateIncomeTaxCents: 0,
+        employeePayrollTaxCents: 200_000,
+        selfEmploymentTaxCents: 0,
+        totalTaxCents: 1_200_000,
+        afterTaxIncomeCents: 10_800_000,
+        effectiveTaxRatePpm: 100_000,
+        componentsCents: {},
+        model: {
+          provider: "PolicyEngine US",
+          bundleVersion: POLICYENGINE_BUNDLE_VERSION,
+          rulesVersion: POLICYENGINE_US_VERSION,
+          projectedFromFrozenPolicy: true,
+        },
+        disclaimer:
+          "Educational estimate only; not tax, legal, or financial advice.",
+      }),
+    );
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext: vi.fn(
+        async (_runId, _secret, fingerprint) => {
+          expect(fingerprint).toBe(expectedContextFingerprint);
+          return null;
+        },
+      ),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2: vi.fn(),
+      applyCommandV2: vi.fn(async (_runId, _secret, command) => {
+        if (command.type !== "process_month_v2") {
+          throw new Error("expected a monthly command");
+        }
+        const applied = processMonthlyTurnV2(state, command);
+        state = applied.state;
+        return {
+          state,
+          stateChecksum: sha256Canonical(state),
+          idempotentReplay: false,
+          monthlyRecord: applied.record,
+        };
+      }),
+    };
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const response = await service.submitCommand("run-id", "secret", {
+      schemaVersion: 2,
+      id: commandId,
+      type: "process_month",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      payload: {},
+    });
+
+    expect(response.state.gameplay.contributions).toMatchObject({
+      policyYear: 2027,
+      employee401kCents: moneyCents(50_000),
+      hsaCents: moneyCents(20_000),
+    });
+    expect(calculate).toHaveBeenCalledOnce();
+    expect(calculate.mock.calls[0]?.[0].people[0]?.income.w2Jobs[0]).toMatchObject({
+      pretaxRetirementContributionsCents: 600_000,
+      pretaxHealthContributionsCents: 240_000,
+    });
+    expect(openingState.gameplay.contributions).toMatchObject({
+      policyYear: 2026,
+      employee401kCents:
+        snapshot.selected.benefitPolicy
+          .employeeRetirementContributionLimitCents,
+      hsaCents: snapshot.derived.hsaAnnualContributionLimitCents,
+    });
   });
 });
 
