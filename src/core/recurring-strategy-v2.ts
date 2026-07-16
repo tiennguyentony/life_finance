@@ -6,6 +6,7 @@ import {
   type MoneyCents,
 } from "./domain/money";
 import type { SimulationMonth } from "./domain/month";
+import { applyDebtPaymentV2 } from "./debt-service-v2";
 import {
   finalizeGameStateV2,
   type GameStateV2,
@@ -161,7 +162,7 @@ function cappedAllocation(
   return moneyCents(Math.min(allocateMoney(base, ratePpm, 1_000_000), available));
 }
 
-function calculateEmployerMatch(
+export function calculateEmployerMatchV2(
   state: GameStateV2,
   grossSalaryCents: MoneyCents,
   employeeContributionCents: MoneyCents,
@@ -250,7 +251,7 @@ export function planRecurringAllocations(
       state.gameplay.contributions.employee401kCents,
     ),
   );
-  const employerMatch = calculateEmployerMatch(
+  const employerMatch = calculateEmployerMatchV2(
     state,
     grossSalaryCents,
     employee401k,
@@ -314,9 +315,15 @@ export function planRecurringAllocations(
     );
   for (const debt of avalanche) {
     if (debtRemaining === 0) break;
-    const payment = moneyCents(Math.min(debtRemaining, debt.principalCents));
-    extraDebtPayments.push({ debtId: debt.id, amountCents: payment });
-    debtRemaining = subtractMoney(debtRemaining, payment);
+    const payment = applyDebtPaymentV2(debt, ZERO, debtRemaining);
+    extraDebtPayments.push({
+      debtId: debt.id,
+      amountCents: payment.appliedPaymentCents,
+    });
+    debtRemaining = subtractMoney(
+      debtRemaining,
+      payment.appliedPaymentCents,
+    );
   }
   const allocatedDebt = subtractMoney(extraDebtBudget, debtRemaining);
   const allocatedAfterTax = [

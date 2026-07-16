@@ -1,13 +1,11 @@
-import {
-  divideRoundHalfAwayFromZero,
-  safeBigIntToNumber,
-} from "../../../core/domain/integer";
+import { safeBigIntToNumber } from "../../../core/domain/integer";
 import {
   addMoney,
   allocateMoney,
   moneyCents,
 } from "../../../core/domain/money";
 import { monthsBetween } from "../../../core/domain/month";
+import { currentCumulativePriceIndexPpmV2 } from "../../../core/inflation-v2";
 import type { MonthlyTaxEvidence } from "../../../core/payroll-v2";
 import { planRecurringAllocations } from "../../../core/recurring-strategy-v2";
 import type { TaxCalculator } from "../../tax/client";
@@ -18,22 +16,6 @@ import {
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
 import { RunApiV2Error } from "./errors";
 import type { AuthorizedV2State, V2Repository } from "./repository-port";
-
-function annualCpiPpm(state: AuthorizedV2State): number {
-  const initialLivingCost =
-    state.gameplay.catalogSnapshot?.derived.annualLivingCostCents;
-  if (!initialLivingCost || initialLivingCost <= 0) return 1_000_000;
-  return Math.max(
-    1,
-    safeBigIntToNumber(
-      divideRoundHalfAwayFromZero(
-        BigInt(state.finances.annualLivingCostCents) * BigInt(1_000_000),
-        BigInt(initialLivingCost),
-      ),
-      "cumulative price index",
-    ),
-  );
-}
 
 function emptyIncome() {
   return {
@@ -162,7 +144,7 @@ export function buildTaxRequest(state: AuthorizedV2State, commandId: string) {
     traceId: `tax.${commandId}`,
     economicYear: Number(state.currentMonth.slice(0, 4)),
     policyYear: FROZEN_POLICY_YEAR,
-    cumulativePriceIndexPpm: annualCpiPpm(state),
+    cumulativePriceIndexPpm: currentCumulativePriceIndexPpmV2(state),
     stateCode: snapshot.derived.stateCode,
     filingStatus: snapshot.derived.filingStatus,
     people,

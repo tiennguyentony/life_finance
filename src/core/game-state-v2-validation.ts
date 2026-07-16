@@ -317,6 +317,21 @@ export function validateGameStateV2(
       ),
     );
   }
+  const cumulativePriceIndexPpm =
+    state.gameplay.market.cumulativePriceIndexPpm;
+  if (
+    cumulativePriceIndexPpm !== undefined &&
+    (!Number.isSafeInteger(cumulativePriceIndexPpm) ||
+      cumulativePriceIndexPpm <= 0)
+  ) {
+    violations.push(
+      violation(
+        "gameplay.market.cumulativePriceIndexPpm",
+        "invalid_cumulative_price_index",
+        "must be a positive safe integer PPM index",
+      ),
+    );
+  }
   try {
     simulationMonth(strategy.effectiveMonth);
     if (compareMonths(strategy.effectiveMonth, state.currentMonth) > 0) {

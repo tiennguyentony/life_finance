@@ -114,6 +114,7 @@ describe("native game state v2 creation", () => {
         { coverageId: "insurance.renters", usedCents: 0 },
       ],
     });
+    expect(state.gameplay.market.cumulativePriceIndexPpm).toBe(1_000_000);
     expect(state.gameplay.runtimeBalance).toEqual({
       version: 1,
       pressurePpm: 0,
