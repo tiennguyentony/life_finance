@@ -19,22 +19,23 @@ export function WorldDirectorPanel({
     <section className="play-panel play-form">
       <div className="section-heading">
         <div>
-          <p className="hero-kicker">Optional AI stress lab</p>
-          <h2>Ask the World Director for an extra scenario</h2>
+          <p className="hero-kicker">Optional Hostile Fed AI preview</p>
+          <h2>Ask the Hostile Fed to rank eligible scenarios</h2>
         </div>
       </div>
       <p className="play-note">
         Normal surprise events already appear automatically when you advance a month.
-        This optional lab asks AI for an additional personalized stress scenario from
-        eligible, non-recent engine templates. AI cannot invent money effects or mutate
-        your balance sheet.
+        This optional preview gives the Hostile Fed personality influence over the order
+        of eligible, engine-owned templates using minimized risk bands. It never queues or
+        approves an event, supplies amounts or effects, or mutates your balance sheet.
+        Runtime Balance remains the sole approval authority during normal monthly play.
       </p>
       <label>
         <input checked={consented} onChange={(event) => onConsentChange(event.target.checked)} type="checkbox" />
-        I agree to send the minimized, redacted exposure context for this event.
+        I agree to send minimized ranking metadata and redacted risk bands.
       </label>
       <button disabled={busy || !consented || !ready} onClick={onCreateEvent} type="button">
-        {ready ? "Run an optional AI stress scenario" : "Process one month to measure exposure"}
+        {ready ? "Preview Hostile Fed ranking" : "Process one month to measure exposure"}
       </button>
     </section>
   );

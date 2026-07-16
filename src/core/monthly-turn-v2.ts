@@ -64,6 +64,13 @@ import {
   recordRuntimeBalanceCashFlowV2,
   runtimeBalanceStateV2,
 } from "./runtime-balance-state-v2";
+import { analyzeRiskV1 } from "./risk-v1";
+import {
+  rankScenarioCandidatesV2,
+  type ScenarioDirectorDecisionV2,
+  type ScenarioDirectorInputV2,
+} from "./scenario-director-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "./scenario-director-policy-v2";
 import {
   adjudicateCoverageClaim,
   adjudicateHealthClaim,
@@ -146,6 +153,7 @@ export type ProcessMonthV2Command = Readonly<{
       | typeof DECLARATIVE_EVENT_SCHEDULER_V2_VERSION;
     runtimeBalanceControllerVersion?:
       typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
+    scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
     marketModelVersion?:
       | typeof MARKET_MODEL_VERSION
       | typeof MACRO_MARKET_MODEL_V2_VERSION;
@@ -181,6 +189,8 @@ export type MonthlyTurnV2Record = Readonly<{
   runtimeBalanceControllerVersion?:
     typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
   runtimeBalanceDecision?: RuntimeBalanceDecisionV2;
+  scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
+  scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
   runtimeBalanceCandidateSet?: Readonly<{
     eligibleTemplateIds: readonly string[];
     candidateTemplateIds: readonly string[];
@@ -215,6 +225,7 @@ export class MonthlyTurnV2Error extends Error {
     | "UNSUPPORTED_OUTCOME_POLICY_VERSION"
     | "UNSUPPORTED_EVENT_SCHEDULER_VERSION"
     | "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION"
+    | "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION"
     | "UNSUPPORTED_MARKET_MODEL_VERSION"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
@@ -281,6 +292,18 @@ export function runtimeBalanceControllerVersionForCommandV2(
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
     `unsupported Runtime Balance controller version: ${String(version)}`,
+  );
+}
+
+export function scenarioDirectorVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): typeof SCENARIO_DIRECTOR_V2_VERSION | null {
+  const version = command.payload.scenarioDirectorVersion;
+  if (version === undefined) return null;
+  if (version === SCENARIO_DIRECTOR_V2_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION",
+    `unsupported Scenario Director version: ${String(version)}`,
   );
 }
 
@@ -770,6 +793,7 @@ export function processMonthlyTurnV2(
   const eventSchedulerVersion = eventSchedulerVersionForCommandV2(command);
   const runtimeBalanceControllerVersion =
     runtimeBalanceControllerVersionForCommandV2(command);
+  const scenarioDirectorVersion = scenarioDirectorVersionForCommandV2(command);
   const marketSelection = marketModelVersionForCommandV2(command);
   if (
     outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION &&
@@ -788,6 +812,15 @@ export function processMonthlyTurnV2(
     throw new MonthlyTurnV2Error(
       "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
       "runtime-balance-v1 requires financial kernel 2.0.0 and declarative-events-v2",
+    );
+  }
+  if (
+    scenarioDirectorVersion === SCENARIO_DIRECTOR_V2_VERSION &&
+    runtimeBalanceControllerVersion !== RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION",
+      "scenario-director-v2 requires runtime-balance-v1",
     );
   }
   if (
@@ -837,6 +870,7 @@ export function processMonthlyTurnV2(
       outcomePolicyVersion,
       eventSchedulerVersion,
       runtimeBalanceControllerVersion,
+      scenarioDirectorVersion,
       marketSelection,
     );
   }
@@ -868,6 +902,56 @@ function sampleFinancialMarketStepV2(
   );
 }
 
+function scenarioDirectorInputForMonthlyTurnV2(
+  state: GameStateV2,
+  candidates: ReturnType<
+    typeof generateDeclarativePersonalEventCandidatesV2
+  >["candidates"],
+): ScenarioDirectorInputV2 {
+  const balance = state.gameplay.runtimeBalance;
+  if (balance?.version !== 2) {
+    throw new RangeError("Scenario Director v2 requires Runtime Balance state v2");
+  }
+  return Object.freeze({
+    version: SCENARIO_DIRECTOR_V2_VERSION,
+    month: state.currentMonth,
+    riskSnapshot: analyzeRiskV1(state),
+    macro: Object.freeze({
+      regime: state.marketRegime,
+      tags: Object.freeze([]),
+    }),
+    candidates: Object.freeze(
+      candidates.map(({ template, targetedWeakness }) =>
+        Object.freeze({
+          templateId: template.id,
+          templateVersion: template.version,
+          category: template.category,
+          tier: template.severityTier,
+          targetedWeakness,
+          lessonTags: template.lessonTags,
+          directorTags: Object.freeze([]),
+        }),
+      ),
+    ),
+    recentDecisions: Object.freeze([]),
+    recentEvents: Object.freeze(
+      balance.recentEvents.map((event) =>
+        Object.freeze({
+          templateId: event.templateId,
+          templateVersion: event.templateVersion,
+          category: event.category,
+          tier: event.tier,
+          targetedWeakness: event.targetedWeakness,
+          lessonTags: event.lessonTags,
+          month: event.approvedMonth,
+        }),
+      ),
+    ),
+    lessonExposureCounts: balance.lessonExposureCounts,
+    difficulty: balance.difficulty,
+  });
+}
+
 function processMonthlyTurnV2Kernel200(
   state: GameStateV2,
   command: ProcessMonthV2Command,
@@ -877,6 +961,7 @@ function processMonthlyTurnV2Kernel200(
   runtimeBalanceControllerVersion:
     | typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION
     | null,
+  scenarioDirectorVersion: typeof SCENARIO_DIRECTOR_V2_VERSION | null,
   marketSelection: MarketModelSelectionV2,
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
@@ -974,6 +1059,8 @@ function processMonthlyTurnV2Kernel200(
         };
     let nextState = finalizeGameStateV2({ ...exposedWithRuntimeBalance, outcome });
     let runtimeBalanceDecision: RuntimeBalanceDecisionV2 | undefined;
+    let scenarioDirectorInput: ScenarioDirectorInputV2 | undefined;
+    let scenarioDirectorDecision: ScenarioDirectorDecisionV2 | undefined;
     let runtimeBalanceCandidateSet:
       | MonthlyTurnV2Record["runtimeBalanceCandidateSet"]
       | undefined;
@@ -1000,6 +1087,15 @@ function processMonthlyTurnV2Kernel200(
           eligibleTemplateIds: candidates.eligibleTemplateIds,
           candidateTemplateIds: candidates.candidateTemplateIds,
         });
+        if (scenarioDirectorVersion === SCENARIO_DIRECTOR_V2_VERSION) {
+          scenarioDirectorInput = scenarioDirectorInputForMonthlyTurnV2(
+            nextState,
+            candidates.candidates,
+          );
+          scenarioDirectorDecision = rankScenarioCandidatesV2(
+            scenarioDirectorInput,
+          );
+        }
         const choice = chooseBalancedEventV2(
           nextState,
           candidates.candidates,
@@ -1017,6 +1113,12 @@ function processMonthlyTurnV2Kernel200(
               ),
               requiredCashCents: financial.record.requiredCashCents,
             },
+            ...(scenarioDirectorDecision === undefined
+              ? {}
+              : {
+                  scenarioDirectorInput,
+                  scenarioDirectorDecision,
+                }),
           },
         );
         runtimeBalanceDecision = choice.decision;
@@ -1061,6 +1163,12 @@ function processMonthlyTurnV2Kernel200(
       ...(runtimeBalanceDecision === undefined
         ? {}
         : { runtimeBalanceDecision }),
+      ...(scenarioDirectorVersion === null
+        ? {}
+        : { scenarioDirectorVersion }),
+      ...(scenarioDirectorDecision === undefined
+        ? {}
+        : { scenarioDirectorDecision }),
       ...(runtimeBalanceCandidateSet === undefined
         ? {}
         : { runtimeBalanceCandidateSet }),
