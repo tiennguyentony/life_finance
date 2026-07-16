@@ -1,38 +1,30 @@
-@media (max-width: 980px) {
-  .cast-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 780px) {
   .header-inner {
     gap: 1rem;
   }
 
-  .hero,
+  .home-hero {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    gap: 3rem;
+    padding-block: 4rem;
+  }
+
+  .home-scope {
+    padding: 2rem 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .home-capability-grid {
+    grid-template-columns: 1fr;
+  }
+
   .play-start {
     min-height: auto;
     grid-template-columns: 1fr;
     gap: 2.5rem;
     padding-block: 3rem;
-  }
-
-  .hero-art {
-    order: -1;
-  }
-
-  .hero-scene {
-    rotate: 0deg;
-  }
-
-  .capability-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .capability-card,
-  .capability-card-engine,
-  .capability-card-evidence {
-    grid-column: auto;
   }
 
   .play-grid,
@@ -69,7 +61,10 @@
     font-size: 0.98rem;
   }
 
-  .hero h1,
+  .home-hero h1 {
+    letter-spacing: -0.05em;
+  }
+
   .play-start h1,
   .not-found h1 {
     font-size: clamp(2.2rem, 9vw, 2.8rem);
@@ -83,7 +78,6 @@
     align-self: stretch;
   }
 
-  .cast-grid,
   .persona-grid,
   .play-inline-fields,
   .strategy-grid,
