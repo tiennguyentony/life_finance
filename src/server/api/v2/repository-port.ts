@@ -4,6 +4,7 @@ export type V2Repository = Pick<
   RunRepository,
   | "createRunV2"
   | "loadAuthorizedRunV2"
+  | "loadAcceptedMonthlyCommandV2"
   | "applyCommandV2"
   | "loadMonthlyTaxEvidenceForCommand"
   | "loadMonthlyTaxEvidenceForContext"
