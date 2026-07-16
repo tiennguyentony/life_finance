@@ -13,6 +13,7 @@ import {
   type GameStateV2,
 } from "../game-state-v2";
 import { reconcileFinancesWithLedger } from "../game-state";
+import { manageLifeMilestoneV2 } from "../life-milestones-v2";
 import {
   FinancialProjectionV2Error,
   MAX_FINANCIAL_PROJECTION_MONTHS_V2,
@@ -286,6 +287,40 @@ function withOpeningState(
   state: GameStateV2,
 ): FinancialProjectionInputV2 {
   return { ...input, state };
+}
+
+function withPendingCertificate(state: GameStateV2): GameStateV2 {
+  return reduceDetailedFinanceCommand(state, {
+    schemaVersion: 2,
+    id: "cmd.projection.upskill",
+    type: "take_detailed_action",
+    expectedRevision: state.revision,
+    effectiveMonth: state.currentMonth,
+    payload: {
+      action: { type: "start_upskill", programId: "upskill.certificate" },
+    },
+  });
+}
+
+function withScheduledMilestone(
+  state: GameStateV2,
+  targetMonth: string,
+): GameStateV2 {
+  return manageLifeMilestoneV2(state, {
+    schemaVersion: 2,
+    id: `cmd.projection.milestone.${targetMonth}`,
+    type: "manage_life_milestone",
+    expectedRevision: state.revision,
+    effectiveMonth: state.currentMonth,
+    payload: {
+      action: "schedule",
+      milestoneId: `milestone.projection.${targetMonth}`,
+      kind: "travel",
+      label: "Projection horizon fixture",
+      targetMonth: simulationMonth(targetMonth),
+      estimatedCostCents: moneyCents(100_000),
+    },
+  });
 }
 
 function taxEvidenceForMonth(
@@ -1481,30 +1516,6 @@ describe("projectWithoutEventsV2", () => {
       },
     ],
     [
-      "pending career completion",
-      (state: GameStateV2) =>
-        reduceDetailedFinanceCommand(state, {
-          schemaVersion: 2,
-          id: "cmd.projection.upskill",
-          type: "take_detailed_action",
-          expectedRevision: state.revision,
-          effectiveMonth: state.currentMonth,
-          payload: {
-            action: { type: "start_upskill", programId: "upskill.certificate" },
-          },
-        }),
-    ],
-    [
-      "active macro story",
-      (state: GameStateV2) =>
-        advanceMacroStoriesV2(state, {
-          version: "macro-story-v1",
-          monthlyChancePpm: 1_000_000,
-          minimumDurationMonths: 2,
-          maximumDurationMonths: 2,
-        }),
-    ],
-    [
       "terminal outcome",
       (state: GameStateV2) =>
         finalizeGameStateV2({
@@ -1529,6 +1540,106 @@ describe("projectWithoutEventsV2", () => {
     );
     expect(sha256Canonical(state)).toBe(openingChecksum);
     expect(state.currentMonth).toBe("2026-07");
+  });
+
+  it("retains pending career work that completes after the projection horizon", () => {
+    const base = fixedGoldenInput();
+    const state = withPendingCertificate(base.state);
+
+    const result = projectWithoutEventsV2(withOpeningState(base, state));
+
+    expect(result.completedMonths).toBe(1);
+    expect(result.projectedState.state.currentMonth).toBe("2026-08");
+    expect(result.projectedState.state.gameplay.careerDevelopment).toEqual(
+      state.gameplay.careerDevelopment,
+    );
+    expect(
+      result.projectedState.state.gameplay.careerDevelopment.pending[0]
+        ?.completesMonth,
+    ).toBe("2026-10");
+  });
+
+  it("rejects a career completion inside the projection horizon before partial work", () => {
+    const base = stateSeededInput(3, ZERO_MARKET_MODIFIERS);
+    const state = withPendingCertificate(base.state);
+    const openingChecksum = sha256Canonical(state);
+
+    expect(() =>
+      projectWithoutEventsV2(withOpeningState(base, state)),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_NONFINANCIAL_LIFECYCLE" }),
+    );
+    expect(sha256Canonical(state)).toBe(openingChecksum);
+    expect(state.currentMonth).toBe("2026-07");
+    expect(state.revision).toBe(2);
+  });
+
+  it("retains an active macro story that remains valid through the projection horizon", () => {
+    const base = fixedGoldenInput();
+    const state = advanceMacroStoriesV2(base.state, {
+      version: "macro-story-v1",
+      monthlyChancePpm: 1_000_000,
+      minimumDurationMonths: 2,
+      maximumDurationMonths: 2,
+    });
+
+    const result = projectWithoutEventsV2(withOpeningState(base, state));
+
+    expect(result.completedMonths).toBe(1);
+    expect(result.projectedState.state.currentMonth).toBe("2026-08");
+    expect(result.projectedState.state.gameplay.eventLifecycle).toEqual(
+      state.gameplay.eventLifecycle,
+    );
+    expect(
+      result.projectedState.state.gameplay.eventLifecycle.macroStories[0]
+        ?.expiresMonth,
+    ).toBe("2026-08");
+  });
+
+  it("rejects a macro story that expires inside the projection horizon", () => {
+    const base = stateSeededInput(2, ZERO_MARKET_MODIFIERS);
+    const state = advanceMacroStoriesV2(base.state, {
+      version: "macro-story-v1",
+      monthlyChancePpm: 1_000_000,
+      minimumDurationMonths: 2,
+      maximumDurationMonths: 2,
+    });
+    const openingChecksum = sha256Canonical(state);
+
+    expect(() =>
+      projectWithoutEventsV2(withOpeningState(base, state)),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_NONFINANCIAL_LIFECYCLE" }),
+    );
+    expect(sha256Canonical(state)).toBe(openingChecksum);
+    expect(state.currentMonth).toBe("2026-07");
+  });
+
+  it("rejects a life milestone decision due inside the projection horizon", () => {
+    const base = fixedGoldenInput();
+    const state = withScheduledMilestone(base.state, "2026-08");
+    const openingChecksum = sha256Canonical(state);
+
+    expect(() =>
+      projectWithoutEventsV2(withOpeningState(base, state)),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_NONFINANCIAL_LIFECYCLE" }),
+    );
+    expect(sha256Canonical(state)).toBe(openingChecksum);
+    expect(state.currentMonth).toBe("2026-07");
+  });
+
+  it("retains a scheduled life milestone beyond the projection horizon", () => {
+    const base = fixedGoldenInput();
+    const state = withScheduledMilestone(base.state, "2026-09");
+
+    const result = projectWithoutEventsV2(withOpeningState(base, state));
+
+    expect(result.completedMonths).toBe(1);
+    expect(result.projectedState.state.currentMonth).toBe("2026-08");
+    expect(result.projectedState.state.gameplay.lifeMilestones).toEqual(
+      state.gameplay.lifeMilestones,
+    );
   });
 
   it("retains valid historical lifecycle cooldown evidence without orchestrating it", () => {
