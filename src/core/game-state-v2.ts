@@ -25,13 +25,17 @@ import {
   GAME_STATE_V2_SCHEMA_VERSION,
   V1_TO_V2_MIGRATION_VERSION,
 } from "./game-state-v2-constants";
-import { assertValidGameStateV2 } from "./game-state-v2-validation";
+import {
+  assertValidGameStateV2,
+  type GameStateV2ValidationOptions,
+} from "./game-state-v2-validation";
 import {
   createInitialRuntimeBalanceStateV1,
   type RuntimeBalanceStateV1,
 } from "./runtime-balance-state-v1";
 import type { RuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
 import type { OnboardingInitializationEvidenceV1 } from "./onboarding-v1-contracts";
+import type { WorldRandomStateV1 } from "./world-random-v1";
 
 export {
   ENGINE_V2_VERSION,
@@ -321,6 +325,8 @@ export type GameStateV2 = Readonly<
     engineVersion: typeof ENGINE_V2_VERSION;
     gameplay: GameplayStateV2;
     migration: StateMigrationRecord | null;
+    /** Absent on historical states. Named streams are enabled only by an accepted versioned command. */
+    worldRandom?: WorldRandomStateV1;
   }
 >;
 
@@ -332,8 +338,11 @@ function deepFreeze<T>(value: T): Readonly<T> {
   return value;
 }
 
-export function finalizeGameStateV2(state: GameStateV2): GameStateV2 {
-  assertValidGameStateV2(state);
+export function finalizeGameStateV2(
+  state: GameStateV2,
+  validationOptions: GameStateV2ValidationOptions = {},
+): GameStateV2 {
+  assertValidGameStateV2(state, validationOptions);
   return deepFreeze(state) as GameStateV2;
 }
 

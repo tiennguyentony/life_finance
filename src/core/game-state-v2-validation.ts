@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Canonical } from "./canonical";
 import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
 import { randomState } from "./domain/rng";
+import { decodeOptionalWorldRandomStateV1 } from "./world-random-v1";
 import {
   assertValidGameState,
   calculateAgeYearsAtMonth,
@@ -19,6 +20,7 @@ import type {
   PendingEventV2,
   ResolvedEventEvidenceV2,
 } from "./game-state-v2";
+import type { PersonalEventTemplateV2 } from "./personal-event-v2";
 import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-validation";
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
 import {
@@ -41,6 +43,10 @@ import {
   gradeRetirementProgressV1,
   outcomePolicyForVersionV2,
 } from "./outcome-policy-v2";
+
+export type GameStateV2ValidationOptions = Readonly<{
+  personalEventCatalog?: readonly PersonalEventTemplateV2[];
+}>;
 
 export class InvalidGameStateV2Error extends Error {
   readonly violations: readonly StateInvariantViolation[];
@@ -588,6 +594,7 @@ function validateRuntimeBalanceLifecycleV2(
 
 export function validateGameStateV2(
   state: GameStateV2,
+  options: GameStateV2ValidationOptions = {},
 ): readonly StateInvariantViolation[] {
   const violations: StateInvariantViolation[] = [];
 
@@ -655,6 +662,17 @@ export function validateGameStateV2(
   // that optional validation out of the very hot monthly-finalization path.
   if (state.gameplay.initialization !== undefined) {
     validateOnboardingInitializationV1(state, violations);
+  }
+  try {
+    decodeOptionalWorldRandomStateV1(state.worldRandom);
+  } catch {
+    violations.push(
+      violation(
+        "worldRandom",
+        "invalid_world_random_state",
+        "named world random state must use the exact supported version and stream shape",
+      ),
+    );
   }
 
   if (state.schemaVersion !== GAME_STATE_V2_SCHEMA_VERSION) {
@@ -1047,13 +1065,16 @@ export function validateGameStateV2(
       ),
     );
   }
-  violations.push(...validateEventAndCareerStateV2(state));
+  violations.push(...validateEventAndCareerStateV2(state, options.personalEventCatalog));
   validateDeterministicOutcomeAgainstState(state, violations);
 
   return violations;
 }
 
-export function assertValidGameStateV2(state: GameStateV2): void {
-  const violations = validateGameStateV2(state);
+export function assertValidGameStateV2(
+  state: GameStateV2,
+  options: GameStateV2ValidationOptions = {},
+): void {
+  const violations = validateGameStateV2(state, options);
   if (violations.length > 0) throw new InvalidGameStateV2Error(violations);
 }

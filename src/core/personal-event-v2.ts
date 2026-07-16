@@ -1,6 +1,8 @@
 import { nextInt, type RandomState } from "./domain/rng";
-import { compareMonths, monthsBetween } from "./domain/month";
+import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
 import type { GameStateV2 } from "./game-state-v2";
+import { sha256Canonical } from "./canonical";
+import { eventOpportunityDrawV1 } from "./world-random-v1";
 import {
   UNRELATED_HAZARD_TARGET,
   type EventProposal,
@@ -165,6 +167,17 @@ export type DeclarativePersonalEventCandidatesV2 = Readonly<{
   eligibleTemplateIds: readonly string[];
   candidateTemplateIds: readonly string[];
 }>;
+
+export type NamedDeclarativePersonalEventCandidatesV2 =
+  DeclarativePersonalEventCandidatesV2 & Readonly<{
+    rawOpportunityEvidence: readonly Readonly<{
+      templateId: string;
+      templateVersion: number;
+      draw: number;
+      chancePpm: number;
+    }>[];
+    rawOpportunityFingerprint: string;
+  }>;
 
 const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const CATEGORIES = new Set<string>([
@@ -709,6 +722,131 @@ export function generateDeclarativePersonalEventCandidatesV2(
   return Object.freeze({
     candidates: Object.freeze(candidates),
     nextRandom: random,
+    eligibleTemplateIds: Object.freeze(eligible.map(({ id }) => id)),
+    candidateTemplateIds: Object.freeze(candidates.map(({ template }) => template.id)),
+  });
+}
+
+/**
+ * Additive named-stream candidate path. The frozen legacy scheduler above keeps
+ * consuming the root cursor; opted-in commands key every catalog opportunity by
+ * exact month/template identity so strategy-dependent eligibility cannot move a
+ * later world's cursor.
+ */
+export function generateNamedDeclarativePersonalEventCandidatesV2(
+  state: GameStateV2,
+  catalog: readonly PersonalEventTemplateV2[],
+): NamedDeclarativePersonalEventCandidatesV2 {
+  const violations = validatePersonalEventCatalogV2(catalog);
+  if (violations.length > 0) {
+    throw new RangeError(
+      `invalid declarative event catalog: ${violations
+        .map(({ path, code }) => `${path}:${code}`)
+        .join(",")}`,
+    );
+  }
+  if (state.worldRandom === undefined) {
+    throw new RangeError("named declarative event scheduling requires named world state");
+  }
+  const monthIndex = monthsBetween(simulationMonth("0001-01"), state.currentMonth);
+  const orderedCatalog = [...catalog].toSorted(
+    (left, right) => left.id.localeCompare(right.id) || left.version - right.version,
+  );
+  const rawOpportunityEvidence = Object.freeze(
+    orderedCatalog.map((template) =>
+      Object.freeze({
+        templateId: template.id,
+        templateVersion: template.version,
+        draw: eventOpportunityDrawV1({
+          epoch: state.worldRandom!.eventOpportunity,
+          simulationMonth: monthIndex,
+          templateId: template.id,
+          templateVersion: template.version,
+        }).value,
+        chancePpm: hazardChancePpm(template, state),
+      }),
+    ),
+  );
+  const evidenceByIdentity = new Map(
+    rawOpportunityEvidence.map((entry) => [
+      `${entry.templateId}@${entry.templateVersion}`,
+      entry,
+    ]),
+  );
+
+  const frozen = (result: Omit<NamedDeclarativePersonalEventCandidatesV2,
+    "rawOpportunityEvidence" | "rawOpportunityFingerprint">) =>
+    Object.freeze({
+      ...result,
+      rawOpportunityEvidence,
+      rawOpportunityFingerprint: sha256Canonical(
+        rawOpportunityEvidence.map(({ templateId, templateVersion, draw }) => ({
+          templateId,
+          templateVersion,
+          draw,
+        })),
+      ),
+    });
+  if (state.outcome || state.gameplay.eventLifecycle.pending) {
+    return frozen({
+      candidates: Object.freeze([]),
+      nextRandom: state.random,
+      eligibleTemplateIds: Object.freeze([]),
+      candidateTemplateIds: Object.freeze([]),
+    });
+  }
+
+  const dueFollowUp = [...(state.gameplay.eventLifecycle.scheduledFollowUps ?? [])]
+    .filter(({ eligibleMonth }) => compareMonths(eligibleMonth, state.currentMonth) <= 0)
+    .toSorted((left, right) =>
+      left.eligibleMonth.localeCompare(right.eligibleMonth) ||
+      left.sourceEventId.localeCompare(right.sourceEventId) ||
+      left.templateId.localeCompare(right.templateId) ||
+      left.templateVersion - right.templateVersion,
+    )
+    .find((followUp) => {
+      const target = orderedCatalog.find(
+        ({ id, version }) => id === followUp.templateId && version === followUp.templateVersion,
+      );
+      return Boolean(
+        target &&
+        personalEventEligibilityReasonsV2(target, state).length === 0 &&
+        personalEventHistoryAvailabilityReasonsV2(target, state, orderedCatalog).length === 0,
+      );
+    });
+  if (dueFollowUp !== undefined) {
+    const template = orderedCatalog.find(
+      ({ id, version }) => id === dueFollowUp.templateId && version === dueFollowUp.templateVersion,
+    )!;
+    return frozen({
+      candidates: Object.freeze([Object.freeze({
+        template,
+        targetedWeakness: UNRELATED_HAZARD_TARGET,
+        followUpSourceEventId: dueFollowUp.sourceEventId,
+      })]),
+      nextRandom: state.random,
+      eligibleTemplateIds: Object.freeze([template.id]),
+      candidateTemplateIds: Object.freeze([template.id]),
+    });
+  }
+
+  const eligible = orderedCatalog
+    .filter((template) => personalEventEligibilityReasonsV2(template, state).length === 0)
+    .filter((template) =>
+      personalEventHistoryAvailabilityReasonsV2(template, state, orderedCatalog).length === 0,
+    );
+  const candidates = eligible
+    .filter((template) => {
+      const evidence = evidenceByIdentity.get(`${template.id}@${template.version}`)!;
+      return evidence.draw <= evidence.chancePpm;
+    })
+    .map((template) => Object.freeze({
+      template,
+      targetedWeakness: UNRELATED_HAZARD_TARGET,
+    }));
+  return frozen({
+    candidates: Object.freeze(candidates),
+    nextRandom: state.random,
     eligibleTemplateIds: Object.freeze(eligible.map(({ id }) => id)),
     candidateTemplateIds: Object.freeze(candidates.map(({ template }) => template.id)),
   });

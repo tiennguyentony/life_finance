@@ -13,6 +13,7 @@ import type { TaxCalculator } from "../../tax/client";
 import {
   FROZEN_POLICY_YEAR,
   taxCalculationRequestSchema,
+  type TaxCalculationResult,
 } from "../../tax/contracts";
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
 import { RunApiV2Error } from "./errors";
@@ -199,15 +200,17 @@ function assertCachedContext(
   }
 }
 
-export async function resolveMonthlyTaxEvidence(input: Readonly<{
-  state: AuthorizedV2State;
-  runId: string;
-  accessSecret: string;
-  commandId: string;
-  repository: V2Repository;
-  taxCalculator: TaxCalculator;
-}>): Promise<MonthlyTaxEvidence> {
-  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(input.state);
+export type MonthlyTaxEvidenceSourceV1 =
+  | Readonly<{ kind: "calculated"; result: TaxCalculationResult }>
+  | Readonly<{ kind: "cached"; evidence: MonthlyTaxEvidence }>;
+
+/** One production-owned conversion shared by the web service and offline lab. */
+export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
+  state: AuthorizedV2State,
+  commandId: string,
+  source: MonthlyTaxEvidenceSourceV1,
+): MonthlyTaxEvidence {
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(state);
   const employment = annualOpeningState.gameplay.employment;
   if (employment.status !== "employed") {
     throw new RunApiV2Error(
@@ -215,18 +218,9 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
       "monthly processing requires native employment",
     );
   }
-  const request = buildTaxRequest(annualOpeningState, input.commandId);
+  const request = buildTaxRequest(annualOpeningState, commandId);
   const contextFingerprint = fingerprintAnnualTaxContext(request);
-  const cached = await input.repository.loadMonthlyTaxEvidenceForContext(
-    input.runId,
-    input.accessSecret,
-    contextFingerprint,
-  );
-  const monthlyGross = allocateMoney(
-    employment.annualGrossSalaryCents,
-    1,
-    12,
-  );
+  const monthlyGross = allocateMoney(employment.annualGrossSalaryCents, 1, 12);
   const monthlyPlan = planRecurringAllocations(
     annualOpeningState,
     monthlyGross,
@@ -234,29 +228,28 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
   );
   let metadata: TaxMetadata;
   let monthlyTax: number;
-
-  if (cached) {
+  if (source.kind === "cached") {
     assertCachedContext(
-      cached,
+      source.evidence,
       request,
       monthlyGross,
       monthlyPlan.preTax.employee401kCents,
       monthlyPlan.preTax.hsaCents,
     );
     metadata = {
-      traceId: `tax.cache.${input.commandId}`,
-      economicYear: cached.economicYear,
-      policyYear: cached.policyYear,
-      stateCode: cached.stateCode,
-      filingStatus: cached.filingStatus,
-      provider: cached.provider,
-      bundleVersion: cached.bundleVersion,
-      rulesVersion: cached.rulesVersion,
-      projectedFromFrozenPolicy: cached.projectedFromFrozenPolicy,
+      traceId: `tax.cache.${commandId}`,
+      economicYear: source.evidence.economicYear,
+      policyYear: source.evidence.policyYear,
+      stateCode: source.evidence.stateCode,
+      filingStatus: source.evidence.filingStatus,
+      provider: source.evidence.provider,
+      bundleVersion: source.evidence.bundleVersion,
+      rulesVersion: source.evidence.rulesVersion,
+      projectedFromFrozenPolicy: source.evidence.projectedFromFrozenPolicy,
     };
-    monthlyTax = cached.totalTaxCents;
+    monthlyTax = source.evidence.totalTaxCents;
   } else {
-    const result = await input.taxCalculator.calculate(request);
+    const result = source.result;
     if (
       result.traceId !== request.traceId ||
       result.economicYear !== request.economicYear ||
@@ -283,7 +276,6 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
     };
     monthlyTax = allocateMoney(moneyCents(result.totalTaxCents), 1, 12);
   }
-
   const afterTaxCash = safeBigIntToNumber(
     BigInt(monthlyGross) -
       BigInt(monthlyPlan.preTax.employee401kCents) -
@@ -297,16 +289,52 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
       "tax result leaves negative monthly payroll cash",
     );
   }
-
   return {
     schemaVersion: 1,
     ...metadata,
     contextFingerprint,
     grossIncomeCents: monthlyGross,
-    employee401kContributionCents:
-      monthlyPlan.preTax.employee401kCents,
+    employee401kContributionCents: monthlyPlan.preTax.employee401kCents,
     employeeHsaContributionCents: monthlyPlan.preTax.hsaCents,
     totalTaxCents: monthlyTax,
     afterTaxCashIncomeCents: moneyCents(afterTaxCash),
   };
+}
+
+export async function resolveMonthlyTaxEvidence(input: Readonly<{
+  state: AuthorizedV2State;
+  runId: string;
+  accessSecret: string;
+  commandId: string;
+  repository: V2Repository;
+  taxCalculator: TaxCalculator;
+}>): Promise<MonthlyTaxEvidence> {
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(input.state);
+  const employment = annualOpeningState.gameplay.employment;
+  if (employment.status !== "employed") {
+    throw new RunApiV2Error(
+      "TAX_CONTEXT_MISMATCH",
+      "monthly processing requires native employment",
+    );
+  }
+  const request = buildTaxRequest(annualOpeningState, input.commandId);
+  const contextFingerprint = fingerprintAnnualTaxContext(request);
+  const cached = await input.repository.loadMonthlyTaxEvidenceForContext(
+    input.runId,
+    input.accessSecret,
+    contextFingerprint,
+  );
+  if (cached) {
+    return buildMonthlyTaxEvidenceFromPolicyEngineV1(
+      annualOpeningState,
+      input.commandId,
+      { kind: "cached", evidence: cached },
+    );
+  }
+  const result = await input.taxCalculator.calculate(request);
+  return buildMonthlyTaxEvidenceFromPolicyEngineV1(
+    annualOpeningState,
+    input.commandId,
+    { kind: "calculated", result },
+  );
 }

@@ -17,6 +17,7 @@ import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
 import { OUTCOME_POLICY_V1_VERSION } from "../../core/outcome-policy-v2";
 import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../core/runtime-balance-policy-v2";
 import { SCENARIO_DIRECTOR_V2_VERSION } from "../../core/scenario-director-policy-v2";
+import { WORLD_RANDOM_VERSION_V1 } from "../../core/world-random-v1";
 import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
 import {
   advanceTimeV2,
@@ -238,6 +239,7 @@ export class RunApiServiceV2 {
             runtimeBalanceControllerVersion:
               RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
             scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+            worldRandomVersion: WORLD_RANDOM_VERSION_V1,
             marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
             macroDifficulty: runtimeBalanceDifficulty,
             taxEvidence:
@@ -544,6 +546,7 @@ export class RunApiServiceV2 {
           runtimeBalanceControllerVersion:
             RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
           scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+          worldRandomVersion: WORLD_RANDOM_VERSION_V1,
           marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
           macroDifficulty: runtimeBalanceDifficulty,
           taxEvidence: evidence,

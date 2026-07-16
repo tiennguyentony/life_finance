@@ -38,6 +38,7 @@ import {
   processMonthlyTurnV2,
   runtimeBalanceControllerVersionForCommandV2,
   scenarioDirectorVersionForCommandV2,
+  worldRandomVersionForCommandV2,
   type ProcessMonthV2Command,
 } from "../monthly-turn-v2";
 import { OUTCOME_POLICY_V1_VERSION } from "../outcome-policy-v2";
@@ -54,6 +55,11 @@ import {
 import { decodePersistedGameCommandV2 } from "../../server/db/persisted-command-v2";
 import { reduceGameCommandV2 } from "../../server/db/run-repository-support";
 import { decodePersistedGameState } from "../persisted-game-state";
+import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
+import {
+  initializeNamedWorldRandomV1,
+  WORLD_RANDOM_VERSION_V1,
+} from "../world-random-v1";
 
 function configuredState(
   financeOverrides: Partial<
@@ -130,6 +136,104 @@ function configuredState(
     },
   });
 }
+
+describe("named world random monthly routing", () => {
+  const namedCommand = (state: ReturnType<typeof configuredState>) =>
+    command(state, {
+      financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+      worldRandomVersion: WORLD_RANDOM_VERSION_V1,
+      marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+      macroDifficulty: "normal",
+    });
+
+  it("routes macro, opportunity, and parameter draws without advancing the historical root cursor", () => {
+    const opening = configuredState();
+    const expectedWorld = initializeNamedWorldRandomV1(opening.random);
+    const accepted = namedCommand(opening);
+
+    expect(worldRandomVersionForCommandV2(accepted)).toBe(WORLD_RANDOM_VERSION_V1);
+    const first = processMonthlyTurnV2(opening, accepted);
+    const repeated = processMonthlyTurnV2(opening, accepted);
+
+    expect(first).toEqual(repeated);
+    expect(first.state.random).toEqual(opening.random);
+    expect(first.state.worldRandom?.macro).not.toEqual(expectedWorld.macro);
+    expect(first.state.worldRandom?.eventOpportunity).not.toEqual(
+      expectedWorld.eventOpportunity,
+    );
+    expect(first.state.worldRandom?.eventParameters).not.toEqual(
+      expectedWorld.eventParameters,
+    );
+    expect(first.state.worldRandom?.balanceDirector).toEqual(
+      expectedWorld.balanceDirector,
+    );
+    expect(first.record.worldRandomEvidence).toMatchObject({
+      version: WORLD_RANDOM_VERSION_V1,
+      openingMacroStateValue: expectedWorld.macro.value,
+      openingOpportunityEpochValue: expectedWorld.eventOpportunity.value,
+      openingParameterEpochValue: expectedWorld.eventParameters.value,
+    });
+    expect(first.record.worldRandomEvidence?.rawOpportunityFingerprint).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+    expect(first.record.worldRandomEvidence?.grossParameterFingerprint).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+  });
+
+  it("round-trips the discriminator through the accepted command decoder", () => {
+    const accepted = namedCommand(configuredState());
+    expect(decodePersistedGameCommandV2(JSON.parse(JSON.stringify(accepted)))).toEqual(
+      accepted,
+    );
+  });
+
+  it("locks the accepted-command named-world replay checksum", () => {
+    const opening = configuredState();
+    const accepted = decodePersistedGameCommandV2(
+      JSON.parse(JSON.stringify(namedCommand(opening))),
+    );
+    const first = reduceGameCommandV2(opening, accepted);
+    const repeated = reduceGameCommandV2(opening, accepted);
+
+    expect(first).toEqual(repeated);
+    expect(first.monthlyRecord?.worldRandomEvidence?.version).toBe(
+      WORLD_RANDOM_VERSION_V1,
+    );
+    expect(sha256Canonical(first.state)).toBe(
+      "c135f690ace8f7387c64e2d7273afeae947ed14344deff0240f7269dc37b6166",
+    );
+  });
+
+  it("rejects invalid event configuration before a named world transition", () => {
+    const opening = configuredState();
+    const invalidCatalog = [
+      {
+        ...PERSONAL_EVENT_TEMPLATES_V2[0]!,
+        parameters: [
+          {
+            ...PERSONAL_EVENT_TEMPLATES_V2[0]!.parameters[0]!,
+            minimum: 10,
+            maximum: 1,
+          },
+        ],
+      },
+    ];
+    const checksum = sha256Canonical(opening);
+
+    expect(() =>
+      processMonthlyTurnV2(opening, namedCommand(opening), {
+        personalEventCatalog: invalidCatalog,
+      }),
+    ).toThrowError(/invalid event configuration/);
+    expect(sha256Canonical(opening)).toBe(checksum);
+    expect(opening.worldRandom).toBeUndefined();
+  });
+});
 
 const NO_FOLLOW_UP_EVENTS = Object.freeze({
   eventSchedulingPolicy: Object.freeze({
