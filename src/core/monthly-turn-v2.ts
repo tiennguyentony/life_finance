@@ -17,6 +17,16 @@ import {
 } from "./debt-service-v2";
 import type { FinancialSnapshot, GameState } from "./game-state";
 import {
+  FINANCIAL_KERNEL_V2_VERSION,
+  simulateFinancialMonthV2,
+  type FinancialMonthInputV2,
+  type FinancialMonthRecordV2,
+  type FinancialMonthResultV2,
+  type FinancialShortfallV2,
+  type MonthlyInsuranceClaimV2,
+  type ResolvedCashFlowV2,
+} from "./financial-kernel-v2";
+import {
   finalizeGameStateV2,
   type GameStateV2,
   type PendingEventV2,
@@ -37,6 +47,7 @@ import {
   marketSimulationState,
   simulateMarketMonth,
   type MarketMonth,
+  type MarketSimulationResult,
 } from "./market";
 import {
   activeMacroReturnModifiersV2,
@@ -48,7 +59,11 @@ import {
   prepareV2ObligationCash,
   type V2FundingRecord,
 } from "./obligation-funding-v2";
-import { evaluateTerminalOutcome } from "./outcomes";
+import {
+  evaluateTerminalOutcome,
+  evaluateTerminalOutcomeV2,
+} from "./outcomes";
+import { acceptFinancialMonthCommandV2 } from "./financial-transition-v2";
 import { recordExposureSnapshotV2 } from "./exposure-v2";
 import { applyMonthlyPayroll, type MonthlyTaxEvidence } from "./payroll-v2";
 import {
@@ -56,20 +71,21 @@ import {
   type RecurringAllocationPlan,
 } from "./recurring-strategy-v2";
 
-export type MonthlyInsuranceClaim =
-  | Readonly<{
-      type: "health";
-      grossAmountCents: MoneyCents;
-      covered: boolean;
-    }>
-  | Readonly<{
-      type: "selected_coverage";
-      coverageId: string;
-      grossAmountCents: MoneyCents;
-      eligible: boolean;
-    }>;
+export { FINANCIAL_KERNEL_V2_VERSION };
+export type {
+  FinancialMonthInputV2,
+  FinancialMonthRecordV2,
+  FinancialMonthResultV2,
+  FinancialShortfallV2,
+  MonthlyInsuranceClaimV2,
+  ResolvedCashFlowV2,
+};
 
-export type FinancialKernelVersionV2 = "legacy-4.1.0" | "2.0.0";
+export type MonthlyInsuranceClaim = MonthlyInsuranceClaimV2;
+
+export type FinancialKernelVersionV2 =
+  | "legacy-4.1.0"
+  | typeof FINANCIAL_KERNEL_V2_VERSION;
 
 export type ProcessMonthV2Command = Readonly<{
   schemaVersion: 2;
@@ -82,6 +98,7 @@ export type ProcessMonthV2Command = Readonly<{
     taxEvidence: MonthlyTaxEvidence;
     taxableLiquidationCostRatePpm: RatePpm;
     insuranceClaim?: MonthlyInsuranceClaim;
+    resolvedCashFlows?: readonly ResolvedCashFlowV2[];
   }>;
 }>;
 
@@ -104,6 +121,18 @@ export type MonthlyTurnV2Record = Readonly<{
   recurringAllocations: RecurringAllocationPlan | null;
   scheduledEvent: PendingEventV2 | null;
   outcome: GameStateV2["outcome"];
+  financialKernelVersion?: typeof FINANCIAL_KERNEL_V2_VERSION;
+  openingNetWorthCents?: MoneyCents;
+  closingNetWorthCents?: MoneyCents;
+  openingAutomaticLiquidityCents?: MoneyCents;
+  closingAutomaticLiquidityCents?: MoneyCents;
+  resolvedIncomeCents?: MoneyCents;
+  resolvedExpenseCents?: MoneyCents;
+  monthlyObligationInflationIncreaseCents?: MoneyCents;
+  cumulativePriceIndexPpm?: number;
+  baseNonDebtObligationsCents?: MoneyCents;
+  fundingPlan?: FinancialMonthRecordV2["fundingPlan"];
+  shortfall?: FinancialShortfallV2 | null;
 }>;
 
 export type MonthlyTurnV2Result = Readonly<{
@@ -596,13 +625,85 @@ export function processMonthlyTurnV2(
   dependencies: MonthlyTurnV2Dependencies = {},
 ): MonthlyTurnV2Result {
   const version = financialKernelVersionForCommandV2(command);
-  if (version !== "legacy-4.1.0") {
-    throw new MonthlyTurnV2Error(
-      "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
-      `financial kernel ${version} is not implemented`,
-    );
+  if (version === FINANCIAL_KERNEL_V2_VERSION) {
+    return processMonthlyTurnV2Kernel200(state, command, dependencies);
   }
   return processMonthlyTurnV2Legacy410(state, command, dependencies);
+}
+
+function sampleFinancialMarketStepV2(
+  state: GameStateV2,
+): MarketSimulationResult {
+  return simulateMarketMonth(
+    marketSimulationState(
+      state.marketRegime,
+      state.random,
+      state.gameplay.market.monthsInRegime,
+    ),
+    activeMacroReturnModifiersV2(state),
+  );
+}
+
+function processMonthlyTurnV2Kernel200(
+  state: GameStateV2,
+  command: ProcessMonthV2Command,
+  dependencies: MonthlyTurnV2Dependencies,
+): MonthlyTurnV2Result {
+  validateCommand(state, command);
+  try {
+    const marketStep = sampleFinancialMarketStepV2(state);
+    const financial = simulateFinancialMonthV2({
+      version: FINANCIAL_KERNEL_V2_VERSION,
+      commandId: command.id,
+      state,
+      taxEvidence: command.payload.taxEvidence,
+      marketStep,
+      taxableLiquidationCostRatePpm:
+        command.payload.taxableLiquidationCostRatePpm,
+      insuranceClaim: command.payload.insuranceClaim,
+      resolvedCashFlows: command.payload.resolvedCashFlows,
+    });
+    const careerCompleted = completeCareerDevelopmentV2(financial.state);
+    const accepted = acceptFinancialMonthCommandV2(
+      state,
+      careerCompleted,
+      command.id,
+    );
+    const exposed = recordExposureSnapshotV2(accepted, financial.nextMonth);
+    const outcome = evaluateTerminalOutcomeV2(exposed, financial.shortfall);
+    let nextState = finalizeGameStateV2({ ...exposed, outcome });
+    if (outcome === null) {
+      nextState = advanceMacroStoriesV2(
+        nextState,
+        dependencies.macroStoryPolicy,
+      );
+      const schedule = schedulePersonalEventV2(
+        nextState,
+        dependencies.eventSchedulingPolicy,
+      );
+      nextState = finalizeGameStateV2({
+        ...nextState,
+        random: schedule.nextRandom,
+      });
+      if (schedule.event) {
+        nextState = queueScheduledPersonalEventV2(nextState, schedule.event);
+      }
+    }
+    const record = Object.freeze({
+      ...financial.record,
+      financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      scheduledEvent: nextState.gameplay.eventLifecycle.pending,
+      outcome,
+    }) satisfies MonthlyTurnV2Record;
+    return Object.freeze({ state: nextState, record });
+  } catch (cause) {
+    if (cause instanceof MonthlyTurnV2Error) throw cause;
+    throw new MonthlyTurnV2Error(
+      "TRANSITION_INVARIANT",
+      "monthly v2 command failed atomically",
+      cause,
+    );
+  }
 }
 
 function processMonthlyTurnV2Legacy410(
