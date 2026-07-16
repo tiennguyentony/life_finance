@@ -1,6 +1,7 @@
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type { PauseReasonV2 } from "@/core/time-controller-v2";
 import type { CreateRunV2Request } from "@/server/api/contracts-v2";
+import type { StrategyDraft } from "./play-types";
 
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
 import {
@@ -39,6 +40,25 @@ export function dollarsToCents(dollars: number): number {
 export function percentToPpm(percent: number): number {
   if (!Number.isFinite(percent)) return 0;
   return Math.round(percent * 10_000);
+}
+
+export function strategyDraftFromState(state: GameStateV2): StrategyDraft {
+  const strategy = state.gameplay.recurringStrategy;
+  return {
+    emergencyFundMonths:
+      (strategy.emergencyFundTargetMonthsPpm ?? 0) / 1_000_000,
+    insuranceCoverageIds: [
+      ...(strategy.insuranceCoverageIds ??
+        state.gameplay.benefits.insuranceCoverageIds),
+    ],
+    retirement: strategy.preTax401kSalaryRatePpm / 10_000,
+    hsa: strategy.preTaxHsaSalaryRatePpm / 10_000,
+    index: strategy.afterTaxBroadIndexRatePpm / 10_000,
+    sector: strategy.afterTaxSectorRatePpm / 10_000,
+    speculative: strategy.afterTaxSpeculativeRatePpm / 10_000,
+    ira: strategy.afterTaxIraRatePpm / 10_000,
+    debt: strategy.afterTaxExtraDebtRatePpm / 10_000,
+  };
 }
 
 export function formatMoney(cents: number): string {

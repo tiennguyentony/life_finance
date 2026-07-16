@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type {
@@ -8,6 +8,8 @@ import type {
   CheckpointV2Response,
   CommandV2Response,
   GameCommandV2Public,
+  PlayerPolicyPreviewV2Request,
+  PlayerPolicyPreviewV2Response,
 } from "@/server/api/contracts-v2";
 import type { AiExplanationApiResponse } from "@/server/ai/education-contracts";
 import type { AiWorldEventApiResponse } from "@/server/ai/world-director-contracts";
@@ -34,6 +36,7 @@ import {
   formatMoney,
   percentToPpm,
   PLAYER_PRESETS,
+  strategyDraftFromState,
 } from "./play-model";
 import {
   apiRequest,
@@ -55,6 +58,14 @@ import type {
 import { RunControls } from "./run-controls";
 import { WorldDirectorPanel } from "./world-director-panel";
 import { DebriefPanel } from "./debrief-panel";
+import {
+  approvedPolicyCommand,
+  createPolicyPreviewSession,
+  invalidatePolicyPreview,
+  isCurrentPolicyPreviewGeneration,
+  type PolicyPreviewSession,
+} from "./policy-preview-model";
+import { PolicyPreviewPanel } from "./policy-preview-panel";
 
 const DEFAULT_ONBOARDING: OnboardingDraft = {
   setupMode: "quick",
@@ -72,6 +83,8 @@ const DEFAULT_ONBOARDING: OnboardingDraft = {
 };
 
 const DEFAULT_STRATEGY: StrategyDraft = {
+  emergencyFundMonths: 6,
+  insuranceCoverageIds: null,
   retirement: 5,
   hsa: 1,
   index: 5,
@@ -127,6 +140,20 @@ export function PlayConsole() {
   const [resumeDecisionId, setResumeDecisionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<string[]>([]);
+  const [policyPreview, setPolicyPreview] =
+    useState<PolicyPreviewSession | null>(null);
+  const policyPreviewGeneration = useRef(0);
+
+  const invalidateCurrentPolicyPreview = () => {
+    policyPreviewGeneration.current += 1;
+    setPolicyPreview((current) => invalidatePolicyPreview(current));
+  };
+
+  const acceptAuthoritativeState = (nextState: GameStateV2) => {
+    invalidateCurrentPolicyPreview();
+    setStrategy(strategyDraftFromState(nextState));
+    setState(nextState);
+  };
 
   const addActivity = (message: string) => {
     setActivity((current) => [message, ...current].slice(0, 20));
@@ -150,6 +177,7 @@ export function PlayConsole() {
         .then((result) => {
           if (cancelled) return;
           setCredential(saved);
+          setStrategy(strategyDraftFromState(result.state));
           setState(result.state);
         })
         .catch(() => sessionStorage.removeItem(SESSION_KEY));
@@ -197,9 +225,10 @@ export function PlayConsole() {
       const saved = { runId: result.runId, accessSecret: result.accessSecret };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved));
       setCredential(saved);
-      setState(result.state);
+      acceptAuthoritativeState(result.state);
       setCheckpoint(null);
       setResumeDecisionId(null);
+      setPolicyPreview(null);
       setTurnHistory([]);
       sessionStorage.removeItem(RECAP_SESSION_KEY);
       setActivity([`Created ${PLAYER_PRESETS[onboarding.presetId].label} run.`]);
@@ -225,7 +254,7 @@ export function PlayConsole() {
           body: JSON.stringify(command),
         },
       );
-      setState(result.state);
+      acceptAuthoritativeState(result.state);
       setCheckpoint(null);
       setResumeDecisionId(null);
       addActivity(message);
@@ -242,9 +271,68 @@ export function PlayConsole() {
     }
   };
 
+  const previewPolicyCommand = async (
+    command: PlayerPolicyPreviewV2Request,
+    message: string,
+  ) => {
+    if (!credential) return;
+    const requestedGeneration = policyPreviewGeneration.current + 1;
+    policyPreviewGeneration.current = requestedGeneration;
+    setBusy(true);
+    setBusyLabel("Calculating exact engine effects...");
+    setError(null);
+    try {
+      const response = await apiRequest<PlayerPolicyPreviewV2Response>(
+        `/api/v2/runs/${credential.runId}/commands/preview`,
+        {
+          method: "POST",
+          headers: authHeaders(credential.accessSecret),
+          body: JSON.stringify(command),
+        },
+      );
+      if (
+        isCurrentPolicyPreviewGeneration(
+          requestedGeneration,
+          policyPreviewGeneration.current,
+        )
+      ) {
+        setPolicyPreview(createPolicyPreviewSession(command, response, message));
+      }
+    } catch (caught) {
+      if (
+        isCurrentPolicyPreviewGeneration(
+          requestedGeneration,
+          policyPreviewGeneration.current,
+        )
+      ) {
+        setPolicyPreview(null);
+        setError(caught instanceof Error ? caught.message : "Preview failed");
+      }
+    } finally {
+      setBusy(false);
+      setBusyLabel("");
+    }
+  };
+
+  const approvePolicyPreview = () => {
+    if (!state || !policyPreview) return;
+    const approvedCommand = approvedPolicyCommand(
+      policyPreview,
+      state.revision,
+      state.currentMonth,
+    );
+    if (!approvedCommand) {
+      invalidateCurrentPolicyPreview();
+      setError("This preview is stale. Review the updated engine effects before approval.");
+      return;
+    }
+    invalidateCurrentPolicyPreview();
+    void submit(approvedCommand, policyPreview.activityMessage);
+  };
+
   const saveStrategy = () => {
     if (!state) return;
-    void submit(
+    void previewPolicyCommand(
       {
         schemaVersion: 2,
         id: commandId("strategy"),
@@ -253,6 +341,15 @@ export function PlayConsole() {
         type: "set_recurring_strategy",
         payload: {
           strategy: {
+            emergencyFundTargetMonthsPpm: Math.round(
+              strategy.emergencyFundMonths * 1_000_000,
+            ),
+            insuranceCoverageIds:
+              [...(
+                strategy.insuranceCoverageIds ??
+                state.gameplay.recurringStrategy.insuranceCoverageIds ??
+                state.gameplay.benefits.insuranceCoverageIds
+              )],
             preTax401kSalaryRatePpm: percentToPpm(strategy.retirement),
             preTaxHsaSalaryRatePpm: percentToPpm(
               state.gameplay.benefits.hsaEligible ? strategy.hsa : 0,
@@ -296,7 +393,7 @@ export function PlayConsole() {
           }),
         },
       );
-      setState(result.state);
+      acceptAuthoritativeState(result.state);
       setCheckpoint(
         result.checkpointInput ? { evidence: result.checkpointInput } : null,
       );
@@ -316,7 +413,7 @@ export function PlayConsole() {
 
   const takeAction = () => {
     if (!state) return;
-    void submit(
+    void previewPolicyCommand(
       {
         schemaVersion: 2,
         id: commandId("action"),
@@ -410,7 +507,7 @@ export function PlayConsole() {
         },
       );
       setAiLesson(result);
-      setState(result.state as GameStateV2);
+      acceptAuthoritativeState(result.state as GameStateV2);
       addActivity(
         result.source === "deterministic_fallback"
           ? "AI was unavailable; the verified curriculum fallback was shown."
@@ -442,7 +539,7 @@ export function PlayConsole() {
           }),
         },
       );
-      setState(result.state as GameStateV2);
+      acceptAuthoritativeState(result.state as GameStateV2);
       addActivity(`World Director queued ${result.source} event targeting ${result.memory.targetedWeaknessId.replaceAll("_", " ")}.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "World Director failed");
@@ -508,6 +605,7 @@ export function PlayConsole() {
     setState(null);
     setCheckpoint(null);
     setResumeDecisionId(null);
+    invalidateCurrentPolicyPreview();
     setTurnHistory([]);
     setActivity([]);
     setAiLesson(null);
@@ -605,15 +703,28 @@ export function PlayConsole() {
         />
       ) : null}
       {tab === "strategy" ? (
-        <StrategyPanel
-          state={state}
-          draft={strategy}
-          busy={busy}
-          blocked={blocked}
-          onChange={setStrategy}
-          onSave={saveStrategy}
-          onSelectConcept={selectConcept}
-        />
+        <>
+          <StrategyPanel
+            state={state}
+            draft={strategy}
+            busy={busy}
+            blocked={blocked}
+            onChange={(update) => {
+              invalidateCurrentPolicyPreview();
+              setStrategy(update);
+            }}
+            onSave={saveStrategy}
+            onSelectConcept={selectConcept}
+          />
+          {policyPreview?.command.type === "set_recurring_strategy" ? (
+            <PolicyPreviewPanel
+              busy={busy}
+              session={policyPreview}
+              onApprove={approvePolicyPreview}
+              onCancel={invalidateCurrentPolicyPreview}
+            />
+          ) : null}
+        </>
       ) : null}
       {tab === "actions" ? (
         <>
@@ -622,10 +733,21 @@ export function PlayConsole() {
             draft={actionDraft}
             busy={busy}
             blocked={blocked}
-            onChange={(patch) => setActionDraft((current) => ({ ...current, ...patch }))}
+            onChange={(patch) => {
+              invalidateCurrentPolicyPreview();
+              setActionDraft((current) => ({ ...current, ...patch }));
+            }}
             onApply={takeAction}
             onSelectConcept={selectConcept}
           />
+          {policyPreview?.command.type === "take_detailed_action" ? (
+            <PolicyPreviewPanel
+              busy={busy}
+              session={policyPreview}
+              onApprove={approvePolicyPreview}
+              onCancel={invalidateCurrentPolicyPreview}
+            />
+          ) : null}
           <MilestonePanel
             state={state}
             draft={milestoneDraft}

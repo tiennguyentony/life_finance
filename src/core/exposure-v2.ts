@@ -9,6 +9,7 @@ import {
   type ExposureSnapshot,
   type GameStateV2,
 } from "./game-state-v2";
+import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
 
 const PPM = 1_000_000;
 const MAX_EMERGENCY_MONTHS_PPM = 12_000_000;
@@ -46,7 +47,7 @@ function propertyAndIncomeInsuranceGap(state: GameStateV2): RatePpm | null {
   let propertyCoverage = BigInt(0);
   let incomeCoverage = BigInt(0);
   let lifeCoverage = BigInt(0);
-  for (const coverage of snapshot.selected.insuranceCoverages) {
+  for (const coverage of activeInsuranceCoveragesV2(state)) {
     const amount = BigInt(coverage.coverageLimitCents);
     if (coverage.kind === "renters") propertyCoverage += amount;
     if (

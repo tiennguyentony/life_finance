@@ -11,7 +11,10 @@ import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
 import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import { RunSecretCodec } from "../auth/run-secret";
 import type { LifeFinanceDatabase } from "./client";
-import { RunRepositoryError } from "./run-repository-contracts";
+import {
+  RunRepositoryError,
+  type GameCommandV2,
+} from "./run-repository-contracts";
 import {
   loadRunStateAtRevisionV2,
   rebuildGameCommandV2,
@@ -241,6 +244,53 @@ async function findAcceptedMonthlyCommandV2(
     );
   }
   return command;
+}
+
+export async function loadAcceptedCommandV2(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  commandId: string,
+): Promise<GameCommandV2 | null> {
+  assertUuid(runId);
+  const [run] = await db
+    .select()
+    .from(gameRuns)
+    .where(eq(gameRuns.id, runId))
+    .limit(1);
+  if (
+    !run ||
+    !isAuthorized(
+      secretCodec,
+      accessSecret,
+      run.accessSecretHash,
+      run.accessSecretHashVersion,
+    )
+  ) {
+    throw new RunRepositoryError(
+      "NOT_FOUND_OR_UNAUTHORIZED",
+      "run was not found or the credential is invalid",
+    );
+  }
+  const [accepted] = await db
+    .select()
+    .from(acceptedCommands)
+    .where(
+      and(
+        eq(acceptedCommands.runId, runId),
+        eq(acceptedCommands.commandId, commandId),
+      ),
+    )
+    .limit(1);
+  if (!accepted) return null;
+  if (accepted.commandSchemaVersion !== 2) {
+    throw new RunRepositoryError(
+      "IDEMPOTENCY_MISMATCH",
+      "command id belongs to a different accepted command schema",
+    );
+  }
+  return rebuildGameCommandV2(accepted);
 }
 
 export async function loadAcceptedMonthlyCommandV2(

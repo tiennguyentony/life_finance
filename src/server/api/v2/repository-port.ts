@@ -22,6 +22,9 @@ export type V2Repository = Pick<
       batchId: string,
       requestFingerprint: string,
     ) => Promise<AppliedTimeAdvanceV2 | null>;
+    loadAcceptedCommandV2?: RunRepository["loadAcceptedCommandV2"];
+    previewPlayerPolicyCommandV2?:
+      RunRepository["previewPlayerPolicyCommandV2"];
     applyTimeAdvanceV2?: (
       runId: string,
       accessSecret: string,

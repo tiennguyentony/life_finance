@@ -395,6 +395,22 @@
   gap: 0.75rem;
 }
 
+.insurance-policy-options {
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.8rem 1rem 1rem;
+}
+
+.insurance-policy-options label {
+  align-items: center;
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: auto 1fr auto;
+}
+
 .strategy-grid label {
   position: relative;
   grid-template-columns: minmax(0, 1fr) 100px 20px;
@@ -569,3 +585,51 @@
   margin-top: 0.65rem;
 }
 
+.policy-preview {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+}
+
+.policy-preview-effects {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-block: 1.25rem;
+}
+
+.policy-preview-effects div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.policy-preview-effects dt,
+.policy-preview-evidence p {
+  color: var(--muted);
+}
+
+.policy-preview-effects dd {
+  margin: 0;
+  font-weight: 750;
+}
+
+.policy-preview-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.policy-preview-evidence h3 {
+  margin-block: 0 0.5rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .policy-preview-effects,
+  .policy-preview-evidence {
+    grid-template-columns: 1fr;
+  }
+}

@@ -476,6 +476,43 @@ export function validateGameStateV2(
   validateRate(strategy.afterTaxIraRatePpm, "gameplay.recurringStrategy.afterTaxIraRatePpm", violations);
   validateRate(strategy.afterTaxExtraDebtRatePpm, "gameplay.recurringStrategy.afterTaxExtraDebtRatePpm", violations);
   if (
+    strategy.emergencyFundTargetMonthsPpm !== undefined &&
+    (!Number.isSafeInteger(strategy.emergencyFundTargetMonthsPpm) ||
+      strategy.emergencyFundTargetMonthsPpm < 0 ||
+      strategy.emergencyFundTargetMonthsPpm > 24_000_000)
+  ) {
+    violations.push(
+      violation(
+        "gameplay.recurringStrategy.emergencyFundTargetMonthsPpm",
+        "invalid_emergency_fund_target",
+        "emergency-fund target must be between 0 and 24 months",
+      ),
+    );
+  }
+  if (strategy.insuranceCoverageIds !== undefined) {
+    const ids = strategy.insuranceCoverageIds;
+    const available =
+      state.gameplay.catalogSnapshot?.selected.insuranceCoverages ?? [];
+    if (
+      ids.length > 16 ||
+      new Set(ids).size !== ids.length ||
+      ids.some(
+        (id) =>
+          typeof id !== "string" ||
+          id.length === 0 ||
+          !available.some((coverage) => coverage.id === id),
+      )
+    ) {
+      violations.push(
+        violation(
+          "gameplay.recurringStrategy.insuranceCoverageIds",
+          "invalid_insurance_selection",
+          "active insurance IDs must be unique and available in the run snapshot",
+        ),
+      );
+    }
+  }
+  if (
     sum([strategy.preTax401kSalaryRatePpm, strategy.preTaxHsaSalaryRatePpm]) >
     BigInt(1_000_000)
   ) {

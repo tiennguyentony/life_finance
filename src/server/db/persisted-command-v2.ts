@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  ACTION_POLICY_V1_VERSION,
+  actionPolicyForVersionV2,
+} from "../../core/action-policy-v2";
 import { simulationMonth } from "../../core/domain/month";
 import type { GameCommandV2 } from "./run-repository-contracts";
 
@@ -138,6 +142,14 @@ const detailedActionSchema = z.discriminatedUnion("type", [
 
 const recurringStrategySchema = z
   .object({
+    emergencyFundTargetMonthsPpm: z.int().min(0).max(24_000_000).optional(),
+    insuranceCoverageIds: z
+      .array(identifierSchema)
+      .max(16)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "insurance coverage IDs must be unique",
+      })
+      .optional(),
     preTax401kSalaryRatePpm: boundedRatePpmSchema,
     preTaxHsaSalaryRatePpm: boundedRatePpmSchema,
     afterTaxBroadIndexRatePpm: boundedRatePpmSchema,
@@ -292,13 +304,36 @@ const textSchema = (maximum: number) =>
     .max(maximum)
     .refine((value) => value.trim().length > 0);
 
+const persistedDetailedActionCommandV2Schema = v2EnvelopeSchema
+  .extend({
+    type: z.literal("take_detailed_action"),
+    payload: z
+      .object({
+        action: detailedActionSchema,
+        actionPolicyVersion: z.literal(ACTION_POLICY_V1_VERSION).optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (
+      command.payload.actionPolicyVersion === ACTION_POLICY_V1_VERSION &&
+      command.payload.action.type === "liquidate_taxable" &&
+      command.payload.action.liquidationCostRatePpm !==
+        actionPolicyForVersionV2(ACTION_POLICY_V1_VERSION)
+          .taxableLiquidationCostRatePpm
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["payload", "action", "liquidationCostRatePpm"],
+        message:
+          "versioned liquidation cost must match the frozen action policy",
+      });
+    }
+  });
+
 const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
-  v2EnvelopeSchema
-    .extend({
-      type: z.literal("take_detailed_action"),
-      payload: z.object({ action: detailedActionSchema }).strict(),
-    })
-    .strict(),
+  persistedDetailedActionCommandV2Schema,
   v2EnvelopeSchema
     .extend({
       type: z.literal("set_recurring_strategy"),

@@ -2,6 +2,10 @@ import type {
   DetailedFinanceCommand,
   DetailedFinancialAction,
 } from "../../../core/detailed-actions-v2";
+import {
+  ACTION_POLICY_V1_VERSION,
+  actionPolicyForVersionV2,
+} from "../../../core/action-policy-v2";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { ResolveEventChoiceV2Command } from "../../../core/event-lifecycle-v2";
@@ -24,6 +28,16 @@ export function mapPlayerCommand(
       effectiveMonth: simulationMonth(command.effectiveMonth),
       payload: {
         strategy: {
+          ...(strategy.emergencyFundTargetMonthsPpm === undefined
+            ? {}
+            : {
+                emergencyFundTargetMonthsPpm: ratePpm(
+                  strategy.emergencyFundTargetMonthsPpm,
+                ),
+              }),
+          ...(strategy.insuranceCoverageIds === undefined
+            ? {}
+            : { insuranceCoverageIds: strategy.insuranceCoverageIds }),
           preTax401kSalaryRatePpm: ratePpm(strategy.preTax401kSalaryRatePpm),
           preTaxHsaSalaryRatePpm: ratePpm(strategy.preTaxHsaSalaryRatePpm),
           afterTaxBroadIndexRatePpm: ratePpm(
@@ -61,6 +75,7 @@ export function mapPlayerCommand(
     };
   }
   const publicAction = command.payload.action;
+  const actionPolicy = actionPolicyForVersionV2(ACTION_POLICY_V1_VERSION);
   let action: DetailedFinancialAction;
   if (publicAction.type === "purchase_home") {
     action = {
@@ -96,9 +111,8 @@ export function mapPlayerCommand(
       amountCents: moneyCents(publicAction.amountCents),
       ...(publicAction.type === "liquidate_taxable"
         ? {
-            liquidationCostRatePpm: ratePpm(
-              publicAction.liquidationCostRatePpm,
-            ),
+            liquidationCostRatePpm:
+              actionPolicy.taxableLiquidationCostRatePpm,
           }
         : {}),
     } as DetailedFinancialAction;
@@ -106,6 +120,6 @@ export function mapPlayerCommand(
   return {
     ...command,
     effectiveMonth: simulationMonth(command.effectiveMonth),
-    payload: { action },
+    payload: { action, actionPolicyVersion: ACTION_POLICY_V1_VERSION },
   };
 }
