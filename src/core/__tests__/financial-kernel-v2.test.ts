@@ -580,6 +580,45 @@ describe("simulateFinancialMonthV2", () => {
     expect(sha256Canonical(mutableState)).toBe(openingChecksum);
   });
 
+  it("does not freeze mutable descendants of a shallow-frozen state input", () => {
+    const shallowState = Object.freeze(structuredClone(configuredState()));
+    const openingReferences = {
+      ledger: shallowState.ledger,
+      transactions: shallowState.ledger.transactions,
+      gameplay: shallowState.gameplay,
+      portfolio: shallowState.gameplay.portfolio,
+    };
+    const observedNodes = [
+      shallowState,
+      shallowState.ledger,
+      shallowState.ledger.transactions,
+      shallowState.ledger.transactions[0]!,
+      shallowState.gameplay,
+      shallowState.gameplay.portfolio,
+    ];
+    const openingOwnership = observedNodes.map((value) => ({
+      frozen: Object.isFrozen(value),
+      extensible: Object.isExtensible(value),
+    }));
+    const openingChecksum = sha256Canonical(shallowState);
+
+    simulateFinancialMonthV2(successfulInput(shallowState));
+
+    expect(
+      observedNodes.map((value) => ({
+        frozen: Object.isFrozen(value),
+        extensible: Object.isExtensible(value),
+      })),
+    ).toEqual(openingOwnership);
+    expect(shallowState.ledger).toBe(openingReferences.ledger);
+    expect(shallowState.ledger.transactions).toBe(
+      openingReferences.transactions,
+    );
+    expect(shallowState.gameplay).toBe(openingReferences.gameplay);
+    expect(shallowState.gameplay.portfolio).toBe(openingReferences.portfolio);
+    expect(sha256Canonical(shallowState)).toBe(openingChecksum);
+  });
+
   it("owns and deeply freezes mutable supplied market output", () => {
     const base = successfulInput();
     const mutableMarketStep = structuredClone(base.marketStep);
