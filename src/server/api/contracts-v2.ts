@@ -854,6 +854,7 @@ const resolvedEventEvidenceV2Schema = z
       "high_fixed_costs",
       "lifestyle_fragility",
       "market_timing",
+      "unrelated_hazard",
     ]),
     parameters: z.record(z.string().min(1), z.int()),
     choiceId: identifierSchema,
@@ -1045,6 +1046,7 @@ const eventWeaknessV2Schema = z.enum([
   "high_fixed_costs",
   "lifestyle_fragility",
   "market_timing",
+  "unrelated_hazard",
 ]);
 
 const pendingEventV2Schema = z

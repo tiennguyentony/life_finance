@@ -4,7 +4,10 @@ import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import { createInitialGameState } from "../game-state";
 import { finalizeGameStateV2, migrateGameStateV1ToV2 } from "../game-state-v2";
-import { schedulePersonalEventV2 } from "../event-scheduler-v2";
+import {
+  CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  schedulePersonalEventV2,
+} from "../event-scheduler-v2";
 
 const ALWAYS = {
   version: "fairness-v1" as const,
@@ -60,6 +63,50 @@ function exposedState() {
 }
 
 describe("fair v2 personal-event scheduling", () => {
+  it("keeps causal hazard draws and candidates independent of financial vulnerability", () => {
+    const vulnerable = exposedState();
+    const resilient = {
+      ...vulnerable,
+      finances: {
+        ...vulnerable.finances,
+        cashCents: moneyCents(10_000_000),
+        creditUsedCents: moneyCents(0),
+      },
+      gameplay: {
+        ...vulnerable.gameplay,
+        exposure: {
+          current: {
+            ...vulnerable.gameplay.exposure.current!,
+            scorePpm: ratePpm(1_000_000),
+            emergencyFundMonthsPpm: ratePpm(12_000_000),
+            revolvingDebtPpm: ratePpm(0),
+            insuranceGapPpm: ratePpm(0),
+            portfolioConcentrationPpm: ratePpm(0),
+            jobInvestmentCorrelationPpm: ratePpm(0),
+          },
+          history: [],
+        },
+      },
+    };
+
+    const vulnerableSchedule = schedulePersonalEventV2(
+      vulnerable,
+      ALWAYS,
+      CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+    );
+    const resilientSchedule = schedulePersonalEventV2(
+      resilient,
+      ALWAYS,
+      CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+    );
+
+    expect(vulnerableSchedule).toEqual(resilientSchedule);
+    expect(vulnerableSchedule.eligibleTemplateIds.length).toBeGreaterThan(0);
+    expect(vulnerableSchedule.event?.targetedWeakness).toBe(
+      "unrelated_hazard",
+    );
+  });
+
   it("is deterministic, catalog-bounded, and targets demonstrated weakness", () => {
     const left = schedulePersonalEventV2(exposedState(), ALWAYS);
     const right = schedulePersonalEventV2(exposedState(), ALWAYS);

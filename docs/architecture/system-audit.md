@@ -21,7 +21,7 @@ It now includes the Prompt 04 goal/outcome policy and Prompt 05 action-policy, n
 
 1. The `2.0.0` financial kernel is now the sole new-product financial authority: money is integer cents, rates are PPM, market input is complete and seeded, tax enters as persisted evidence, one funding plan owns liquidity, and event-free projection reuses the production kernel. Web, AI, goal, and checkpoint consumers use canonical selectors/evidence.
 2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas and absent-version action semantics are frozen replay compatibility, not competing new-product authorities.
-3. Personal-event causality is wrong for the intended simulation. Exposure weaknesses decide which bad events may occur, the exposure score raises monthly event chance, and the same score unlocks catastrophe-tier templates. A weak emergency fund can therefore make bad luck more available and more frequent, rather than only making an independently caused shock more damaging.
+3. New automatic personal-event occurrence is now risk-independent: service-created commands persist `causal-hazard-v1`, which uses a fixed base chance and intrinsic applicability. Historical absent-version scheduling remains exposure-driven for exact replay; vulnerability-gated template redesign, consequence amplification, and optional director insertion remain for Prompt 08/10.
 4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
 5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
 6. Time advancement now has one v2 core authority with tagged pauses. The server resolves tax evidence outside pure annual segments, persists every accepted hidden tick in one transaction, and returns one aggregate response to the browser. Runtime Balance pressure remains intentionally deferred to Prompt 09.
@@ -74,9 +74,9 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | 4 | Deterministic Financial Simulation Engine | complete | financial-kernel-v2.ts, financial-transition-v2.ts, obligation-funding-v2.ts, financial-projection-v2.ts, versioned monthly wrapper | New months, projections, Web/AI/goal/checkpoint consumers, and replay have one documented financial authority; old formulas are frozen compatibility only. | Complete in Prompt 02 |
 | 5 | Player Actions and Persistent Policies | complete | detailed-actions-v2.ts, recurring-strategy-v2.ts, action-policy-v2.ts, action-preview-v2.ts | New public actions use one versioned policy and reducer-backed no-write preview; recurring protection policy includes emergency target and active insurance; the UI applies only an explicitly approved exact command. Historical absent-version behavior is replay compatibility. | Complete in Prompt 05 |
 | 6 | Goals, End Conditions, and Grading | complete | financial-goals-v2.ts, outcome-policy-v2.ts, and assessTerminalOutcomeV2 | Outcome policy `1.0.0` centralizes exact grades, retirement age, terminal precedence, and rich cross-validated evidence. New commands are stamped; missing versions retain frozen replay semantics. | Complete in Prompt 04 |
-| 7 | Risk and Resilience Analyzer | incorrectly coupled | exposure-v2.ts and event-scheduler-v2.ts | Exposure measures vulnerability but also causes event eligibility, frequency, and catastrophe access. | Prompt 06 |
+| 7 | Risk and Resilience Analyzer | complete | risk-v1.ts, risk-policy-v1.ts, versioned event scheduler boundary | Fourteen transparent pure metrics expose raw units, bands, facts, tags, and separately weighted analytics; new monthly commands use risk-independent causal hazard while absent-version commands retain frozen replay. | Complete in Prompt 06 |
 | 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
-| 9 | Personal Event and Trap System | incorrectly coupled | event scheduler, lifecycle, templates, and events.ts | Deterministic and bounded, but event cause is vulnerability-driven and financial effects bypass a dedicated financial-effect interface. | Prompt 08 after Prompt 06 |
+| 9 | Personal Event and Trap System | partial | event scheduler, lifecycle, templates, and events.ts | New automatic scheduling has a causal hazard boundary, but vulnerability-gated legacy templates, effect routing, severity, and optional director insertion still require Prompt 08. | Prompt 08 |
 | 10 | Adaptive Scenario Director | incorrectly coupled | world-director-service.ts and ai-world-event-v2.ts | AI selects an event and parameter values, then the service queues it without an independent fairness gate. | Prompt 10 after Prompt 09 |
 | 11 | Runtime Balance Controller | missing | None; scheduler contains fragments | Cooldown is not a balance controller. No pressure, recovery, catastrophe, difficulty, or impact policy exists. | Prompt 09 |
 | 12 | Causal History and Counterfactuals | partial | commands, snapshots, ledger, monthly records, event/milestone histories | Evidence exists, but no causal graph, turning-point detector, or controlled replay comparison exists. | Prompt 11 |
@@ -186,19 +186,20 @@ Status: complete for Prompt 04.
 
 ### 7. Risk and Resilience Analyzer
 
-Status: incorrectly coupled.
+Status: complete for Prompt 06.
 
-- Authoritative files and entry points: src/core/exposure-v2.ts and its call sites in monthly-turn-v2.ts and event-scheduler-v2.ts.
-- Inputs: emergency fund, debt-to-income, credit utilization, insurance gap, asset concentration, and job/macro correlation.
-- Outputs: component scores, weighted exposure score, demonstrated weakness signals, and stored exposure snapshot/history.
-- State owned: current exposure and exposure history inside v2 gameplay state.
-- Dependencies: financial state, detailed debts/assets, insurance, career, macro regime, and event scheduler.
-- Tests found: exposure-v2 tests and scheduler tests using exposure eligibility.
-- Determinism/performance risks: calculation is deterministic and bounded. The design risk is causal: the score is consumed as an event generator rather than a damage/resilience measure.
-- Missing requirements: measurement-only contract, separately named vulnerability versus incident-probability inputs, impact-estimation API, and evidence that improving resilience reduces loss without suppressing unrelated event incidence.
-- Duplicate formulas or authority: no major duplicate risk formula found; the error is ownership at the scheduler boundary.
-- AI boundary: AI may receive exposure signals for explanation/ranking, but must not reinterpret them as permission to invent incidents.
-- Next action: Prompt 06 must decouple vulnerability from event cause before Prompt 08 changes event behavior.
+- Authoritative files and entry points: `risk-v1.ts` and immutable `risk-policy-v1.ts`; new monthly commands stamp scheduler `causal-hazard-v1` at the event boundary.
+- Inputs: verified current state for cash flow, obligations, debt, active insurance, portfolio, employment, goals, and recent resolved-event costs.
+- Outputs: fourteen named metrics with raw values/units, normalized inputs, explicit inclusive thresholds, severity bands, bounded severity, weakness tags, explanation facts, and an optional separately weighted aggregate.
+- State owned: none. Risk is recalculated as a pure snapshot; old persisted exposure remains replay evidence rather than the new analyzer authority.
+- Dependencies: financial state, detailed debts/assets, active recurring insurance selection, career, event history, and configured FI goal. It does not depend on scheduler output.
+- Tests found: zero/negative income, zero obligations, threshold boundaries, active insured/uninsured cases, cash/debt/concentration/correlation/lifestyle monotonicity, repeatability, immutability, action-to-risk integration, and identical causal hazard across different vulnerability states.
+- Determinism/performance risks: one full calculation is bounded and inexpensive. No dirty flags or stale derived persistence exist. The analytics aggregate must never be treated as event probability.
+- Missing requirements: no Prompt 06 measurement requirement remains open. Prompt 08 must redesign the vulnerability-gated legacy templates that causal-v1 deliberately excludes and must separate incident parameters from consequence amplification.
+- Duplicate formulas or authority: `exposure-v2` remains only for historical command replay and legacy consumers pending their later prompt migrations. It is not read by causal-v1 scheduling.
+- AI boundary: AI may later rank using stable facts/tags, but risk cannot authorize incident creation, numeric effects, or grades.
+- Historical boundary: absent scheduler version uses the frozen exposure-driven path. New service commands persist `causal-hazard-v1`, which uses a fixed base chance and intrinsic applicability without risk score, cash, insurance, concentration, or fixed-cost gating.
+- Next action: Prompt 08 consumes this boundary for cause/consequence separation; Prompt 12 consumes the explanation facts.
 
 ### 8. Macro and Market System
 
@@ -478,7 +479,7 @@ The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 4. Prompt 03 — Time and Turn Controller. Add one in-process v2 controller with tagged stop reasons and sequential-parity tests.
 5. Prompt 04 — Goals, End Conditions, and Grading. Complete: policy-versioned grades and precedence, responsive/default and fixed/player goals, rich validated terminal evidence, historical replay, and canonical consumers.
 6. Prompt 05 — Player Actions and Persistent Policies. Complete: immutable action policy, strict public intent, reducer-backed no-write preview, exact explicit approval, replay compatibility, and effect/ledger evidence.
-7. Prompt 06 — Risk and Resilience Analyzer. Make exposure measurement-only and add an impact-estimation contract.
+7. Prompt 06 — Risk and Resilience Analyzer. Complete: pure transparent dimensions, versioned thresholds/weights/facts, active-policy insurance gaps, monotonic action integration, and risk-independent causal scheduling for new commands.
 8. Prompt 07 — Macro and Market System. Add explicit difficulty/calibration inputs without weakening deterministic draw order.
 9. Prompt 08 — Personal Event and Trap System. Separate event cause/hazard from vulnerability and route exact effects through typed financial interfaces.
 10. Prompt 09 — Runtime Balance Controller. Add deterministic approve/reject/defer policy, pressure/recovery state, catastrophe limits, and difficulty.
