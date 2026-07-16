@@ -2,7 +2,7 @@
 
 Date: 2026-07-15
 
-Scope: current repository behavior, with emphasis on the v2 browser game, server application layer, deterministic core, persistence, tax adapter, and optional AI adapters. This is an audit only. No production code was changed.
+Scope: current repository behavior, with emphasis on the v2 browser game, server application layer, deterministic core, persistence, tax adapter, and optional AI adapters. The original audit was read-only; this document now includes the verified Prompt 01 authority, ledger, replay, and migration repair.
 
 ## Status legend
 
@@ -17,12 +17,12 @@ Scope: current repository behavior, with emphasis on the v2 browser game, server
 ## Executive findings
 
 1. The v2 deterministic core is strong: money is integer cents, rates are parts per million, the random generator is seeded and serializable, market draw order is explicit, tax results enter as persisted evidence, and database writes are transactional and idempotent.
-2. The repository still has two product stacks. v1 and v2 routes, services, state shapes, commands, outcomes, and monthly engines remain present. A single run is version-discriminated correctly, but repository-wide authority is duplicated until v1 becomes read/migrate-only or is removed.
+2. GameStateV2 is now the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Legacy v1 constructors and reducers remain compatibility code, so later engine/action prompts must still remove their duplicate formulas and interfaces.
 3. Personal-event causality is wrong for the intended simulation. Exposure weaknesses decide which bad events may occur, the exposure score raises monthly event chance, and the same score unlocks catastrophe-tier templates. A weak emergency fund can therefore make bad luck more available and more frequent, rather than only making an independently caused shock more damaging.
 4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
 5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
 6. Time advancement is split. A tested v1 in-process checkpoint loop exists but is not used by production. The v2 UI advances multiple months through sequential network/database commands, so there is no authoritative v2 controller with tagged pause reasons.
-7. Persistence is robust but may not scale linearly. Every transition validates, deep-freezes, checksums, and snapshots state containing the complete append-only ledger and histories, while ledger rows and monthly records are also stored separately. Long simulations can therefore incur repeated full-history serialization and storage.
+7. Persistence is robust but may not scale linearly. Every transition still validates, deep-freezes, checksums, and persists current state containing the complete append-only ledger and histories. Historical v2 snapshots are now sparse verified anchors rather than per-command copies, but repeated full-history current-state serialization and normalized ledger/monthly storage still require long-run budgets.
 8. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
 9. The Offline Balance Lab is missing. No matched-seed strategy runner, difficulty comparison, 480-month headless benchmark, or distributional balance report was found.
 
@@ -40,32 +40,32 @@ flowchart LR
     LOCK --> REDUCE["Reduce ProcessMonthV2 or player command"]
     REDUCE --> CORE["Deterministic core"]
     CORE --> FINALIZE["Validate and deep-freeze state"]
-    FINALIZE --> PERSIST["State snapshot, accepted command, monthly record, ledger rows, tax evidence, outbox"]
+    FINALIZE --> PERSIST["Current save, sparse boundary anchors, accepted command, evidence, ledger rows, outbox"]
     PERSIST --> RESPONSE["Versioned API response"]
 ~~~
 
 The financial reducer does not call the network or database. The application service obtains external tax evidence before entering the core. The repository is the transactional authority for accepted commands and persisted revisions.
 
-### Parallel legacy path
+### Legacy compatibility path
 
-The repository also exposes v1 routes and RunApiService beside the v2 routes and RunApiServiceV2. GameState and GameStateV2 are both valid persisted types, and monthly-turn.ts and monthly-turn-v2.ts both implement financial progression. This is controlled compatibility, not accidental state corruption, but it is still duplicate product authority.
+GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 constructors and monthly reducer remain reusable compatibility code, so Prompt 02 and Prompt 05 still own their formula/action consolidation even though they no longer define mutable production state authority.
 
 ### External and optional services
 
 - Tax: src/server/tax/client.ts may call PolicyEngine; resolved evidence is persisted and supplied to the deterministic reducer.
 - World director: src/server/ai/world-director-service.ts may call an AI model or use a deterministic fallback, then submits a validated event-queue command.
 - Education and debrief: AI services produce bounded explanatory content with deterministic fallbacks; they do not directly mutate financial state.
-- Database: src/server/db/run-repository.ts owns transactionality, optimistic revision checks, idempotency, snapshots, normalized ledger persistence, and outbox writes.
+- Database: src/server/db/run-repository.ts owns transactionality, optimistic revision checks, idempotency, the current save, sparse historical anchors, verified replay, normalized ledger persistence, migrations, and outbox writes.
 
 ## System matrix
 
 | # | System | Status | Current authority | Principal finding | Next prompt |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Onboarding and State Initialization | duplicated | Onboarding UI/model, scenario catalog, native v2 state factory, v1/v2 create services | v2 is catalog-backed and validated, but v1 accepts a separate state contract and UI repeats salary math. | Prompt 13 after Prompt 01 |
-| 2 | Authoritative Game State and Ledger | duplicated | game-state.ts, game-state-v2.ts, ledger.ts, repository | Strong per-version invariants; two live state/command stacks and repeated full-history snapshots prevent one repository-wide authority. | Prompt 01 |
+| 1 | Onboarding and State Initialization | duplicated | Onboarding UI/model, scenario catalog, native v2 state factory, legacy compatibility constructor | v2 is the only public creation path, but legacy construction remains for migration fixtures and the UI repeats salary math. | Prompt 13 |
+| 2 | Authoritative Game State and Ledger | complete | state-authority-v2.ts, game-state-v2.ts, ledger.ts, repository/replay modules | GameStateV2 is the sole mutable gameplay authority; v1 is decode/migrate/read-only; current state is the save authority and sparse verified anchors support historical reconstruction. | Complete in Prompt 01 |
 | 3 | Time and Turn Controller | incorrectly coupled | v2 play-console loop; dormant v1 checkpoints.ts | Multi-month control is in the browser and crosses API/DB once per month; no v2 tagged controller. | Prompt 03 after Prompt 02 |
 | 4 | Deterministic Financial Simulation Engine | duplicated | monthly-turn.ts and monthly-turn-v2.ts plus finance modules | v2 is deterministic and exact, but v1 remains an alternate engine and some formulas are repeated. | Prompt 02 |
-| 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; v1 commands remain live. | Prompt 05 |
+| 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; legacy v1 action reducers remain reusable compatibility code. | Prompt 05 |
 | 6 | Goals, End Conditions, and Grading | duplicated | financial-goals-v2.ts, outcomes.ts, legacy FI helper | v2 player-selected FI goal is coherent, but a legacy 25x helper and UI/AI calculations remain alternate owners. | Prompt 04 |
 | 7 | Risk and Resilience Analyzer | incorrectly coupled | exposure-v2.ts and event-scheduler-v2.ts | Exposure measures vulnerability but also causes event eligibility, frequency, and catastrophe access. | Prompt 06 |
 | 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
@@ -82,7 +82,7 @@ The repository also exposes v1 routes and RunApiService beside the v2 routes and
 
 Status: duplicated.
 
-- Authoritative files and entry points: src/features/play/onboarding-model.ts, onboarding form components, src/data/scenario-catalog.ts, src/core/scenario-catalog.ts, src/core/native-game-state-v2.ts, RunApiServiceV2.createRun, and the v1/v2 run-creation routes.
+- Authoritative files and entry points: src/features/play/onboarding-model.ts, onboarding form components, src/data/scenario-catalog.ts, src/core/scenario-catalog.ts, src/core/native-game-state-v2.ts, RunApiServiceV2.createRun, and the v2 run-creation route. The v1 constructor remains for decoding/migration compatibility, not public creation.
 - Inputs: preset, catalog career and region, salary point, benefits, health and household fields, assets, liabilities, goal target/age, seed, and request identifiers.
 - Outputs: immutable catalog snapshot plus a reconciled initial state with player, finances, goal, insurance, career, recurring strategy, ledger, RNG state, and revision metadata.
 - State owned: the UI owns only draft form state; the created run owns authoritative scenario assumptions and financial opening balances. The repository owns run identity and persistence.
@@ -90,25 +90,25 @@ Status: duplicated.
 - Tests found: onboarding-model, play-model, scenario-catalog, native-game-state-v2, API service, and repository integration tests.
 - Determinism/performance risks: the start month is hard-coded in the browser flow; new run/player/command UUIDs are intentionally replay-relevant identifiers; UI salary bounds use floating multiplication rather than the core money/rate helper.
 - Missing requirements: a single versioned creation contract, explicit persisted assumption/provenance records for every repaired/defaulted input, and an onboarding replay fixture independent of browser-generated IDs.
-- Duplicate formulas or authority: v1 and v2 create paths coexist; salary range projection is repeated in UI and core.
+- Duplicate formulas or authority: the public create path is v2-only, but legacy construction remains for compatibility and salary range projection is repeated in UI and core.
 - AI boundary: no AI is needed for authoritative initialization. If free-text intake is added, AI output must remain a proposal validated and normalized by this system.
-- Next action: after Prompt 01 establishes one state authority, run Prompt 13 to make one catalog-backed initializer and remove UI-owned financial formulas.
+- Next action: Prompt 13 should make one catalog-backed initializer and remove UI-owned financial formulas.
 
 ### 2. Authoritative Game State and Ledger
 
-Status: duplicated.
+Status: complete.
 
-- Authoritative files and entry points: src/core/game-state.ts, src/core/game-state-v2.ts, src/core/ledger.ts, canonical serialization/decoder modules, src/server/db/run-repository.ts, run-repository-read.ts, and database schema/migrations.
+- Authoritative files and entry points: src/core/state-authority-v2.ts, src/core/game-state-v2.ts, src/core/state-transition-v2.ts, src/core/ledger.ts, canonical serialization/decoder modules, src/server/db/run-repository.ts, run-repository-read.ts, run-state-replay-v2.ts, snapshot-policy-v2.ts, and database schema/migrations.
 - Inputs: initial state or prior persisted revision, validated command, external evidence, and deterministic reducer output.
-- Outputs: finalized state, state checksum, balanced ledger, snapshot, accepted command, normalized transaction/posting rows, monthly record, and outbox message.
-- State owned: player identity, calendar, finances, detailed v2 gameplay state, outcome, RNG, ledger, revision, histories, and catalog snapshot. The database owns accepted revision history and idempotency records.
+- Outputs: finalized authoritative state, canonical checksum, balanced ledger, current save, sparse boundary anchors, accepted command, normalized transaction/posting rows, monthly record, and outbox message.
+- State owned: GameStateV2 owns player identity, calendar, finances, detailed gameplay state, outcome, RNG, immutable ledger, revision, histories, Runtime Balance storage, and catalog snapshot. `game_runs.current_state` is the current save authority; accepted commands, sparse snapshots, and migration targets provide replay evidence.
 - Dependencies: branded primitives, canonical serializer, validators, reducer dispatch, Drizzle/Postgres, tax-evidence schema, and outbox.
-- Tests found: game-state v1/v2, ledger, canonical serialization, command replay, persistence decoder, repository integration, concurrency, rollback, idempotency, and migration tests.
-- Determinism/performance risks: finalize validates and recursively freezes the full aggregate; checksums serialize it; every accepted command snapshots it. Because the aggregate contains full ledger and history arrays, total serialization/storage work can grow roughly quadratically with run length.
-- Missing requirements: one mutable production version, an explicit snapshot/compaction policy, a 480-month size/time budget, and proof that normalized ledger/history tables can reconstruct or audit compacted state.
-- Duplicate formulas or authority: GameState and GameStateV2, v1/v2 command reducers, full ledger in state and normalized ledger rows in SQL.
+- Tests found: authoritative-v2 guards, Runtime Balance defaults/bounds, transition invariants, game-state v1/v2 compatibility, precise rounding, ledger provenance/reconciliation, canonical serialization, strict command replay, sparse snapshot policy, persistence decoding, repository integration, concurrency, rollback, idempotency, and authenticated migration/legacy-retirement tests.
+- Determinism/performance risks: every accepted command still validates/freezes the aggregate, computes a canonical checksum, and persists `current_state`. Sparse historical anchors remove per-command snapshot duplication, but growing embedded histories and normalized evidence still need 120/480-month budgets under Prompt 14.
+- Missing requirements: no Prompt 01 authority, ledger, migration, or replay requirement remains open. Long-run performance budgets belong to Prompt 14; the browser/API-per-month loop belongs to Prompt 03; duplicate display/AI selectors belong to Prompt 04.
+- Duplicate formulas or authority: v1 constructors/reducers remain read/migrate fixture compatibility rather than mutable production authority. The embedded validated ledger is gameplay authority; normalized SQL ledger rows are an audit/query projection. Financial formula duplication remains recorded under later owning systems.
 - AI boundary: AI does not own state validation or ledger writes, which is correct.
-- Next action: Prompt 01 should designate v2 as the sole mutable authority, constrain v1 to migrate/read-only behavior, and define bounded snapshot/history ownership before other repairs.
+- Next action: keep this boundary stable while later prompts consume the v2 authority; do not move financial formulas or Runtime Balance behavior into the state layer.
 
 ### 3. Time and Turn Controller
 
@@ -152,9 +152,9 @@ Status: duplicated.
 - State owned: recurring strategy, career/progression, insurance decisions, detailed debts/assets, lifestyle cost, milestone choices, and action-derived ledger history.
 - Dependencies: state/ledger, finance primitives, debt/payroll/insurance modules, validation contracts, and UI builders.
 - Tests found: actions, detailed actions, recurring strategy, debt service, payroll, insurance, milestones, command mapping, and API service tests.
-- Determinism/performance risks: actions are deterministic after validation. The principal risk is semantic drift across v1 take_action and v2 detailed command families.
-- Missing requirements: one action taxonomy, one policy interface, explicit affordability/effect previews derived from core formulas, and retirement of alternate v1 mutations.
-- Duplicate formulas or authority: v1 actions and v2 detailed actions both mutate finance; some UI previews reconstruct values rather than call selectors.
+- Determinism/performance risks: actions are deterministic after validation. The principal risk is semantic drift between legacy v1 action code retained for compatibility and the v2 detailed command families.
+- Missing requirements: one action taxonomy, one policy interface, explicit affordability/effect previews derived from core formulas, and removal or isolation of alternate legacy action implementations.
+- Duplicate formulas or authority: legacy v1 actions remain callable compatibility code while v2 detailed actions own production mutation; some UI previews reconstruct values rather than call selectors.
 - AI boundary: AI must not create or execute financial actions without typed player confirmation; current authoritative actions remain code-driven.
 - Next action: Prompt 05 after Prompts 01-04.
 
@@ -296,7 +296,7 @@ Status: missing.
 - State owned: offline run specifications and reports only; it must not become production simulation authority.
 - Dependencies: stable engine, time controller, goals, actions/policies, risk, macro, events, balance controller, and causal metrics.
 - Tests found: isolated deterministic/long-path tests exist, but no lab, matched-seed comparison, strategy bot, or 480-month performance suite exists.
-- Determinism/performance risks: current per-command full-state freezing/checksumming/snapshotting is a likely blocker if the lab uses the production persistence path. The lab needs an in-memory headless path plus explicit parity checks.
+- Determinism/performance risks: current per-command full-state freezing, checksumming, and `current_state` persistence may be a blocker if the lab uses the production persistence path, even though historical anchors are sparse. The lab needs an in-memory headless path plus explicit parity checks.
 - Missing requirements: all primary lab capabilities.
 - Duplicate formulas or authority: none because the system is absent; future bots must use public action interfaces rather than reimplement finance.
 - AI boundary: no AI is needed for balance truth or numeric tuning.
@@ -377,7 +377,9 @@ That mixing violates the desired causal model. A general risk score should not m
 - Market, macro, and event draws use the shared persisted RNG in explicit order.
 - Canonical state checksums detect drift.
 - Accepted commands are idempotent and revision-checked.
-- State snapshots, ledger rows, monthly records, tax evidence, and command payloads are persisted transactionally.
+- Current state, sparse boundary snapshots, ledger rows, monthly records, tax evidence, and exact command payloads are persisted transactionally.
+- Historical/idempotent reads replay strictly decoded contiguous commands from the latest compatible snapshot or migration target and verify the checksum after every revision.
+- Authenticated v1-to-v2 migration is transactional and idempotent; public v1 writes return HTTP 410 without mutation while authenticated legacy reads remain available.
 - Tax evidence is resolved outside the core and can be reused on retry/replay.
 - Tests cover fixed-checksum monthly transitions, command replay, market long paths, repository rollback/concurrency/idempotency, and version migration.
 
@@ -431,17 +433,17 @@ No AI-owned exact financial formula was found. The AI game-context adapter never
 1. Game state embeds the complete append-only ledger plus growing exposure, event, milestone, and learning histories.
 2. Each transition validates and recursively freezes that graph.
 3. Canonical checksum generation serializes the full graph.
-4. Each accepted command stores a full state snapshot.
+4. Each accepted command persists the full current save, while historical v2 snapshots are limited to run start, annual checkpoints, event/milestone boundaries, terminal outcome, and migration anchors.
 5. Ledger transactions/postings and monthly records are also stored in normalized tables.
 6. The v2 browser fast-forward performs one request/transaction per month.
 
-This is not evidence of a current user-visible failure, but it is a high-confidence scaling risk. Prompt 01 should define compact authoritative state versus audit history; Prompt 03 should add an in-process application loop; Prompt 14 should enforce 120- and 480-month time/size budgets.
+This is not evidence of a current user-visible failure, but it remains a high-confidence scaling risk. Prompt 01 now separates the current save from sparse verified history. Prompt 03 should add an in-process application loop; Prompt 14 should enforce 120- and 480-month time/size budgets.
 
 ## Dependency-aware implementation order
 
 The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 
-1. Prompt 01 — Authoritative Game State and Ledger. Establish one mutable state version, one ledger/formula authority, and a bounded persistence/snapshot policy.
+1. Prompt 01 — Authoritative Game State and Ledger. Complete: GameStateV2 is the sole mutable state, v1 is decode/migrate/read-only, ledger provenance is enforced for new writes, and historical anchors are sparse and replay-verified.
 2. Prompt 13 — Onboarding and State Initialization. Create only the canonical state and persist normalized assumptions/provenance.
 3. Prompt 02 — Deterministic Financial Simulation Engine. Consolidate repeated finance formulas and define projection/replay interfaces.
 4. Prompt 03 — Time and Turn Controller. Add one in-process v2 controller with tagged stop reasons and sequential-parity tests.
@@ -461,11 +463,11 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 
 ## Recommended immediate next prompts
 
-1. Prompt 01 first, because all subsequent work depends on one state, ledger, replay, and persistence authority.
+1. Prompt 13 can now consume the authoritative v2 state and remove remaining onboarding/UI duplication.
 2. Prompt 06 followed by Prompt 08, because the current exposure-to-event coupling changes game causality and player fairness.
-3. Prompt 09 before Prompt 10, because the director currently has no independent approval gate.
-4. Prompt 03 before large-scale balance work, because the browser/network month loop prevents a clean headless long-run path.
-5. Prompt 14 before final tuning or release claims, because deterministic correctness alone does not prove distributional fairness or acceptable long-run performance.
+3. Prompt 09 before Prompt 10, because the persisted Runtime Balance container has no approval behavior yet and the director has no independent approval gate.
+4. Prompt 03 before large-scale balance work, because the browser/network month loop still prevents a clean headless long-run path.
+5. Prompt 14 before final tuning or release claims, because deterministic correctness and sparse history do not prove distributional fairness or acceptable long-run performance.
 
 ## Audit completion checklist
 
@@ -473,5 +475,5 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 - The actual event pipeline identifies eligibility, hazard, selection/ranking, fairness approval, parameter sampling, choice handling, exact effect, causal logging, and teaching/debrief.
 - Probability, severity, exposure, and difficulty are analyzed separately.
 - Save/load, external evidence, seeded replay, and command-identity boundaries are documented.
-- Duplicate formulas and dual-version authorities are identified.
-- No production code was modified.
+- Duplicate formulas and remaining legacy compatibility implementations are identified without treating them as mutable state authority.
+- Prompt 01 findings are updated from the verified implementation; all Prompt 02-14 statuses remain unchanged.

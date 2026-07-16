@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 .venv/
 __pycache__/
 .pytest_cache/
@@ -32,3 +33,6 @@ pnpm-debug.log*
 
 # Isolated Codex worktrees
 .worktrees/
+
+# Local implementation-planning scratch
+.superpowers/
