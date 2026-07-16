@@ -81,6 +81,15 @@ export function calculateTotalMinimumDebtPaymentV2(
   );
 }
 
+export function calculateStoredMinimumDebtObligationV2(
+  debts: DebtBreakdown["termDebts"],
+): MoneyCents {
+  return sumMoney(
+    debts.map(({ minimumPaymentCents }) => minimumPaymentCents),
+    "stored term debt minimum obligation",
+  );
+}
+
 export function applyDebtPaymentV2(
   debt: DebtBreakdown["termDebts"][number],
   interestCents: MoneyCents,
@@ -186,19 +195,6 @@ function credit(accountId: string, amountCents: MoneyCents): JournalPosting {
   return { accountId, debitCents: moneyCents(0), creditCents: amountCents };
 }
 
-function calculateLegacyMinimumDebtPaymentV2(
-  debts: DebtBreakdown["termDebts"],
-): MoneyCents {
-  const cappedMinimum = calculateTotalMinimumDebtPaymentV2(debts);
-  const historicalExcess = sumMoney(
-    debts.map(({ minimumPaymentCents, principalCents }) =>
-      moneyCents(Math.max(0, minimumPaymentCents - principalCents)),
-    ),
-    "historical term debt minimum excess",
-  );
-  return addMoney(cappedMinimum, historicalExcess);
-}
-
 export function settleMonthlyDebtService(
   state: GameStateV2,
   commandId: string,
@@ -267,10 +263,10 @@ export function settleMonthlyDebtService(
         }
       : debt;
   });
-  const oldMinimum = calculateLegacyMinimumDebtPaymentV2(
+  const oldMinimum = calculateStoredMinimumDebtObligationV2(
     state.gameplay.debts.termDebts,
   );
-  const nextMinimum = calculateLegacyMinimumDebtPaymentV2(nextDebts);
+  const nextMinimum = calculateStoredMinimumDebtObligationV2(nextDebts);
   const reconciled = reconcileFinancesWithLedger(state.finances, ledger);
   const requiredWithoutOldMinimum = subtractMoney(
     reconciled.requiredObligationsCents,

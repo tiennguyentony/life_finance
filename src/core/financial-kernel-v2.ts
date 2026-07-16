@@ -11,6 +11,7 @@ import {
 import { addMonths, type SimulationMonth } from "./domain/month";
 import {
   applyDebtPaymentV2,
+  calculateStoredMinimumDebtObligationV2,
   planMonthlyDebtService,
   settleMonthlyDebtService,
   type MonthlyDebtServicePlan,
@@ -568,15 +569,6 @@ function payNonDebtObligations(
   });
 }
 
-function payoffCappedMinimumDebtTotal(state: GameStateV2): MoneyCents {
-  return sumMoney(
-    state.gameplay.debts.termDebts.map((debt) =>
-      moneyCents(Math.min(debt.minimumPaymentCents, debt.principalCents)),
-    ),
-    "financial kernel payoff-capped minimum debt",
-  );
-}
-
 function applyAfterTaxPlan(
   state: GameStateV2,
   commandId: string,
@@ -629,17 +621,14 @@ function applyAfterTaxPlan(
       amountCents,
     ]),
   );
-  const oldMinimum = payoffCappedMinimumDebtTotal(state);
+  const oldMinimum = calculateStoredMinimumDebtObligationV2(
+    state.gameplay.debts.termDebts,
+  );
   const termDebts = state.gameplay.debts.termDebts.map((debt) => {
     const payment = paymentByDebt.get(debt.id) ?? ZERO;
     return payment === 0 ? debt : applyDebtPaymentV2(debt, ZERO, payment).debt;
   });
-  const nextMinimum = sumMoney(
-    termDebts.map((debt) =>
-      moneyCents(Math.min(debt.minimumPaymentCents, debt.principalCents)),
-    ),
-    "financial kernel next payoff-capped minimum debt",
-  );
+  const nextMinimum = calculateStoredMinimumDebtObligationV2(termDebts);
   const finances = reconcileFinancesWithLedger(state.finances, ledger);
   return finalizeGameStateV2({
     ...state,
@@ -766,7 +755,9 @@ export function simulateFinancialMonthV2(
   const debtService = planMonthlyDebtService(working);
   const baseNonDebtObligationsCents = subtractMoney(
     working.finances.requiredObligationsCents,
-    payoffCappedMinimumDebtTotal(working),
+    calculateStoredMinimumDebtObligationV2(
+      working.gameplay.debts.termDebts,
+    ),
   );
   const nonDebtObligations = sumMoney(
     [baseNonDebtObligationsCents, claim.playerCostCents],
