@@ -385,7 +385,20 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           insuranceClaim: insuranceClaimSchema.optional(),
           resolvedCashFlows: resolvedCashFlowsSchema.optional(),
         })
-        .strict(),
+        .strict()
+        .superRefine((payload, context) => {
+          if (
+            payload.resolvedCashFlows !== undefined &&
+            payload.financialKernelVersion !== "2.0.0"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["resolvedCashFlows"],
+              message:
+                "resolved cash flows require financial kernel version 2.0.0",
+            });
+          }
+        }),
     })
     .strict(),
 ]);

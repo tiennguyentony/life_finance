@@ -307,6 +307,8 @@ function monthCommandV2(id = "cmd.repository-v2.month"): ProcessMonthV2Command {
     expectedRevision: 1,
     effectiveMonth: simulationMonth("2026-07"),
     payload: {
+      financialKernelVersion: "2.0.0",
+      resolvedCashFlows: [],
       taxEvidence: {
         schemaVersion: 1,
         traceId: `tax.${id}`,

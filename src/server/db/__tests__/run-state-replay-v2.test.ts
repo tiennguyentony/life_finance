@@ -740,6 +740,43 @@ describe("verified v2 run-state replay", () => {
     });
   });
 
+  it("strictly decodes an empty resolved cash-flow set for the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          resolvedCashFlows: [],
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows: [],
+      },
+    });
+  });
+
+  it.each([
+    ["unversioned", {}],
+    ["legacy-4.1.0", { financialKernelVersion: "legacy-4.1.0" }],
+  ] as const)(
+    "rejects persisted resolved cash flows on %s monthly rows",
+    (_label, versionEvidence) => {
+      expect(
+        captureError(() =>
+          rebuildGameCommandV2(
+            storedRow("process_month_v2", {
+              ...processMonthPayload,
+              ...versionEvidence,
+              resolvedCashFlows,
+            }),
+          ),
+        ),
+      ).toMatchObject({ code: "CORRUPT_STATE" });
+    },
+  );
+
   it.each([
     [
       "unknown kind",
