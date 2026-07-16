@@ -2,6 +2,7 @@ import {
   addMoney,
   moneyCents,
   multiplyMoneyByRate,
+  ratePpm,
   subtractMoney,
   type MoneyCents,
   type RatePpm,
@@ -27,6 +28,27 @@ import {
   requireCash,
 } from "./detailed-actions-v2-support";
 import type { ResolvedDetailedActionPolicyV2 } from "./action-policy-v2";
+
+function resolvedMortgageRateV2(
+  state: GameStateV2,
+  policy: ResolvedDetailedActionPolicyV2,
+  requestedRate: RatePpm,
+): RatePpm {
+  const market = state.gameplay.market;
+  if (
+    policy.actionPolicyVersion !== null &&
+    market.modelVersion === "regime-v2" &&
+    market.borrowingRatePpm !== undefined
+  ) {
+    return ratePpm(
+      Math.min(
+        500_000,
+        market.borrowingRatePpm + policy.newMortgageSpreadPpm,
+      ),
+    );
+  }
+  return requestedRate;
+}
 
 function validateMortgageTerms(rate: RatePpm, termMonths: number): void {
   if (!Number.isSafeInteger(rate) || rate < 0 || rate > 500_000) {
@@ -95,10 +117,12 @@ export function applyHomePurchase(
   if (state.finances.homeValueCents > 0) {
     throw new DetailedFinanceError("HOME_ALREADY_OWNED", "run already owns a home");
   }
-  validateMortgageTerms(
+  const mortgageRate = resolvedMortgageRateV2(
+    state,
+    policy,
     action.mortgageAnnualInterestRatePpm,
-    action.mortgageTermMonths,
   );
+  validateMortgageTerms(mortgageRate, action.mortgageTermMonths);
   const closingCost = multiplyMoneyByRate(
     action.purchasePriceCents,
     policy.homePurchaseClosingCostRatePpm,
@@ -111,7 +135,7 @@ export function applyHomePurchase(
   );
   const minimumPayment = amortizedPayment(
     principal,
-    action.mortgageAnnualInterestRatePpm,
+    mortgageRate,
     action.mortgageTermMonths,
   );
   const postings: JournalPosting[] = [
@@ -134,7 +158,7 @@ export function applyHomePurchase(
           id: `debt.mortgage.${command.id}`,
           kind: "mortgage" as const,
           principalCents: principal,
-          annualInterestRatePpm: action.mortgageAnnualInterestRatePpm,
+          annualInterestRatePpm: mortgageRate,
           minimumPaymentCents: minimumPayment,
           remainingTermMonths: action.mortgageTermMonths,
         },
@@ -228,10 +252,12 @@ export function applyHomeRefinance(
   if (state.finances.homeValueCents <= 0) {
     throw new DetailedFinanceError("HOME_REQUIRED", "run does not own a home");
   }
-  validateMortgageTerms(
+  const mortgageRate = resolvedMortgageRateV2(
+    state,
+    policy,
     action.mortgageAnnualInterestRatePpm,
-    action.mortgageTermMonths,
   );
+  validateMortgageTerms(mortgageRate, action.mortgageTermMonths);
   const indexes = state.gameplay.debts.termDebts
     .map((debt, index) => ({ debt, index }))
     .filter(({ debt }) => debt.kind === "mortgage" && debt.principalCents > 0);
@@ -249,7 +275,7 @@ export function applyHomeRefinance(
   requireCash(state, closingCost);
   const nextMinimum = amortizedPayment(
     debt.principalCents,
-    action.mortgageAnnualInterestRatePpm,
+    mortgageRate,
     action.mortgageTermMonths,
   );
   const aggregate = appendAction(
@@ -262,7 +288,7 @@ export function applyHomeRefinance(
   const termDebts = [...state.gameplay.debts.termDebts];
   termDebts[index] = {
     ...debt,
-    annualInterestRatePpm: action.mortgageAnnualInterestRatePpm,
+    annualInterestRatePpm: mortgageRate,
     minimumPaymentCents: nextMinimum,
     remainingTermMonths: action.mortgageTermMonths,
   };

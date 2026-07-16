@@ -33,9 +33,12 @@ import { adjudicateCoverageClaim, adjudicateHealthClaim } from "./insurance-v2";
 import { ownForDeepFreeze } from "./immutable-ownership";
 import { appendTransaction, type JournalPosting } from "./ledger";
 import {
+  MACRO_MARKET_CALIBRATION_V2_VERSION,
+  MACRO_MARKET_MODEL_V2_VERSION,
   MARKET_MODEL_VERSION,
-  type MarketMonth,
-  type MarketSimulationResult,
+  validateMacroMarketMonthV2,
+  type SupportedMarketMonth,
+  type SupportedMarketSimulationResult,
 } from "./market";
 import {
   assessV2Liquidity,
@@ -82,7 +85,7 @@ export type FinancialMonthInputV2 = Readonly<{
   commandId: string;
   state: GameStateV2;
   taxEvidence: MonthlyTaxEvidence;
-  marketStep: MarketSimulationResult;
+  marketStep: SupportedMarketSimulationResult;
   taxableLiquidationCostRatePpm: RatePpm;
   insuranceClaim?: MonthlyInsuranceClaimV2;
   resolvedCashFlows?: readonly ResolvedCashFlowV2[];
@@ -111,7 +114,7 @@ export type FinancialMonthRecordV2 = Readonly<{
   afterTaxCashIncomeCents: MoneyCents;
   resolvedIncomeCents: MoneyCents;
   resolvedExpenseCents: MoneyCents;
-  market: MarketMonth;
+  market: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   annualInflationIncreaseCents: MoneyCents;
   monthlyObligationInflationIncreaseCents: MoneyCents;
@@ -240,19 +243,29 @@ function assertInput(input: FinancialMonthInputV2): void {
 
 function assertMarketStep(
   state: GameStateV2,
-  marketStep: MarketSimulationResult,
+  marketStep: SupportedMarketSimulationResult,
 ): void {
-  const rates = [
+  const commonRates = [
     marketStep.month.equityReturnPpm,
     marketStep.month.bondReturnPpm,
     marketStep.month.cashReturnPpm,
     marketStep.month.housingReturnPpm,
     marketStep.month.inflationPpm,
   ];
+  const rates =
+    marketStep.month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? [
+          ...commonRates,
+          marketStep.month.broadIndexReturnPpm,
+          marketStep.month.sectorReturnPpm,
+          marketStep.month.speculativeReturnPpm,
+          marketStep.month.borrowingRatePpm,
+          marketStep.month.laborDemandChangePpm,
+          marketStep.month.volatilityPpm,
+        ]
+      : commonRates;
   if (
-    state.gameplay.market.modelVersion !== MARKET_MODEL_VERSION ||
-    marketStep.nextState.modelVersion !== MARKET_MODEL_VERSION ||
-    marketStep.month.modelVersion !== MARKET_MODEL_VERSION ||
+    marketStep.nextState.modelVersion !== marketStep.month.modelVersion ||
     marketStep.month.regime !== state.marketRegime ||
     marketStep.month.nextRegime !== marketStep.nextState.regime ||
     marketStep.nextState.monthsInRegime !==
@@ -267,6 +280,45 @@ function assertMarketStep(
     throw new FinancialKernelV2Error(
       "INVALID_MARKET_STEP",
       "market step is inconsistent with the opening model, regime, or next state",
+    );
+  }
+  if (marketStep.month.modelVersion === MARKET_MODEL_VERSION) {
+    if (state.gameplay.market.modelVersion !== MARKET_MODEL_VERSION) {
+      throw new FinancialKernelV2Error(
+        "INVALID_MARKET_STEP",
+        "regime-v1 cannot replace an accepted regime-v2 lifecycle",
+      );
+    }
+    return;
+  }
+  try {
+    validateMacroMarketMonthV2(marketStep.month);
+  } catch {
+    throw new FinancialKernelV2Error(
+      "INVALID_MARKET_STEP",
+      "regime-v2 market evidence is outside its accepted calibration",
+    );
+  }
+  if (
+    marketStep.month.modelVersion !== MACRO_MARKET_MODEL_V2_VERSION ||
+    marketStep.nextState.modelVersion !== MACRO_MARKET_MODEL_V2_VERSION ||
+    marketStep.month.calibrationVersion !==
+      MACRO_MARKET_CALIBRATION_V2_VERSION ||
+    marketStep.nextState.calibrationVersion !==
+      marketStep.month.calibrationVersion ||
+    marketStep.nextState.difficulty !== marketStep.month.difficulty ||
+    marketStep.month.equityReturnPpm !==
+      marketStep.month.broadIndexReturnPpm ||
+    marketStep.month.borrowingRatePpm < 0 ||
+    marketStep.month.volatilityPpm < 0 ||
+    (state.gameplay.market.modelVersion === MACRO_MARKET_MODEL_V2_VERSION &&
+      (state.gameplay.market.calibrationVersion !==
+        marketStep.month.calibrationVersion ||
+        state.gameplay.market.macroDifficulty !== marketStep.month.difficulty))
+  ) {
+    throw new FinancialKernelV2Error(
+      "INVALID_MARKET_STEP",
+      "regime-v2 market evidence does not match the accepted lifecycle",
     );
   }
 }
@@ -309,49 +361,67 @@ function addSigned(balance: MoneyCents, change: MoneyCents): MoneyCents {
 function applySuppliedMarketMonth(
   state: GameStateV2,
   commandId: string,
-  simulation: MarketSimulationResult,
+  simulation: SupportedMarketSimulationResult,
 ): Readonly<{
   state: GameStateV2;
-  month: MarketMonth;
+  month: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   cumulativePriceIndexPpm: number;
 }> {
-  const month = Object.freeze({
-    ...simulation.month,
-    appliedReturnModifiersPpm: Object.freeze({
-      ...simulation.month.appliedReturnModifiersPpm,
-    }),
-    shocks: Object.freeze({ ...simulation.month.shocks }),
-  });
+  const month: SupportedMarketMonth =
+    simulation.month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? Object.freeze({
+          ...simulation.month,
+          appliedReturnModifiersPpm: Object.freeze({
+            ...simulation.month.appliedReturnModifiersPpm,
+          }),
+          shocks: Object.freeze({ ...simulation.month.shocks }),
+        })
+      : Object.freeze({
+          ...simulation.month,
+          appliedReturnModifiersPpm: Object.freeze({
+            ...simulation.month.appliedReturnModifiersPpm,
+          }),
+          shocks: Object.freeze({ ...simulation.month.shocks }),
+        });
   const portfolio = state.gameplay.portfolio;
+  const broadReturnPpm = month.equityReturnPpm;
+  const sectorReturnPpm =
+    month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? month.sectorReturnPpm
+      : broadReturnPpm;
+  const speculativeReturnPpm =
+    month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? month.speculativeReturnPpm
+      : broadReturnPpm;
   const portfolioChanges: Record<keyof PortfolioBreakdown, MoneyCents> = {
     taxableBroadIndexCents: signedChange(
       portfolio.taxableBroadIndexCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     taxableSectorCents: signedChange(
       portfolio.taxableSectorCents,
-      month.equityReturnPpm,
+      sectorReturnPpm,
     ),
     taxableSpeculativeCents: signedChange(
       portfolio.taxableSpeculativeCents,
-      month.equityReturnPpm,
+      speculativeReturnPpm,
     ),
     taxableLegacyUnclassifiedCents: signedChange(
       portfolio.taxableLegacyUnclassifiedCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     retirement401kCents: signedChange(
       portfolio.retirement401kCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     retirementIraCents: signedChange(
       portfolio.retirementIraCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     retirementLegacyUnclassifiedCents: signedChange(
       portfolio.retirementLegacyUnclassifiedCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     hsaCents: signedChange(portfolio.hsaCents, month.bondReturnPpm),
     otherInvestableLegacyUnclassifiedCents: signedChange(
@@ -444,11 +514,31 @@ function applySuppliedMarketMonth(
       gameplay: {
         ...state.gameplay,
         portfolio: nextPortfolio,
-        market: {
-          modelVersion: MARKET_MODEL_VERSION,
-          monthsInRegime: simulation.nextState.monthsInRegime,
-          cumulativePriceIndexPpm,
-        },
+        market:
+          month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+            ? {
+                modelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+                monthsInRegime: simulation.nextState.monthsInRegime,
+                cumulativePriceIndexPpm,
+                calibrationVersion: month.calibrationVersion,
+                macroDifficulty: month.difficulty,
+                observedRegime: month.regime,
+                observedMonth: state.currentMonth,
+                borrowingRatePpm: month.borrowingRatePpm,
+                laborDemandChangePpm: month.laborDemandChangePpm,
+                volatilityPpm: month.volatilityPpm,
+                lastInflationPpm: month.inflationPpm,
+                broadMarketReturnPpm: month.broadIndexReturnPpm,
+                sectorMarketReturnPpm: month.sectorReturnPpm,
+                speculativeMarketReturnPpm: month.speculativeReturnPpm,
+                housingReturnPpm: month.housingReturnPpm,
+                cashYieldPpm: month.cashReturnPpm,
+              }
+            : {
+                modelVersion: MARKET_MODEL_VERSION,
+                monthsInRegime: simulation.nextState.monthsInRegime,
+                cumulativePriceIndexPpm,
+              },
       },
     }),
     month,

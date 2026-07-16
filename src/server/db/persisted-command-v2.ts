@@ -417,6 +417,8 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
             .optional(),
           outcomePolicyVersion: z.literal("1.0.0").optional(),
           eventSchedulerVersion: z.literal("causal-hazard-v1").optional(),
+          marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
+          macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
           taxEvidence: taxEvidenceSchema,
           taxableLiquidationCostRatePpm: boundedRatePpmSchema,
           insuranceClaim: insuranceClaimSchema.optional(),
@@ -455,6 +457,27 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               path: ["eventSchedulerVersion"],
               message:
                 "causal event scheduling requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            (payload.marketModelVersion === "regime-v2") !==
+            (payload.macroDifficulty !== undefined)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["marketModelVersion"],
+              message:
+                "regime-v2 requires one explicit macro difficulty and other market versions forbid it",
+            });
+          }
+          if (
+            payload.marketModelVersion === "regime-v2" &&
+            payload.financialKernelVersion !== "2.0.0"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["marketModelVersion"],
+              message: "regime-v2 requires financial kernel version 2.0.0",
             });
           }
         }),
