@@ -5,15 +5,17 @@ import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { createInitialGameState } from "../../../core/game-state";
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import { RunSecretCodec } from "../../auth/run-secret";
-import type { RunRepository } from "../../db/run-repository";
+import { RunRepositoryError, type RunRepository } from "../../db/run-repository";
 import { LifeFinanceApiClient, LifeFinanceApiError } from "../client";
 import type { CreateRunRequest } from "../contracts";
 import {
   handleCreateRun,
   handleGetRun,
+  handleMigrateRunV2,
   handleSubmitCommand,
 } from "../http";
 import { RunApiService } from "../service";
+import type { RunApiServiceV2 } from "../service-v2";
 
 const runId = "10000000-0000-4000-8000-000000000001";
 const accessSecret = new RunSecretCodec(Buffer.alloc(32, 9)).create((size) =>
@@ -91,8 +93,8 @@ function service() {
 }
 
 describe("v1 HTTP handlers", () => {
-  it("creates a run with no-store headers and returns the one-time secret", async () => {
-    const { api } = service();
+  it("retires public v1 creation without invoking mutation", async () => {
+    const { api, repository } = service();
     const response = await handleCreateRun(
       new Request("https://example.test/api/v1/runs", {
         method: "POST",
@@ -101,9 +103,15 @@ describe("v1 HTTP handlers", () => {
       api,
     );
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(410);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(await response.json()).toMatchObject({ runId, accessSecret });
+    expect(await response.json()).toEqual({
+      error: {
+        code: "STATE_SCHEMA_DEPRECATED",
+        message: "Legacy state is read-only; create or migrate a v2 run.",
+      },
+    });
+    expect(repository.createRun).not.toHaveBeenCalled();
   });
 
   it("requires bearer auth and never echoes a malformed credential", async () => {
@@ -123,36 +131,143 @@ describe("v1 HTTP handlers", () => {
     expect(repository.loadAuthorizedRun).not.toHaveBeenCalled();
   });
 
-  it("rejects internal month commands and oversized bodies before mutation", async () => {
+  it("preserves authenticated legacy reads", async () => {
     const { api, repository } = service();
-    const internalResponse = await handleSubmitCommand(
+    const response = await handleGetRun(
+      new Request(`https://example.test/api/v1/runs/${runId}`, {
+        headers: { Authorization: `Bearer ${accessSecret}` },
+      }),
+      runId,
+      api,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ state: { schemaVersion: 1 } });
+    expect(repository.loadAuthorizedRun).toHaveBeenCalledWith(runId, accessSecret);
+  });
+
+  it("retires public v1 commands without invoking mutation", async () => {
+    const { api, repository } = service();
+    const response = await handleSubmitCommand(
       new Request(`https://example.test/api/v1/runs/${runId}/commands`, {
         method: "POST",
         headers: { Authorization: `Bearer ${accessSecret}` },
         body: JSON.stringify({
           schemaVersion: 1,
-          id: "cmd.month.1",
+          id: "cmd.public.1",
           expectedRevision: 0,
           effectiveMonth: "2026-07",
-          type: "process_month",
-          payload: { employmentIncomeCents: 999_999_99 },
+          type: "take_action",
+          payload: { action: { type: "invest_cash", amountCents: 10_000 } },
         }),
       }),
       runId,
       api,
     );
-    const oversizedResponse = await handleCreateRun(
-      new Request("https://example.test/api/v1/runs", {
+
+    expect(response.status).toBe(410);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "STATE_SCHEMA_DEPRECATED",
+        message: "Legacy state is read-only; create or migrate a v2 run.",
+      },
+    });
+    expect(repository.applyCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe("v2 migration HTTP handler", () => {
+  it.each([undefined, "Bearer malformed-secret"])(
+    "rejects a missing or malformed bearer credential before migration",
+    async (authorization) => {
+      const migrateRun = vi.fn();
+      const response = await handleMigrateRunV2(
+        new Request(`https://example.test/api/v2/runs/${runId}/migrate`, {
+          method: "POST",
+          ...(authorization ? { headers: { Authorization: authorization } } : {}),
+        }),
+        runId,
+        { migrateRun } as unknown as RunApiServiceV2,
+      );
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        error: {
+          code: "NOT_FOUND_OR_UNAUTHORIZED",
+          message: "Run was not found or the credential is invalid",
+        },
+      });
+      expect(migrateRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns a validated migration response", async () => {
+    const migratedState = migrateGameStateV1ToV2(state());
+    const migration = {
+      state: migratedState,
+      stateChecksum: sha256Canonical(migratedState),
+      idempotentReplay: false,
+    };
+    const migrateRun = vi.fn(async () => migration);
+    const response = await handleMigrateRunV2(
+      new Request(`https://example.test/api/v2/runs/${runId}/migrate`, {
         method: "POST",
-        headers: { "Content-Length": "65537" },
-        body: "{}",
+        headers: { Authorization: `Bearer ${accessSecret}` },
       }),
-      api,
+      runId,
+      { migrateRun } as unknown as RunApiServiceV2,
     );
 
-    expect(internalResponse.status).toBe(400);
-    expect(oversizedResponse.status).toBe(413);
-    expect(repository.applyCommand).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(migration);
+    expect(migrateRun).toHaveBeenCalledWith(runId, accessSecret);
+  });
+
+  it("maps a valid-looking bad credential to the same opaque 401", async () => {
+    const migrateRun = vi.fn(async () => {
+      throw new RunRepositoryError(
+        "NOT_FOUND_OR_UNAUTHORIZED",
+        "run was not found or the credential is invalid",
+      );
+    });
+    const response = await handleMigrateRunV2(
+      new Request(`https://example.test/api/v2/runs/${runId}/migrate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessSecret}` },
+      }),
+      runId,
+      { migrateRun } as unknown as RunApiServiceV2,
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "NOT_FOUND_OR_UNAUTHORIZED",
+        message: "Run was not found or the credential is invalid",
+      },
+    });
+  });
+
+  it("maps repository failures to the structured API error envelope", async () => {
+    const migrateRun = vi.fn(async () => {
+      throw new RunRepositoryError("CORRUPT_STATE", "checksum mismatch");
+    });
+    const response = await handleMigrateRunV2(
+      new Request(`https://example.test/api/v2/runs/${runId}/migrate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessSecret}` },
+      }),
+      runId,
+      { migrateRun } as unknown as RunApiServiceV2,
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "CORRUPT_STATE",
+        message: "The request could not be completed",
+      },
+    });
   });
 });
 
@@ -209,6 +324,34 @@ describe("typed v1 client", () => {
 });
 
 describe("typed v2 client", () => {
+  it("posts an authenticated migration request without a body", async () => {
+    const migratedState = migrateGameStateV1ToV2(state());
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        state: migratedState,
+        stateChecksum: sha256Canonical(migratedState),
+        idempotentReplay: false,
+      }),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+
+    await expect(client.migrateRunV2(runId, accessSecret)).resolves.toMatchObject(
+      {
+        state: migratedState,
+        idempotentReplay: false,
+      },
+    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      `https://example.test/api/v2/runs/${runId}/migrate`,
+    );
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessSecret}` },
+    });
+    expect(init?.body).toBeUndefined();
+  });
+
   it("validates v2 state and sends only the public process-month envelope", async () => {
     const current = migrateGameStateV1ToV2(state());
     const fetchMock = vi.fn<typeof fetch>(async (input) =>

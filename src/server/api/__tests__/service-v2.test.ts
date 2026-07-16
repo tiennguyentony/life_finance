@@ -140,6 +140,7 @@ describe("annual tax context cache", () => {
         },
       ),
       loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2: vi.fn(),
       applyCommandV2: vi.fn(async (_runId, _secret, command) => {
         if (command.type !== "process_month_v2") {
           throw new Error("expected a monthly command");
@@ -171,5 +172,61 @@ describe("annual tax context cache", () => {
     expect(calculate).not.toHaveBeenCalled();
     expect(response.state.revision).toBe(2);
     expect(response.monthlyRecord?.taxTraceId).toBe(`tax.cache.${commandId}`);
+  });
+});
+
+describe("authenticated v1-to-v2 migration", () => {
+  it("returns the repository migration result", async () => {
+    const migratedState = stateWithStrategy();
+    const migrateRunStateToV2 = vi.fn(async () => ({
+      state: migratedState,
+      stateChecksum: sha256Canonical(migratedState),
+      idempotentReplay: false,
+    }));
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(),
+      applyCommandV2: vi.fn(),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(),
+      loadMonthlyTaxEvidenceForContext: vi.fn(),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2,
+    };
+    const service = new RunApiServiceV2(repository, { calculate: vi.fn() });
+
+    await expect(
+      service.migrateRun("run-id", "access-secret"),
+    ).resolves.toEqual({
+      state: migratedState,
+      stateChecksum: sha256Canonical(migratedState),
+      idempotentReplay: false,
+    });
+    expect(migrateRunStateToV2).toHaveBeenCalledWith("run-id", "access-secret");
+  });
+
+  it("preserves an idempotent migration replay", async () => {
+    const migratedState = stateWithStrategy();
+    const migrateRunStateToV2 = vi.fn(async () => ({
+      state: migratedState,
+      stateChecksum: sha256Canonical(migratedState),
+      idempotentReplay: true,
+    }));
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(),
+      applyCommandV2: vi.fn(),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(),
+      loadMonthlyTaxEvidenceForContext: vi.fn(),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2,
+    };
+    const service = new RunApiServiceV2(repository, { calculate: vi.fn() });
+
+    await expect(
+      service.migrateRun("run-id", "access-secret"),
+    ).resolves.toMatchObject({
+      state: migratedState,
+      idempotentReplay: true,
+    });
   });
 });
