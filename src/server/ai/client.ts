@@ -23,6 +23,8 @@ const MAX_OUTPUT_CHARACTERS = 32_000;
 const ROLE_INSTRUCTIONS: Readonly<Record<AiRole, string>> = Object.freeze({
   hostile_fed:
     "You are the Hostile Fed World Director in a personal-finance life simulation. Select exactly one supplied engine-owned event candidate that fairly targets an evidenced weakness. Balance severity with narrative variety; do not automatically choose the strongest signal, and prefer a plausible life context over repeating the same lesson. The engine has already removed recently used event families. Use only supplied candidate IDs, versions, parameter bounds, and evidence IDs. Never calculate balances, invent financial effects, or issue state mutations. Return only the required structured output.",
+  scenario_director:
+    "You are the Hostile Fed scenario-ranking personality, with influence over presentation order only. Rank every supplied engine-owned scenario candidate exactly once, balancing relevance, novelty, narrative coherence, and lesson variety. Return only the supplied candidate IDs, versions, intended lessons, and reason codes in your preferred order. Never select or approve an event, invent prose, parameters, amounts, effects, severity, impacts, or state changes. Preserve the supplied candidate-set checksum and return only the required structured output.",
   teacher:
     "You are a precise personal-finance teacher. Explain the supplied engine-computed outcome and identify at most three decisive supplied decisions. The grade is immutable. Every lesson must cite only supplied evidence IDs. Do not recompute money, invent facts, or give regulated professional advice. Return only the required structured output.",
   onboarding:
@@ -149,6 +151,41 @@ function validateRoleSemantics<R extends AiRole>(
       }
     }
     assertSubset(output.citedEvidenceIds, evidenceIds(request), "Hostile Fed evidence");
+    return;
+  }
+
+  if (request.role === "scenario_director") {
+    const output = response as AiRoleResponseMap["scenario_director"];
+    if (output.candidateSetChecksum !== request.director.candidateSetChecksum) {
+      throw new Error("scenario ranking must preserve the candidate-set checksum");
+    }
+    const expectedByIdentity = new Map(
+      request.director.candidates.map((candidate) => [
+        `${candidate.templateId}@${candidate.templateVersion}`,
+        candidate,
+      ]),
+    );
+    if (output.ranked.length !== expectedByIdentity.size) {
+      throw new Error("scenario ranking must contain every candidate exactly once");
+    }
+    const seen = new Set<string>();
+    for (const candidate of output.ranked) {
+      const identity = `${candidate.templateId}@${candidate.templateVersion}`;
+      const expected = expectedByIdentity.get(identity);
+      if (seen.has(identity) || !expected) {
+        throw new Error("scenario ranking must be an exact candidate permutation");
+      }
+      seen.add(identity);
+      if (
+        candidate.intendedLesson !== expected.intendedLesson ||
+        candidate.reasonCodes.length !== expected.reasonCodes.length ||
+        candidate.reasonCodes.some(
+          (reasonCode, index) => reasonCode !== expected.reasonCodes[index],
+        )
+      ) {
+        throw new Error("scenario ranking cannot alter engine-owned explanations");
+      }
+    }
     return;
   }
 
@@ -313,7 +350,12 @@ export class AiRoleClient {
             { role: "user", content: promptBody },
           ],
           textFormat: zodTextFormat(schema, `life_finance_${role}_v1`),
-          reasoningEffort: role === "hostile_fed" || role === "teacher" ? "medium" : "low",
+          reasoningEffort:
+            role === "hostile_fed" ||
+            role === "scenario_director" ||
+            role === "teacher"
+              ? "medium"
+              : "low",
           store: false,
         });
       } catch (error) {

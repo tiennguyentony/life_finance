@@ -37,11 +37,13 @@ import {
   outcomePolicyVersionForCommandV2,
   processMonthlyTurnV2,
   runtimeBalanceControllerVersionForCommandV2,
+  scenarioDirectorVersionForCommandV2,
   type ProcessMonthV2Command,
 } from "../monthly-turn-v2";
 import { OUTCOME_POLICY_V1_VERSION } from "../outcome-policy-v2";
 import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../runtime-balance-policy-v2";
 import { createInitialRuntimeBalanceStateV2 } from "../runtime-balance-state-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "../scenario-director-policy-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import { setRecurringStrategy } from "../recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
@@ -404,6 +406,139 @@ describe("atomic v2 monthly turn", () => {
         eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
       },
     })).toThrow();
+  });
+
+  it("requires an explicit compatible Scenario Director selection", () => {
+    const initial = configuredState();
+    expect(scenarioDirectorVersionForCommandV2(command(initial))).toBeNull();
+    const selected = command(initial, {
+      financialKernelVersion: "2.0.0",
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+    });
+    expect(scenarioDirectorVersionForCommandV2(selected)).toBe(
+      SCENARIO_DIRECTOR_V2_VERSION,
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION" }),
+    );
+    expect(() =>
+      scenarioDirectorVersionForCommandV2(
+        command(initial, {
+          scenarioDirectorVersion: "invented-director",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION" }),
+    );
+
+    const persisted = decodePersistedGameCommandV2(
+      JSON.parse(JSON.stringify(selected)) as unknown,
+    );
+    expect(
+      persisted.type === "process_month_v2" &&
+        persisted.payload.scenarioDirectorVersion,
+    ).toBe(SCENARIO_DIRECTOR_V2_VERSION);
+    expect(() =>
+      decodePersistedGameCommandV2({
+        ...persisted,
+        payload: {
+          ...persisted.payload,
+          runtimeBalanceControllerVersion: undefined,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("persists deterministic Director ranking before Runtime Balance approval", () => {
+    const base = configuredState();
+    const opening: GameStateV2 = {
+      ...base,
+      random: randomState("runtime-balance-monthly.13"),
+    };
+    const selected = command(
+      opening as ReturnType<typeof configuredState>,
+      {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+        runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+      },
+      "cmd.scenario-director.golden",
+    );
+
+    const first = processMonthlyTurnV2(opening, selected);
+    const second = processMonthlyTurnV2(opening, selected);
+
+    expect(second).toEqual(first);
+    expect(first.record.scenarioDirectorVersion).toBe(
+      SCENARIO_DIRECTOR_V2_VERSION,
+    );
+    expect(first.record.scenarioDirectorDecision).toMatchObject({
+      version: SCENARIO_DIRECTOR_V2_VERSION,
+      rankingSource: "deterministic_fallback",
+      riskAsOfMonth: first.state.currentMonth,
+    });
+    expect(
+      first.record.scenarioDirectorDecision?.ranked
+        .map(({ templateId }) => templateId)
+        .toSorted(),
+    ).toEqual(
+      first.record.runtimeBalanceCandidateSet?.candidateTemplateIds.toSorted(),
+    );
+    expect(
+      first.record.runtimeBalanceDecision?.candidates.map(
+        ({ templateId }) => templateId,
+      ),
+    ).toEqual(
+      first.record.scenarioDirectorDecision?.ranked
+        .slice(0, 5)
+        .map(({ templateId }) => templateId),
+    );
+    expect(first.record.runtimeBalanceDecision?.scenarioDirector).toEqual({
+      version: SCENARIO_DIRECTOR_V2_VERSION,
+      policyVersion:
+        first.record.scenarioDirectorDecision?.policyVersion,
+      rankingSource: "deterministic_fallback",
+      candidateSetChecksum:
+        first.record.scenarioDirectorDecision?.candidateSetChecksum,
+      rankingInputChecksum:
+        first.record.scenarioDirectorDecision?.rankingInputChecksum,
+    });
+    const replayed = reduceGameCommandV2(opening, selected);
+    expect(replayed.state).toEqual(first.state);
+    expect(replayed.monthlyRecord).toEqual(first.record);
+    expect({
+      stateChecksum: sha256Canonical(first.state),
+      randomValue: first.state.random.value,
+      candidateSetChecksum:
+        first.record.scenarioDirectorDecision?.candidateSetChecksum,
+      rankingInputChecksum:
+        first.record.scenarioDirectorDecision?.rankingInputChecksum,
+      topCandidate:
+        first.record.scenarioDirectorDecision?.ranked[0]?.templateId ?? null,
+      approvedCandidate:
+        first.record.runtimeBalanceDecision?.approved?.templateId ?? null,
+    }).toEqual({
+      stateChecksum: "8fb7dff1bec998724003a45498ce8942bd6ce82eedab02f5dbc31720df813086",
+      randomValue: 2_643_935_435,
+      candidateSetChecksum:
+        "465ddc3a391c9997af300a8ef612573c396bf355399f21fab8bc668ad72c2b00",
+      rankingInputChecksum:
+        "dee6f9c9e3a50908969f593139c6f3e1245f55eac0f2e5e8319552672eb1bf4d",
+      topCandidate: "personal.utility_rebate",
+      approvedCandidate: "personal.utility_rebate",
+    });
   });
 
   it("integrates hazard candidates through Runtime Balance and persists approval/null evidence", () => {

@@ -7,7 +7,12 @@ import type {
   AiTransportResult,
 } from "../client";
 import { AiRoleClient, AiServiceError } from "../client";
-import type { ExplanationRequest, HostileFedRequest, TeacherRequest } from "../contracts";
+import type {
+  ExplanationRequest,
+  HostileFedRequest,
+  ScenarioDirectorRequest,
+  TeacherRequest,
+} from "../contracts";
 
 const hostileRequest: HostileFedRequest = {
   contractVersion: 1,
@@ -44,6 +49,54 @@ const hostileOutput = {
   narrative: "Your industry contracts while fixed costs remain due.",
   rationale: "This fairly tests the evidenced thin cash buffer.",
   citedEvidenceIds: ["cash_months"],
+};
+
+const scenarioDirectorRequest: ScenarioDirectorRequest = {
+  contractVersion: 2,
+  privacyNoticeVersion: 2,
+  dataUseAccepted: true,
+  role: "scenario_director",
+  director: {
+    version: "scenario-director-ai-request-v1",
+    candidateSetChecksum: "a".repeat(64),
+    difficulty: "normal",
+    macro: { regime: "recession", tags: ["macro.recession"] },
+    riskFacts: [
+      { metricId: "emergency_fund_months", severityBand: "high" },
+    ],
+    candidates: [
+      {
+        templateId: "personal.medical_bill",
+        templateVersion: 2,
+        category: "health",
+        tier: "medium",
+        targetedWeakness: "low_emergency_fund",
+        lessonTags: {
+          primary: "lesson.insurance",
+          secondary: ["lesson.emergency_fund"],
+        },
+        directorTags: ["director.category.health"],
+        intendedLesson: "lesson.insurance",
+        reasonCodes: ["weakness_relevance"],
+      },
+    ],
+    recentDecisions: [],
+    recentEvents: [],
+    lessonHistory: [],
+  },
+};
+
+const scenarioDirectorOutput = {
+  version: "scenario-director-ai-response-v1",
+  candidateSetChecksum: "a".repeat(64),
+  ranked: [
+    {
+      templateId: "personal.medical_bill",
+      templateVersion: 2,
+      intendedLesson: "lesson.insurance",
+      reasonCodes: ["weakness_relevance"],
+    },
+  ],
 };
 
 function completed(output: unknown, id = "resp_1"): AiTransportResult {
@@ -105,6 +158,42 @@ describe("AiRoleClient", () => {
         }),
         attempts: [expect.objectContaining({ kind: "success", responseId: "resp_1" })],
       }),
+    ]);
+  });
+
+  it("accepts only an exact Scenario Director candidate permutation", async () => {
+    const valid = harness([completed(scenarioDirectorOutput)]);
+    await expect(
+      valid.client.generate(scenarioDirectorRequest),
+    ).resolves.toEqual(scenarioDirectorOutput);
+    expect(valid.requests[0]).toMatchObject({
+      model: "gpt-5.6-sol",
+      reasoningEffort: "medium",
+      store: false,
+    });
+    expect(valid.audits[0]).toMatchObject({
+      contractVersion: 2,
+      role: "scenario_director",
+      outcome: "success",
+    });
+
+    const unknown = {
+      ...scenarioDirectorOutput,
+      ranked: [{
+        ...scenarioDirectorOutput.ranked[0],
+        templateId: "personal.unknown",
+      }],
+    };
+    const invalid = harness([
+      completed(unknown, "resp_unknown_1"),
+      completed(unknown, "resp_unknown_2"),
+    ]);
+    await expect(
+      invalid.client.generate(scenarioDirectorRequest),
+    ).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
+    expect(invalid.audits[0]?.attempts.map(({ kind }) => kind)).toEqual([
+      "invalid_output",
+      "invalid_output",
     ]);
   });
 

@@ -7,6 +7,8 @@ import {
   hostileFedRequestSchema,
   hostileFedResponseSchema,
   onboardingResponseSchema,
+  scenarioDirectorRequestSchema,
+  scenarioDirectorResponseSchema,
   teacherResponseSchema,
 } from "../contracts";
 import { AI_PRIVACY_NOTICE, AI_PRIVACY_NOTICE_VERSION } from "../privacy-notice";
@@ -15,10 +17,77 @@ describe("AI role contracts", () => {
   it("locks expensive and balanced GPT-5.6 models to their intended roles", () => {
     expect(AI_ROLE_MODELS).toEqual({
       hostile_fed: "gpt-5.6-sol",
+      scenario_director: "gpt-5.6-sol",
       teacher: "gpt-5.6-sol",
       onboarding: "gpt-5.6-terra",
       explanation: "gpt-5.6-terra",
     });
+  });
+
+  it("limits Scenario Director to rank-only metadata", () => {
+    const director = {
+      version: "scenario-director-ai-request-v1",
+      candidateSetChecksum: "a".repeat(64),
+      difficulty: "normal",
+      macro: { regime: "recession", tags: ["macro.recession"] },
+      riskFacts: [
+        { metricId: "emergency_fund_months", severityBand: "high" },
+      ],
+      candidates: [
+        {
+          templateId: "personal.medical_bill",
+          templateVersion: 2,
+          category: "health",
+          tier: "medium",
+          targetedWeakness: "low_emergency_fund",
+          lessonTags: {
+            primary: "lesson.insurance",
+            secondary: ["lesson.emergency_fund"],
+          },
+          directorTags: ["director.category.health"],
+          intendedLesson: "lesson.insurance",
+          reasonCodes: ["weakness_relevance"],
+        },
+      ],
+      recentDecisions: [],
+      recentEvents: [],
+      lessonHistory: [],
+    } as const;
+    const request = scenarioDirectorRequestSchema.parse({
+      contractVersion: 2,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "scenario_director",
+      director,
+    });
+    expect(request.director.candidates[0]?.templateId).toBe(
+      "personal.medical_bill",
+    );
+    expect(() =>
+      scenarioDirectorRequestSchema.parse({
+        contractVersion: 2,
+        privacyNoticeVersion: 2,
+        dataUseAccepted: true,
+        role: "scenario_director",
+        director: {
+          ...director,
+          candidates: [{ ...director.candidates[0], amountCents: 500_000 }],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      scenarioDirectorResponseSchema.parse({
+        version: "scenario-director-ai-response-v1",
+        candidateSetChecksum: "a".repeat(64),
+        ranked: [{
+          templateId: "personal.medical_bill",
+          templateVersion: 2,
+          intendedLesson: "lesson.insurance",
+          reasonCodes: ["weakness_relevance"],
+          approved: true,
+        }],
+      }),
+    ).toThrow();
   });
 
   it("accepts only bounded engine-owned Hostile Fed candidates", () => {

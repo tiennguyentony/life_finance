@@ -422,6 +422,9 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           runtimeBalanceControllerVersion: z
             .literal("runtime-balance-v1")
             .optional(),
+          scenarioDirectorVersion: z
+            .literal("scenario-director-v2")
+            .optional(),
           marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
           macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
           taxEvidence: taxEvidenceSchema,
@@ -474,6 +477,17 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               path: ["runtimeBalanceControllerVersion"],
               message:
                 "runtime-balance-v1 requires financial kernel 2.0.0 and declarative-events-v2",
+            });
+          }
+          if (
+            payload.scenarioDirectorVersion !== undefined &&
+            payload.runtimeBalanceControllerVersion !== "runtime-balance-v1"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["scenarioDirectorVersion"],
+              message:
+                "scenario-director-v2 requires runtime-balance-v1",
             });
           }
           if (
