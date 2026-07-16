@@ -76,6 +76,12 @@ export function appendAction(
     effectiveMonth: command.effectiveMonth,
     reasonCode,
     description,
+    sourceSystem: "detailed_financial_actions_v2",
+    category: `action.${reasonCode}`,
+    causalReference: {
+      kind: "command",
+      id: command.id,
+    },
     postings,
   });
   return {

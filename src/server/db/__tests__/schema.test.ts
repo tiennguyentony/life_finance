@@ -119,6 +119,26 @@ describe("authoritative persistence schema", () => {
     ).toBe(true);
   });
 
+  it("stores legacy-compatible causal provenance on ledger transactions", () => {
+    const transactionConfig = getTableConfig(ledgerTransactions);
+    const columnNames = transactionConfig.columns.map(({ name }) => name);
+
+    expect(columnNames).toEqual(
+      expect.arrayContaining([
+        "source_system",
+        "category",
+        "causal_reference_kind",
+        "causal_reference_id",
+      ]),
+    );
+    expect(transactionConfig.checks.map(({ name }) => name)).toEqual(
+      expect.arrayContaining([
+        "ledger_transactions_complete_provenance",
+        "ledger_transactions_causal_kind_valid",
+      ]),
+    );
+  });
+
   it("indexes validated tax contexts for persisted annual reuse", () => {
     const config = getTableConfig(monthlyTaxEvidence);
 

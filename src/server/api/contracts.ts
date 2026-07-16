@@ -92,6 +92,13 @@ export const journalPostingSchema = z
     { message: "exactly one posting side must be positive" },
   );
 
+export const ledgerCausalReferenceSchema = z
+  .object({
+    kind: z.enum(["command", "event", "milestone", "system"]),
+    id: identifierSchema,
+  })
+  .strict();
+
 export const journalTransactionSchema = z
   .object({
     id: identifierSchema,
@@ -99,10 +106,28 @@ export const journalTransactionSchema = z
     effectiveMonth: simulationMonthSchema,
     reasonCode: identifierSchema,
     description: z.string().min(1).max(500),
+    sourceSystem: identifierSchema.optional(),
+    category: identifierSchema.optional(),
+    causalReference: ledgerCausalReferenceSchema.optional(),
     postings: z.array(journalPostingSchema).min(2),
     reversesTransactionId: identifierSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((transaction, context) => {
+    const presentCount = [
+      transaction.sourceSystem,
+      transaction.category,
+      transaction.causalReference,
+    ].filter((value) => value !== undefined).length;
+    if (presentCount !== 0 && presentCount !== 3) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceSystem"],
+        message:
+          "sourceSystem, category, and causalReference must be all present or all absent",
+      });
+    }
+  });
 
 export const ledgerSchema = z
   .object({

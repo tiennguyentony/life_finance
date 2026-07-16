@@ -131,6 +131,12 @@ function appendActionTransaction(
     effectiveMonth,
     reasonCode,
     description,
+    sourceSystem: "financial_actions",
+    category: `action.${reasonCode}`,
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings,
   });
   return {

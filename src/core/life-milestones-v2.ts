@@ -275,6 +275,12 @@ function resolve(
         effectiveMonth: state.currentMonth,
         reasonCode: `life_milestone_${milestone.kind}`,
         description: `Life milestone: ${milestone.label}`,
+        sourceSystem: "life_milestones_v2",
+        category: `milestone.${milestone.kind}`,
+        causalReference: {
+          kind: "milestone",
+          id: milestone.milestoneId,
+        },
         postings: [
           { accountId: "expense.living", debitCents: milestone.estimatedCostCents, creditCents: moneyCents(0) },
           { accountId: "asset.cash", debitCents: moneyCents(0), creditCents: milestone.estimatedCostCents },

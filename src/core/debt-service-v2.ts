@@ -172,6 +172,12 @@ export function settleMonthlyDebtService(
       effectiveMonth: state.currentMonth,
       reasonCode: "monthly_term_debt_interest",
       description: "Accrue exact monthly interest on active term debts",
+      sourceSystem: "debt_service_v2",
+      category: "expense.debt_interest",
+      causalReference: {
+        kind: "command",
+        id: commandId,
+      },
       postings: [
         debit("expense.interest", plan.totalInterestCents),
         credit("liability.non_credit", plan.totalInterestCents),
@@ -185,6 +191,12 @@ export function settleMonthlyDebtService(
       effectiveMonth: state.currentMonth,
       reasonCode: "monthly_term_debt_payment",
       description: "Pay scheduled principal and interest on active term debts",
+      sourceSystem: "debt_service_v2",
+      category: "liability.debt_payment",
+      causalReference: {
+        kind: "command",
+        id: commandId,
+      },
       postings: [
         debit("liability.non_credit", plan.totalScheduledPaymentCents),
         credit("asset.cash", plan.totalScheduledPaymentCents),
