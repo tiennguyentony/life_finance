@@ -48,6 +48,8 @@ import {
 import { RunApiServiceV2 } from "../../api/service-v2";
 import type { CreateRunV2Request } from "../../api/contracts-v2";
 import { TaxServiceError, type TaxCalculator } from "../../tax/client";
+import { onboardingDraftForPersonaV1 } from "../../../core/onboarding-personas-v1";
+import { OnboardingApiServiceV1 } from "../../api/onboarding-service-v1";
 import {
   TransactionalOutboxDispatcher,
   type OutboxPublisher,
@@ -2109,5 +2111,38 @@ databaseDescribe("Postgres run repository", () => {
       .from(monthlyTaxEvidence)
       .where(eq(monthlyTaxEvidence.runId, created.runId));
     expect(evidenceCount.value).toBe(0);
+  });
+
+  it("persists and reloads a confirmed onboarding state with opening ledger evidence", async () => {
+    const onboarding = new OnboardingApiServiceV1(
+      repository,
+      () => "player.onboarding.postgres",
+    );
+    const draft = onboardingDraftForPersonaV1(
+      "software",
+      "postgres-onboarding-seed",
+    );
+    const review = onboarding.review(draft);
+    const created = await onboarding.confirm({
+      draft,
+      reviewChecksum: review.reviewChecksum,
+    });
+
+    const loaded = await repository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    expect(sha256Canonical(loaded)).toBe(created.stateChecksum);
+    expect(loaded.gameplay.initialization).toMatchObject({
+      version: "onboarding-v1",
+      reviewChecksum: review.reviewChecksum,
+      initialRandomSeed: "postgres-onboarding-seed",
+    });
+    expect(loaded.gameplay.exposure.current?.month).toBe("2026-07");
+    const [openingRows] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    expect(openingRows.value).toBeGreaterThan(0);
   });
 });

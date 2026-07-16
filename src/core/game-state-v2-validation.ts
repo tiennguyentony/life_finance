@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Canonical } from "./canonical";
 import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
+import { randomState } from "./domain/rng";
 import {
   assertValidGameState,
   calculateAgeYearsAtMonth,
@@ -31,6 +32,7 @@ import {
   validateRuntimeBalanceStateV2,
   type RuntimeBalanceRecentEventV2,
 } from "./runtime-balance-state-v2";
+
 import {
   validateMacroMarketSnapshotV2,
   type MacroMarketSnapshotV2,
@@ -66,6 +68,194 @@ function isNonNegativeSafeInteger(value: number): boolean {
 
 function sum(values: readonly number[]): bigint {
   return values.reduce((total, value) => total + BigInt(value), BigInt(0));
+}
+
+const ONBOARDING_ASSUMPTION_CODES = new Set([
+  "DEFAULT_START_MONTH",
+  "DEFAULT_CATALOG_VERSION",
+  "DEFAULT_CATALOG_SELECTION",
+  "UNKNOWN_LOCATION_PRODUCT_DEFAULT",
+  "DEFAULT_STARTING_CASH",
+  "DEFAULT_FINANCE_ZERO",
+  "DEFAULT_CREDIT_LIMIT",
+  "DEFAULT_WELLBEING",
+  "DEFAULT_INSURANCE",
+  "DEFAULT_RUNTIME_DIFFICULTY",
+  "DEFAULT_FINANCIAL_GOAL",
+  "DEFAULT_CATALOG_LIVING_COST",
+  "DEFAULT_EXPENSE_ZERO",
+  "TAKE_HOME_DISPLAY_ONLY",
+  "DECLARED_EXPENSES_AUTHORITATIVE",
+]);
+const ONBOARDING_FIELD_SOURCES = new Set([
+  "user_entered",
+  "persona_fixture",
+  "catalog_default",
+  "product_default",
+]);
+
+function validateOnboardingInitializationV1(
+  state: GameStateV2,
+  violations: StateInvariantViolation[],
+): void {
+  const evidence = state.gameplay.initialization;
+  if (evidence === undefined) return;
+  const hash = /^[a-f0-9]{64}$/;
+  const baseValid =
+    evidence !== null &&
+    typeof evidence === "object" &&
+    evidence.version === "onboarding-v1" &&
+    evidence.schemaVersion === 2 &&
+    ["typed", "persona", "ai_assisted"].includes(evidence.sourceMode) &&
+    evidence.defaultsVersion === "onboarding-defaults-v1" &&
+    evidence.locationDefaultsVersion === "onboarding-location-defaults-v1" &&
+    evidence.confirmed === true &&
+    hash.test(evidence.reviewChecksum) &&
+    hash.test(evidence.normalizedInputChecksum) &&
+    typeof evidence.initialRandomSeed === "string" &&
+    evidence.initialRandomSeed.length >= 1 &&
+    evidence.initialRandomSeed.length <= 256 &&
+    evidence.derivedOwners?.stateAndObligations === "createNativeGameStateV2" &&
+    evidence.derivedOwners?.financialGoal === "projectFinancialGoal" &&
+    evidence.derivedOwners?.exposure === "recordExposureSnapshotV2";
+  if (!baseValid) {
+    violations.push(
+      violation(
+        "gameplay.initialization",
+        "invalid_onboarding_initialization",
+        "onboarding evidence must use supported closed versions, checksums, seed, confirmation, and owners",
+      ),
+    );
+    return;
+  }
+  if (
+    state.revision === 0 &&
+    sha256Canonical(randomState(evidence.initialRandomSeed)) !==
+      sha256Canonical(state.random)
+  ) {
+    violations.push(
+      violation(
+        "gameplay.initialization.initialRandomSeed",
+        "onboarding_seed_mismatch",
+        "the persisted initial seed must produce the authoritative opening RNG state",
+      ),
+    );
+  }
+  const persona = evidence.persona;
+  const validPersona =
+    persona !== null &&
+    typeof persona === "object" &&
+    typeof persona.id === "string" &&
+    persona.id.length > 0 &&
+    persona.version === "onboarding-persona-v1";
+  if (
+    (evidence.sourceMode === "persona" && !validPersona) ||
+    (evidence.sourceMode === "typed" && persona !== null) ||
+    (evidence.sourceMode === "ai_assisted" && persona !== null && !validPersona)
+  ) {
+    violations.push(
+      violation(
+        "gameplay.initialization.persona",
+        "onboarding_persona_mismatch",
+        "persona evidence is required for persona mode, optional for hybrid AI-assisted mode, and absent for typed mode",
+      ),
+    );
+  }
+  const assumptions = Array.isArray(evidence.assumptions)
+    ? evidence.assumptions
+    : [];
+  const provenance = Array.isArray(evidence.provenance)
+    ? evidence.provenance
+    : [];
+  const assumptionsValid =
+    Array.isArray(evidence.assumptions) &&
+    assumptions.length <= 64 &&
+    assumptions.every(
+      (entry) =>
+        typeof entry?.path === "string" &&
+        entry.path.length > 0 &&
+        entry.path.length <= 160 &&
+        ONBOARDING_ASSUMPTION_CODES.has(entry.code) &&
+        typeof entry.sourceId === "string" &&
+        entry.sourceId.length > 0 &&
+        entry.sourceId.length <= 160 &&
+        typeof entry.sourceVersion === "string" &&
+        entry.sourceVersion.length > 0 &&
+        entry.sourceVersion.length <= 80,
+    );
+  const provenanceValid =
+    Array.isArray(evidence.provenance) &&
+    provenance.length <= 96 &&
+    provenance.every(
+      (entry) =>
+        typeof entry?.path === "string" &&
+        entry.path.length > 0 &&
+        entry.path.length <= 160 &&
+        ONBOARDING_FIELD_SOURCES.has(entry.source) &&
+        typeof entry.sourceId === "string" &&
+        entry.sourceId.length > 0 &&
+        entry.sourceId.length <= 160 &&
+        typeof entry.sourceVersion === "string" &&
+        entry.sourceVersion.length > 0 &&
+        entry.sourceVersion.length <= 80,
+    );
+  const sortedAssumptions = assumptionsValid
+    ? [...assumptions].sort((left, right) =>
+        left.path.localeCompare(right.path) || left.code.localeCompare(right.code),
+      )
+    : [];
+  const sortedProvenance = provenanceValid
+    ? [...provenance].sort((left, right) => left.path.localeCompare(right.path))
+    : [];
+  const assumptionsUnique =
+    assumptionsValid &&
+    new Set(assumptions.map((entry) => `${entry.path}:${entry.code}`)).size ===
+      assumptions.length;
+  const provenanceUnique =
+    provenanceValid &&
+    new Set(provenance.map((entry) => entry.path)).size === provenance.length;
+  if (
+    !assumptionsValid ||
+    !provenanceValid ||
+    sha256Canonical(assumptions) !== sha256Canonical(sortedAssumptions) ||
+    sha256Canonical(provenance) !== sha256Canonical(sortedProvenance) ||
+    !assumptionsUnique ||
+    !provenanceUnique
+  ) {
+    violations.push(
+      violation(
+        "gameplay.initialization",
+        "invalid_onboarding_evidence",
+        "onboarding assumptions and provenance must be bounded, closed, unique, and canonically sorted",
+      ),
+    );
+  }
+  const expenses = evidence.declaredExpenses;
+  if (expenses !== null) {
+    const values =
+      expenses !== undefined && typeof expenses === "object"
+        ? [
+            expenses.essentialAnnualCents,
+            expenses.discretionaryAnnualCents,
+            expenses.totalAnnualCents,
+          ]
+        : [];
+    if (
+      values.length !== 3 ||
+      !values.every(isNonNegativeSafeInteger) ||
+      BigInt(values[0] ?? -1) + BigInt(values[1] ?? -1) !==
+        BigInt(values[2] ?? -1) ||
+      values[2] !== state.finances.annualLivingCostCents
+    ) {
+      violations.push(
+        violation(
+          "gameplay.initialization.declaredExpenses",
+          "onboarding_expense_mismatch",
+          "confirmed expense components must reconcile to authoritative annual living cost",
+        ),
+      );
+    }
+  }
 }
 
 function validateRate(
@@ -459,6 +649,12 @@ export function validateGameStateV2(
         ),
       );
     }
+  }
+
+  // Most replayed/native states predate confirmed onboarding evidence. Keep
+  // that optional validation out of the very hot monthly-finalization path.
+  if (state.gameplay.initialization !== undefined) {
+    validateOnboardingInitializationV1(state, violations);
   }
 
   if (state.schemaVersion !== GAME_STATE_V2_SCHEMA_VERSION) {

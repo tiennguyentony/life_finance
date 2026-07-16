@@ -28,6 +28,7 @@ import {
 import { createInitialRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
 import { createInitialRuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
 import type { RuntimeBalanceDifficultyV2 } from "./runtime-balance-policy-v2";
+import type { OnboardingInitializationEvidenceV1 } from "./onboarding-v1-contracts";
 
 export type NativeGameStateV2Input = Readonly<{
   runId: string;
@@ -37,6 +38,10 @@ export type NativeGameStateV2Input = Readonly<{
   randomSeed: string;
   resolvedScenario: ResolvedScenario;
   annualGrossSalaryCents: MoneyCents;
+  /** Optional confirmed custom annual expense total. Omission preserves catalog behavior. */
+  annualLivingCostCents?: MoneyCents;
+  /** Optional bounded initialization evidence stored in the authoritative state. */
+  initialization?: OnboardingInitializationEvidenceV1;
   financialGoal?: FinancialGoalV1;
   runtimeBalanceDifficulty?: RuntimeBalanceDifficultyV2;
   finances: Readonly<{
@@ -189,8 +194,10 @@ export function createNativeGameStateV2(
   const selectedInsurancePremiums = snapshot.selected.insuranceCoverages.map(
     ({ monthlyPremiumCents }) => monthlyPremiumCents,
   );
+  const annualLivingCostCents =
+    input.annualLivingCostCents ?? snapshot.derived.annualLivingCostCents;
   const monthlyLivingCost = allocateMoney(
-    snapshot.derived.annualLivingCostCents,
+    annualLivingCostCents,
     1,
     12,
   );
@@ -243,7 +250,7 @@ export function createNativeGameStateV2(
       nonCreditLiabilitiesCents,
       creditLimitCents: input.finances.revolvingCreditLimitCents,
       creditUsedCents: input.finances.revolvingCreditUsedCents,
-      annualLivingCostCents: snapshot.derived.annualLivingCostCents,
+      annualLivingCostCents,
       requiredObligationsCents,
     },
     wellbeing: input.wellbeing,
@@ -256,6 +263,9 @@ export function createNativeGameStateV2(
     engineVersion: ENGINE_V2_VERSION,
     migration: null,
     gameplay: {
+      ...(input.initialization === undefined
+        ? {}
+        : { initialization: input.initialization }),
       runtimeBalance: input.runtimeBalanceDifficulty === undefined
         ? createInitialRuntimeBalanceStateV1()
         : createInitialRuntimeBalanceStateV2(input.runtimeBalanceDifficulty),
@@ -263,7 +273,7 @@ export function createNativeGameStateV2(
       lifeMilestones: emptyLifeMilestoneState(),
       financialGoal:
         input.financialGoal ??
-        defaultFinancialGoal(snapshot.derived.annualLivingCostCents),
+        defaultFinancialGoal(annualLivingCostCents),
       catalogs: {
         location: {
           id: snapshot.selected.location.id,
