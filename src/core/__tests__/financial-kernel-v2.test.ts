@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
 import {
+  calculateMonthlyCashFlowDeficitV2,
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
   type FinancialMonthInputV2,
@@ -25,6 +26,25 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
+
+describe("financial warning selector", () => {
+  it("returns only the exact funded monthly cash-flow deficit", () => {
+    expect(
+      calculateMonthlyCashFlowDeficitV2({
+        afterTaxCashIncomeCents: moneyCents(730_000),
+        resolvedIncomeCents: moneyCents(25_000),
+        requiredCashCents: moneyCents(800_000),
+      }),
+    ).toBe(45_000);
+    expect(
+      calculateMonthlyCashFlowDeficitV2({
+        afterTaxCashIncomeCents: moneyCents(800_000),
+        resolvedIncomeCents: moneyCents(0),
+        requiredCashCents: moneyCents(800_000),
+      }),
+    ).toBeNull();
+  });
+});
 
 type ConfiguredStateOptions = Readonly<{
   startMonth?: SimulationMonth;

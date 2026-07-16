@@ -16,6 +16,8 @@ import {
 } from "./contracts";
 import type { RunApiService } from "./service";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
   checkpointV2QuerySchema,
   checkpointV2ResponseSchema,
@@ -329,6 +331,26 @@ export async function handleSubmitCommandV2(
     return jsonResponse(
       commandV2ResponseSchema.parse(
         await service.submitCommand(path.runId, secret, command),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleAdvanceTimeV2(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const input = advanceTimeV2RequestSchema.parse(await readJson(request));
+    return jsonResponse(
+      advanceTimeV2ResponseSchema.parse(
+        await service.advanceTime(path.runId, secret, input),
       ),
       200,
     );

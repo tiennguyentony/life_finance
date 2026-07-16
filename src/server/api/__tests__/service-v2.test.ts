@@ -4,7 +4,11 @@ import { sha256Canonical } from "../../../core/canonical";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import { resetAnnualFinancialAccumulatorsV2 } from "../../../core/financial-year-v2";
-import { processMonthlyTurnV2 } from "../../../core/monthly-turn-v2";
+import { reduceDetailedFinanceCommand } from "../../../core/detailed-actions-v2";
+import {
+  processMonthlyTurnV2,
+  type ProcessMonthV2Command,
+} from "../../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
 import { setRecurringStrategy } from "../../../core/recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../../../core/scenario-catalog";
@@ -664,5 +668,389 @@ describe("authenticated v1-to-v2 migration", () => {
       state: migratedState,
       idempotentReplay: true,
     });
+  });
+});
+
+describe("atomic time advance orchestration", () => {
+  const calmControllerDependencies = Object.freeze({
+    eventSchedulingPolicy: Object.freeze({
+      version: "fairness-v1" as const,
+      minimumChancePpm: 0,
+      maximumChancePpm: 0,
+    }),
+    macroStoryPolicy: Object.freeze({
+      version: "macro-story-v1" as const,
+      monthlyChancePpm: 0,
+      minimumDurationMonths: 1,
+      maximumDurationMonths: 1,
+    }),
+  });
+
+  function cachedTaxEvidence(commandId: string) {
+    const state = stateWithStrategy();
+    return {
+      schemaVersion: 1 as const,
+      traceId: `tax.cache.${commandId}`,
+      contextFingerprint: fingerprintAnnualTaxContext(
+        buildTaxRequest(state, commandId),
+      ),
+      economicYear: 2026,
+      policyYear: 2026,
+      stateCode: "WA",
+      filingStatus: "single",
+      provider: "PolicyEngine US" as const,
+      bundleVersion: POLICYENGINE_BUNDLE_VERSION,
+      rulesVersion: POLICYENGINE_US_VERSION,
+      projectedFromFrozenPolicy: false,
+      grossIncomeCents: moneyCents(1_000_000),
+      employee401kContributionCents: moneyCents(50_000),
+      employeeHsaContributionCents: moneyCents(20_000),
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: moneyCents(730_000),
+    };
+  }
+
+  it("authorizes before tax evidence lookup or batch persistence", async () => {
+    const loadMonthlyTaxEvidenceForContext = vi.fn();
+    const applyTimeAdvanceV2 = vi.fn();
+    const repository = {
+      loadAuthorizedRunV2: vi.fn(async () => {
+        throw new Error("unauthorized");
+      }),
+      loadAcceptedTimeAdvanceV2: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext,
+      applyTimeAdvanceV2,
+    } as unknown as ConstructorParameters<typeof RunApiServiceV2>[0];
+    const calculate = vi.fn();
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    await expect(
+      service.advanceTime("run-id", "bad-secret", {
+        schemaVersion: 2,
+        id: "advance.unauthorized",
+        expectedRevision: 1,
+        effectiveMonth: "2026-07",
+        maxMonths: 1,
+        mode: { kind: "one_month" },
+      }),
+    ).rejects.toThrow("unauthorized");
+
+    expect(loadMonthlyTaxEvidenceForContext).not.toHaveBeenCalled();
+    expect(calculate).not.toHaveBeenCalled();
+    expect(applyTimeAdvanceV2).not.toHaveBeenCalled();
+  });
+
+  it("performs no tax lookup for an explicit zero-month stop", async () => {
+    const state = stateWithStrategy();
+    const applyTimeAdvanceV2 = vi.fn(async (_runId, _secret, prepared) => ({
+      ...prepared.controllerResult,
+      stateChecksum: prepared.finalStateChecksum,
+      idempotentReplay: false,
+    }));
+    const repository = {
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedTimeAdvanceV2: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext: vi.fn(),
+      applyTimeAdvanceV2,
+    } as unknown as ConstructorParameters<typeof RunApiServiceV2>[0];
+    const calculate = vi.fn();
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const result = await service.advanceTime("run-id", "secret", {
+      schemaVersion: 2,
+      id: "advance.stop",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      maxMonths: 12,
+      mode: { kind: "stop" },
+    });
+
+    expect(result.monthsAdvanced).toBe(0);
+    expect(result.pauseReason).toEqual({ kind: "explicit_user_stop" });
+    expect(repository.loadMonthlyTaxEvidenceForContext).not.toHaveBeenCalled();
+    expect(calculate).not.toHaveBeenCalled();
+    expect(applyTimeAdvanceV2).toHaveBeenCalledOnce();
+  });
+
+  it("reuses one tax-context lookup and persists one atomic three-month batch", async () => {
+    const state = stateWithStrategy();
+    const cached = cachedTaxEvidence("advance.three.month.1");
+    const loadMonthlyTaxEvidenceForContext = vi.fn(async () => cached);
+    const applyTimeAdvanceV2 = vi.fn(async (_runId, _secret, prepared) => ({
+      ...prepared.controllerResult,
+      stateChecksum: prepared.finalStateChecksum,
+      idempotentReplay: false,
+    }));
+    const repository = {
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedTimeAdvanceV2: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext,
+      applyTimeAdvanceV2,
+    } as unknown as ConstructorParameters<typeof RunApiServiceV2>[0];
+    const calculate = vi.fn();
+    const service = new RunApiServiceV2(
+      repository,
+      { calculate },
+      undefined,
+      calmControllerDependencies,
+    );
+
+    const result = await service.advanceTime("run-id", "secret", {
+      schemaVersion: 2,
+      id: "advance.three",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      maxMonths: 3,
+      mode: { kind: "months", months: 3 },
+    });
+
+    expect(result.monthsAdvanced).toBe(3);
+    expect(result.pauseReason).toEqual({
+      kind: "requested_duration",
+      requestedMonths: 3,
+    });
+    expect(loadMonthlyTaxEvidenceForContext).toHaveBeenCalledOnce();
+    expect(calculate).not.toHaveBeenCalled();
+    expect(applyTimeAdvanceV2).toHaveBeenCalledOnce();
+    const prepared = applyTimeAdvanceV2.mock.calls[0]![2];
+    const originalRequest = {
+      schemaVersion: 2,
+      id: "advance.three",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      maxMonths: 3,
+      mode: { kind: "months", months: 3 },
+    };
+    expect(prepared).toMatchObject({
+      controllerVersion: "time-controller-v2.0.0",
+      engineVersion: state.engineVersion,
+      request: originalRequest,
+      requestFingerprint: sha256Canonical(originalRequest),
+    });
+    expect(prepared.steps).toHaveLength(3);
+    expect(
+      prepared.steps.map(
+        (step: { command: ProcessMonthV2Command }) => step.command.id,
+      ),
+    ).toEqual([
+      "advance.three.month.1",
+      "advance.three.month.2",
+      "advance.three.month.3",
+    ]);
+    expect(
+      new Set(
+        prepared.steps.map(
+          (step: { command: ProcessMonthV2Command }) =>
+            step.command.payload.taxEvidence.traceId,
+        ),
+      ).size,
+    ).toBe(3);
+  });
+
+  it("does not let a checkpoint bypass resume-decision validation", async () => {
+    const state = stateWithStrategy();
+    const cached = cachedTaxEvidence("advance.invalid-resume.month.1");
+    const applyTimeAdvanceV2 = vi.fn();
+    const repository = {
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedTimeAdvanceV2: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext: vi.fn(async () => cached),
+      applyTimeAdvanceV2,
+    } as unknown as ConstructorParameters<typeof RunApiServiceV2>[0];
+    const service = new RunApiServiceV2(
+      repository,
+      { calculate: vi.fn() },
+      undefined,
+      calmControllerDependencies,
+    );
+
+    await expect(
+      service.advanceTime("run-id", "secret", {
+        schemaVersion: 2,
+        id: "advance.invalid-resume",
+        expectedRevision: state.revision,
+        effectiveMonth: state.currentMonth,
+        maxMonths: 3,
+        mode: {
+          kind: "resume",
+          resolvedDecisionId: "decision.not-accepted",
+          months: 3,
+        },
+        checkpointIntervalMonths: 3,
+      }),
+    ).rejects.toThrow("latest resolved event or milestone decision");
+    expect(applyTimeAdvanceV2).not.toHaveBeenCalled();
+  });
+
+  it("crosses a tax-year fingerprint boundary without splitting the public batch", async () => {
+    const july = stateWithStrategy();
+    const state = {
+      ...july,
+      currentMonth: simulationMonth("2026-12"),
+    };
+    const loadMonthlyTaxEvidenceForContext = vi.fn(async () => null);
+    const calculate = vi.fn(async (request: TaxCalculationRequest) =>
+      taxCalculationResultSchema.parse({
+        schemaVersion: 1,
+        traceId: request.traceId,
+        economicYear: request.economicYear,
+        policyYear: request.policyYear,
+        stateCode: request.stateCode,
+        filingStatus: request.filingStatus,
+        annualGrossIncomeCents: 12_000_000,
+        federalIncomeTaxCents: 1_000_000,
+        stateIncomeTaxCents: 0,
+        employeePayrollTaxCents: 200_000,
+        selfEmploymentTaxCents: 0,
+        totalTaxCents: 1_200_000,
+        afterTaxIncomeCents: 10_800_000,
+        effectiveTaxRatePpm: 100_000,
+        componentsCents: {},
+        model: {
+          provider: "PolicyEngine US",
+          bundleVersion: POLICYENGINE_BUNDLE_VERSION,
+          rulesVersion: POLICYENGINE_US_VERSION,
+          projectedFromFrozenPolicy: false,
+        },
+        disclaimer:
+          "Educational estimate only; not tax, legal, or financial advice.",
+      }),
+    );
+    const applyTimeAdvanceV2 = vi.fn(async (_runId, _secret, prepared) => ({
+      ...prepared.controllerResult,
+      stateChecksum: prepared.finalStateChecksum,
+      idempotentReplay: false,
+    }));
+    const repository = {
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedTimeAdvanceV2: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext,
+      applyTimeAdvanceV2,
+    } as unknown as ConstructorParameters<typeof RunApiServiceV2>[0];
+    const service = new RunApiServiceV2(
+      repository,
+      { calculate },
+      undefined,
+      calmControllerDependencies,
+    );
+
+    const result = await service.advanceTime("run-id", "secret", {
+      schemaVersion: 2,
+      id: "advance.year-boundary",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      maxMonths: 2,
+      mode: { kind: "months", months: 2 },
+    });
+
+    expect(result.monthsAdvanced).toBe(2);
+    expect(result.pauseReason).toEqual({
+      kind: "requested_duration",
+      requestedMonths: 2,
+    });
+    expect(loadMonthlyTaxEvidenceForContext).toHaveBeenCalledTimes(2);
+    expect(calculate).toHaveBeenCalledTimes(2);
+    expect(applyTimeAdvanceV2).toHaveBeenCalledOnce();
+    expect(applyTimeAdvanceV2.mock.calls[0]![2].steps).toHaveLength(2);
+
+    const checkpoint = await service.advanceTime("run-id", "secret", {
+      schemaVersion: 2,
+      id: "advance.year-boundary-checkpoint",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      maxMonths: 2,
+      mode: { kind: "months", months: 2 },
+      checkpointIntervalMonths: 2,
+    });
+    expect(checkpoint.pauseReason).toEqual({
+      kind: "periodic_checkpoint",
+      checkpointMonth: "2027-02",
+    });
+    expect(checkpoint.checkpointInput).toMatchObject({
+      evidenceVersion: "checkpoint-v2.1",
+      monthsProcessed: 2,
+    });
+    expect(applyTimeAdvanceV2).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts a fresh tax segment after a pending career salary increase completes", async () => {
+    const configured = stateWithStrategy();
+    const state = reduceDetailedFinanceCommand(configured, {
+      schemaVersion: 2,
+      id: "action.upskill.tax-segment",
+      type: "take_detailed_action",
+      expectedRevision: configured.revision,
+      effectiveMonth: configured.currentMonth,
+      payload: {
+        action: { type: "start_upskill", programId: "upskill.certificate" },
+      },
+    });
+    const calculate = vi.fn(async (request: TaxCalculationRequest) => {
+      const annualGrossIncomeCents =
+        request.people[0]?.income.w2Jobs[0]?.wagesCents ?? 0;
+      const totalTaxCents = annualGrossIncomeCents / 10;
+      return taxCalculationResultSchema.parse({
+        schemaVersion: 1,
+        traceId: request.traceId,
+        economicYear: request.economicYear,
+        policyYear: request.policyYear,
+        stateCode: request.stateCode,
+        filingStatus: request.filingStatus,
+        annualGrossIncomeCents,
+        federalIncomeTaxCents: totalTaxCents,
+        stateIncomeTaxCents: 0,
+        employeePayrollTaxCents: 0,
+        selfEmploymentTaxCents: 0,
+        totalTaxCents,
+        afterTaxIncomeCents: annualGrossIncomeCents - totalTaxCents,
+        effectiveTaxRatePpm: 100_000,
+        componentsCents: {},
+        model: {
+          provider: "PolicyEngine US",
+          bundleVersion: POLICYENGINE_BUNDLE_VERSION,
+          rulesVersion: POLICYENGINE_US_VERSION,
+          projectedFromFrozenPolicy: false,
+        },
+        disclaimer:
+          "Educational estimate only; not tax, legal, or financial advice.",
+      });
+    });
+    const applyTimeAdvanceV2 = vi.fn(async (_runId, _secret, prepared) => ({
+      ...prepared.controllerResult,
+      stateChecksum: prepared.finalStateChecksum,
+      idempotentReplay: false,
+    }));
+    const repository = {
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedTimeAdvanceV2: vi.fn(async () => null),
+      loadMonthlyTaxEvidenceForContext: vi.fn(async () => null),
+      applyTimeAdvanceV2,
+    } as unknown as ConstructorParameters<typeof RunApiServiceV2>[0];
+    const service = new RunApiServiceV2(
+      repository,
+      { calculate },
+      undefined,
+      calmControllerDependencies,
+    );
+
+    const result = await service.advanceTime("run-id", "secret", {
+      schemaVersion: 2,
+      id: "advance.salary-transition",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      maxMonths: 4,
+      mode: { kind: "months", months: 4 },
+    });
+
+    expect(result.monthsAdvanced).toBe(4);
+    expect(calculate).toHaveBeenCalledTimes(2);
+    expect(
+      calculate.mock.calls.map(
+        ([request]) => request.people[0]?.income.w2Jobs[0]?.wagesCents,
+      ),
+    ).toEqual([12_000_000, 12_300_000]);
+    const prepared = applyTimeAdvanceV2.mock.calls[0]![2];
+    expect(prepared.steps[2]?.record.grossIncomeCents).toBe(1_000_000);
+    expect(prepared.steps[3]?.record.grossIncomeCents).toBe(1_025_000);
   });
 });

@@ -14,6 +14,8 @@ import {
 } from "./contracts";
 import { isRunSecret } from "../auth/run-secret";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
   checkpointV2QuerySchema,
   checkpointV2ResponseSchema,
@@ -23,6 +25,8 @@ import {
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
   runIdV2PathSchema,
+  type AdvanceTimeV2Request,
+  type AdvanceTimeV2Response,
   type CommandV2Response,
   type CheckpointV2Response,
   type CreateRunV2Request,
@@ -207,6 +211,27 @@ export class LifeFinanceApiClient {
     return this.#request(
       `/api/v2/runs/${encodeURIComponent(path.runId)}/commands`,
       commandV2ResponseSchema,
+      {
+        method: "POST",
+        headers: {
+          ...this.#authorization(accessSecret),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  async advanceTimeV2(
+    runId: string,
+    accessSecret: string,
+    request: AdvanceTimeV2Request,
+  ): Promise<AdvanceTimeV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    const body = advanceTimeV2RequestSchema.parse(request);
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}/advance`,
+      advanceTimeV2ResponseSchema,
       {
         method: "POST",
         headers: {

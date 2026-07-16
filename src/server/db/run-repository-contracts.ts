@@ -10,6 +10,12 @@ import type { SetRecurringStrategyCommand } from "../../core/recurring-strategy-
 import type { ManageLifeMilestoneV2Command } from "../../core/life-milestones-v2";
 import type { RecordLearningInteractionV2Command } from "../../core/learning-interaction-v2";
 import type { QueueAiWorldEventV2Command } from "../../core/ai-world-event-v2";
+import {
+  TIME_CONTROLLER_V2_VERSION,
+  type TimeAdvanceModeV2,
+  type TimeControllerV2Result,
+  type TimeControllerStepV2,
+} from "../../core/time-controller-v2";
 
 export type CreatedRun = Readonly<{
   runId: string;
@@ -46,6 +52,35 @@ export type AppliedCommandV2 = Readonly<{
   idempotentReplay: boolean;
   monthlyRecord: MonthlyTurnV2Record | null;
 }>;
+
+export type TimeAdvanceRequestV2 = Readonly<{
+  schemaVersion: 2;
+  id: string;
+  expectedRevision: number;
+  effectiveMonth: string;
+  maxMonths: number;
+  mode: TimeAdvanceModeV2;
+  checkpointIntervalMonths?: number;
+}>;
+
+export type PreparedTimeAdvanceV2 = Readonly<{
+  controllerVersion: typeof TIME_CONTROLLER_V2_VERSION;
+  engineVersion: string;
+  request: TimeAdvanceRequestV2;
+  batchId: string;
+  requestFingerprint: string;
+  openingRevision: number;
+  openingStateChecksum: string;
+  steps: readonly TimeControllerStepV2[];
+  controllerResult: TimeControllerV2Result;
+  finalStateChecksum: string;
+}>;
+
+export type AppliedTimeAdvanceV2 = TimeControllerV2Result &
+  Readonly<{
+    stateChecksum: string;
+    idempotentReplay: boolean;
+  }>;
 
 export type MigratedRun = Readonly<{
   state: GameStateV2;

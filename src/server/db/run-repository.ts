@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, lte } from "drizzle-orm";
 
 import { canonicalJson, sha256Canonical } from "../../core/canonical";
 import type { CheckpointEvidenceV2 } from "../../core/checkpoint-v2";
@@ -19,6 +19,10 @@ import {
   type GameStateV2,
 } from "../../core/game-state-v2";
 import type { MonthlyTurnV2Record } from "../../core/monthly-turn-v2";
+import {
+  TIME_CONTROLLER_V2_VERSION,
+  type TimeControllerV2Result,
+} from "../../core/time-controller-v2";
 import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import { RunSecretCodec, type RunCredential } from "../auth/run-secret";
 import type { LifeFinanceDatabase } from "./client";
@@ -31,6 +35,7 @@ import {
   loadMonthlyTaxEvidenceForContext,
 } from "./run-repository-read";
 import { loadRunStateAtRevisionV2 } from "./run-state-replay-v2";
+import { decodePersistedGameCommandV2 } from "./persisted-command-v2";
 import {
   RUN_STATE_SNAPSHOT_KIND_PRIORITY,
   snapshotRequestsForAcceptedCommandV2,
@@ -52,10 +57,13 @@ import {
 import {
   type AppliedCommand,
   type AppliedCommandV2,
+  type AppliedTimeAdvanceV2,
   type CreatedRun,
   type CreatedRunV2,
   type GameCommandV2,
   type MigratedRun,
+  type PreparedTimeAdvanceV2,
+  type TimeAdvanceRequestV2,
   RunRepositoryError,
 } from "./run-repository-contracts";
 import {
@@ -136,14 +144,254 @@ async function persistSparseSnapshotsV2(
   }
 }
 
+type PersistedTimeAdvanceResultV2 = Omit<
+  TimeControllerV2Result,
+  "state" | "steps" | "records"
+>;
+
+type TimeAdvanceOutboxPayloadV2 = Readonly<{
+  kind: "time_advance_v2";
+  controllerVersion: typeof TIME_CONTROLLER_V2_VERSION;
+  engineVersion: string;
+  request: TimeAdvanceRequestV2;
+  batchId: string;
+  requestFingerprint: string;
+  openingRevision: number;
+  finalRevision: number;
+  finalStateChecksum: string;
+  result: PersistedTimeAdvanceResultV2;
+}>;
+
+type TimeAdvanceReader = Pick<LifeFinanceDatabase, "select">;
+
+function exactObjectKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  return (
+    Object.keys(value).length === expected.length &&
+    expected.every((key) => Object.hasOwn(value, key))
+  );
+}
+
+function isTimeAdvanceRequestV2(value: unknown): value is TimeAdvanceRequestV2 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  const expectedKeys = request.checkpointIntervalMonths === undefined
+    ? ["schemaVersion", "id", "expectedRevision", "effectiveMonth", "maxMonths", "mode"]
+    : [
+        "schemaVersion",
+        "id",
+        "expectedRevision",
+        "effectiveMonth",
+        "maxMonths",
+        "mode",
+        "checkpointIntervalMonths",
+      ];
+  if (
+    !exactObjectKeys(request, expectedKeys) ||
+    request.schemaVersion !== 2 ||
+    typeof request.id !== "string" ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/.test(request.id) ||
+    !Number.isSafeInteger(request.expectedRevision) ||
+    Number(request.expectedRevision) < 0 ||
+    typeof request.effectiveMonth !== "string" ||
+    !/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(request.effectiveMonth) ||
+    !Number.isSafeInteger(request.maxMonths) ||
+    Number(request.maxMonths) < 1 ||
+    Number(request.maxMonths) > 480 ||
+    (request.checkpointIntervalMonths !== undefined &&
+      (!Number.isSafeInteger(request.checkpointIntervalMonths) ||
+        Number(request.checkpointIntervalMonths) < 1 ||
+        Number(request.checkpointIntervalMonths) > 12)) ||
+    !request.mode ||
+    typeof request.mode !== "object" ||
+    Array.isArray(request.mode)
+  ) {
+    return false;
+  }
+  const mode = request.mode as Record<string, unknown>;
+  switch (mode.kind) {
+    case "one_month":
+    case "until_event":
+    case "until_decision":
+    case "until_end":
+    case "stop":
+      return exactObjectKeys(mode, ["kind"]);
+    case "months":
+      return (
+        exactObjectKeys(mode, ["kind", "months"]) &&
+        Number.isSafeInteger(mode.months) &&
+        Number(mode.months) >= 1 &&
+        Number(mode.months) <= Number(request.maxMonths)
+      );
+    case "until_checkpoint":
+      return (
+        exactObjectKeys(mode, ["kind", "intervalMonths"]) &&
+        Number.isSafeInteger(mode.intervalMonths) &&
+        Number(mode.intervalMonths) >= 1 &&
+        Number(mode.intervalMonths) <= 12 &&
+        (request.checkpointIntervalMonths === undefined ||
+          request.checkpointIntervalMonths === mode.intervalMonths)
+      );
+    case "resume":
+      return (
+        exactObjectKeys(mode, ["kind", "resolvedDecisionId", "months"]) &&
+        typeof mode.resolvedDecisionId === "string" &&
+        /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/.test(
+          mode.resolvedDecisionId,
+        ) &&
+        Number.isSafeInteger(mode.months) &&
+        Number(mode.months) >= 1 &&
+        Number(mode.months) <= Number(request.maxMonths)
+      );
+    default:
+      return false;
+  }
+}
+
+function requireTimeAdvancePayloadV2(value: unknown): TimeAdvanceOutboxPayloadV2 {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    (value as { kind?: unknown }).kind !== "time_advance_v2" ||
+    (value as { controllerVersion?: unknown }).controllerVersion !==
+      TIME_CONTROLLER_V2_VERSION ||
+    typeof (value as { engineVersion?: unknown }).engineVersion !== "string" ||
+    !isTimeAdvanceRequestV2((value as { request?: unknown }).request) ||
+    typeof (value as { batchId?: unknown }).batchId !== "string" ||
+    typeof (value as { requestFingerprint?: unknown }).requestFingerprint !==
+      "string" ||
+    !Number.isSafeInteger((value as { openingRevision?: unknown }).openingRevision) ||
+    !Number.isSafeInteger((value as { finalRevision?: unknown }).finalRevision) ||
+    typeof (value as { finalStateChecksum?: unknown }).finalStateChecksum !==
+      "string" ||
+    !(value as { result?: unknown }).result ||
+    typeof (value as { result?: unknown }).result !== "object"
+  ) {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "time advance outbox payload is invalid",
+    );
+  }
+  const payload = value as TimeAdvanceOutboxPayloadV2;
+  if (
+    payload.engineVersion.length === 0 ||
+    payload.request.id !== payload.batchId ||
+    payload.request.expectedRevision !== payload.openingRevision ||
+    sha256Canonical(payload.request) !== payload.requestFingerprint ||
+    payload.finalRevision - payload.openingRevision !==
+      payload.result.monthsAdvanced
+  ) {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "time advance outbox request evidence is inconsistent",
+    );
+  }
+  return payload;
+}
+
+async function replayAppliedTimeAdvanceV2(
+  db: TimeAdvanceReader,
+  runId: string,
+  payload: TimeAdvanceOutboxPayloadV2,
+): Promise<AppliedTimeAdvanceV2> {
+  const replayed = await loadRunStateAtRevisionV2(
+    db,
+    runId,
+    payload.finalRevision,
+    payload.engineVersion,
+  );
+  if (replayed.stateChecksum !== payload.finalStateChecksum) {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "time advance final replay checksum does not match its outbox payload",
+    );
+  }
+  const [commandRows, recordRows] = await Promise.all([
+    db
+      .select()
+      .from(acceptedCommands)
+      .where(
+        and(
+          eq(acceptedCommands.runId, runId),
+          gt(acceptedCommands.resultingRevision, payload.openingRevision),
+          lte(acceptedCommands.resultingRevision, payload.finalRevision),
+        ),
+      )
+      .orderBy(asc(acceptedCommands.resultingRevision)),
+    db
+      .select()
+      .from(monthlyTurnRecords)
+      .where(
+        and(
+          eq(monthlyTurnRecords.runId, runId),
+          gt(monthlyTurnRecords.resultingRevision, payload.openingRevision),
+          lte(monthlyTurnRecords.resultingRevision, payload.finalRevision),
+        ),
+      )
+      .orderBy(asc(monthlyTurnRecords.resultingRevision)),
+  ]);
+  const expectedMonths = payload.finalRevision - payload.openingRevision;
+  if (
+    commandRows.length !== expectedMonths ||
+    recordRows.length !== expectedMonths ||
+    payload.result.monthsAdvanced !== expectedMonths
+  ) {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "time advance replay rows do not match its recorded month count",
+    );
+  }
+  const recordByCommand = new Map(recordRows.map((row) => [row.commandId, row]));
+  const steps = commandRows.map((row) => {
+    const command = decodePersistedGameCommandV2({
+      schemaVersion: row.commandSchemaVersion,
+      id: row.commandId,
+      type: row.commandType,
+      expectedRevision: row.expectedRevision,
+      effectiveMonth: row.effectiveMonth,
+      payload: row.payload,
+    });
+    const recordRow = recordByCommand.get(command.id);
+    if (
+      command.type !== "process_month_v2" ||
+      !recordRow ||
+      recordRow.resultingRevision !== row.resultingRevision ||
+      sha256Canonical(recordRow.record) !== recordRow.recordChecksum
+    ) {
+      throw new RunRepositoryError(
+        "CORRUPT_STATE",
+        "time advance replay is missing a consistent monthly record",
+      );
+    }
+    return Object.freeze({
+      command,
+      record: recordRow.record,
+      resultingMonth: recordRow.record.nextMonth,
+      resultingRevision: row.resultingRevision,
+    });
+  });
+  return Object.freeze({
+    ...payload.result,
+    state: replayed.state,
+    stateChecksum: replayed.stateChecksum,
+    steps: Object.freeze(steps),
+    records: Object.freeze(steps.map(({ record }) => record)),
+    idempotentReplay: true,
+  });
+}
+
 export {
   RunRepositoryError,
   type AppliedCommand,
   type AppliedCommandV2,
+  type AppliedTimeAdvanceV2,
   type CreatedRun,
   type CreatedRunV2,
   type GameCommandV2,
   type MigratedRun,
+  type PreparedTimeAdvanceV2,
 } from "./run-repository-contracts";
 
 export class RunRepository {
@@ -391,6 +639,47 @@ export class RunRepository {
       runId,
       accessSecret,
       contextFingerprint,
+    );
+  }
+
+  async loadAcceptedTimeAdvanceV2(
+    runId: string,
+    accessSecret: string,
+    batchId: string,
+    requestFingerprint: string,
+  ): Promise<AppliedTimeAdvanceV2 | null> {
+    assertUuid(runId);
+    await loadAuthorizedRunV2(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+    );
+    const [row] = await this.#db
+      .select({ payload: transactionalOutbox.payload })
+      .from(transactionalOutbox)
+      .where(
+        eq(
+          transactionalOutbox.idempotencyKey,
+          `${runId}:v2:advance:${batchId}`,
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    const payload = requireTimeAdvancePayloadV2(row.payload);
+    if (
+      payload.batchId !== batchId ||
+      payload.requestFingerprint !== requestFingerprint
+    ) {
+      throw new RunRepositoryError(
+        "IDEMPOTENCY_MISMATCH",
+        "time advance id was already used with different request content",
+      );
+    }
+    return replayAppliedTimeAdvanceV2(
+      this.#db,
+      runId,
+      payload,
     );
   }
 
@@ -823,6 +1112,287 @@ export class RunRepository {
         stateChecksum: checksum,
         idempotentReplay: false,
         monthlyRecord: reduction.monthlyRecord,
+      });
+    });
+  }
+
+  async applyTimeAdvanceV2(
+    runId: string,
+    accessSecret: string,
+    prepared: PreparedTimeAdvanceV2,
+  ): Promise<AppliedTimeAdvanceV2> {
+    assertUuid(runId);
+    return this.#db.transaction(async (tx) => {
+      const [run] = await tx
+        .select()
+        .from(gameRuns)
+        .where(eq(gameRuns.id, runId))
+        .for("update")
+        .limit(1);
+      if (
+        !run ||
+        !isAuthorized(
+          this.#secretCodec,
+          accessSecret,
+          run.accessSecretHash,
+          run.accessSecretHashVersion,
+        )
+      ) {
+        throw new RunRepositoryError(
+          "NOT_FOUND_OR_UNAUTHORIZED",
+          "run was not found or the credential is invalid",
+        );
+      }
+      const currentState = requireV2State(
+        assertPersistedState(run.currentState, {
+          runId,
+          checksum: run.currentStateChecksum,
+          schemaVersion: run.stateSchemaVersion,
+          engineVersion: run.engineVersion,
+          revision: run.currentRevision,
+          currentMonth: run.currentMonth,
+        }),
+      );
+      const [catalogRow] = await tx
+        .select()
+        .from(runScenarioSnapshots)
+        .where(eq(runScenarioSnapshots.runId, runId))
+        .limit(1);
+      assertScenarioSnapshotRecord(currentState, catalogRow);
+
+      const outboxKey = `${runId}:v2:advance:${prepared.batchId}`;
+      const [existingBatch] = await tx
+        .select({ payload: transactionalOutbox.payload })
+        .from(transactionalOutbox)
+        .where(eq(transactionalOutbox.idempotencyKey, outboxKey))
+        .limit(1);
+      if (existingBatch) {
+        const payload = requireTimeAdvancePayloadV2(existingBatch.payload);
+        if (
+          payload.batchId !== prepared.batchId ||
+          payload.requestFingerprint !== prepared.requestFingerprint
+        ) {
+          throw new RunRepositoryError(
+            "IDEMPOTENCY_MISMATCH",
+            "time advance id was already used with different request content",
+          );
+        }
+        return replayAppliedTimeAdvanceV2(
+          tx,
+          runId,
+          payload,
+        );
+      }
+
+      if (
+        run.currentRevision !== prepared.openingRevision ||
+        run.currentStateChecksum !== prepared.openingStateChecksum
+      ) {
+        throw new RunRepositoryError(
+          "OPTIMISTIC_CONFLICT",
+          "run changed before the time advance could commit",
+        );
+      }
+      if (
+        prepared.controllerVersion !== TIME_CONTROLLER_V2_VERSION ||
+        prepared.engineVersion !== run.engineVersion ||
+        !isTimeAdvanceRequestV2(prepared.request) ||
+        prepared.request.id !== prepared.batchId ||
+        prepared.request.expectedRevision !== prepared.openingRevision ||
+        prepared.request.effectiveMonth !== currentState.currentMonth ||
+        sha256Canonical(prepared.request) !== prepared.requestFingerprint ||
+        prepared.steps.length > prepared.request.maxMonths ||
+        prepared.steps.length !== prepared.controllerResult.monthsAdvanced ||
+        prepared.steps.length !== prepared.controllerResult.records.length ||
+        sha256Canonical(prepared.controllerResult.state) !==
+          prepared.finalStateChecksum ||
+        canonicalJson(prepared.steps) !==
+          canonicalJson(prepared.controllerResult.steps) ||
+        canonicalJson(prepared.controllerResult.records) !==
+          canonicalJson(prepared.steps.map(({ record }) => record)) ||
+        prepared.controllerResult.uiChanges.monthsAdvanced !==
+          prepared.steps.length ||
+        new Set(prepared.steps.map(({ command }) => command.id)).size !==
+          prepared.steps.length
+      ) {
+        throw new RunRepositoryError(
+          "PERSISTENCE_INVARIANT",
+          "prepared time advance has inconsistent controller evidence",
+        );
+      }
+
+      let replayState = currentState;
+      const now = this.#clock();
+      for (const step of prepared.steps) {
+        if (
+          step.command.type !== "process_month_v2" ||
+          step.command.expectedRevision !== replayState.revision ||
+          step.command.effectiveMonth !== replayState.currentMonth
+        ) {
+          throw new RunRepositoryError(
+            "PERSISTENCE_INVARIANT",
+            "prepared monthly command is not contiguous with the locked run",
+          );
+        }
+        const reduction = reduceGameCommandV2(replayState, step.command);
+        const nextState = reduction.state;
+        const checksum = sha256Canonical(nextState);
+        if (
+          step.resultingRevision !== nextState.revision ||
+          step.resultingMonth !== nextState.currentMonth ||
+          canonicalJson(step.record) !== canonicalJson(reduction.monthlyRecord) ||
+          !reduction.monthlyRecord
+        ) {
+          throw new RunRepositoryError(
+            "PERSISTENCE_INVARIANT",
+            "prepared monthly result does not match authoritative replay",
+          );
+        }
+        const newTransactions = newLedgerTransactions(replayState, nextState);
+        const ledgerRows = flattenLedger(
+          runId,
+          newTransactions,
+          replayState.ledger.transactions.length,
+        );
+        await persistSparseSnapshotsV2(
+          tx,
+          runId,
+          snapshotRequestsForAcceptedCommandV2(
+            replayState,
+            nextState,
+            step.command,
+          ),
+          now,
+        );
+        await tx.insert(acceptedCommands).values({
+          runId,
+          commandId: step.command.id,
+          commandSchemaVersion: step.command.schemaVersion,
+          commandType: step.command.type,
+          expectedRevision: step.command.expectedRevision,
+          resultingRevision: nextState.revision,
+          effectiveMonth: step.command.effectiveMonth,
+          payload: step.command.payload,
+          resultingStateChecksum: checksum,
+          createdAt: now,
+        });
+        const evidence = step.command.payload.taxEvidence;
+        await tx.insert(monthlyTaxEvidence).values({
+          runId,
+          traceId: evidence.traceId,
+          commandId: step.command.id,
+          effectiveMonth: step.command.effectiveMonth,
+          taxContextFingerprint: evidence.contextFingerprint ?? null,
+          evidenceChecksum: sha256Canonical(evidence),
+          evidence,
+          createdAt: now,
+        });
+        await tx.insert(monthlyTurnRecords).values({
+          runId,
+          processedMonth: reduction.monthlyRecord.processedMonth,
+          commandId: step.command.id,
+          resultingRevision: nextState.revision,
+          taxTraceId: evidence.traceId,
+          recordChecksum: sha256Canonical(reduction.monthlyRecord),
+          record: reduction.monthlyRecord,
+          createdAt: now,
+        });
+        if (ledgerRows.transactions.length > 0) {
+          await tx.insert(ledgerTransactions).values(ledgerRows.transactions);
+          await tx.insert(ledgerPostings).values(ledgerRows.postings);
+        }
+        replayState = nextState;
+      }
+
+      if (
+        canonicalJson(replayState) !==
+          canonicalJson(prepared.controllerResult.state) ||
+        sha256Canonical(replayState) !== prepared.finalStateChecksum
+      ) {
+        throw new RunRepositoryError(
+          "PERSISTENCE_INVARIANT",
+          "prepared final state does not match authoritative batch replay",
+        );
+      }
+      if (
+        prepared.controllerResult.pauseReason.kind === "periodic_checkpoint"
+      ) {
+        await persistSparseSnapshotsV2(
+          tx,
+          runId,
+          [
+            {
+              state: replayState,
+              snapshotKind: "checkpoint",
+              causalCommandId:
+                prepared.steps.at(-1)?.command.id ?? null,
+            },
+          ],
+          now,
+        );
+      }
+      const [updated] = await tx
+        .update(gameRuns)
+        .set({
+          stateSchemaVersion: replayState.schemaVersion,
+          engineVersion: replayState.engineVersion,
+          currentRevision: replayState.revision,
+          currentMonth: replayState.currentMonth,
+          status: replayState.outcome ? "terminal" : "active",
+          currentState: replayState,
+          currentStateChecksum: prepared.finalStateChecksum,
+          terminalAt: replayState.outcome ? (run.terminalAt ?? now) : null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(gameRuns.id, runId),
+            eq(gameRuns.currentRevision, prepared.openingRevision),
+            eq(gameRuns.currentStateChecksum, prepared.openingStateChecksum),
+          ),
+        )
+        .returning({ id: gameRuns.id });
+      if (!updated) {
+        throw new RunRepositoryError(
+          "OPTIMISTIC_CONFLICT",
+          "run changed before the time advance could commit",
+        );
+      }
+      const {
+        state: _state,
+        steps: _steps,
+        records: _records,
+        ...persistedResult
+      } = prepared.controllerResult;
+      void _state;
+      void _steps;
+      void _records;
+      const payload: TimeAdvanceOutboxPayloadV2 = Object.freeze({
+        kind: "time_advance_v2",
+        controllerVersion: prepared.controllerVersion,
+        engineVersion: prepared.engineVersion,
+        request: prepared.request,
+        batchId: prepared.batchId,
+        requestFingerprint: prepared.requestFingerprint,
+        openingRevision: prepared.openingRevision,
+        finalRevision: replayState.revision,
+        finalStateChecksum: prepared.finalStateChecksum,
+        result: persistedResult,
+      });
+      await tx.insert(transactionalOutbox).values({
+        runId,
+        commandId: prepared.batchId,
+        topic: "run.v2.time_advanced",
+        idempotencyKey: outboxKey,
+        payload,
+        status: "pending",
+        availableAt: now,
+        createdAt: now,
+      });
+      return Object.freeze({
+        ...prepared.controllerResult,
+        stateChecksum: prepared.finalStateChecksum,
+        idempotentReplay: false,
       });
     });
   }
