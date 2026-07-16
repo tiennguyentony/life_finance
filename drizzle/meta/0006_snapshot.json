@@ -1,0 +1,1651 @@
+{
+  "id": "fce88ba4-e0ea-4660-a233-b143e6718bd8",
+  "prevId": "5bff8735-25c0-4cc6-ad14-e303858a3aeb",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.accepted_commands": {
+      "name": "accepted_commands",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_id": {
+          "name": "command_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_schema_version": {
+          "name": "command_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_type": {
+          "name": "command_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_revision": {
+          "name": "expected_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resulting_revision": {
+          "name": "resulting_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_month": {
+          "name": "effective_month",
+          "type": "char(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resulting_state_checksum": {
+          "name": "resulting_state_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "accepted_commands_run_revision_uidx": {
+          "name": "accepted_commands_run_revision_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resulting_revision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "accepted_commands_run_created_idx": {
+          "name": "accepted_commands_run_created_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "accepted_commands_run_id_game_runs_id_fk": {
+          "name": "accepted_commands_run_id_game_runs_id_fk",
+          "tableFrom": "accepted_commands",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "accepted_commands_run_id_command_id_pk": {
+          "name": "accepted_commands_run_id_command_id_pk",
+          "columns": [
+            "run_id",
+            "command_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "accepted_commands_revision_sequence": {
+          "name": "accepted_commands_revision_sequence",
+          "value": "\"accepted_commands\".\"expected_revision\" >= 0 AND \"accepted_commands\".\"resulting_revision\" = \"accepted_commands\".\"expected_revision\" + 1"
+        },
+        "accepted_commands_schema_version_positive": {
+          "name": "accepted_commands_schema_version_positive",
+          "value": "\"accepted_commands\".\"command_schema_version\" > 0"
+        },
+        "accepted_commands_month_format": {
+          "name": "accepted_commands_month_format",
+          "value": "\"accepted_commands\".\"effective_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        },
+        "accepted_commands_checksum_format": {
+          "name": "accepted_commands_checksum_format",
+          "value": "\"accepted_commands\".\"resulting_state_checksum\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.ai_audit_records": {
+      "name": "ai_audit_records",
+      "schema": "",
+      "columns": {
+        "invocation_id": {
+          "name": "invocation_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contract_version": {
+          "name": "contract_version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_version": {
+          "name": "key_version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "initialization_vector": {
+          "name": "initialization_vector",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authentication_tag": {
+          "name": "authentication_tag",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ciphertext": {
+          "name": "ciphertext",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ai_audit_records_run_created_idx": {
+          "name": "ai_audit_records_run_created_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ai_audit_records_role_created_idx": {
+          "name": "ai_audit_records_role_created_idx",
+          "columns": [
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ai_audit_records_run_id_game_runs_id_fk": {
+          "name": "ai_audit_records_run_id_game_runs_id_fk",
+          "tableFrom": "ai_audit_records",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ai_audit_records_contract_version_positive": {
+          "name": "ai_audit_records_contract_version_positive",
+          "value": "\"ai_audit_records\".\"contract_version\" > 0"
+        },
+        "ai_audit_records_role_valid": {
+          "name": "ai_audit_records_role_valid",
+          "value": "\"ai_audit_records\".\"role\" IN ('hostile_fed', 'teacher', 'onboarding', 'explanation')"
+        },
+        "ai_audit_records_outcome_valid": {
+          "name": "ai_audit_records_outcome_valid",
+          "value": "\"ai_audit_records\".\"outcome\" IN ('success', 'failure')"
+        },
+        "ai_audit_records_attempt_count_bounded": {
+          "name": "ai_audit_records_attempt_count_bounded",
+          "value": "\"ai_audit_records\".\"attempt_count\" BETWEEN 1 AND 8"
+        },
+        "ai_audit_records_key_version_positive": {
+          "name": "ai_audit_records_key_version_positive",
+          "value": "\"ai_audit_records\".\"key_version\" > 0"
+        },
+        "ai_audit_records_iv_length": {
+          "name": "ai_audit_records_iv_length",
+          "value": "octet_length(\"ai_audit_records\".\"initialization_vector\") = 12"
+        },
+        "ai_audit_records_tag_length": {
+          "name": "ai_audit_records_tag_length",
+          "value": "octet_length(\"ai_audit_records\".\"authentication_tag\") = 16"
+        },
+        "ai_audit_records_ciphertext_length": {
+          "name": "ai_audit_records_ciphertext_length",
+          "value": "octet_length(\"ai_audit_records\".\"ciphertext\") BETWEEN 1 AND 2097152"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.game_runs": {
+      "name": "game_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "access_secret_hash": {
+          "name": "access_secret_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_secret_hash_version": {
+          "name": "access_secret_hash_version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "state_schema_version": {
+          "name": "state_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "engine_version": {
+          "name": "engine_version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_revision": {
+          "name": "current_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "current_month": {
+          "name": "current_month",
+          "type": "char(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "current_state": {
+          "name": "current_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_state_checksum": {
+          "name": "current_state_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "terminal_at": {
+          "name": "terminal_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "game_runs_access_secret_hash_uidx": {
+          "name": "game_runs_access_secret_hash_uidx",
+          "columns": [
+            {
+              "expression": "access_secret_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "game_runs_status_updated_idx": {
+          "name": "game_runs_status_updated_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "game_runs_revision_nonnegative": {
+          "name": "game_runs_revision_nonnegative",
+          "value": "\"game_runs\".\"current_revision\" >= 0"
+        },
+        "game_runs_schema_version_positive": {
+          "name": "game_runs_schema_version_positive",
+          "value": "\"game_runs\".\"state_schema_version\" > 0"
+        },
+        "game_runs_secret_hash_version_positive": {
+          "name": "game_runs_secret_hash_version_positive",
+          "value": "\"game_runs\".\"access_secret_hash_version\" > 0"
+        },
+        "game_runs_month_format": {
+          "name": "game_runs_month_format",
+          "value": "\"game_runs\".\"current_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        },
+        "game_runs_checksum_format": {
+          "name": "game_runs_checksum_format",
+          "value": "\"game_runs\".\"current_state_checksum\" ~ '^[0-9a-f]{64}$'"
+        },
+        "game_runs_terminal_consistency": {
+          "name": "game_runs_terminal_consistency",
+          "value": "(\"game_runs\".\"status\" = 'active' AND \"game_runs\".\"terminal_at\" IS NULL) OR (\"game_runs\".\"status\" = 'terminal' AND \"game_runs\".\"terminal_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.ledger_postings": {
+      "name": "ledger_postings",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transaction_id": {
+          "name": "transaction_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "posting_index": {
+          "name": "posting_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "debit_cents": {
+          "name": "debit_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credit_cents": {
+          "name": "credit_cents",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "ledger_postings_run_account_idx": {
+          "name": "ledger_postings_run_account_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_postings_transaction_fk": {
+          "name": "ledger_postings_transaction_fk",
+          "tableFrom": "ledger_postings",
+          "tableTo": "ledger_transactions",
+          "columnsFrom": [
+            "run_id",
+            "transaction_id"
+          ],
+          "columnsTo": [
+            "run_id",
+            "transaction_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "ledger_postings_run_id_transaction_id_posting_index_pk": {
+          "name": "ledger_postings_run_id_transaction_id_posting_index_pk",
+          "columns": [
+            "run_id",
+            "transaction_id",
+            "posting_index"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ledger_postings_index_nonnegative": {
+          "name": "ledger_postings_index_nonnegative",
+          "value": "\"ledger_postings\".\"posting_index\" >= 0"
+        },
+        "ledger_postings_safe_integer_cents": {
+          "name": "ledger_postings_safe_integer_cents",
+          "value": "\"ledger_postings\".\"debit_cents\" BETWEEN 0 AND 9007199254740991 AND \"ledger_postings\".\"credit_cents\" BETWEEN 0 AND 9007199254740991"
+        },
+        "ledger_postings_exactly_one_side": {
+          "name": "ledger_postings_exactly_one_side",
+          "value": "(\"ledger_postings\".\"debit_cents\" > 0 AND \"ledger_postings\".\"credit_cents\" = 0) OR (\"ledger_postings\".\"credit_cents\" > 0 AND \"ledger_postings\".\"debit_cents\" = 0)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.ledger_transactions": {
+      "name": "ledger_transactions",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transaction_id": {
+          "name": "transaction_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_id": {
+          "name": "command_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_month": {
+          "name": "effective_month",
+          "type": "char(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_system": {
+          "name": "source_system",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category": {
+          "name": "category",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "causal_reference_kind": {
+          "name": "causal_reference_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "causal_reference_id": {
+          "name": "causal_reference_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reverses_transaction_id": {
+          "name": "reverses_transaction_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transaction_index": {
+          "name": "transaction_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ledger_transactions_run_index_uidx": {
+          "name": "ledger_transactions_run_index_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "transaction_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ledger_transactions_run_command_idx": {
+          "name": "ledger_transactions_run_command_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "command_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_transactions_run_id_game_runs_id_fk": {
+          "name": "ledger_transactions_run_id_game_runs_id_fk",
+          "tableFrom": "ledger_transactions",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "ledger_transactions_run_id_transaction_id_pk": {
+          "name": "ledger_transactions_run_id_transaction_id_pk",
+          "columns": [
+            "run_id",
+            "transaction_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ledger_transactions_index_nonnegative": {
+          "name": "ledger_transactions_index_nonnegative",
+          "value": "\"ledger_transactions\".\"transaction_index\" >= 0"
+        },
+        "ledger_transactions_month_format": {
+          "name": "ledger_transactions_month_format",
+          "value": "\"ledger_transactions\".\"effective_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        },
+        "ledger_transactions_complete_provenance": {
+          "name": "ledger_transactions_complete_provenance",
+          "value": "(\n        (\"ledger_transactions\".\"source_system\" IS NULL AND \"ledger_transactions\".\"category\" IS NULL AND \"ledger_transactions\".\"causal_reference_kind\" IS NULL AND \"ledger_transactions\".\"causal_reference_id\" IS NULL)\n        OR\n        (\"ledger_transactions\".\"source_system\" IS NOT NULL AND \"ledger_transactions\".\"category\" IS NOT NULL AND \"ledger_transactions\".\"causal_reference_kind\" IS NOT NULL AND \"ledger_transactions\".\"causal_reference_id\" IS NOT NULL)\n      )"
+        },
+        "ledger_transactions_causal_kind_valid": {
+          "name": "ledger_transactions_causal_kind_valid",
+          "value": "\"ledger_transactions\".\"causal_reference_kind\" IS NULL OR \"ledger_transactions\".\"causal_reference_kind\" IN ('command', 'event', 'milestone', 'system')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.monthly_tax_evidence": {
+      "name": "monthly_tax_evidence",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trace_id": {
+          "name": "trace_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_id": {
+          "name": "command_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_month": {
+          "name": "effective_month",
+          "type": "char(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_context_fingerprint": {
+          "name": "tax_context_fingerprint",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_checksum": {
+          "name": "evidence_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "monthly_tax_evidence_run_month_uidx": {
+          "name": "monthly_tax_evidence_run_month_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "effective_month",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "monthly_tax_evidence_run_command_uidx": {
+          "name": "monthly_tax_evidence_run_command_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "command_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "monthly_tax_evidence_run_context_idx": {
+          "name": "monthly_tax_evidence_run_context_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tax_context_fingerprint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "monthly_tax_evidence_run_id_game_runs_id_fk": {
+          "name": "monthly_tax_evidence_run_id_game_runs_id_fk",
+          "tableFrom": "monthly_tax_evidence",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "monthly_tax_evidence_command_fk": {
+          "name": "monthly_tax_evidence_command_fk",
+          "tableFrom": "monthly_tax_evidence",
+          "tableTo": "accepted_commands",
+          "columnsFrom": [
+            "run_id",
+            "command_id"
+          ],
+          "columnsTo": [
+            "run_id",
+            "command_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "monthly_tax_evidence_run_id_trace_id_pk": {
+          "name": "monthly_tax_evidence_run_id_trace_id_pk",
+          "columns": [
+            "run_id",
+            "trace_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "monthly_tax_evidence_month_format": {
+          "name": "monthly_tax_evidence_month_format",
+          "value": "\"monthly_tax_evidence\".\"effective_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        },
+        "monthly_tax_evidence_checksum_format": {
+          "name": "monthly_tax_evidence_checksum_format",
+          "value": "\"monthly_tax_evidence\".\"evidence_checksum\" ~ '^[0-9a-f]{64}$'"
+        },
+        "monthly_tax_evidence_context_fingerprint_format": {
+          "name": "monthly_tax_evidence_context_fingerprint_format",
+          "value": "\"monthly_tax_evidence\".\"tax_context_fingerprint\" IS NULL OR \"monthly_tax_evidence\".\"tax_context_fingerprint\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.monthly_turn_records": {
+      "name": "monthly_turn_records",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processed_month": {
+          "name": "processed_month",
+          "type": "char(7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_id": {
+          "name": "command_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resulting_revision": {
+          "name": "resulting_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_trace_id": {
+          "name": "tax_trace_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_checksum": {
+          "name": "record_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record": {
+          "name": "record",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "monthly_turn_records_run_command_uidx": {
+          "name": "monthly_turn_records_run_command_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "command_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "monthly_turn_records_run_revision_uidx": {
+          "name": "monthly_turn_records_run_revision_uidx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "resulting_revision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "monthly_turn_records_run_id_game_runs_id_fk": {
+          "name": "monthly_turn_records_run_id_game_runs_id_fk",
+          "tableFrom": "monthly_turn_records",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "monthly_turn_records_command_fk": {
+          "name": "monthly_turn_records_command_fk",
+          "tableFrom": "monthly_turn_records",
+          "tableTo": "accepted_commands",
+          "columnsFrom": [
+            "run_id",
+            "command_id"
+          ],
+          "columnsTo": [
+            "run_id",
+            "command_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "monthly_turn_records_tax_evidence_fk": {
+          "name": "monthly_turn_records_tax_evidence_fk",
+          "tableFrom": "monthly_turn_records",
+          "tableTo": "monthly_tax_evidence",
+          "columnsFrom": [
+            "run_id",
+            "tax_trace_id"
+          ],
+          "columnsTo": [
+            "run_id",
+            "trace_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "monthly_turn_records_run_id_processed_month_pk": {
+          "name": "monthly_turn_records_run_id_processed_month_pk",
+          "columns": [
+            "run_id",
+            "processed_month"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "monthly_turn_records_month_format": {
+          "name": "monthly_turn_records_month_format",
+          "value": "\"monthly_turn_records\".\"processed_month\" ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'"
+        },
+        "monthly_turn_records_revision_positive": {
+          "name": "monthly_turn_records_revision_positive",
+          "value": "\"monthly_turn_records\".\"resulting_revision\" > 0"
+        },
+        "monthly_turn_records_checksum_format": {
+          "name": "monthly_turn_records_checksum_format",
+          "value": "\"monthly_turn_records\".\"record_checksum\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.run_scenario_snapshots": {
+      "name": "run_scenario_snapshots",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "catalog_version": {
+          "name": "catalog_version",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot_checksum": {
+          "name": "snapshot_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "run_scenario_snapshots_run_id_game_runs_id_fk": {
+          "name": "run_scenario_snapshots_run_id_game_runs_id_fk",
+          "tableFrom": "run_scenario_snapshots",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "run_scenario_snapshots_checksum_format": {
+          "name": "run_scenario_snapshots_checksum_format",
+          "value": "\"run_scenario_snapshots\".\"snapshot_checksum\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.run_state_migrations": {
+      "name": "run_state_migrations",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "migration_version": {
+          "name": "migration_version",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_schema_version": {
+          "name": "source_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_engine_version": {
+          "name": "source_engine_version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_schema_version": {
+          "name": "target_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_engine_version": {
+          "name": "target_engine_version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_revision": {
+          "name": "source_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_state_checksum": {
+          "name": "source_state_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_state": {
+          "name": "target_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_state_checksum": {
+          "name": "target_state_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "run_state_migrations_run_created_idx": {
+          "name": "run_state_migrations_run_created_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "run_state_migrations_run_id_game_runs_id_fk": {
+          "name": "run_state_migrations_run_id_game_runs_id_fk",
+          "tableFrom": "run_state_migrations",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "run_state_migrations_run_id_migration_version_pk": {
+          "name": "run_state_migrations_run_id_migration_version_pk",
+          "columns": [
+            "run_id",
+            "migration_version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "run_state_migrations_version_progression": {
+          "name": "run_state_migrations_version_progression",
+          "value": "\"run_state_migrations\".\"source_schema_version\" > 0 AND \"run_state_migrations\".\"target_schema_version\" > \"run_state_migrations\".\"source_schema_version\""
+        },
+        "run_state_migrations_revision_nonnegative": {
+          "name": "run_state_migrations_revision_nonnegative",
+          "value": "\"run_state_migrations\".\"source_revision\" >= 0"
+        },
+        "run_state_migrations_source_checksum_format": {
+          "name": "run_state_migrations_source_checksum_format",
+          "value": "\"run_state_migrations\".\"source_state_checksum\" ~ '^[0-9a-f]{64}$'"
+        },
+        "run_state_migrations_target_checksum_format": {
+          "name": "run_state_migrations_target_checksum_format",
+          "value": "\"run_state_migrations\".\"target_state_checksum\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.run_state_snapshots": {
+      "name": "run_state_snapshots",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_schema_version": {
+          "name": "state_schema_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "engine_version": {
+          "name": "engine_version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state_checksum": {
+          "name": "state_checksum",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshot_kind": {
+          "name": "snapshot_kind",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'legacy_command_result'"
+        },
+        "causal_command_id": {
+          "name": "causal_command_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "run_state_snapshots_run_id_game_runs_id_fk": {
+          "name": "run_state_snapshots_run_id_game_runs_id_fk",
+          "tableFrom": "run_state_snapshots",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "run_state_snapshots_run_id_revision_pk": {
+          "name": "run_state_snapshots_run_id_revision_pk",
+          "columns": [
+            "run_id",
+            "revision"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "run_state_snapshots_revision_nonnegative": {
+          "name": "run_state_snapshots_revision_nonnegative",
+          "value": "\"run_state_snapshots\".\"revision\" >= 0"
+        },
+        "run_state_snapshots_schema_version_positive": {
+          "name": "run_state_snapshots_schema_version_positive",
+          "value": "\"run_state_snapshots\".\"state_schema_version\" > 0"
+        },
+        "run_state_snapshots_checksum_format": {
+          "name": "run_state_snapshots_checksum_format",
+          "value": "\"run_state_snapshots\".\"state_checksum\" ~ '^[0-9a-f]{64}$'"
+        },
+        "run_state_snapshots_kind_valid": {
+          "name": "run_state_snapshots_kind_valid",
+          "value": "\"run_state_snapshots\".\"snapshot_kind\" IN ('run_start', 'checkpoint', 'before_event', 'after_event', 'before_milestone', 'after_milestone', 'terminal', 'migration', 'legacy_command_result')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.transactional_outbox": {
+      "name": "transactional_outbox",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "command_id": {
+          "name": "command_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "topic": {
+          "name": "topic",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "outbox_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "locked_at": {
+          "name": "locked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error_code": {
+          "name": "last_error_code",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "transactional_outbox_idempotency_uidx": {
+          "name": "transactional_outbox_idempotency_uidx",
+          "columns": [
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transactional_outbox_dispatch_idx": {
+          "name": "transactional_outbox_dispatch_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transactional_outbox_run_created_idx": {
+          "name": "transactional_outbox_run_created_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "transactional_outbox_run_id_game_runs_id_fk": {
+          "name": "transactional_outbox_run_id_game_runs_id_fk",
+          "tableFrom": "transactional_outbox",
+          "tableTo": "game_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "transactional_outbox_attempt_nonnegative": {
+          "name": "transactional_outbox_attempt_nonnegative",
+          "value": "\"transactional_outbox\".\"attempt_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {
+    "public.outbox_status": {
+      "name": "outbox_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "processing",
+        "delivered",
+        "failed"
+      ]
+    },
+    "public.run_status": {
+      "name": "run_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "terminal"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

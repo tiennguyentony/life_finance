@@ -11,6 +11,7 @@ import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import { RunSecretCodec } from "../auth/run-secret";
 import type { LifeFinanceDatabase } from "./client";
 import { RunRepositoryError } from "./run-repository-contracts";
+import { loadRunStateAtRevisionV2 } from "./run-state-replay-v2";
 import {
   assertPersistedState,
   assertScenarioSnapshotRecord,
@@ -25,7 +26,6 @@ import {
   monthlyTaxEvidence,
   monthlyTurnRecords,
   runScenarioSnapshots,
-  runStateSnapshots,
 } from "./schema";
 
 export async function loadAuthorizedRun(
@@ -131,30 +131,11 @@ export async function loadCheckpointEvidenceV2(
       "checkpoint start revision cannot exceed current revision",
     );
   }
-  const [startRow] = await db
-    .select()
-    .from(runStateSnapshots)
-    .where(
-      and(
-        eq(runStateSnapshots.runId, runId),
-        eq(runStateSnapshots.revision, fromRevision),
-      ),
-    )
-    .limit(1);
-  if (!startRow) {
-    throw new RunRepositoryError(
-      "PERSISTENCE_INVARIANT",
-      "checkpoint start snapshot does not exist",
-    );
-  }
-  const startingState = requireV2State(
-    assertPersistedState(startRow.state, {
-      runId,
-      checksum: startRow.stateChecksum,
-      schemaVersion: startRow.stateSchemaVersion,
-      engineVersion: startRow.engineVersion,
-      revision: startRow.revision,
-    }),
+  const { state: startingState } = await loadRunStateAtRevisionV2(
+    db,
+    runId,
+    fromRevision,
+    endingState.engineVersion,
   );
   const rows = await db
     .select()

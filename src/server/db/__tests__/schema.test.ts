@@ -8,6 +8,7 @@ import {
   ledgerPostings,
   ledgerTransactions,
   monthlyTaxEvidence,
+  monthlyTurnRecords,
   runStateMigrations,
   runStateSnapshots,
   transactionalOutbox,
@@ -86,15 +87,35 @@ describe("authoritative persistence schema", () => {
     expect(config.indexes.some(({ config: index }) => index.unique)).toBe(true);
   });
 
-  it("links every accepted command to one immutable resulting revision", () => {
+  it("stores sparse snapshot metadata without requiring per-command snapshots", () => {
     const commandConfig = getTableConfig(acceptedCommands);
+    const monthlyRecordConfig = getTableConfig(monthlyTurnRecords);
     const snapshotConfig = getTableConfig(runStateSnapshots);
+    const snapshotColumnNames = snapshotConfig.columns.map(({ name }) => name);
 
     expect(commandConfig.primaryKeys).toHaveLength(1);
     expect(snapshotConfig.primaryKeys).toHaveLength(1);
+    expect(snapshotColumnNames).toEqual(
+      expect.arrayContaining(["snapshot_kind", "causal_command_id"]),
+    );
     expect(
       commandConfig.foreignKeys.some(
         (key) => key.reference().foreignTable === runStateSnapshots,
+      ),
+    ).toBe(false);
+    expect(
+      monthlyRecordConfig.foreignKeys.some(
+        (key) => key.reference().foreignTable === runStateSnapshots,
+      ),
+    ).toBe(false);
+    expect(
+      monthlyRecordConfig.foreignKeys.some(
+        (key) => key.reference().foreignTable === acceptedCommands,
+      ),
+    ).toBe(true);
+    expect(
+      monthlyRecordConfig.foreignKeys.some(
+        (key) => key.reference().foreignTable === monthlyTaxEvidence,
       ),
     ).toBe(true);
   });

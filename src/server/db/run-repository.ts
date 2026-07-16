@@ -29,6 +29,12 @@ import {
   loadMonthlyTaxEvidenceForCommand,
   loadMonthlyTaxEvidenceForContext,
 } from "./run-repository-read";
+import { loadRunStateAtRevisionV2 } from "./run-state-replay-v2";
+import {
+  RUN_STATE_SNAPSHOT_KIND_PRIORITY,
+  snapshotRequestsForAcceptedCommandV2,
+  type SnapshotRequestV2,
+} from "./snapshot-policy-v2";
 import {
   acceptedCommands,
   gameRuns,
@@ -63,6 +69,71 @@ import {
   requireV2State,
   samePersistedCommand,
 } from "./run-repository-support";
+
+type SparseSnapshotWriter = Pick<
+  LifeFinanceDatabase,
+  "insert" | "select" | "update"
+>;
+
+async function persistSparseSnapshotsV2(
+  db: SparseSnapshotWriter,
+  runId: string,
+  requests: readonly SnapshotRequestV2<GameStateV2>[],
+  createdAt: Date,
+): Promise<void> {
+  for (const request of requests) {
+    const stateChecksum = sha256Canonical(request.state);
+    const [existing] = await db
+      .select({
+        stateChecksum: runStateSnapshots.stateChecksum,
+        snapshotKind: runStateSnapshots.snapshotKind,
+      })
+      .from(runStateSnapshots)
+      .where(
+        and(
+          eq(runStateSnapshots.runId, runId),
+          eq(runStateSnapshots.revision, request.state.revision),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      if (
+        existing.stateChecksum === stateChecksum &&
+        RUN_STATE_SNAPSHOT_KIND_PRIORITY[request.snapshotKind] >
+          RUN_STATE_SNAPSHOT_KIND_PRIORITY[existing.snapshotKind]
+      ) {
+        await db
+          .update(runStateSnapshots)
+          .set({
+            snapshotKind: request.snapshotKind,
+            causalCommandId: request.causalCommandId,
+          })
+          .where(
+            and(
+              eq(runStateSnapshots.runId, runId),
+              eq(runStateSnapshots.revision, request.state.revision),
+              eq(runStateSnapshots.stateChecksum, stateChecksum),
+            ),
+          );
+      }
+      continue;
+    }
+    await db
+      .insert(runStateSnapshots)
+      .values({
+        runId,
+        revision: request.state.revision,
+        stateSchemaVersion: request.state.schemaVersion,
+        engineVersion: request.state.engineVersion,
+        state: request.state,
+        stateChecksum,
+        snapshotKind: request.snapshotKind,
+        causalCommandId: request.causalCommandId,
+        createdAt,
+      })
+      .onConflictDoNothing();
+  }
+}
 
 export {
   RunRepositoryError,
@@ -135,6 +206,8 @@ export class RunRepository {
         engineVersion: state.engineVersion,
         state,
         stateChecksum: checksum,
+        snapshotKind: "run_start",
+        causalCommandId: null,
         createdAt: now,
       });
       if (ledgerRows.transactions.length > 0) {
@@ -210,6 +283,8 @@ export class RunRepository {
         engineVersion: state.engineVersion,
         state,
         stateChecksum: checksum,
+        snapshotKind: "run_start",
+        causalCommandId: null,
         createdAt: now,
       });
       await tx.insert(runScenarioSnapshots).values({
@@ -415,6 +490,8 @@ export class RunRepository {
         engineVersion: nextState.engineVersion,
         state: nextState,
         stateChecksum: checksum,
+        snapshotKind: "legacy_command_result",
+        causalCommandId: command.id,
         createdAt: now,
       });
       await tx.insert(acceptedCommands).values({
@@ -545,30 +622,11 @@ export class RunRepository {
             "command id was already used with different command content",
           );
         }
-        const [snapshot] = await tx
-          .select()
-          .from(runStateSnapshots)
-          .where(
-            and(
-              eq(runStateSnapshots.runId, runId),
-              eq(runStateSnapshots.revision, existing.resultingRevision),
-            ),
-          )
-          .limit(1);
-        if (!snapshot) {
-          throw new RunRepositoryError(
-            "CORRUPT_STATE",
-            "idempotent v2 command is missing its immutable snapshot",
-          );
-        }
-        const snapshotState = requireV2State(
-          assertPersistedState(snapshot.state, {
-            runId,
-            checksum: snapshot.stateChecksum,
-            schemaVersion: snapshot.stateSchemaVersion,
-            engineVersion: snapshot.engineVersion,
-            revision: snapshot.revision,
-          }),
+        const replayed = await loadRunStateAtRevisionV2(
+          tx,
+          runId,
+          existing.resultingRevision,
+          run.engineVersion,
         );
         let monthlyRecord: MonthlyTurnV2Record | null = null;
         if (command.type === "process_month_v2") {
@@ -619,8 +677,8 @@ export class RunRepository {
           monthlyRecord = storedRecord.record;
         }
         return Object.freeze({
-          state: snapshotState,
-          stateChecksum: snapshot.stateChecksum,
+          state: replayed.state,
+          stateChecksum: replayed.stateChecksum,
           idempotentReplay: true,
           monthlyRecord,
         });
@@ -647,15 +705,16 @@ export class RunRepository {
         ? sha256Canonical(reduction.monthlyRecord)
         : null;
 
-      await tx.insert(runStateSnapshots).values({
+      await persistSparseSnapshotsV2(
+        tx,
         runId,
-        revision: nextState.revision,
-        stateSchemaVersion: nextState.schemaVersion,
-        engineVersion: nextState.engineVersion,
-        state: nextState,
-        stateChecksum: checksum,
-        createdAt: now,
-      });
+        snapshotRequestsForAcceptedCommandV2(
+          currentState,
+          nextState,
+          command,
+        ),
+        now,
+      );
       await tx.insert(acceptedCommands).values({
         runId,
         commandId: command.id,
