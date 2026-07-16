@@ -5,6 +5,7 @@ import { simulationMonth } from "../domain/month";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import {
   PERSONAL_EVENT_SCHEMA_V2,
+  generateDeclarativePersonalEventCandidatesV2,
   scheduleDeclarativePersonalEventV2,
   validatePersonalEventCatalogV2,
   validatePersonalEventTemplateV2,
@@ -368,6 +369,30 @@ describe("declarative personal-event v2 scheduling", () => {
     expect(left.event?.proposal.parameters.cost_cents).toBeGreaterThanOrEqual(10_000);
     expect(left.event?.proposal.parameters.cost_cents).toBeLessThanOrEqual(20_000);
     expect(left.event?.targetedWeakness).toBe("unrelated_hazard");
+  });
+
+  it("exposes hazard candidates before parameter sampling without reading vulnerability", () => {
+    const vulnerable = state();
+    const resilient = {
+      ...vulnerable,
+      finances: {
+        ...vulnerable.finances,
+        cashCents: moneyCents(10_000_000),
+        creditUsedCents: moneyCents(0),
+      },
+    };
+    const catalog = [alwaysTemplate()];
+    const left = generateDeclarativePersonalEventCandidatesV2(vulnerable, catalog);
+    const right = generateDeclarativePersonalEventCandidatesV2(resilient, catalog);
+
+    expect(left).toEqual(right);
+    expect(left.candidates).toEqual([
+      expect.objectContaining({
+        template: expect.objectContaining({ id: "personal.test_setback" }),
+        targetedWeakness: "unrelated_hazard",
+      }),
+    ]);
+    expect(left.candidates[0]).not.toHaveProperty("proposal.parameters");
   });
 
   it("applies only explicit causal hazard modifiers", () => {

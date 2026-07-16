@@ -1,0 +1,708 @@
+import { canonicalJson } from "./canonical";
+import { NumericDomainError } from "./domain/integer";
+import type { RatePpm } from "./domain/money";
+import { monthsBetween } from "./domain/month";
+import { nextInt, type RandomState } from "./domain/rng";
+import { UNRELATED_HAZARD_TARGET, type EventTargetV2 } from "./events";
+import type { GameStateV2 } from "./game-state-v2";
+import {
+  personalEventEligibilityReasonsV2,
+  personalEventHistoryAvailabilityReasonsV2,
+  validatePersonalEventTemplateV2,
+  type PersonalEventTemplateV2,
+  type ScheduledDeclarativePersonalEventV2,
+} from "./personal-event-v2";
+import {
+  estimatePersonalEventImpactV2,
+  RuntimeBalanceImpactV2Error,
+  type PersonalEventImpactEstimateV2,
+  type RuntimeBalanceMonthlyCashFlowEvidenceV2,
+} from "./runtime-balance-impact-v2";
+import { PersonalEventEffectV2Error } from "./personal-event-effects-v2";
+import { ObligationFundingV2Error } from "./obligation-funding-v2";
+import {
+  RUNTIME_BALANCE_CANDIDATE_LIMIT_V2,
+  RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+  RUNTIME_BALANCE_IMPACT_ESTIMATOR_V1_VERSION,
+  RUNTIME_BALANCE_LESSON_LIMIT_V2,
+  RUNTIME_BALANCE_POLICY_V1_VERSION,
+  RUNTIME_BALANCE_REJECTION_LIMIT_V2,
+  RUNTIME_BALANCE_RECENT_EVENT_LIMIT_V2,
+  runtimeBalanceDifficultyPolicyV2,
+} from "./runtime-balance-policy-v2";
+import {
+  regenerateRuntimeBalancePressureV2,
+  type RuntimeBalanceRejectionCodeV2,
+  type RuntimeBalanceStateV2,
+} from "./runtime-balance-state-v2";
+
+export type RuntimeBalanceCandidateV2 = Readonly<{
+  template: PersonalEventTemplateV2;
+  targetedWeakness: EventTargetV2;
+  followUpSourceEventId?: string;
+}>;
+
+export type RuntimeBalanceCandidateDecisionV2 = Readonly<{
+  templateId: string;
+  templateVersion: number;
+  rank: number;
+  adjustedRank: number;
+  repetitionPenalty: number;
+  lessonCoverageBonus: number;
+  evaluated: boolean;
+  rejectionCodes: readonly RuntimeBalanceRejectionCodeV2[];
+  warningCodes: readonly RuntimeBalanceWarningCodeV2[];
+  parameters?: Readonly<Record<string, number>>;
+  impactScorePpm?: number;
+  impact?: RuntimeBalanceCandidateImpactSummaryV2;
+}>;
+
+export type RuntimeBalanceWarningCodeV2 =
+  | "impact_score_near_limit"
+  | "burn_months_near_limit"
+  | "negative_cash_flow_near_limit"
+  | "recovery_time_near_limit";
+
+export type RuntimeBalanceCandidateImpactSummaryV2 = Readonly<{
+  minimumUncoveredCostCents: number;
+  likelyLiquidationCents: number;
+  likelyCreditUseCents: number;
+  burnMonthsPpm: number;
+  negativeCashFlowDurationMonths: number;
+  recoveryTimeMonths: number;
+  bankruptcyRisk: PersonalEventImpactEstimateV2["bankruptcyRisk"];
+  inexpensiveGoalDelayMonths: number | null;
+  reasonableResponseIds: readonly string[];
+}>;
+
+export type RuntimeBalanceDecisionV2 = Readonly<{
+  version: "runtime-balance-decision-v1";
+  controllerVersion: typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
+  policyVersion: typeof RUNTIME_BALANCE_POLICY_V1_VERSION;
+  impactEstimatorVersion: typeof RUNTIME_BALANCE_IMPACT_ESTIMATOR_V1_VERSION;
+  difficulty: RuntimeBalanceStateV2["difficulty"];
+  candidateLimit: typeof RUNTIME_BALANCE_CANDIDATE_LIMIT_V2;
+  warningStrength: ReturnType<typeof runtimeBalanceDifficultyPolicyV2>["warningStrength"];
+  impactBands: Readonly<{
+    maximumImpactScorePpm: number;
+    maximumBurnMonthsPpm: number;
+    maximumNegativeCashFlowDurationMonths: number;
+    maximumRecoveryTimeMonths: number;
+  }>;
+  month: GameStateV2["currentMonth"];
+  status: "approved" | "none";
+  nullReason?: "no_candidates" | "all_rejected";
+  pressureBeforeUnits: number;
+  pressureAfterUnits: number;
+  evaluatedCandidateCount: number;
+  candidates: readonly RuntimeBalanceCandidateDecisionV2[];
+  approved?: Readonly<{
+    eventId: string;
+    templateId: string;
+    templateVersion: number;
+    parameters: Readonly<Record<string, number>>;
+    impact: PersonalEventImpactEstimateV2;
+    pressureCostUnits: number;
+    warningCodes: readonly RuntimeBalanceWarningCodeV2[];
+  }>;
+}>;
+
+export type RuntimeBalanceChoiceV2 = Readonly<{
+  event: ScheduledDeclarativePersonalEventV2 | null;
+  nextRandom: RandomState;
+  runtimeBalance: RuntimeBalanceStateV2;
+  decision: RuntimeBalanceDecisionV2;
+}>;
+
+export type RuntimeBalanceChoiceOptionsV2 = Readonly<{
+  developmentMode?: boolean;
+  eventCatalog: readonly PersonalEventTemplateV2[];
+  monthlyCashFlowEvidence: RuntimeBalanceMonthlyCashFlowEvidenceV2;
+  estimateImpact?: typeof estimatePersonalEventImpactV2;
+}>;
+
+type ScoredCandidate = Readonly<{
+  candidate: RuntimeBalanceCandidateV2;
+  rank: number;
+  adjustedRank: number;
+  repetitionPenalty: number;
+  lessonCoverageBonus: number;
+}>;
+
+function compactImpact(
+  impact: PersonalEventImpactEstimateV2,
+): RuntimeBalanceCandidateImpactSummaryV2 {
+  return Object.freeze({
+    minimumUncoveredCostCents: impact.minimumUncoveredCostCents,
+    likelyLiquidationCents: impact.likelyLiquidationCents,
+    likelyCreditUseCents: impact.likelyCreditUseCents,
+    burnMonthsPpm: impact.burnMonthsPpm,
+    negativeCashFlowDurationMonths: impact.negativeCashFlowDurationMonths,
+    recoveryTimeMonths: impact.recoveryTimeMonths,
+    bankruptcyRisk: impact.bankruptcyRisk,
+    inexpensiveGoalDelayMonths: impact.inexpensiveGoalDelayMonths,
+    reasonableResponseIds: Object.freeze([...impact.reasonableResponseIds]),
+  });
+}
+
+function allLessonTags(template: PersonalEventTemplateV2): readonly string[] {
+  return [template.lessonTags.primary, ...template.lessonTags.secondary];
+}
+
+function effectivePressureCost(
+  template: PersonalEventTemplateV2,
+  policy: ReturnType<typeof runtimeBalanceDifficultyPolicyV2>,
+): number {
+  if (template.classification === "positive") return 0;
+  return Math.max(
+    template.pressureCost,
+    policy.minimumTierPressureCostUnits[template.severityTier],
+  );
+}
+
+export function prioritizeRuntimeBalanceCandidatesV2(
+  balance: RuntimeBalanceStateV2,
+  candidates: readonly RuntimeBalanceCandidateV2[],
+): readonly ScoredCandidate[] {
+  const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
+  const lessonCounts = new Map(
+    balance.lessonExposureCounts.map(({ lessonTag, count }) => [lessonTag, count]),
+  );
+  const maximumExposure = Math.max(0, ...lessonCounts.values());
+  return candidates
+    .slice(0, RUNTIME_BALANCE_CANDIDATE_LIMIT_V2)
+    .map((candidate, index) => {
+      const lessons = new Set(allLessonTags(candidate.template));
+      const repeatedEventCount = balance.recentEvents.filter(
+        ({ templateId }) => templateId === candidate.template.id,
+      ).length;
+      const repeatedCategoryCount = balance.recentEvents.filter(
+        ({ category }) => category === candidate.template.category,
+      ).length;
+      const repeatedLessonCount = balance.recentEvents.filter(({ lessonTags }) =>
+        lessonTags.some((lesson) => lessons.has(lesson)),
+      ).length;
+      const repetitionPenalty =
+        repeatedEventCount * policy.repeatedEventPenalty +
+        repeatedCategoryCount * policy.repeatedCategoryPenalty +
+        repeatedLessonCount * policy.repeatedLessonPenalty;
+      const primaryExposure = lessonCounts.get(
+        candidate.template.lessonTags.primary,
+      ) ?? 0;
+      const lessonCoverageBonus =
+        (maximumExposure - primaryExposure) *
+        policy.underrepresentedLessonBonus;
+      const rank = candidates.length - index;
+      return {
+        candidate,
+        rank,
+        adjustedRank:
+          rank * policy.baseRankStep + lessonCoverageBonus - repetitionPenalty,
+        repetitionPenalty,
+        lessonCoverageBonus,
+      };
+    })
+    .toSorted(
+      (left, right) =>
+        right.adjustedRank - left.adjustedRank,
+    );
+}
+
+function elapsedMonths(
+  state: GameStateV2,
+  approvedMonth: GameStateV2["currentMonth"],
+): number {
+  return Math.max(0, monthsBetween(approvedMonth, state.currentMonth));
+}
+
+export function assessCandidatePacingV2(
+  state: GameStateV2,
+  balance: RuntimeBalanceStateV2,
+  candidate: RuntimeBalanceCandidateV2,
+  eventCatalog: readonly PersonalEventTemplateV2[],
+): RuntimeBalanceRejectionCodeV2[] {
+  const { template } = candidate;
+  const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
+  const reasons: RuntimeBalanceRejectionCodeV2[] = [];
+  const canonicalTemplate = eventCatalog.find(
+    ({ id, version }) => id === template.id && version === template.version,
+  );
+  if (
+    canonicalTemplate === undefined ||
+    canonicalJson(canonicalTemplate) !== canonicalJson(template) ||
+    validatePersonalEventTemplateV2(template).length > 0 ||
+    personalEventEligibilityReasonsV2(template, state).length > 0 ||
+    personalEventHistoryAvailabilityReasonsV2(template, state, eventCatalog).length > 0
+  ) {
+    reasons.push("ineligible");
+  }
+  if (candidate.targetedWeakness !== UNRELATED_HAZARD_TARGET) {
+    reasons.push("ineligible");
+  }
+  const cost = effectivePressureCost(template, policy);
+  if (cost > balance.pressureUnits) reasons.push("insufficient_pressure");
+  const lessons = new Set(allLessonTags(template));
+  for (const recent of balance.recentEvents) {
+    const elapsed = elapsedMonths(state, recent.approvedMonth);
+    if (
+      recent.templateId === template.id &&
+      elapsed < Math.max(
+        template.cooldowns.eventMonths,
+        policy.minimumEventCooldownMonths,
+      ) &&
+      !reasons.includes("event_cooldown")
+    ) reasons.push("event_cooldown");
+    if (
+      recent.category === template.category &&
+      elapsed < Math.max(
+        template.cooldowns.categoryMonths,
+        policy.minimumCategoryCooldownMonths,
+      ) &&
+      !reasons.includes("category_cooldown")
+    ) reasons.push("category_cooldown");
+    if (
+      recent.lessonTags.some((tag) => lessons.has(tag)) &&
+      elapsed < Math.max(
+        template.cooldowns.lessonMonths,
+        policy.minimumLessonCooldownMonths,
+      ) &&
+      !reasons.includes("lesson_cooldown")
+    ) reasons.push("lesson_cooldown");
+  }
+  const monthsSinceTier = template.severityTier === "medium"
+    ? balance.monthsSinceMediumEvent
+    : template.severityTier === "large"
+      ? balance.monthsSinceLargeEvent
+      : template.severityTier === "catastrophe"
+        ? balance.monthsSinceCatastrophicEvent
+        : null;
+  if (
+    monthsSinceTier !== null &&
+    monthsSinceTier < policy.tierCooldownMonths[template.severityTier]
+  ) reasons.push("tier_cooldown");
+  if (balance.recovery !== null) {
+    if (
+      template.severityTier === "large" ||
+      template.severityTier === "catastrophe"
+    ) reasons.push("recovery_block");
+    if (
+      template.classification === "negative" &&
+      candidate.targetedWeakness !== "unrelated_hazard" &&
+      candidate.targetedWeakness === balance.recovery.targetedWeakness
+    ) reasons.push("recovery_retarget");
+  }
+  if (
+    template.severityTier === "catastrophe" &&
+    balance.catastropheCount >= policy.maximumCatastrophes
+  ) reasons.push("catastrophe_limit");
+  return reasons;
+}
+
+export type RuntimeBalanceImpactBandInputV2 = Readonly<{
+  impactScorePpm: number;
+  burnMonthsPpm: number;
+  negativeCashFlowDurationMonths: number;
+  recoveryTimeMonths: number;
+}>;
+
+export function assessRuntimeBalanceImpactV2(
+  difficulty: RuntimeBalanceStateV2["difficulty"],
+  impact: RuntimeBalanceImpactBandInputV2,
+): Readonly<{
+  rejectionCodes: readonly RuntimeBalanceRejectionCodeV2[];
+  warningCodes: readonly RuntimeBalanceWarningCodeV2[];
+}> {
+  const policy = runtimeBalanceDifficultyPolicyV2(difficulty);
+  const rejectionCodes: RuntimeBalanceRejectionCodeV2[] = [];
+  if (
+    impact.impactScorePpm > policy.maximumImpactScorePpm ||
+    impact.burnMonthsPpm > policy.maximumBurnMonthsPpm ||
+    impact.negativeCashFlowDurationMonths >
+      policy.maximumNegativeCashFlowDurationMonths ||
+    impact.recoveryTimeMonths > policy.maximumRecoveryTimeMonths
+  ) rejectionCodes.push("impact_above_band");
+
+  const warningThresholdPpm = policy.warningStrength === "strong"
+    ? 500_000
+    : policy.warningStrength === "standard"
+      ? 700_000
+      : 900_000;
+  const warningCodes: RuntimeBalanceWarningCodeV2[] = [];
+  const nearLimit = (value: number, maximum: number) =>
+    value * 1_000_000 >= maximum * warningThresholdPpm;
+  if (nearLimit(impact.impactScorePpm, policy.maximumImpactScorePpm)) {
+    warningCodes.push("impact_score_near_limit");
+  }
+  if (nearLimit(impact.burnMonthsPpm, policy.maximumBurnMonthsPpm)) {
+    warningCodes.push("burn_months_near_limit");
+  }
+  if (
+    nearLimit(
+      impact.negativeCashFlowDurationMonths,
+      policy.maximumNegativeCashFlowDurationMonths,
+    )
+  ) warningCodes.push("negative_cash_flow_near_limit");
+  if (nearLimit(impact.recoveryTimeMonths, policy.maximumRecoveryTimeMonths)) {
+    warningCodes.push("recovery_time_near_limit");
+  }
+  return Object.freeze({
+    rejectionCodes: Object.freeze(rejectionCodes),
+    warningCodes: Object.freeze(warningCodes),
+  });
+}
+
+function sampleParameters(
+  template: PersonalEventTemplateV2,
+  random: RandomState,
+): Readonly<{
+  parameters: Readonly<Record<string, number>>;
+  nextRandom: RandomState;
+}> {
+  let cursor = random;
+  const parameters: Record<string, number> = {};
+  for (const parameter of template.parameters) {
+    const draw = nextInt(cursor, parameter.minimum, parameter.maximum);
+    parameters[parameter.id] = draw.value;
+    cursor = draw.nextState;
+  }
+  return Object.freeze({
+    parameters: Object.freeze(parameters),
+    nextRandom: cursor,
+  });
+}
+
+function boundedRecentEvents(
+  events: readonly RuntimeBalanceStateV2["recentEvents"][number][],
+): readonly RuntimeBalanceStateV2["recentEvents"][number][] {
+  const requiredEventIds = new Set(
+    events
+      .filter(({ tier }) => tier === "catastrophe")
+      .map(({ eventId }) => eventId),
+  );
+  for (const tier of ["medium", "large"] as const) {
+    const latest = events.findLast((event) => event.tier === tier);
+    if (latest !== undefined) requiredEventIds.add(latest.eventId);
+  }
+  for (let index = events.length - 1;
+    index >= 0 && requiredEventIds.size < RUNTIME_BALANCE_RECENT_EVENT_LIMIT_V2;
+    index -= 1) {
+    requiredEventIds.add(events[index]!.eventId);
+  }
+  return Object.freeze(
+    events.filter(({ eventId }) => requiredEventIds.has(eventId)),
+  );
+}
+
+function approvedBalance(
+  state: GameStateV2,
+  balance: RuntimeBalanceStateV2,
+  candidate: RuntimeBalanceCandidateV2,
+  eventId: string,
+  impact: PersonalEventImpactEstimateV2,
+  pressureCostUnits: number,
+  developmentRejections: RuntimeBalanceStateV2["developmentLastRejections"],
+): RuntimeBalanceStateV2 {
+  const { template } = candidate;
+  const {
+    developmentLastRejections: _priorDevelopmentRejections,
+    ...persistentBalance
+  } = balance;
+  void _priorDevelopmentRejections;
+  const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
+  const tags = allLessonTags(template);
+  const currentTags = new Set(tags);
+  const retainedPriorCounts = balance.lessonExposureCounts
+    .filter(({ lessonTag }) => !currentTags.has(lessonTag))
+    .toSorted((left, right) => left.lessonTag.localeCompare(right.lessonTag))
+    .slice(0, Math.max(0, RUNTIME_BALANCE_LESSON_LIMIT_V2 - currentTags.size));
+  const counts = new Map(
+    retainedPriorCounts.map(({ lessonTag, count }) => [lessonTag, count]),
+  );
+  for (const tag of tags) {
+    const priorCount = balance.lessonExposureCounts.find(
+      ({ lessonTag }) => lessonTag === tag,
+    )?.count ?? 0;
+    counts.set(tag, priorCount + 1);
+  }
+  const recentEvents = boundedRecentEvents([
+    ...balance.recentEvents,
+    {
+      eventId,
+      templateId: template.id,
+      templateVersion: template.version,
+      category: template.category,
+      lessonTags: tags,
+      tier: template.severityTier,
+      targetedWeakness: candidate.targetedWeakness,
+      approvedMonth: state.currentMonth,
+    },
+  ]);
+  const recovery = template.severityTier === "large" ||
+      template.severityTier === "catastrophe"
+      ? {
+        sourceEventId: eventId,
+        sourceTier: template.severityTier,
+        targetedWeakness: candidate.targetedWeakness,
+        remainingMonths: Math.max(
+          template.recovery.durationMonths,
+          policy.recoveryDurationMonths[template.severityTier],
+        ),
+      }
+    : balance.recovery;
+  return Object.freeze({
+    ...persistentBalance,
+    pressureUnits: balance.pressureUnits - pressureCostUnits,
+    monthsSinceAnyEvent: 0,
+    monthsSinceMediumEvent:
+      template.severityTier === "medium" ? 0 : balance.monthsSinceMediumEvent,
+    monthsSinceLargeEvent:
+      template.severityTier === "large" ? 0 : balance.monthsSinceLargeEvent,
+    monthsSinceCatastrophicEvent:
+      template.severityTier === "catastrophe"
+        ? 0
+        : balance.monthsSinceCatastrophicEvent,
+    catastropheCount: balance.catastropheCount +
+      (template.severityTier === "catastrophe" ? 1 : 0),
+    recovery,
+    recentEvents: Object.freeze(recentEvents),
+    lessonExposureCounts: Object.freeze(
+      [...counts.entries()]
+        .map(([lessonTag, count]) => Object.freeze({ lessonTag, count }))
+        .toSorted((left, right) => left.lessonTag.localeCompare(right.lessonTag)),
+    ),
+    lastApprovedImpactScorePpm: impact.impactScorePpm,
+    ...(developmentRejections === undefined
+      ? {}
+      : { developmentLastRejections: developmentRejections }),
+  });
+}
+
+export function chooseBalancedEventV2(
+  state: GameStateV2,
+  rankedCandidates: readonly RuntimeBalanceCandidateV2[],
+  random: RandomState,
+  liquidationCostRatePpm: RatePpm,
+  options: RuntimeBalanceChoiceOptionsV2,
+): RuntimeBalanceChoiceV2 {
+  const balance = state.gameplay.runtimeBalance as unknown as RuntimeBalanceStateV2;
+  if (balance?.version !== 2) {
+    throw new RangeError("Runtime Balance controller requires state version 2");
+  }
+  const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
+  const eventCatalog = options.eventCatalog;
+  const estimateImpact = options.estimateImpact ?? estimatePersonalEventImpactV2;
+  const scored = prioritizeRuntimeBalanceCandidatesV2(balance, rankedCandidates);
+  const evidence: Array<{
+    templateId: string;
+    templateVersion: number;
+    rank: number;
+    adjustedRank: number;
+    repetitionPenalty: number;
+    lessonCoverageBonus: number;
+    evaluated: boolean;
+    rejectionCodes: RuntimeBalanceRejectionCodeV2[];
+    warningCodes: RuntimeBalanceWarningCodeV2[];
+    parameters?: Readonly<Record<string, number>>;
+    impactScorePpm?: number;
+    impact?: RuntimeBalanceCandidateImpactSummaryV2;
+  }> = scored.map(({ candidate, ...score }) => ({
+    templateId: candidate.template.id,
+    templateVersion: candidate.template.version,
+    ...score,
+    evaluated: false,
+    rejectionCodes: [],
+    warningCodes: [],
+  }));
+  let cursor = random;
+  let evaluatedCandidateCount = 0;
+  for (const [index, scoredCandidate] of scored.entries()) {
+    const { candidate } = scoredCandidate;
+    const item = evidence[index]!;
+    item.evaluated = true;
+    evaluatedCandidateCount += 1;
+    item.rejectionCodes.push(
+      ...assessCandidatePacingV2(state, balance, candidate, eventCatalog),
+    );
+    if (item.rejectionCodes.length > 0) continue;
+    const sampled = sampleParameters(candidate.template, cursor);
+    cursor = sampled.nextRandom;
+    item.parameters = sampled.parameters;
+    let impact: PersonalEventImpactEstimateV2;
+    try {
+      impact = estimateImpact(
+        state,
+        candidate.template,
+        sampled.parameters,
+        liquidationCostRatePpm,
+        options.monthlyCashFlowEvidence,
+      );
+    } catch (error) {
+      if (error instanceof RuntimeBalanceImpactV2Error) {
+        item.rejectionCodes.push(
+          error.code === "PARAMETER_OUT_OF_BOUNDS"
+            ? "parameter_out_of_bounds"
+            : error.code === "NO_AVAILABLE_RESPONSE"
+              ? "no_reasonable_response"
+              : "estimator_error",
+        );
+        continue;
+      }
+      if (
+        error instanceof PersonalEventEffectV2Error ||
+        error instanceof ObligationFundingV2Error ||
+        error instanceof NumericDomainError
+      ) {
+        item.rejectionCodes.push("estimator_error");
+        continue;
+      }
+      throw error;
+    }
+    item.impactScorePpm = impact.impactScorePpm;
+    item.impact = compactImpact(impact);
+    const impactBand = assessRuntimeBalanceImpactV2(balance.difficulty, impact);
+    item.warningCodes.push(...impactBand.warningCodes);
+    item.rejectionCodes.push(...impactBand.rejectionCodes);
+    if (
+      policy.rejectImmediateUnavoidableFailure &&
+      (impact.immediateBankruptcyRisk || impact.reasonableResponseIds.length === 0)
+    ) item.rejectionCodes.push("unavoidable_failure");
+    if (item.rejectionCodes.length > 0) continue;
+    const eventId = candidate.followUpSourceEventId === undefined
+      ? `evt.${state.currentMonth}.${candidate.template.id}.v${candidate.template.version}`
+      : `evt.followup.${state.currentMonth}.${candidate.followUpSourceEventId}.${candidate.template.id}.v${candidate.template.version}`;
+    const pressureCostUnits = effectivePressureCost(candidate.template, policy);
+    const developmentRejections = options.developmentMode
+      ? Object.freeze(
+          evidence
+            .flatMap(({ templateId, rejectionCodes }) =>
+              rejectionCodes.map((code) => Object.freeze({ templateId, code })),
+            )
+            .slice(-RUNTIME_BALANCE_REJECTION_LIMIT_V2),
+        )
+      : undefined;
+    const nextBalance = approvedBalance(
+      state,
+      balance,
+      candidate,
+      eventId,
+      impact,
+      pressureCostUnits,
+      developmentRejections,
+    );
+    const event = Object.freeze({
+      proposal: Object.freeze({
+        eventId,
+        templateId: candidate.template.id,
+        templateVersion: candidate.template.version,
+        parameters: sampled.parameters,
+      }),
+      template: candidate.template,
+      targetedWeakness: UNRELATED_HAZARD_TARGET,
+      ...(candidate.followUpSourceEventId === undefined
+        ? {}
+        : { followUpSourceEventId: candidate.followUpSourceEventId }),
+    });
+    const frozenEvidence = Object.freeze(
+      evidence.map((candidateEvidence) =>
+        Object.freeze({
+          ...candidateEvidence,
+          rejectionCodes: Object.freeze([...candidateEvidence.rejectionCodes]),
+          warningCodes: Object.freeze([...candidateEvidence.warningCodes]),
+        }),
+      ),
+    );
+    const decision = Object.freeze({
+      version: "runtime-balance-decision-v1" as const,
+      controllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      policyVersion: RUNTIME_BALANCE_POLICY_V1_VERSION,
+      impactEstimatorVersion: RUNTIME_BALANCE_IMPACT_ESTIMATOR_V1_VERSION,
+      difficulty: balance.difficulty,
+      candidateLimit: RUNTIME_BALANCE_CANDIDATE_LIMIT_V2,
+      warningStrength: policy.warningStrength,
+      impactBands: Object.freeze({
+        maximumImpactScorePpm: policy.maximumImpactScorePpm,
+        maximumBurnMonthsPpm: policy.maximumBurnMonthsPpm,
+        maximumNegativeCashFlowDurationMonths:
+          policy.maximumNegativeCashFlowDurationMonths,
+        maximumRecoveryTimeMonths: policy.maximumRecoveryTimeMonths,
+      }),
+      month: state.currentMonth,
+      status: "approved" as const,
+      pressureBeforeUnits: balance.pressureUnits,
+      pressureAfterUnits: nextBalance.pressureUnits,
+      evaluatedCandidateCount,
+      candidates: frozenEvidence,
+      approved: Object.freeze({
+        eventId,
+        templateId: candidate.template.id,
+        templateVersion: candidate.template.version,
+        parameters: sampled.parameters,
+        impact,
+        pressureCostUnits,
+        warningCodes: Object.freeze([...item.warningCodes]),
+      }),
+    });
+    return Object.freeze({
+      event,
+      nextRandom: cursor,
+      runtimeBalance: nextBalance,
+      decision,
+    });
+  }
+  const nextBalanceBase = regenerateRuntimeBalancePressureV2(balance);
+  const {
+    developmentLastRejections: _priorDevelopmentRejections,
+    ...persistentNextBalanceBase
+  } = nextBalanceBase;
+  void _priorDevelopmentRejections;
+  const developmentRejections = options.developmentMode
+    ? Object.freeze(
+        evidence.flatMap(({ templateId, rejectionCodes }) =>
+          rejectionCodes.map((code) => Object.freeze({ templateId, code })),
+        ).slice(-RUNTIME_BALANCE_REJECTION_LIMIT_V2),
+      )
+    : undefined;
+  const nextBalance = Object.freeze({
+    ...persistentNextBalanceBase,
+    ...(developmentRejections === undefined
+      ? {}
+      : { developmentLastRejections: developmentRejections }),
+  });
+  const frozenEvidence = Object.freeze(
+    evidence.map((candidateEvidence) =>
+      Object.freeze({
+        ...candidateEvidence,
+        rejectionCodes: Object.freeze([...candidateEvidence.rejectionCodes]),
+        warningCodes: Object.freeze([...candidateEvidence.warningCodes]),
+      }),
+    ),
+  );
+  return Object.freeze({
+    event: null,
+    nextRandom: cursor,
+    runtimeBalance: nextBalance,
+    decision: Object.freeze({
+      version: "runtime-balance-decision-v1" as const,
+      controllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      policyVersion: RUNTIME_BALANCE_POLICY_V1_VERSION,
+      impactEstimatorVersion: RUNTIME_BALANCE_IMPACT_ESTIMATOR_V1_VERSION,
+      difficulty: balance.difficulty,
+      candidateLimit: RUNTIME_BALANCE_CANDIDATE_LIMIT_V2,
+      warningStrength: policy.warningStrength,
+      impactBands: Object.freeze({
+        maximumImpactScorePpm: policy.maximumImpactScorePpm,
+        maximumBurnMonthsPpm: policy.maximumBurnMonthsPpm,
+        maximumNegativeCashFlowDurationMonths:
+          policy.maximumNegativeCashFlowDurationMonths,
+        maximumRecoveryTimeMonths: policy.maximumRecoveryTimeMonths,
+      }),
+      month: state.currentMonth,
+      status: "none" as const,
+      nullReason: scored.length === 0 ? "no_candidates" as const : "all_rejected" as const,
+      pressureBeforeUnits: balance.pressureUnits,
+      pressureAfterUnits: nextBalance.pressureUnits,
+      evaluatedCandidateCount,
+      candidates: frozenEvidence,
+    }),
+  });
+}

@@ -740,6 +740,60 @@ const financialKernelMonthlyRecordSummarySchema =
       baseNonDebtObligationsCents: nonNegativeCentsSchema,
       fundingPlan: fundingPlanSchema,
       shortfall: financialShortfallSchema.nullable(),
+      runtimeBalanceControllerVersion: z
+        .literal("runtime-balance-v1")
+        .optional(),
+      runtimeBalanceDecision: z
+        .object({
+          version: z.literal("runtime-balance-decision-v1"),
+          controllerVersion: z.literal("runtime-balance-v1"),
+          policyVersion: z.literal("runtime-balance-policy-v1"),
+          impactEstimatorVersion: z.literal("runtime-balance-impact-v1"),
+          difficulty: z.enum(["guided", "normal", "hard"]),
+          candidateLimit: z.literal(5),
+          warningStrength: z.enum(["strong", "standard", "limited"]),
+          status: z.enum(["approved", "none"]),
+          nullReason: z.enum(["no_candidates", "all_rejected"]).nullable(),
+          approvedEventId: identifierSchema.nullable(),
+          pressureBeforeUnits: z.int().min(0),
+          pressureAfterUnits: z.int().min(0),
+          evaluatedCandidateCount: z.int().min(0).max(5),
+          rejectionCodes: z
+            .array(z.enum([
+              "ineligible",
+              "insufficient_pressure",
+              "event_cooldown",
+              "category_cooldown",
+              "lesson_cooldown",
+              "tier_cooldown",
+              "recovery_block",
+              "recovery_retarget",
+              "catastrophe_limit",
+              "parameter_out_of_bounds",
+              "impact_above_band",
+              "unavoidable_failure",
+              "no_reasonable_response",
+              "estimator_error",
+            ]))
+            .max(14),
+          warningCodes: z
+            .array(z.enum([
+              "impact_score_near_limit",
+              "burn_months_near_limit",
+              "negative_cash_flow_near_limit",
+              "recovery_time_near_limit",
+            ]))
+            .max(4),
+        })
+        .strict()
+        .optional(),
+      runtimeBalanceCandidateSet: z
+        .object({
+          eligibleTemplateIds: z.array(identifierSchema).max(128),
+          candidateTemplateIds: z.array(identifierSchema).max(128),
+        })
+        .strict()
+        .optional(),
     })
     .strict();
 
