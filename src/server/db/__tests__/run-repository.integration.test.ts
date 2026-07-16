@@ -893,6 +893,58 @@ databaseDescribe("Postgres run repository", () => {
     ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
   });
 
+  it("replays an exact historical monthly command through the service and repository", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      strategyCommandV2(),
+    );
+    const currentCommand = monthCommandV2("cmd.repository-v2.legacy-month");
+    const legacyCommand: ProcessMonthV2Command = {
+      ...currentCommand,
+      payload: {
+        taxEvidence: currentCommand.payload.taxEvidence,
+        taxableLiquidationCostRatePpm:
+          currentCommand.payload.taxableLiquidationCostRatePpm,
+      },
+    };
+    const processed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      legacyCommand,
+    );
+    const calculate = vi.fn<TaxCalculator["calculate"]>();
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const replayed = await service.submitCommand(
+      created.runId,
+      created.accessSecret,
+      {
+        schemaVersion: 2,
+        id: legacyCommand.id,
+        type: "process_month",
+        expectedRevision: legacyCommand.expectedRevision,
+        effectiveMonth: legacyCommand.effectiveMonth,
+        payload: {},
+      },
+    );
+
+    expect(replayed).toMatchObject({
+      stateChecksum: processed.stateChecksum,
+      idempotentReplay: true,
+      monthlyRecord: { financialKernelVersion: "legacy-4.1.0" },
+    });
+    expect(calculate).not.toHaveBeenCalled();
+    await expect(
+      repository.loadAcceptedMonthlyCommandV2(
+        created.runId,
+        created.accessSecret,
+        legacyCommand.id,
+      ),
+    ).resolves.toEqual(legacyCommand);
+  });
+
   it("rolls back v2 state, evidence, record, and command when the outbox write fails", async () => {
     const created = await repository.createRunV2(nativeStateV2);
     await repository.applyCommandV2(

@@ -175,6 +175,7 @@ describe("annual tax context cache", () => {
     const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
       createRunV2: vi.fn(),
       loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
       loadMonthlyTaxEvidenceForCommand: vi.fn(async () => null),
       loadMonthlyTaxEvidenceForContext: vi.fn(
         async (_runId, _secret, fingerprint) => {
@@ -275,6 +276,108 @@ describe("annual tax context cache", () => {
   });
 });
 
+describe("historical monthly command retries", () => {
+  it("reuses the exact strictly loaded legacy command instead of rebuilding current kernel content", async () => {
+    const opening = stateWithStrategy();
+    const storedLegacyCommand = {
+      schemaVersion: 2 as const,
+      id: "month.legacy-retry",
+      type: "process_month_v2" as const,
+      expectedRevision: opening.revision,
+      effectiveMonth: opening.currentMonth,
+      payload: {
+        taxEvidence: {
+          schemaVersion: 1 as const,
+          traceId: "tax.legacy-retry",
+          economicYear: 2026,
+          policyYear: 2026,
+          stateCode: "WA",
+          filingStatus: "single",
+          provider: "PolicyEngine US" as const,
+          bundleVersion: "4.21.0",
+          rulesVersion: "1.764.6",
+          projectedFromFrozenPolicy: false,
+          grossIncomeCents: moneyCents(1_000_000),
+          employee401kContributionCents: moneyCents(50_000),
+          employeeHsaContributionCents: moneyCents(20_000),
+          totalTaxCents: 200_000,
+          afterTaxCashIncomeCents: moneyCents(730_000),
+        },
+        taxableLiquidationCostRatePpm: ratePpm(10_000),
+      },
+    };
+    const historical = processMonthlyTurnV2(opening, storedLegacyCommand, {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+      macroStoryPolicy: {
+        version: "macro-story-v1",
+        monthlyChancePpm: 0,
+        minimumDurationMonths: 1,
+        maximumDurationMonths: 1,
+      },
+    });
+    const loadAcceptedMonthlyCommandV2 = vi.fn(
+      async () => storedLegacyCommand,
+    );
+    const calculate = vi.fn();
+    const applyCommandV2 = vi.fn(async (_runId, _secret, command) => {
+      expect(command).toBe(storedLegacyCommand);
+      return {
+        state: historical.state,
+        stateChecksum: sha256Canonical(historical.state),
+        idempotentReplay: true,
+        monthlyRecord: historical.record,
+      };
+    });
+    const repository = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(async () => historical.state),
+      loadAcceptedMonthlyCommandV2,
+      loadMonthlyTaxEvidenceForCommand: vi.fn(
+        async () => storedLegacyCommand.payload.taxEvidence,
+      ),
+      loadMonthlyTaxEvidenceForContext: vi.fn(),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2: vi.fn(),
+      applyCommandV2,
+    };
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const response = await service.submitCommand("run-id", "secret", {
+      schemaVersion: 2,
+      id: storedLegacyCommand.id,
+      type: "process_month",
+      expectedRevision: storedLegacyCommand.expectedRevision,
+      effectiveMonth: storedLegacyCommand.effectiveMonth,
+      payload: {},
+    });
+
+    expect(loadAcceptedMonthlyCommandV2).toHaveBeenCalledWith(
+      "run-id",
+      "secret",
+      storedLegacyCommand.id,
+    );
+    expect(applyCommandV2).toHaveBeenCalledOnce();
+    expect(calculate).not.toHaveBeenCalled();
+    expect(response.idempotentReplay).toBe(true);
+
+    await expect(
+      service.submitCommand("run-id", "secret", {
+        schemaVersion: 2,
+        id: storedLegacyCommand.id,
+        type: "process_month",
+        expectedRevision: storedLegacyCommand.expectedRevision + 1,
+        effectiveMonth: storedLegacyCommand.effectiveMonth,
+        payload: {},
+      }),
+    ).rejects.toMatchObject({ code: "STALE_REVISION" });
+    expect(applyCommandV2).toHaveBeenCalledOnce();
+  });
+});
+
 describe("annual tax year rollover", () => {
   it("plans January payroll from reset contribution accumulators", async () => {
     const priorYear = stateWithStrategy();
@@ -335,6 +438,7 @@ describe("annual tax year rollover", () => {
     const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
       createRunV2: vi.fn(),
       loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
       loadMonthlyTaxEvidenceForCommand: vi.fn(async () => null),
       loadMonthlyTaxEvidenceForContext: vi.fn(
         async (_runId, _secret, fingerprint) => {
@@ -516,6 +620,7 @@ describe("authenticated v1-to-v2 migration", () => {
     const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
       createRunV2: vi.fn(),
       loadAuthorizedRunV2: vi.fn(),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
       applyCommandV2: vi.fn(),
       loadMonthlyTaxEvidenceForCommand: vi.fn(),
       loadMonthlyTaxEvidenceForContext: vi.fn(),
@@ -544,6 +649,7 @@ describe("authenticated v1-to-v2 migration", () => {
     const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
       createRunV2: vi.fn(),
       loadAuthorizedRunV2: vi.fn(),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
       applyCommandV2: vi.fn(),
       loadMonthlyTaxEvidenceForCommand: vi.fn(),
       loadMonthlyTaxEvidenceForContext: vi.fn(),
