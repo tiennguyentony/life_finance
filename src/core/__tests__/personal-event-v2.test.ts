@@ -209,6 +209,42 @@ describe("declarative personal-event v2 catalog", () => {
     );
   });
 
+  it("uses the authoritative inflation and recovery market regimes", () => {
+    const valid = alwaysTemplate();
+    for (const regime of ["inflation", "recovery"] as const) {
+      expect(
+        validatePersonalEventTemplateV2({
+          ...valid,
+          eligibility: [{
+            type: "macro_regime",
+            required: [regime],
+            blocked: [],
+          }],
+          hazard: {
+            ...valid.hazard,
+            modifiers: [{
+              type: "macro_regime",
+              regimes: [regime],
+              deltaPpm: 10_000,
+            }],
+          },
+        }),
+      ).toEqual([]);
+    }
+
+    const obsoleteNeutral = {
+      ...valid,
+      eligibility: [{
+        type: "macro_regime",
+        required: ["neutral"],
+        blocked: [],
+      }],
+    } as unknown as PersonalEventTemplateV2;
+    expect(
+      validatePersonalEventTemplateV2(obsoleteNeutral).map(({ code }) => code),
+    ).toContain("macro_condition_conflict");
+  });
+
   it("rejects duplicate exact follow-up declarations", () => {
     const source = getPersonalEventTemplateV2("personal.performance_bonus");
     const duplicate: PersonalEventTemplateV2 = {

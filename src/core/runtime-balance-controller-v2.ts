@@ -1,4 +1,4 @@
-import { canonicalJson } from "./canonical";
+import { canonicalJson, sha256Canonical } from "./canonical";
 import { NumericDomainError } from "./domain/integer";
 import type { RatePpm } from "./domain/money";
 import { monthsBetween } from "./domain/month";
@@ -20,6 +20,7 @@ import {
 } from "./runtime-balance-impact-v2";
 import { PersonalEventEffectV2Error } from "./personal-event-effects-v2";
 import { ObligationFundingV2Error } from "./obligation-funding-v2";
+import { analyzeRiskV1 } from "./risk-v1";
 import {
   RUNTIME_BALANCE_CANDIDATE_LIMIT_V2,
   RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
@@ -35,6 +36,12 @@ import {
   type RuntimeBalanceRejectionCodeV2,
   type RuntimeBalanceStateV2,
 } from "./runtime-balance-state-v2";
+import {
+  rankScenarioCandidatesV2,
+  validateScenarioDirectorPermutationV2,
+  type ScenarioDirectorDecisionV2,
+  type ScenarioDirectorInputV2,
+} from "./scenario-director-v2";
 
 export type RuntimeBalanceCandidateV2 = Readonly<{
   template: PersonalEventTemplateV2;
@@ -96,6 +103,13 @@ export type RuntimeBalanceDecisionV2 = Readonly<{
   pressureAfterUnits: number;
   evaluatedCandidateCount: number;
   candidates: readonly RuntimeBalanceCandidateDecisionV2[];
+  scenarioDirector?: Readonly<{
+    version: ScenarioDirectorDecisionV2["version"];
+    policyVersion: ScenarioDirectorDecisionV2["policyVersion"];
+    rankingSource: ScenarioDirectorDecisionV2["rankingSource"];
+    candidateSetChecksum: string;
+    rankingInputChecksum: string;
+  }>;
   approved?: Readonly<{
     eventId: string;
     templateId: string;
@@ -119,6 +133,8 @@ export type RuntimeBalanceChoiceOptionsV2 = Readonly<{
   eventCatalog: readonly PersonalEventTemplateV2[];
   monthlyCashFlowEvidence: RuntimeBalanceMonthlyCashFlowEvidenceV2;
   estimateImpact?: typeof estimatePersonalEventImpactV2;
+  scenarioDirectorInput?: ScenarioDirectorInputV2;
+  scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
 }>;
 
 type ScoredCandidate = Readonly<{
@@ -160,16 +176,17 @@ function effectivePressureCost(
   );
 }
 
-export function prioritizeRuntimeBalanceCandidatesV2(
+function scoreRuntimeBalanceCandidatesV2(
   balance: RuntimeBalanceStateV2,
   candidates: readonly RuntimeBalanceCandidateV2[],
+  preserveInputOrder: boolean,
 ): readonly ScoredCandidate[] {
   const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
   const lessonCounts = new Map(
     balance.lessonExposureCounts.map(({ lessonTag, count }) => [lessonTag, count]),
   );
   const maximumExposure = Math.max(0, ...lessonCounts.values());
-  return candidates
+  const scored = candidates
     .slice(0, RUNTIME_BALANCE_CANDIDATE_LIMIT_V2)
     .map((candidate, index) => {
       const lessons = new Set(allLessonTags(candidate.template));
@@ -201,11 +218,138 @@ export function prioritizeRuntimeBalanceCandidatesV2(
         repetitionPenalty,
         lessonCoverageBonus,
       };
-    })
-    .toSorted(
-      (left, right) =>
-        right.adjustedRank - left.adjustedRank,
+    });
+  return preserveInputOrder
+    ? scored
+    : scored.toSorted(
+        (left, right) => right.adjustedRank - left.adjustedRank,
+      );
+}
+
+export function prioritizeRuntimeBalanceCandidatesV2(
+  balance: RuntimeBalanceStateV2,
+  candidates: readonly RuntimeBalanceCandidateV2[],
+): readonly ScoredCandidate[] {
+  return scoreRuntimeBalanceCandidatesV2(balance, candidates, false);
+}
+
+function directorOrderedCandidatesV2(
+  state: GameStateV2,
+  balance: RuntimeBalanceStateV2,
+  candidates: readonly RuntimeBalanceCandidateV2[],
+  input: ScenarioDirectorInputV2,
+  decision: ScenarioDirectorDecisionV2,
+): readonly RuntimeBalanceCandidateV2[] {
+  if (
+    input.month !== state.currentMonth ||
+    input.macro.regime !== state.marketRegime ||
+    input.difficulty !== balance.difficulty ||
+    decision.riskAsOfMonth !== state.currentMonth ||
+    decision.difficulty !== balance.difficulty
+  ) {
+    throw new RangeError(
+      "Scenario Director evidence must match the current month and Runtime Balance difficulty",
     );
+  }
+  if (
+    sha256Canonical(input.riskSnapshot) !==
+      sha256Canonical(analyzeRiskV1(state)) ||
+    input.macro.tags.length !== 0 ||
+    input.recentDecisions.length !== 0 ||
+    input.storyArc !== undefined ||
+    sha256Canonical(input.recentEvents) !==
+      sha256Canonical(
+        balance.recentEvents.map((event) => ({
+          templateId: event.templateId,
+          templateVersion: event.templateVersion,
+          category: event.category,
+          tier: event.tier,
+          targetedWeakness: event.targetedWeakness,
+          lessonTags: event.lessonTags,
+          month: event.approvedMonth,
+        })),
+      ) ||
+    sha256Canonical(input.lessonExposureCounts) !==
+      sha256Canonical(balance.lessonExposureCounts)
+  ) {
+    throw new RangeError(
+      "Scenario Director input must use verified production Risk and Runtime Balance evidence",
+    );
+  }
+  const violations = validateScenarioDirectorPermutationV2(
+    candidates.map(({ template }) => ({
+      templateId: template.id,
+      templateVersion: template.version,
+    })),
+    input.candidates,
+  );
+  if (violations.length > 0) {
+    throw new RangeError(
+      `Scenario Director input must be an exact candidate permutation: ${violations
+        .map(({ code, candidateIdentity }) => `${code}:${candidateIdentity}`)
+        .join(",")}`,
+    );
+  }
+  const candidatesByIdentity = new Map(
+    candidates.map((candidate) => [
+      `${candidate.template.id}@${candidate.template.version}`,
+      candidate,
+    ]),
+  );
+  for (const candidate of input.candidates) {
+    const expected = candidatesByIdentity.get(
+      `${candidate.templateId}@${candidate.templateVersion}`,
+    );
+    if (
+      expected === undefined ||
+      candidate.category !== expected.template.category ||
+      candidate.tier !== expected.template.severityTier ||
+      candidate.targetedWeakness !== expected.targetedWeakness ||
+      candidate.lessonTags.primary !== expected.template.lessonTags.primary ||
+      sha256Canonical(candidate.lessonTags.secondary) !==
+        sha256Canonical(expected.template.lessonTags.secondary)
+    ) {
+      throw new RangeError(
+        "Scenario Director input must preserve immutable Event System metadata",
+      );
+    }
+  }
+  const verifiedDecision = rankScenarioCandidatesV2(input);
+  if (sha256Canonical(verifiedDecision) !== sha256Canonical(decision)) {
+    throw new RangeError(
+      "Scenario Director decision must match the verified deterministic input",
+    );
+  }
+  return Object.freeze(
+    verifiedDecision.ranked.map((ranked) => {
+      const candidate = candidatesByIdentity.get(
+        `${ranked.templateId}@${ranked.templateVersion}`,
+      );
+      if (
+        candidate === undefined ||
+        ranked.intendedLesson !== candidate.template.lessonTags.primary
+      ) {
+        throw new RangeError(
+          "Scenario Director ranking must preserve immutable candidate lesson metadata",
+        );
+      }
+      return candidate;
+    }),
+  );
+}
+
+function scenarioDirectorEvidenceV2(
+  decision: ScenarioDirectorDecisionV2 | undefined,
+): RuntimeBalanceDecisionV2["scenarioDirector"] {
+  return decision === undefined
+    ? undefined
+    : Object.freeze({
+        version: decision.version,
+        policyVersion: decision.policyVersion,
+        rankingSource: decision.rankingSource,
+        candidateSetChecksum: decision.candidateSetChecksum,
+        rankingInputChecksum: decision.rankingInputChecksum,
+      });
 }
 
 function elapsedMonths(
@@ -491,7 +635,33 @@ export function chooseBalancedEventV2(
   const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
   const eventCatalog = options.eventCatalog;
   const estimateImpact = options.estimateImpact ?? estimatePersonalEventImpactV2;
-  const scored = prioritizeRuntimeBalanceCandidatesV2(balance, rankedCandidates);
+  if (
+    (options.scenarioDirectorDecision === undefined) !==
+    (options.scenarioDirectorInput === undefined)
+  ) {
+    throw new RangeError(
+      "Scenario Director input and decision must be supplied together",
+    );
+  }
+  const directorOrderedCandidates =
+    options.scenarioDirectorDecision === undefined ||
+    options.scenarioDirectorInput === undefined
+      ? rankedCandidates
+      : directorOrderedCandidatesV2(
+          state,
+          balance,
+          rankedCandidates,
+          options.scenarioDirectorInput,
+          options.scenarioDirectorDecision,
+        );
+  const scored = scoreRuntimeBalanceCandidatesV2(
+    balance,
+    directorOrderedCandidates,
+    options.scenarioDirectorDecision !== undefined,
+  );
+  const scenarioDirector = scenarioDirectorEvidenceV2(
+    options.scenarioDirectorDecision,
+  );
   const evidence: Array<{
     templateId: string;
     templateVersion: number;
@@ -632,6 +802,7 @@ export function chooseBalancedEventV2(
       pressureAfterUnits: nextBalance.pressureUnits,
       evaluatedCandidateCount,
       candidates: frozenEvidence,
+      ...(scenarioDirector === undefined ? {} : { scenarioDirector }),
       approved: Object.freeze({
         eventId,
         templateId: candidate.template.id,
@@ -703,6 +874,7 @@ export function chooseBalancedEventV2(
       pressureAfterUnits: nextBalance.pressureUnits,
       evaluatedCandidateCount,
       candidates: frozenEvidence,
+      ...(scenarioDirector === undefined ? {} : { scenarioDirector }),
     }),
   });
 }

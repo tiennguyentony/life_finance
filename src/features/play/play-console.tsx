@@ -524,7 +524,7 @@ export function PlayConsole() {
   const createAiWorldEvent = async () => {
     if (!state || !credential || !aiConsent) return;
     setBusy(true);
-    setBusyLabel("AI World Director is selecting a bounded fair event…");
+    setBusyLabel("The Hostile Fed is ranking eligible scenarios…");
     setError(null);
     try {
       const result = await apiRequest<AiWorldEventApiResponse>(
@@ -539,8 +539,12 @@ export function PlayConsole() {
           }),
         },
       );
-      acceptAuthoritativeState(result.state as GameStateV2);
-      addActivity(`World Director queued ${result.source} event targeting ${result.memory.targetedWeaknessId.replaceAll("_", " ")}.`);
+      const topCandidate = result.ranking.ranked[0];
+      addActivity(
+        topCandidate
+          ? `The Hostile Fed ranked ${topCandidate.templateId} first using ${result.source}. No event was queued; Runtime Balance keeps approval control.`
+          : "The Hostile Fed found no eligible scenarios to rank. No event was queued.",
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "World Director failed");
     } finally {

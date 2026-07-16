@@ -757,6 +757,7 @@ describe("monthly record response compatibility", () => {
       expect(command.payload.outcomePolicyVersion).toBe("1.0.0");
       expect(command.payload.eventSchedulerVersion).toBe("declarative-events-v2");
       expect(command.payload.runtimeBalanceControllerVersion).toBe("runtime-balance-v1");
+      expect(command.payload.scenarioDirectorVersion).toBe("scenario-director-v2");
       expect(command.payload.marketModelVersion).toBe("regime-v2");
       expect(command.payload.macroDifficulty).toBe("normal");
       const applied = processMonthlyTurnV2(state, command);
@@ -802,6 +803,7 @@ describe("monthly record response compatibility", () => {
     expect(response.monthlyRecord).toMatchObject({
       outcomePolicyVersion: "1.0.0",
       runtimeBalanceControllerVersion: "runtime-balance-v1",
+      scenarioDirectorVersion: "scenario-director-v2",
       outcome: response.state.outcome,
     });
   });

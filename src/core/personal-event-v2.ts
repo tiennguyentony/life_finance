@@ -173,7 +173,12 @@ const CATEGORIES = new Set<string>([
 ]);
 const CLASSIFICATIONS = new Set<string>(["positive", "neutral", "negative"]);
 const SEVERITY_TIERS = new Set<string>(["micro", "medium", "large", "catastrophe"]);
-const MARKET_REGIMES = new Set<string>(["expansion", "neutral", "recession"]);
+const MARKET_REGIMES = new Set<string>([
+  "expansion",
+  "inflation",
+  "recession",
+  "recovery",
+]);
 const FNV_1A_64_OFFSET = BigInt("0xcbf29ce484222325");
 const FNV_1A_64_ALT_OFFSET = BigInt("0x84222325cbf29ce4");
 const FNV_1A_64_PRIME = BigInt("0x100000001b3");

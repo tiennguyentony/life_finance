@@ -86,5 +86,29 @@ export function summarizeMonthlyRecord(record: MonthlyTurnV2Record) {
     ...(record.runtimeBalanceCandidateSet === undefined
       ? {}
       : { runtimeBalanceCandidateSet: record.runtimeBalanceCandidateSet }),
+    ...(record.scenarioDirectorVersion === undefined
+      ? {}
+      : { scenarioDirectorVersion: record.scenarioDirectorVersion }),
+    ...(record.scenarioDirectorDecision === undefined
+      ? {}
+      : {
+          scenarioDirectorDecision: {
+            version: record.scenarioDirectorDecision.version,
+            policyVersion: record.scenarioDirectorDecision.policyVersion,
+            riskVersion: record.scenarioDirectorDecision.riskVersion,
+            riskAsOfMonth: record.scenarioDirectorDecision.riskAsOfMonth,
+            difficulty: record.scenarioDirectorDecision.difficulty,
+            macroRegime: record.scenarioDirectorDecision.macroRegime,
+            rankingSource: record.scenarioDirectorDecision.rankingSource,
+            candidateSetChecksum:
+              record.scenarioDirectorDecision.candidateSetChecksum,
+            rankingInputChecksum:
+              record.scenarioDirectorDecision.rankingInputChecksum,
+            rankedCandidateCount:
+              record.scenarioDirectorDecision.ranked.length,
+            topCandidateId:
+              record.scenarioDirectorDecision.ranked[0]?.templateId ?? null,
+          },
+        }),
   };
 }

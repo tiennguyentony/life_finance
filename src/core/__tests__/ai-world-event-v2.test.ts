@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { queueAiWorldEventV2, type QueueAiWorldEventV2Command } from "../ai-world-event-v2";
+import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";
 import { createInitialGameState } from "../game-state";
 import { migrateGameStateV1ToV2, validateGameStateV2 } from "../game-state-v2";
@@ -57,6 +58,15 @@ describe("AI world event authority boundary", () => {
       },
     });
     expect(validateGameStateV2(queued)).toEqual([]);
+    expect({
+      stateChecksum: sha256Canonical(queued),
+      randomValue: queued.random.value,
+      pendingEventId: queued.gameplay.eventLifecycle.pending?.eventId,
+    }).toEqual({
+      stateChecksum: "178050d43cd9659193050c41465749dc490441903ad9bb5743f48497e8cbb5f1",
+      randomValue: 3_796_965_626,
+      pendingEventId: "evt.ai.2026-07.0.personal.unexpected_repair",
+    });
   });
 
   it("rejects parameters outside immutable engine bounds", () => {

@@ -794,6 +794,28 @@ const financialKernelMonthlyRecordSummarySchema =
         })
         .strict()
         .optional(),
+      scenarioDirectorVersion: z.literal("scenario-director-v2").optional(),
+      scenarioDirectorDecision: z
+        .object({
+          version: z.literal("scenario-director-v2"),
+          policyVersion: z.literal("scenario-director-policy-v1"),
+          riskVersion: z.literal("risk-v1"),
+          riskAsOfMonth: simulationMonthSchema,
+          difficulty: z.enum(["guided", "normal", "hard"]),
+          macroRegime: z.enum([
+            "expansion",
+            "inflation",
+            "recession",
+            "recovery",
+          ]),
+          rankingSource: z.literal("deterministic_fallback"),
+          candidateSetChecksum: checksumSchema,
+          rankingInputChecksum: checksumSchema,
+          rankedCandidateCount: z.int().min(0).max(64),
+          topCandidateId: identifierSchema.nullable(),
+        })
+        .strict()
+        .optional(),
     })
     .strict();
 
