@@ -124,6 +124,14 @@ export type PendingEventV2 = Readonly<{
   choiceIds: readonly string[];
   scheduledMonth: SimulationMonth;
   expiresMonth: SimulationMonth;
+  /** Present only for declarative personal-event schema v2. Absence preserves v1 replay. */
+  eventSchemaVersion?: 2;
+  category?: string;
+  classification?: "positive" | "neutral" | "negative";
+  lessonTags?: Readonly<{ primary: string; secondary: readonly string[] }>;
+  pressureCost?: number;
+  recoveryDurationMonths?: number;
+  fallbackNarrative?: Readonly<{ headline: string; body: string }>;
   aiNarrative?: Readonly<{
     source: AiContentSource;
     headline: string;
@@ -131,6 +139,15 @@ export type PendingEventV2 = Readonly<{
     rationale: string;
     citedEvidenceIds: readonly string[];
   }>;
+}>;
+
+export type ScheduledPersonalEventCashFlowV2 = Readonly<{
+  id: string;
+  sourceEffectId: string;
+  kind: "temporary_expense" | "recurring_expense" | "temporary_income";
+  amountCents: MoneyCents;
+  startMonth: SimulationMonth;
+  durationMonths: number;
 }>;
 
 export type ResolvedEventEvidenceV2 = Readonly<{
@@ -148,6 +165,26 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   resolvedMonth: SimulationMonth;
   playerCostCents: MoneyCents;
   insurerCostCents: MoneyCents;
+  /** Present only for declarative personal-event schema v2. Absence preserves v1 replay. */
+  eventSchemaVersion?: 2;
+  category?: string;
+  classification?: "positive" | "neutral" | "negative";
+  lessonTags?: Readonly<{ primary: string; secondary: readonly string[] }>;
+  pressureCost?: number;
+  recoveryDurationMonths?: number;
+  fallbackNarrative?: Readonly<{ headline: string; body: string }>;
+  /** Immutable canonical evidence for cash flows scheduled by this resolved response. */
+  scheduledCashFlows?: readonly ScheduledPersonalEventCashFlowV2[];
+}>;
+
+export type ActivePersonalEventCashFlowV2 = Readonly<{
+  id: string;
+  sourceEventId: string;
+  sourceEffectId: string;
+  kind: "temporary_expense" | "recurring_expense" | "temporary_income";
+  amountCents: MoneyCents;
+  startMonth: SimulationMonth;
+  remainingMonths: number;
 }>;
 
 export type GameplayStateV2 = Readonly<{
@@ -236,6 +273,15 @@ export type GameplayStateV2 = Readonly<{
       templateId: string;
       eligibleAgainMonth: SimulationMonth;
     }>[];
+    /** Present only after a declarative v2 event schedules a follow-up. */
+    scheduledFollowUps?: readonly Readonly<{
+      sourceEventId: string;
+      templateId: string;
+      templateVersion: number;
+      eligibleMonth: SimulationMonth;
+    }>[];
+    /** Optional only for replay compatibility with schema-v2 runs created before declarative events. */
+    activeCashFlows?: readonly ActivePersonalEventCashFlowV2[];
   }>;
   careerDevelopment: Readonly<{
     pending: readonly Readonly<{

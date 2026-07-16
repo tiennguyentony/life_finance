@@ -738,7 +738,7 @@ describe("monthly record response compatibility", () => {
         throw new Error("expected a monthly command");
       }
       expect(command.payload.outcomePolicyVersion).toBe("1.0.0");
-      expect(command.payload.eventSchedulerVersion).toBe("causal-hazard-v1");
+      expect(command.payload.eventSchedulerVersion).toBe("declarative-events-v2");
       expect(command.payload.marketModelVersion).toBe("regime-v2");
       expect(command.payload.macroDifficulty).toBe("normal");
       const applied = processMonthlyTurnV2(state, command);

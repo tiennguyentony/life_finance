@@ -13,7 +13,9 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "check:test-layout": "node scripts/check-test-layout.mjs",
-    "test": "pnpm check:test-layout && vitest run",
+    "test:parallel": "vitest run --exclude src/core/__tests__/financial-projection-v2.test.ts --exclude src/core/__tests__/time-controller-v2.test.ts",
+    "test:long-run": "vitest run src/core/__tests__/financial-projection-v2.test.ts src/core/__tests__/time-controller-v2.test.ts --no-file-parallelism",
+    "test": "pnpm check:test-layout && pnpm test:parallel && pnpm test:long-run",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {

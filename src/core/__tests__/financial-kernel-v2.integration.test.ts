@@ -495,4 +495,25 @@ describe("Prompt 02 real core integration", () => {
       sha256Canonical(right.second.state),
     );
   });
+
+  it("strictly decodes the declarative-events-v2 scheduler discriminator", () => {
+    const initial = integratedState();
+    const decoded = decodePersistedGameCommandV2({
+      schemaVersion: 2,
+      id: "cmd.declarative-events-v2",
+      type: "process_month_v2",
+      expectedRevision: initial.revision,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+        eventSchedulerVersion: "declarative-events-v2",
+        taxEvidence: taxEvidence("tax.declarative-events-v2"),
+        taxableLiquidationCostRatePpm: 10_000,
+        resolvedCashFlows: [],
+      },
+    });
+    expect(decoded.type).toBe("process_month_v2");
+    if (decoded.type !== "process_month_v2") throw new Error("expected month command");
+    expect(decoded.payload.eventSchedulerVersion).toBe("declarative-events-v2");
+  });
 });

@@ -416,7 +416,9 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
             .enum(["legacy-4.1.0", "2.0.0"])
             .optional(),
           outcomePolicyVersion: z.literal("1.0.0").optional(),
-          eventSchedulerVersion: z.literal("causal-hazard-v1").optional(),
+          eventSchedulerVersion: z
+            .enum(["causal-hazard-v1", "declarative-events-v2"])
+            .optional(),
           marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
           macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
           taxEvidence: taxEvidenceSchema,
