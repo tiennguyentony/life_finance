@@ -142,4 +142,51 @@ describe("financial month command transition", () => {
       ),
     ).toThrow(expect.objectContaining({ code }));
   });
+
+  it("does not freeze caller-owned mutable financial descendants", () => {
+    const previous = previousState();
+    const financial = structuredClone(financialState(previous));
+
+    const accepted = acceptFinancialMonthCommandV2(
+      previous,
+      financial,
+      "cmd.month.mutable",
+    );
+
+    expect(Object.isFrozen(financial)).toBe(false);
+    expect(Object.isFrozen(financial.gameplay)).toBe(false);
+    expect(Object.isFrozen(financial.gameplay.portfolio)).toBe(false);
+    expect(accepted.gameplay).not.toBe(financial.gameplay);
+  });
+
+  it("does not freeze caller-owned descendants behind a shallow-frozen root", () => {
+    const previous = previousState();
+    const mutable = structuredClone(financialState(previous));
+    const financial = Object.freeze({ ...mutable }) as GameStateV2;
+
+    const accepted = acceptFinancialMonthCommandV2(
+      previous,
+      financial,
+      "cmd.month.shallow",
+    );
+
+    expect(Object.isFrozen(financial)).toBe(true);
+    expect(Object.isFrozen(financial.gameplay)).toBe(false);
+    expect(Object.isFrozen(financial.gameplay.portfolio)).toBe(false);
+    expect(accepted.gameplay).not.toBe(financial.gameplay);
+  });
+
+  it("reuses descendants from an already deeply frozen financial state", () => {
+    const previous = previousState();
+    const financial = financialState(previous);
+
+    const accepted = acceptFinancialMonthCommandV2(
+      previous,
+      financial,
+      "cmd.month.frozen",
+    );
+
+    expect(accepted.gameplay).toBe(financial.gameplay);
+    expect(accepted.finances).toBe(financial.finances);
+  });
 });

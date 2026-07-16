@@ -17,8 +17,10 @@ import {
 } from "./debt-service-v2";
 import type { FinancialSnapshot, GameState } from "./game-state";
 import {
+  FINANCIAL_CLOSING_STATE_V2_KIND,
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
+  type FinancialClosingStateV2,
   type FinancialMonthInputV2,
   type FinancialMonthRecordV2,
   type FinancialMonthResultV2,
@@ -54,6 +56,7 @@ import {
   advanceMacroStoriesV2,
   type MacroStoryPolicyV2,
 } from "./macro-story-v2";
+import { ownForDeepFreeze } from "./immutable-ownership";
 import {
   assessV2Liquidity,
   prepareV2ObligationCash,
@@ -74,6 +77,7 @@ import {
 export { FINANCIAL_KERNEL_V2_VERSION };
 export type {
   FinancialMonthInputV2,
+  FinancialClosingStateV2,
   FinancialMonthRecordV2,
   FinancialMonthResultV2,
   FinancialShortfallV2,
@@ -663,7 +667,9 @@ function processMonthlyTurnV2Kernel200(
       insuranceClaim: command.payload.insuranceClaim,
       resolvedCashFlows: command.payload.resolvedCashFlows,
     });
-    const careerCompleted = completeCareerDevelopmentV2(financial.state);
+    const careerCompleted = completeCareerDevelopmentV2(
+      rehydrateFinancialClosingStateV2(state, financial.state),
+    );
     const accepted = acceptFinancialMonthCommandV2(
       state,
       careerCompleted,
@@ -704,6 +710,28 @@ function processMonthlyTurnV2Kernel200(
       cause,
     );
   }
+}
+
+function rehydrateFinancialClosingStateV2(
+  previous: GameStateV2,
+  financialState: FinancialClosingStateV2,
+): GameStateV2 {
+  const {
+    closingStateKind,
+    ...financialEvidence
+  } = financialState;
+  if (closingStateKind !== FINANCIAL_CLOSING_STATE_V2_KIND) {
+    throw new MonthlyTurnV2Error(
+      "TRANSITION_INVARIANT",
+      "financial kernel returned an invalid closing-state kind",
+    );
+  }
+  return {
+    ...financialEvidence,
+    revision: previous.revision,
+    acceptedCommandIds: ownForDeepFreeze(previous.acceptedCommandIds),
+    outcome: ownForDeepFreeze(previous.outcome),
+  };
 }
 
 function processMonthlyTurnV2Legacy410(

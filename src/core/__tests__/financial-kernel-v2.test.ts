@@ -333,10 +333,8 @@ describe("simulateFinancialMonthV2", () => {
       totalScheduledPaymentCents: 11_000,
     });
     expect(result.state).toMatchObject({
+      closingStateKind: "financial_closing_v2",
       currentMonth: "2026-08",
-      revision: input.state.revision,
-      acceptedCommandIds: input.state.acceptedCommandIds,
-      outcome: input.state.outcome,
       finances: {
         cashCents: 840_000,
         taxableInvestmentsCents: 0,
@@ -366,6 +364,9 @@ describe("simulateFinancialMonthV2", () => {
         eventLifecycle: input.state.gameplay.eventLifecycle,
       },
     });
+    expect(result.state).not.toHaveProperty("revision");
+    expect(result.state).not.toHaveProperty("acceptedCommandIds");
+    expect(result.state).not.toHaveProperty("outcome");
     expect(
       result.state.ledger.transactions
         .slice(openingLedgerLength)
@@ -1384,9 +1385,12 @@ describe("simulateFinancialMonthV2", () => {
     });
     expect(result.state.random).not.toEqual(initial.random);
 
-    expect(result.state.revision).toBe(initial.revision);
-    expect(result.state.acceptedCommandIds).toEqual(initial.acceptedCommandIds);
-    expect(result.state.outcome).toBe(initial.outcome);
+    expect(result.state).toMatchObject({
+      closingStateKind: "financial_closing_v2",
+    });
+    expect(result.state).not.toHaveProperty("revision");
+    expect(result.state).not.toHaveProperty("acceptedCommandIds");
+    expect(result.state).not.toHaveProperty("outcome");
     expect(result.state.gameplay.exposure).toEqual(initial.gameplay.exposure);
     expect(result.state.gameplay.employment).toEqual(initial.gameplay.employment);
     expect(result.state.gameplay.careerDevelopment).toEqual(
