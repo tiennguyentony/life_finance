@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
 
 import { sha256Canonical } from "../../core/canonical";
-import { simulationMonth } from "../../core/domain/month";
 import type { GameStateV2 } from "../../core/game-state-v2";
 import type { LifeFinanceDatabase } from "./client";
+import { decodePersistedGameCommandV2 } from "./persisted-command-v2";
 import type { GameCommandV2 } from "./run-repository-contracts";
 import { RunRepositoryError } from "./run-repository-contracts";
 import {
@@ -148,48 +148,46 @@ export async function loadRunStateAtRevisionV2(
 
 const COMMAND_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const CHECKSUM = /^[0-9a-f]{64}$/;
-const COMMAND_TYPES = new Set<GameCommandV2["type"]>([
-  "take_detailed_action",
-  "set_recurring_strategy",
-  "resolve_event_choice",
-  "manage_life_milestone",
-  "record_learning_interaction_v2",
-  "queue_ai_world_event_v2",
-  "process_month_v2",
-]);
+const COMMAND_TYPES = new Set<string>(
+  [
+    "take_detailed_action",
+    "set_recurring_strategy",
+    "resolve_event_choice",
+    "manage_life_milestone",
+    "record_learning_interaction_v2",
+    "queue_ai_world_event_v2",
+    "process_month_v2",
+  ] satisfies readonly GameCommandV2["type"][],
+);
 
 export function rebuildGameCommandV2(
   row: AcceptedCommandReplayRowV2,
 ): GameCommandV2 {
   if (
     row.commandSchemaVersion !== 2 ||
-    !COMMAND_TYPES.has(row.commandType as GameCommandV2["type"]) ||
+    !COMMAND_TYPES.has(row.commandType) ||
     !COMMAND_ID.test(row.commandId) ||
     !Number.isSafeInteger(row.expectedRevision) ||
     row.expectedRevision < 0 ||
     !Number.isSafeInteger(row.resultingRevision) ||
     row.resultingRevision !== row.expectedRevision + 1 ||
-    !isRecord(row.payload) ||
     !CHECKSUM.test(row.resultingStateChecksum)
   ) {
     throw corrupt("stored v2 command envelope is invalid");
   }
 
-  let effectiveMonth;
   try {
-    effectiveMonth = simulationMonth(row.effectiveMonth);
+    return decodePersistedGameCommandV2({
+      schemaVersion: row.commandSchemaVersion,
+      id: row.commandId,
+      type: row.commandType,
+      expectedRevision: row.expectedRevision,
+      effectiveMonth: row.effectiveMonth,
+      payload: row.payload,
+    });
   } catch (cause) {
-    throw corrupt("stored v2 command month is invalid", cause);
+    throw corrupt("stored v2 command payload is invalid", cause);
   }
-
-  return {
-    schemaVersion: 2,
-    id: row.commandId,
-    type: row.commandType,
-    expectedRevision: row.expectedRevision,
-    effectiveMonth,
-    payload: row.payload,
-  } as GameCommandV2;
 }
 
 export function replayAcceptedCommandsV2(
@@ -257,10 +255,6 @@ export function replayAcceptedCommandsV2(
     throw corrupt("accepted v2 command history is missing a target revision");
   }
   return Object.freeze({ state, stateChecksum: checksum });
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function corrupt(message: string, cause?: unknown): RunRepositoryError {
