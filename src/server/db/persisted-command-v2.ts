@@ -425,6 +425,7 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           scenarioDirectorVersion: z
             .literal("scenario-director-v2")
             .optional(),
+          worldRandomVersion: z.literal("named-world-rng-v1").optional(),
           marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
           macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
           taxEvidence: taxEvidenceSchema,
@@ -509,6 +510,21 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               code: "custom",
               path: ["marketModelVersion"],
               message: "regime-v2 requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.worldRandomVersion !== undefined &&
+            (payload.financialKernelVersion !== "2.0.0" ||
+              payload.eventSchedulerVersion !== "declarative-events-v2" ||
+              payload.runtimeBalanceControllerVersion !== "runtime-balance-v1" ||
+              payload.scenarioDirectorVersion !== "scenario-director-v2" ||
+              payload.marketModelVersion !== "regime-v2")
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["worldRandomVersion"],
+              message:
+                "named-world-rng-v1 requires the production financial, macro, event, Runtime Balance, and Scenario Director versions",
             });
           }
         }),

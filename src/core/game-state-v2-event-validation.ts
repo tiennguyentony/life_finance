@@ -15,7 +15,23 @@ import {
   personalEventCashFlowIdV2,
   personalEventEffectIdV2,
   type PersonalEventMagnitudeV2,
+  type PersonalEventTemplateV2,
 } from "./personal-event-v2";
+
+function personalEventTemplateForValidationV2(
+  templateId: string,
+  templateVersion: number,
+  personalEventCatalog?: readonly PersonalEventTemplateV2[],
+): PersonalEventTemplateV2 {
+  if (personalEventCatalog === undefined) {
+    return getPersonalEventTemplateV2(templateId, templateVersion);
+  }
+  const template = personalEventCatalog.find(
+    ({ id, version }) => id === templateId && version === templateVersion,
+  );
+  if (template === undefined) throw new RangeError("unknown personal-event template version");
+  return template;
+}
 
 const EVENT_FLOW_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const DECLARATIVE_METADATA_KEYS = [
@@ -167,6 +183,7 @@ function canonicalScheduledCashFlows(
 
 export function validateEventAndCareerStateV2(
   state: GameStateV2,
+  personalEventCatalog?: readonly PersonalEventTemplateV2[],
 ): readonly StateInvariantViolation[] {
   const violations: StateInvariantViolation[] = [];
 
@@ -211,9 +228,10 @@ export function validateEventAndCareerStateV2(
       violations,
     )) {
       try {
-        const template = getPersonalEventTemplateV2(
+        const template = personalEventTemplateForValidationV2(
           pending.templateId,
           pending.templateVersion,
+          personalEventCatalog,
         );
         const metadata = {
           tier: pending.tier,
@@ -248,9 +266,10 @@ export function validateEventAndCareerStateV2(
         );
       }
       try {
-        const template = getPersonalEventTemplateV2(
+        const template = personalEventTemplateForValidationV2(
           pending.templateId,
           pending.templateVersion,
+          personalEventCatalog,
         );
         if (!proposalMatchesTemplate(pending.parameters, template)) {
           throw new RangeError("declarative proposal mismatch");
@@ -345,9 +364,10 @@ export function validateEventAndCareerStateV2(
       violations,
     )) {
       try {
-        const template = getPersonalEventTemplateV2(
+        const template = personalEventTemplateForValidationV2(
           event.templateId,
           event.templateVersion,
+          personalEventCatalog,
         );
         if (
           canonicalJson({
@@ -381,9 +401,10 @@ export function validateEventAndCareerStateV2(
         );
       }
       try {
-        const template = getPersonalEventTemplateV2(
+        const template = personalEventTemplateForValidationV2(
           event.templateId,
           event.templateVersion,
+          personalEventCatalog,
         );
         if (!proposalMatchesTemplate(event.parameters, template)) {
           throw new RangeError("declarative proposal mismatch");
@@ -396,7 +417,11 @@ export function validateEventAndCareerStateV2(
         ));
       }
       try {
-        const template = getPersonalEventTemplateV2(event.templateId, event.templateVersion);
+        const template = personalEventTemplateForValidationV2(
+          event.templateId,
+          event.templateVersion,
+          personalEventCatalog,
+        );
         const expectedCashFlows = canonicalScheduledCashFlows(event, template);
         if (canonicalJson(event.scheduledCashFlows ?? []) !== canonicalJson(expectedCashFlows)) {
           throw new RangeError("scheduled cash-flow evidence mismatch");
@@ -545,7 +570,11 @@ export function validateEventAndCareerStateV2(
     scheduledFollowUpIdentities.add(identity);
     try {
       simulationMonth(followUp.eligibleMonth);
-      getPersonalEventTemplateV2(followUp.templateId, followUp.templateVersion);
+      personalEventTemplateForValidationV2(
+        followUp.templateId,
+        followUp.templateVersion,
+        personalEventCatalog,
+      );
       const source = lifecycle.history.find(
         ({ eventId }) => eventId === followUp.sourceEventId,
       );

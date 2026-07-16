@@ -1,0 +1,14 @@
+{
+  "version": "quick-tax-fixture-v1",
+  "provider": "PolicyEngine US",
+  "bundleVersion": "4.21.0",
+  "rulesVersion": "1.764.6",
+  "rows": [
+    { "economicYear": 2026, "annualGrossIncomeCents": 12000000, "annualEmployee401kCents": 0, "annualEmployeeHsaCents": 0, "annualTotalTaxCents": 2400000 },
+    { "economicYear": 2026, "annualGrossIncomeCents": 12000000, "annualEmployee401kCents": 600000, "annualEmployeeHsaCents": 0, "annualTotalTaxCents": 2280000 },
+    { "economicYear": 2026, "annualGrossIncomeCents": 12000000, "annualEmployee401kCents": 1200000, "annualEmployeeHsaCents": 0, "annualTotalTaxCents": 2160000 },
+    { "economicYear": 2027, "annualGrossIncomeCents": 12000000, "annualEmployee401kCents": 0, "annualEmployeeHsaCents": 0, "annualTotalTaxCents": 2400000 },
+    { "economicYear": 2027, "annualGrossIncomeCents": 12000000, "annualEmployee401kCents": 600000, "annualEmployeeHsaCents": 0, "annualTotalTaxCents": 2280000 },
+    { "economicYear": 2027, "annualGrossIncomeCents": 12000000, "annualEmployee401kCents": 1200000, "annualEmployeeHsaCents": 0, "annualTotalTaxCents": 2160000 }
+  ]
+}
