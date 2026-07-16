@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import { addMonths } from "../domain/month";
 import { moneyCents, ratePpm } from "../domain/money";
 import {
+  acceptFinancialClosingStateV2,
   acceptFinancialMonthCommandV2,
   FinancialTransitionV2Error,
+  rehydrateFinancialClosingStateV2,
 } from "../financial-transition-v2";
+import type { FinancialClosingStateV2 } from "../financial-kernel-v2";
 import { createInitialGameState } from "../game-state";
 import {
   finalizeGameStateV2,
@@ -59,7 +62,117 @@ function financialState(previous: GameStateV2): GameStateV2 {
   });
 }
 
+function financialClosingState(
+  previous: GameStateV2,
+): FinancialClosingStateV2 {
+  const { revision, acceptedCommandIds, outcome, ...state } =
+    financialState(previous);
+  void revision;
+  void acceptedCommandIds;
+  void outcome;
+  return Object.freeze({
+    ...state,
+    closingStateKind: "financial_closing_v2",
+  });
+}
+
 describe("financial month command transition", () => {
+  it("safely rehydrates and accepts an explicit financial closing state", () => {
+    const previous = previousState();
+    const closing = financialClosingState(previous);
+
+    const rehydrated = rehydrateFinancialClosingStateV2(previous, closing);
+    const accepted = acceptFinancialClosingStateV2(
+      previous,
+      closing,
+      "cmd.month.closing",
+    );
+
+    expect(rehydrated).toMatchObject({
+      currentMonth: "2026-08",
+      revision: 1,
+      acceptedCommandIds: ["cmd.previous"],
+      outcome: null,
+    });
+    expect(rehydrated).not.toHaveProperty("closingStateKind");
+    expect(accepted).toMatchObject({
+      currentMonth: "2026-08",
+      revision: 2,
+      acceptedCommandIds: ["cmd.previous", "cmd.month.closing"],
+      outcome: null,
+    });
+  });
+
+  it.each([
+    [
+      "closing kind",
+      { closingStateKind: "wrong" },
+      "INVALID_CLOSING_STATE_KIND",
+    ],
+    ["run", { runId: "run.changed" }, "RUN_MISMATCH"],
+    ["schema", { schemaVersion: 1 }, "SCHEMA_MISMATCH"],
+    ["engine", { engineVersion: "changed" }, "ENGINE_MISMATCH"],
+    ["month", { currentMonth: "2026-09" }, "MONTH_NOT_ADVANCED_ONCE"],
+    ["revision metadata", { revision: 1 }, "AUTHORITATIVE_METADATA_PRESENT"],
+    [
+      "accepted-id metadata",
+      { acceptedCommandIds: [] },
+      "AUTHORITATIVE_METADATA_PRESENT",
+    ],
+    ["outcome metadata", { outcome: null }, "AUTHORITATIVE_METADATA_PRESENT"],
+  ] as const)("rejects invalid financial closing %s", (_label, mutation, code) => {
+    const previous = previousState();
+    const closing = {
+      ...financialClosingState(previous),
+      ...mutation,
+    } as unknown as FinancialClosingStateV2;
+
+    expect(() => rehydrateFinancialClosingStateV2(previous, closing)).toThrow(
+      expect.objectContaining({ code }),
+    );
+  });
+
+  it("preserves caller ownership for mutable and shallow financial closing states", () => {
+    const previous = previousState();
+    const mutable = structuredClone(financialClosingState(previous));
+    const shallow = Object.freeze({
+      ...structuredClone(financialClosingState(previous)),
+    }) as FinancialClosingStateV2;
+
+    const mutableAccepted = acceptFinancialClosingStateV2(
+      previous,
+      mutable,
+      "cmd.month.closing.mutable",
+    );
+    const shallowAccepted = acceptFinancialClosingStateV2(
+      previous,
+      shallow,
+      "cmd.month.closing.shallow",
+    );
+
+    expect(Object.isFrozen(mutable)).toBe(false);
+    expect(Object.isFrozen(mutable.gameplay)).toBe(false);
+    expect(Object.isFrozen(shallow)).toBe(true);
+    expect(Object.isFrozen(shallow.gameplay)).toBe(false);
+    expect(mutableAccepted.gameplay).not.toBe(mutable.gameplay);
+    expect(shallowAccepted.gameplay).not.toBe(shallow.gameplay);
+  });
+
+  it("reuses deeply frozen financial closing descendants", () => {
+    const previous = previousState();
+    const closing = financialClosingState(previous);
+
+    const accepted = acceptFinancialClosingStateV2(
+      previous,
+      closing,
+      "cmd.month.closing.frozen",
+    );
+
+    expect(accepted.gameplay).toBe(closing.gameplay);
+    expect(accepted.finances).toBe(closing.finances);
+    expect(accepted.ledger.transactions).toBe(closing.ledger.transactions);
+  });
+
   it("accepts exactly one financial month without letting the kernel own command metadata", () => {
     const previous = previousState();
     const financial = financialState(previous);
