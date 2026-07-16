@@ -114,6 +114,14 @@ describe("native game state v2 creation", () => {
         { coverageId: "insurance.renters", usedCents: 0 },
       ],
     });
+    expect(state.gameplay.runtimeBalance).toEqual({
+      version: 1,
+      pressurePpm: 0,
+      recoveryUntilMonth: null,
+      catastropheCount: 0,
+      lastApprovedEventMonth: null,
+    });
+    expect(Object.isFrozen(state.gameplay.runtimeBalance)).toBe(true);
     expect(validateGameStateV2(state)).toEqual([]);
     expect(Object.isFrozen(state.gameplay.catalogSnapshot)).toBe(true);
   });
