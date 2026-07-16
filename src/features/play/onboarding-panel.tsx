@@ -1,6 +1,13 @@
+import Image from "next/image";
+
 import { US_2026_SCENARIO_CATALOG } from "@/data/scenario-catalog";
 
-import { formatMoney, PLAYER_PRESETS } from "./play-model";
+import { MASCOT, personaCharacter } from "./persona-art";
+import {
+  formatMoney,
+  PLAYER_PRESETS,
+  type PlayerPresetId,
+} from "./play-model";
 import type { OnboardingDraft } from "./play-types";
 
 type Props = Readonly<{
@@ -11,6 +18,13 @@ type Props = Readonly<{
   onChange: (next: OnboardingDraft) => void;
   onCreate: () => void;
 }>;
+
+const PERSONA_ORDER: readonly PlayerPresetId[] = [
+  "software",
+  "nurse",
+  "teacher",
+  "established",
+];
 
 export function OnboardingPanel({
   draft,
@@ -38,14 +52,25 @@ export function OnboardingPanel({
       )!,
   );
 
+  const selectPersona = (presetId: PlayerPresetId) => {
+    const nextPreset = PLAYER_PRESETS[presetId];
+    onChange({
+      ...draft,
+      presetId,
+      salary: nextPreset.salaryDollars,
+      cash: nextPreset.defaultCashDollars,
+      healthPlanId: nextPreset.healthPlanId,
+      coverageIds: ["insurance.renters"],
+    });
+  };
+
   return (
     <section className="play-start">
       <div>
-        <p className="hero-kicker">Life Finance · learning simulation</p>
         <h1>Build a life, then stress-test it.</h1>
         <p className="lede">
-          Choose a persona or adjust the numbers. The engine localizes salary,
-          living cost, tax, benefits, risk, and the FI finish line.
+          Choose a player or adjust the numbers. The engine localizes salary,
+          living cost, tax, benefits, risk, and the finish line.
         </p>
         <ul className="play-learning-list">
           <li>Build liquidity without giving up long-term compounding.</li>
@@ -57,33 +82,46 @@ export function OnboardingPanel({
             Learn why diversification, insurance, and employer match matter.
           </li>
         </ul>
+        <Image
+          alt={MASCOT.alt}
+          className="start-mascot"
+          height={MASCOT.height}
+          sizes="148px"
+          src={MASCOT.src}
+          width={MASCOT.width}
+        />
       </div>
       <div className="play-panel play-form">
         <h2>Create your starting position</h2>
-        <label>
-          Persona
-          <select
-            value={draft.presetId}
-            onChange={(event) => {
-              const presetId = event.target.value as OnboardingDraft["presetId"];
-              const nextPreset = PLAYER_PRESETS[presetId];
-              onChange({
-                ...draft,
-                presetId,
-                salary: nextPreset.salaryDollars,
-                cash: nextPreset.defaultCashDollars,
-                healthPlanId: nextPreset.healthPlanId,
-                coverageIds: ["insurance.renters"],
-              });
-            }}
-          >
-            {Object.entries(PLAYER_PRESETS).map(([id, option]) => (
-              <option key={id} value={id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="persona-grid">
+          <legend>Choose your player</legend>
+          {PERSONA_ORDER.map((presetId) => {
+            const option = PLAYER_PRESETS[presetId];
+            const character = personaCharacter(presetId);
+            return (
+              <label className="persona-card" key={presetId}>
+                <input
+                  checked={draft.presetId === presetId}
+                  className="sr-only"
+                  name="persona"
+                  onChange={() => selectPersona(presetId)}
+                  type="radio"
+                  value={presetId}
+                />
+                <Image
+                  alt=""
+                  className="persona-portrait"
+                  height={character.height}
+                  sizes="56px"
+                  src={character.src}
+                  width={character.width}
+                />
+                <span className="persona-name">{character.name}</span>
+                <span className="persona-role">{option.label}</span>
+              </label>
+            );
+          })}
+        </fieldset>
         <div className="play-inline-fields">
           <label>
             Annual salary (USD)
@@ -165,9 +203,9 @@ export function OnboardingPanel({
                 <span>
                   <strong>{plan.label}</strong>
                   <small>
-                    {formatMoney(premium)}/month · {formatMoney(deductible)}
+                    {formatMoney(premium)}/month, {formatMoney(deductible)}
                     {" deductible"}
-                    {plan.hsaEligible ? " · HSA eligible" : ""}
+                    {plan.hsaEligible ? ", HSA eligible" : ""}
                   </small>
                 </span>
               </label>
@@ -193,7 +231,7 @@ export function OnboardingPanel({
               <span>
                 <strong>{coverage.label}</strong>
                 <small>
-                  {formatMoney(coverage.monthlyPremiumCents)}/month ·{" "}
+                  {formatMoney(coverage.monthlyPremiumCents)}/month,{" "}
                   {formatMoney(coverage.coverageLimitCents)} limit
                 </small>
               </span>
@@ -219,12 +257,23 @@ export function OnboardingPanel({
           </p>
         ) : null}
         <button
-          className="play-primary"
+          className="btn btn-primary btn-lg"
           disabled={busy}
           onClick={onCreate}
           type="button"
         >
-          {busy ? busyLabel : "Create balance sheet"}
+          {busy ? (
+            <>
+              <span aria-hidden="true" className="working-dots">
+                <span />
+                <span />
+                <span />
+              </span>
+              {busyLabel}
+            </>
+          ) : (
+            "Create balance sheet"
+          )}
         </button>
         <p className="play-note">
           The anonymous run credential stays only in this browser tab.

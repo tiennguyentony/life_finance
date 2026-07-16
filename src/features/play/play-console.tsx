@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type {
@@ -25,16 +25,21 @@ import {
   formatMoney,
   percentToPpm,
   PLAYER_PRESETS,
+  type PlayerPresetId,
 } from "./play-model";
 import {
   apiRequest,
   authHeaders,
   commandId,
+  formatMonthLabel,
   RECAP_SESSION_KEY,
   SESSION_KEY,
+  signedMoney,
 } from "./play-support";
+import { PlayTabs } from "./play-tabs";
 import type {
   ActionDraft,
+  ActivityEntry,
   MonthlyRecap,
   OnboardingDraft,
   PlayTab,
@@ -43,16 +48,20 @@ import type {
   StrategyDraft,
 } from "./play-types";
 import { RunControls } from "./run-controls";
+import { useAnimatedNumber } from "./use-animated-number";
 
-const DEFAULT_ONBOARDING: OnboardingDraft = {
-  presetId: "software",
-  salary: 120_000,
-  cash: 25_000,
-  studentDebt: 15_000,
-  studentDebtPayment: 250,
-  healthPlanId: "health.hdhp_hsa",
-  coverageIds: ["insurance.renters"],
-};
+function defaultOnboarding(presetId: PlayerPresetId): OnboardingDraft {
+  const preset = PLAYER_PRESETS[presetId];
+  return {
+    presetId,
+    salary: preset.salaryDollars,
+    cash: preset.defaultCashDollars,
+    studentDebt: 15_000,
+    studentDebtPayment: 250,
+    healthPlanId: preset.healthPlanId,
+    coverageIds: ["insurance.renters"],
+  };
+}
 
 const DEFAULT_STRATEGY: StrategyDraft = {
   retirement: 5,
@@ -73,10 +82,23 @@ const DEFAULT_ACTION: ActionDraft = {
   upskillProgram: "upskill.certificate",
 };
 
-export function PlayConsole() {
+const TABS = ["overview", "strategy", "actions", "learn"] as const;
+
+const TAB_LABELS: Record<PlayTab, string> = {
+  overview: "Overview",
+  strategy: "Strategy",
+  actions: "Actions",
+  learn: "Learn & glossary",
+};
+
+export function PlayConsole({
+  initialPresetId = "software",
+}: Readonly<{ initialPresetId?: PlayerPresetId }>) {
   const [credential, setCredential] = useState<RunCredential | null>(null);
   const [state, setState] = useState<GameStateV2 | null>(null);
-  const [onboarding, setOnboarding] = useState(DEFAULT_ONBOARDING);
+  const [onboarding, setOnboarding] = useState(() =>
+    defaultOnboarding(initialPresetId),
+  );
   const [strategy, setStrategy] = useState(DEFAULT_STRATEGY);
   const [actionDraft, setActionDraft] = useState(DEFAULT_ACTION);
   const [checkpoint, setCheckpoint] = useState<CheckpointV2Response | null>(null);
@@ -97,10 +119,17 @@ export function PlayConsole() {
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [activity, setActivity] = useState<string[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [deltaCents, setDeltaCents] = useState<number | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+  const nextActivityId = useRef(1);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const addActivity = (message: string) => {
-    setActivity((current) => [message, ...current].slice(0, 20));
+    setActivity((current) =>
+      [{ id: nextActivityId.current++, message }, ...current].slice(0, 20),
+    );
   };
 
   const selectConcept = (conceptId: string) => {
@@ -135,9 +164,15 @@ export function PlayConsole() {
     sessionStorage.setItem(RECAP_SESSION_KEY, JSON.stringify(turnHistory));
   }, [turnHistory]);
 
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    };
+  }, []);
+
   const createGame = async () => {
     setBusy(true);
-    setBusyLabel("Creating your balance sheet…");
+    setBusyLabel("Creating your balance sheet...");
     setError(null);
     try {
       const request = buildCreateRequest(
@@ -161,8 +196,14 @@ export function PlayConsole() {
       setState(result.state);
       setCheckpoint(null);
       setTurnHistory([]);
+      setDeltaCents(null);
       sessionStorage.removeItem(RECAP_SESSION_KEY);
-      setActivity([`Created ${PLAYER_PRESETS[onboarding.presetId].label} run.`]);
+      setActivity([
+        {
+          id: nextActivityId.current++,
+          message: `Created ${PLAYER_PRESETS[onboarding.presetId].label} run.`,
+        },
+      ]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create game");
     } finally {
@@ -172,10 +213,11 @@ export function PlayConsole() {
   };
 
   const submit = async (command: GameCommandV2Public, message: string) => {
-    if (!credential) return;
+    if (!credential || !state) return;
     setBusy(true);
-    setBusyLabel("Applying your decision…");
+    setBusyLabel("Applying your decision...");
     setError(null);
+    const netWorthBefore = calculateNetWorth(state);
     try {
       const result = await apiRequest<CommandV2Response>(
         `/api/v2/runs/${credential.runId}/commands`,
@@ -187,6 +229,7 @@ export function PlayConsole() {
       );
       setState(result.state);
       setCheckpoint(null);
+      setDeltaCents(calculateNetWorth(result.state) - netWorthBefore);
       addActivity(message);
       if (result.monthlyRecord) {
         setTurnHistory((current) => [result.monthlyRecord!, ...current].slice(0, 12));
@@ -231,11 +274,14 @@ export function PlayConsole() {
     setBusy(true);
     setError(null);
     let working = state;
+    const netWorthBefore = calculateNetWorth(state);
     const recaps: MonthlyRecap[] = [];
     try {
       for (let index = 0; index < count; index += 1) {
         if (working.outcome || working.gameplay.eventLifecycle.pending) break;
-        setBusyLabel(`Simulating ${working.currentMonth} · ${index + 1}/${count}…`);
+        setBusyLabel(
+          `Simulating ${formatMonthLabel(working.currentMonth)} (${index + 1}/${count})...`,
+        );
         const result = await apiRequest<CommandV2Response>(
           `/api/v2/runs/${credential.runId}/commands`,
           {
@@ -256,9 +302,10 @@ export function PlayConsole() {
       }
       setState(working);
       setCheckpoint(null);
+      setDeltaCents(calculateNetWorth(working) - netWorthBefore);
       setTurnHistory((current) => [...recaps, ...current].slice(0, 12));
       addActivity(
-        `Processed ${recaps.length} month${recaps.length === 1 ? "" : "s"}; now ${working.currentMonth}.`,
+        `Processed ${recaps.length} month${recaps.length === 1 ? "" : "s"}; now ${formatMonthLabel(working.currentMonth)}.`,
       );
       if (working.gameplay.eventLifecycle.pending) {
         addActivity("Progress paused for a required personal decision.");
@@ -307,7 +354,7 @@ export function PlayConsole() {
   const loadCheckpoint = async () => {
     if (!state || !credential) return;
     setBusy(true);
-    setBusyLabel("Reconciling checkpoint evidence…");
+    setBusyLabel("Reconciling checkpoint evidence...");
     setError(null);
     try {
       const fromRevision = Math.max(0, state.revision - 12);
@@ -325,7 +372,14 @@ export function PlayConsole() {
     }
   };
 
-  const forgetGame = () => {
+  const requestReset = () => {
+    if (!confirmingReset) {
+      setConfirmingReset(true);
+      resetTimer.current = setTimeout(() => setConfirmingReset(false), 3500);
+      return;
+    }
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    setConfirmingReset(false);
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(RECAP_SESSION_KEY);
     setCredential(null);
@@ -334,7 +388,11 @@ export function PlayConsole() {
     setTurnHistory([]);
     setActivity([]);
     setError(null);
+    setDeltaCents(null);
   };
+
+  const netWorth = state ? calculateNetWorth(state) : 0;
+  const animatedNetWorth = useAnimatedNumber(netWorth);
 
   if (!state) {
     return (
@@ -352,88 +410,124 @@ export function PlayConsole() {
   const pending = state.gameplay.eventLifecycle.pending;
   const blocked = Boolean(pending || state.outcome);
   const age = calculateAgeYears(state.player.birthMonth, state.currentMonth);
+  const delta = deltaCents !== null && deltaCents !== 0 ? signedMoney(deltaCents) : null;
 
   return (
     <section className="play-console">
       <header className="play-titlebar">
         <div>
-          <p className="hero-kicker">Age {age} · {state.currentMonth}</p>
-          <h1>
+          <div className="chip-row hud-meta">
+            <span className="chip">Age {age}</span>
+            <span className="chip">{formatMonthLabel(state.currentMonth)}</span>
+            <span
+              className="chip"
+              title="Engine revision: every decision and simulated month advances it"
+            >
+              Step {state.revision}
+            </span>
+          </div>
+          <h1 className="hud-networth" data-pop key={state.revision}>
             {state.outcome
               ? `Grade ${state.outcome.grade}`
-              : formatMoney(calculateNetWorth(state))}
+              : formatMoney(animatedNetWorth)}
           </h1>
-          <p>
-            {state.outcome
-              ? state.outcome.kind.replaceAll("_", " ")
-              : `Net worth · revision ${state.revision}`}
+          <p className="hud-sub">
+            {state.outcome ? (
+              <span>{state.outcome.kind.replaceAll("_", " ")}</span>
+            ) : (
+              <>
+                <span>Net worth</span>
+                {delta ? (
+                  <span
+                    className={`chip tnum ${
+                      delta.tone === "positive" ? "chip-accent" : "chip-danger"
+                    }`}
+                  >
+                    {delta.label} this step
+                  </span>
+                ) : null}
+              </>
+            )}
           </p>
         </div>
-        <button className="play-quiet" onClick={forgetGame} type="button">
-          Start over
+        <button
+          className={confirmingReset ? "btn btn-danger" : "btn btn-quiet"}
+          onClick={requestReset}
+          type="button"
+        >
+          {confirmingReset ? "Discard this run?" : "Start over"}
         </button>
       </header>
 
       {error ? <p className="play-error" role="alert">{error}</p> : null}
-      {busy ? <p className="play-working" role="status">{busyLabel}</p> : null}
+      {busy ? (
+        <p className="play-working" role="status">
+          <span aria-hidden="true" className="working-dots">
+            <span />
+            <span />
+            <span />
+          </span>
+          {busyLabel || "Working..."}
+        </p>
+      ) : null}
 
-      <div className="play-tabs" role="tablist" aria-label="Game sections">
-        {(["overview", "strategy", "actions", "learn"] as const).map((item) => (
-          <button
-            aria-selected={tab === item}
-            className={tab === item ? "active" : ""}
-            key={item}
-            onClick={() => setTab(item)}
-            role="tab"
-            type="button"
-          >
-            {item === "learn"
-              ? "Learn & glossary"
-              : item[0]!.toUpperCase() + item.slice(1)}
-          </button>
-        ))}
-      </div>
+      <PlayTabs
+        labels={TAB_LABELS}
+        listLabel="Game sections"
+        onChange={setTab}
+        tabs={TABS}
+        value={tab}
+      />
 
       {pending ? (
         <EventPanel pending={pending} busy={busy} onChoice={resolveChoice} />
       ) : null}
-      {tab === "overview" ? (
-        <OverviewPanel
-          state={state}
-          latestTurn={turnHistory[0] ?? null}
-          onSelectConcept={selectConcept}
-        />
-      ) : null}
-      {tab === "strategy" ? (
-        <StrategyPanel
-          state={state}
-          draft={strategy}
-          busy={busy}
-          blocked={blocked}
-          onChange={setStrategy}
-          onSave={saveStrategy}
-          onSelectConcept={selectConcept}
-        />
-      ) : null}
-      {tab === "actions" ? (
-        <ActionPanel
-          state={state}
-          draft={actionDraft}
-          busy={busy}
-          blocked={blocked}
-          onChange={(patch) =>
-            setActionDraft((current) => ({ ...current, ...patch }))
-          }
-          onApply={takeAction}
-          onSelectConcept={selectConcept}
-        />
-      ) : null}
-      {tab === "learn" ? (
-        <EducationPanel
-          activeConceptId={activeConceptId}
-          onChange={setActiveConceptId}
-        />
-      ) : null}
+
+      <div
+        aria-labelledby={`tab-${tab}`}
+        className="tab-panel"
+        id={`panel-${tab}`}
+        key={tab}
+        role="tabpanel"
+      >
+        {tab === "overview" ? (
+          <OverviewPanel
+            state={state}
+            latestTurn={turnHistory[0] ?? null}
+            onSelectConcept={selectConcept}
+          />
+        ) : null}
+        {tab === "strategy" ? (
+          <StrategyPanel
+            state={state}
+            draft={strategy}
+            busy={busy}
+            blocked={blocked}
+            onChange={setStrategy}
+            onSave={saveStrategy}
+            onSelectConcept={selectConcept}
+          />
+        ) : null}
+        {tab === "actions" ? (
+          <ActionPanel
+            state={state}
+            draft={actionDraft}
+            busy={busy}
+            blocked={blocked}
+            onChange={(patch) =>
+              setActionDraft((current) => ({ ...current, ...patch }))
+            }
+            onApply={takeAction}
+            onSelectConcept={selectConcept}
+          />
+        ) : null}
+        {tab === "learn" ? (
+          <EducationPanel
+            activeConceptId={activeConceptId}
+            onChange={setActiveConceptId}
+          />
+        ) : null}
+      </div>
 
       <RunControls
         busy={busy}

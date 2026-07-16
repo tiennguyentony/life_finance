@@ -25,8 +25,14 @@ export function EventPanel({
   }
 
   return (
-    <section className="play-panel play-event">
-      <p className="hero-kicker">Personal shock · {pending.tier}</p>
+    <section aria-live="polite" className="play-panel play-event">
+      <div className="chip-row">
+        <span className="chip chip-danger">Life happens</span>
+        <span className="chip">{titleFromId(pending.tier)} event</span>
+        <span className="chip">
+          targets {pending.targetedWeakness.replaceAll("_", " ")}
+        </span>
+      </div>
       <h2>{titleFromId(pending.templateId)}</h2>
       <p>
         {template?.teachingPrinciple ??
@@ -35,7 +41,7 @@ export function EventPanel({
       <div className="event-parameters">
         {Object.entries(pending.parameters).map(([key, value]) => (
           <div key={key}>
-            <span>{key.replaceAll("_", " ")}</span>
+            <span>{key.replaceAll("_", " ").replace(/ cents$/, "")}</span>
             <strong>{key.endsWith("cents") ? formatMoney(value) : value}</strong>
           </div>
         ))}
@@ -45,6 +51,7 @@ export function EventPanel({
           const choice = template?.choices.find(({ id }) => id === choiceId);
           return (
             <button
+              className="choice-card"
               disabled={busy}
               key={choiceId}
               onClick={() => onChoice(choiceId)}
