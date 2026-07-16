@@ -500,6 +500,12 @@ function createOpeningLedger(
     effectiveMonth: startMonth,
     reasonCode: "opening_balances",
     description: "Record the player's opening financial balances",
+    sourceSystem: "state_initialization",
+    category: "equity.opening",
+    causalReference: {
+      kind: "system",
+      id: "run.opening",
+    },
     postings,
   });
 }

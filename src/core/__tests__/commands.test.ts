@@ -116,7 +116,7 @@ describe("game command reducer", () => {
     expect(first).toEqual(second);
     expect(sha256Canonical(first)).toBe(sha256Canonical(second));
     expect(sha256Canonical(first)).toBe(
-      "67b2b116aea4256a2d270bc45002f2f0ef27840dd5f1d4e436bf4f0ced7766a8",
+      "e1f88985357229adf0f1817d887bc4a9eaaaa5a6ac7bca323a79d8f69b9a5b5b",
     );
   });
 

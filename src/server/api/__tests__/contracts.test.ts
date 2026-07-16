@@ -7,6 +7,7 @@ import {
   gameCommandSchema,
   gameStateSchema,
   internalGameCommandSchema,
+  journalTransactionSchema,
 } from "../contracts";
 import { generateOpenApiDocument } from "../openapi";
 import {
@@ -121,6 +122,40 @@ describe("v1 API contracts", () => {
         },
       }).type,
     ).toBe("process_month");
+  });
+
+  it("accepts complete or absent ledger provenance and rejects partial provenance", () => {
+    const transaction = {
+      id: "txn.opening",
+      commandId: "system.initialize",
+      effectiveMonth: "2026-07",
+      reasonCode: "opening_balances",
+      description: "Opening balances",
+      sourceSystem: "state_initialization",
+      category: "equity.opening",
+      causalReference: { kind: "system", id: "run.opening" },
+      postings: [
+        { accountId: "asset.cash", debitCents: 100, creditCents: 0 },
+        { accountId: "equity.opening", debitCents: 0, creditCents: 100 },
+      ],
+    };
+    const legacy = {
+      id: transaction.id,
+      commandId: transaction.commandId,
+      effectiveMonth: transaction.effectiveMonth,
+      reasonCode: transaction.reasonCode,
+      description: transaction.description,
+      postings: transaction.postings,
+    };
+
+    expect(journalTransactionSchema.parse(transaction)).toEqual(transaction);
+    expect(journalTransactionSchema.parse(legacy)).toEqual(legacy);
+    expect(() =>
+      journalTransactionSchema.parse({
+        ...legacy,
+        sourceSystem: "state_initialization",
+      }),
+    ).toThrow();
   });
 
   it("keeps authoritative journals and month inputs off the public boundary", () => {

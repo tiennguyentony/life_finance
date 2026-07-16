@@ -165,7 +165,7 @@ describe("deterministic monthly turn", () => {
 
     expect(sha256Canonical(first)).toBe(sha256Canonical(second));
     expect(sha256Canonical(first)).toBe(
-      "5d9970d963a994d4fefe988a0d2ccc7d5816d73360714f5a82e679f24921ea45",
+      "56cd549805c9112bf25d5f8a3837778639868aa6d1096126647b61e570ea8062",
     );
   });
 

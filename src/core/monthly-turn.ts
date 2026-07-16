@@ -184,6 +184,12 @@ function revalueAssets(
     effectiveMonth: state.currentMonth,
     reasonCode: "monthly_market_revaluation",
     description: "Apply deterministic monthly market returns to asset balances",
+    sourceSystem: "monthly_turn",
+    category: "asset.market_revaluation",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings,
   });
   return Object.freeze({
@@ -205,6 +211,12 @@ function postEmploymentIncome(
     effectiveMonth: state.currentMonth,
     reasonCode: "monthly_employment_income",
     description: "Receive after-tax employment income for the month",
+    sourceSystem: "monthly_turn",
+    category: "income.employment",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings: [debit("asset.cash", incomeCents), credit("income.employment", incomeCents)],
   });
   return {

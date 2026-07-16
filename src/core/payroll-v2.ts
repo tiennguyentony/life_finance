@@ -191,6 +191,12 @@ export function applyMonthlyPayroll(
     effectiveMonth: state.currentMonth,
     reasonCode: "monthly_payroll_v2",
     description: `Apply persisted payroll tax evidence ${evidence.traceId}`,
+    sourceSystem: "payroll_v2",
+    category: "income.payroll",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings,
   });
   const finances = reconcileFinancesWithLedger(state.finances, ledger);
