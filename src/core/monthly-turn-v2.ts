@@ -36,7 +36,10 @@ import {
 import { calculateMonthlyLivingCostInflationV2 } from "./inflation-v2";
 import { queueScheduledPersonalEventV2 } from "./event-lifecycle-v2";
 import {
+  CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  LEGACY_EXPOSURE_EVENT_SCHEDULER,
   schedulePersonalEventV2,
+  type EventSchedulerVersionV2,
   type EventSchedulingPolicyV2,
 } from "./event-scheduler-v2";
 import {
@@ -110,6 +113,7 @@ export type ProcessMonthV2Command = Readonly<{
   payload: Readonly<{
     financialKernelVersion?: FinancialKernelVersionV2;
     outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
+    eventSchedulerVersion?: typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION;
     taxEvidence: MonthlyTaxEvidence;
     taxableLiquidationCostRatePpm: RatePpm;
     insuranceClaim?: MonthlyInsuranceClaim;
@@ -166,6 +170,7 @@ export class MonthlyTurnV2Error extends Error {
     | "INVALID_LIQUIDATION_RATE"
     | "UNSUPPORTED_FINANCIAL_KERNEL_VERSION"
     | "UNSUPPORTED_OUTCOME_POLICY_VERSION"
+    | "UNSUPPORTED_EVENT_SCHEDULER_VERSION"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
 
@@ -204,6 +209,18 @@ export function outcomePolicyVersionForCommandV2(
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_OUTCOME_POLICY_VERSION",
     `unsupported outcome policy version: ${String(version)}`,
+  );
+}
+
+export function eventSchedulerVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): EventSchedulerVersionV2 {
+  const version = command.payload.eventSchedulerVersion;
+  if (version === undefined) return LEGACY_EXPOSURE_EVENT_SCHEDULER;
+  if (version === CAUSAL_EVENT_SCHEDULER_V1_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
+    `unsupported event scheduler version: ${String(version)}`,
   );
 }
 
@@ -655,6 +672,7 @@ export function processMonthlyTurnV2(
 ): MonthlyTurnV2Result {
   const version = financialKernelVersionForCommandV2(command);
   const outcomePolicyVersion = outcomePolicyVersionForCommandV2(command);
+  const eventSchedulerVersion = eventSchedulerVersionForCommandV2(command);
   if (
     outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION &&
     version !== FINANCIAL_KERNEL_V2_VERSION
@@ -664,12 +682,22 @@ export function processMonthlyTurnV2(
       "outcome policy 1.0.0 requires financial kernel 2.0.0",
     );
   }
+  if (
+    eventSchedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION &&
+    version !== FINANCIAL_KERNEL_V2_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
+      "causal event scheduling requires financial kernel 2.0.0",
+    );
+  }
   if (version === FINANCIAL_KERNEL_V2_VERSION) {
     return processMonthlyTurnV2Kernel200(
       state,
       command,
       dependencies,
       outcomePolicyVersion,
+      eventSchedulerVersion,
     );
   }
   return processMonthlyTurnV2Legacy410(state, command, dependencies);
@@ -693,6 +721,7 @@ function processMonthlyTurnV2Kernel200(
   command: ProcessMonthV2Command,
   dependencies: MonthlyTurnV2Dependencies,
   outcomePolicyVersion: OutcomePolicyVersionV2,
+  eventSchedulerVersion: EventSchedulerVersionV2,
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   try {
@@ -734,6 +763,7 @@ function processMonthlyTurnV2Kernel200(
       const schedule = schedulePersonalEventV2(
         nextState,
         dependencies.eventSchedulingPolicy,
+        eventSchedulerVersion,
       );
       nextState = finalizeGameStateV2({
         ...nextState,
@@ -915,6 +945,7 @@ function processMonthlyTurnV2Legacy410(
       const schedule = schedulePersonalEventV2(
         nextState,
         dependencies.eventSchedulingPolicy,
+        eventSchedulerVersionForCommandV2(command),
       );
       nextState = finalizeGameStateV2({
         ...nextState,

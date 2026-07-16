@@ -1,6 +1,10 @@
 import { addMoney, moneyCents } from "./domain/money";
 import { addMonths, type SimulationMonth } from "./domain/month";
-import { applyEvent, type EventTier } from "./events";
+import {
+  applyEvent,
+  UNRELATED_HAZARD_TARGET,
+  type EventTier,
+} from "./events";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
 import { adjudicateHealthClaim } from "./insurance-v2";
 import type { ScheduledPersonalEventV2 } from "./event-scheduler-v2";
@@ -71,7 +75,8 @@ export function queueScheduledPersonalEventV2(
     template.tier === "ambient" ||
     proposal.templateId !== template.id ||
     proposal.templateVersion !== template.version ||
-    !template.targetsWeaknesses.includes(targetedWeakness)
+    (targetedWeakness !== UNRELATED_HAZARD_TARGET &&
+      !template.targetsWeaknesses.includes(targetedWeakness))
   ) {
     throw new EventLifecycleV2Error(
       "INVALID_COMMAND",

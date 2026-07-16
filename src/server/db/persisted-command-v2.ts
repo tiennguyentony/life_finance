@@ -416,6 +416,7 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
             .enum(["legacy-4.1.0", "2.0.0"])
             .optional(),
           outcomePolicyVersion: z.literal("1.0.0").optional(),
+          eventSchedulerVersion: z.literal("causal-hazard-v1").optional(),
           taxEvidence: taxEvidenceSchema,
           taxableLiquidationCostRatePpm: boundedRatePpmSchema,
           insuranceClaim: insuranceClaimSchema.optional(),
@@ -443,6 +444,17 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               path: ["outcomePolicyVersion"],
               message:
                 "outcome policy 1.0.0 requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.eventSchedulerVersion !== undefined &&
+            payload.financialKernelVersion !== "2.0.0"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["eventSchedulerVersion"],
+              message:
+                "causal event scheduling requires financial kernel version 2.0.0",
             });
           }
         }),
