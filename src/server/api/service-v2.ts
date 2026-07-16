@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { sha256Canonical } from "../../core/canonical";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { simulationMonth } from "../../core/domain/month";
-import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
+import {
+  FINANCIAL_KERNEL_V2_VERSION,
+  type ProcessMonthV2Command,
+} from "../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
 import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
 import {
@@ -209,8 +212,10 @@ export class RunApiServiceV2 {
       expectedRevision: command.expectedRevision,
       effectiveMonth: simulationMonth(command.effectiveMonth),
       payload: {
+        financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
         taxEvidence: evidence,
         taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
+        resolvedCashFlows: [],
       },
     };
     const applied = await this.#repository.applyCommandV2(

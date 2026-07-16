@@ -9,6 +9,9 @@ const identifierSchema = z
 const monthlyCommandIdSchema = z
   .string()
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/);
+const resolvedCashFlowIdentifierSchema = z
+  .string()
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/);
 const simulationMonthSchema = z
   .string()
   .regex(/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/);
@@ -261,6 +264,28 @@ const insuranceClaimSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
+const resolvedCashFlowSchema = z
+  .object({
+    id: resolvedCashFlowIdentifierSchema,
+    kind: z.enum([
+      "other_income",
+      "recurring_expense",
+      "temporary_income",
+      "temporary_expense",
+    ]),
+    amountCents: nonNegativeCentsSchema,
+    sourceSystem: resolvedCashFlowIdentifierSchema,
+  })
+  .strict();
+
+const resolvedCashFlowsSchema = z
+  .array(resolvedCashFlowSchema)
+  .max(64)
+  .refine(
+    (flows) => new Set(flows.map(({ id }) => id)).size === flows.length,
+    { message: "resolved cash-flow IDs must be unique" },
+  );
+
 const textSchema = (maximum: number) =>
   z
     .string()
@@ -358,6 +383,7 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           taxEvidence: taxEvidenceSchema,
           taxableLiquidationCostRatePpm: boundedRatePpmSchema,
           insuranceClaim: insuranceClaimSchema.optional(),
+          resolvedCashFlows: resolvedCashFlowsSchema.optional(),
         })
         .strict(),
     })
