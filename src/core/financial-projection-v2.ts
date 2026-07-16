@@ -250,16 +250,16 @@ function assertSupportedNonfinancialLifecycle(
   const macroStoryExpiresBeforeHorizonEnd = lifecycle.macroStories.some(
     ({ expiresMonth }) => compareMonths(expiresMonth, horizonEndMonth) < 0,
   );
-  const lifeMilestoneDueWithinHorizon =
+  const lifeMilestoneDueBeforeHorizonEnd =
     state.gameplay.lifeMilestones?.scheduled.some(
-      ({ targetMonth }) => compareMonths(targetMonth, horizonEndMonth) <= 0,
+      ({ targetMonth }) => compareMonths(targetMonth, horizonEndMonth) < 0,
     ) ?? false;
   const hasUnsupportedEvidence =
     state.outcome !== null ||
     lifecycle.pending !== null ||
     careerCompletesWithinHorizon ||
     macroStoryExpiresBeforeHorizonEnd ||
-    lifeMilestoneDueWithinHorizon;
+    lifeMilestoneDueBeforeHorizonEnd;
   if (hasUnsupportedEvidence) {
     throw new FinancialProjectionV2Error(
       "UNSUPPORTED_NONFINANCIAL_LIFECYCLE",
