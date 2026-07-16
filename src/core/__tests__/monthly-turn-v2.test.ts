@@ -7,10 +7,10 @@ import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import { projectFinancialGoal } from "../financial-goals-v2";
 import { validateGameStateV2 } from "../game-state-v2";
+import * as monthlyTurnV2Module from "../monthly-turn-v2";
 import {
   financialKernelVersionForCommandV2,
   processMonthlyTurnV2,
-  processMonthlyTurnV2Legacy410,
   type ProcessMonthV2Command,
 } from "../monthly-turn-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
@@ -128,26 +128,25 @@ function command(
 }
 
 describe("atomic v2 monthly turn", () => {
-  it("exposes the named legacy reducer and financial-kernel discriminator", () => {
+  it("keeps the legacy reducer private and dispatches legacy commands publicly", () => {
     const initial = configuredState();
+    const unversioned = command(initial);
     const explicitLegacy = command(initial, {
       financialKernelVersion: "legacy-4.1.0",
     });
 
-    expect(processMonthlyTurnV2Legacy410).toBeTypeOf("function");
-    expect(financialKernelVersionForCommandV2(command())).toBe(
+    expect(monthlyTurnV2Module).not.toHaveProperty(
+      "processMonthlyTurnV2Legacy410",
+    );
+    expect(financialKernelVersionForCommandV2(unversioned)).toBe(
       "legacy-4.1.0",
     );
     expect(financialKernelVersionForCommandV2(explicitLegacy)).toBe(
       "legacy-4.1.0",
     );
     expect(
-      sha256Canonical(processMonthlyTurnV2(initial, explicitLegacy).state),
-    ).toBe(
-      sha256Canonical(
-        processMonthlyTurnV2Legacy410(initial, explicitLegacy).state,
-      ),
-    );
+      sha256Canonical(processMonthlyTurnV2(initial, unversioned).state),
+    ).toBe(sha256Canonical(processMonthlyTurnV2(initial, explicitLegacy).state));
     expect(
       financialKernelVersionForCommandV2(
         command(configuredState(), { financialKernelVersion: "2.0.0" }),
