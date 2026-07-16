@@ -38,7 +38,18 @@ export function StrategyPanel({
   const preTaxTotal = draft.retirement + hsaStrategy;
   const afterTaxTotal =
     draft.index + draft.sector + draft.speculative + draft.ira + draft.debt;
-  const invalid = preTaxTotal > 100 || afterTaxTotal > 100;
+  const invalidEmergencyTarget =
+    !Number.isFinite(draft.emergencyFundMonths) ||
+    draft.emergencyFundMonths < 0 ||
+    draft.emergencyFundMonths > 24;
+  const invalid =
+    preTaxTotal > 100 || afterTaxTotal > 100 || invalidEmergencyTarget;
+  const availableInsurance =
+    state.gameplay.catalogSnapshot?.selected.insuranceCoverages ?? [];
+  const activeInsuranceIds =
+    draft.insuranceCoverageIds ??
+    state.gameplay.recurringStrategy.insuranceCoverageIds ??
+    state.gameplay.benefits.insuranceCoverageIds;
 
   return (
     <section className="play-panel play-form">
@@ -50,6 +61,55 @@ export function StrategyPanel({
         401(k) and HSA use gross salary. Index, sector, speculative, IRA, and
         extra debt use cash remaining after tax and required obligations.
       </p>
+      <div className="strategy-grid">
+        <label>
+          <span>Emergency-fund target</span>
+          <input
+            min="0"
+            max="24"
+            step="0.5"
+            type="number"
+            value={draft.emergencyFundMonths}
+            onChange={(event) =>
+              onChange((current) => ({
+                ...current,
+                emergencyFundMonths: event.target.valueAsNumber,
+              }))
+            }
+          />
+          <small>months</small>
+        </label>
+      </div>
+      {availableInsurance.length > 0 ? (
+        <fieldset className="insurance-policy-options">
+          <legend>Active insurance protection</legend>
+          {availableInsurance.map((coverage) => (
+            <label key={coverage.id}>
+              <input
+                type="checkbox"
+                checked={activeInsuranceIds.includes(coverage.id)}
+                onChange={(event) =>
+                  onChange((current) => {
+                    const selected = new Set(
+                      current.insuranceCoverageIds ?? activeInsuranceIds,
+                    );
+                    if (event.target.checked) selected.add(coverage.id);
+                    else selected.delete(coverage.id);
+                    return {
+                      ...current,
+                      insuranceCoverageIds: availableInsurance
+                        .map(({ id }) => id)
+                        .filter((id) => selected.has(id)),
+                    };
+                  })
+                }
+              />
+              <span>{coverage.label}</span>
+              <small>{coverage.monthlyPremiumCents / 100}/month</small>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
       <div className="strategy-grid">
         {([
           ["retirement", "401(k)", "401k"],
@@ -90,7 +150,7 @@ export function StrategyPanel({
         <span>After-tax total: {afterTaxTotal}%</span>
       </div>
       <button disabled={busy || blocked || invalid} onClick={onSave} type="button">
-        Save recurring strategy
+        Preview recurring strategy
       </button>
     </section>
   );
@@ -185,7 +245,7 @@ export function ActionPanel({
           </select>
         </label>
       ) : null}
-      <button disabled={busy || blocked} onClick={onApply} type="button">Apply action</button>
+      <button disabled={busy || blocked} onClick={onApply} type="button">Preview action</button>
     </section>
   );
 }

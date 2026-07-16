@@ -26,10 +26,7 @@ import {
   debit,
   requireCash,
 } from "./detailed-actions-v2-support";
-
-const HOME_PURCHASE_CLOSING_COST_PPM = 30_000 as RatePpm;
-const HOME_SALE_COST_PPM = 60_000 as RatePpm;
-const HOME_REFINANCE_COST_PPM = 20_000 as RatePpm;
+import type { ResolvedDetailedActionPolicyV2 } from "./action-policy-v2";
 
 function validateMortgageTerms(rate: RatePpm, termMonths: number): void {
   if (!Number.isSafeInteger(rate) || rate < 0 || rate > 500_000) {
@@ -82,6 +79,7 @@ export function applyHomePurchase(
   state: GameStateV2,
   command: DetailedFinanceCommand,
   action: Extract<DetailedFinancialAction, { type: "purchase_home" }>,
+  policy: ResolvedDetailedActionPolicyV2,
 ): GameStateV2 {
   assertPositive(action.purchasePriceCents);
   if (
@@ -103,7 +101,7 @@ export function applyHomePurchase(
   );
   const closingCost = multiplyMoneyByRate(
     action.purchasePriceCents,
-    HOME_PURCHASE_CLOSING_COST_PPM,
+    policy.homePurchaseClosingCostRatePpm,
   );
   const cashRequired = addMoney(action.downPaymentCents, closingCost);
   requireCash(state, cashRequired);
@@ -161,6 +159,7 @@ export function applyHomePurchase(
 export function applyHomeSale(
   state: GameStateV2,
   command: DetailedFinanceCommand,
+  policy: ResolvedDetailedActionPolicyV2,
 ): GameStateV2 {
   const homeValue = state.finances.homeValueCents;
   if (homeValue <= 0) {
@@ -179,7 +178,10 @@ export function applyHomeSale(
     ),
   );
   const removedMinimums = calculateStoredMinimumDebtObligationV2(mortgages);
-  const saleCost = multiplyMoneyByRate(homeValue, HOME_SALE_COST_PPM);
+  const saleCost = multiplyMoneyByRate(
+    homeValue,
+    policy.homeSaleCostRatePpm,
+  );
   const net = homeValue - saleCost - mortgagePrincipal;
   if (net < 0) requireCash(state, moneyCents(-net));
   const postings: JournalPosting[] = [credit("asset.home", homeValue)];
@@ -221,6 +223,7 @@ export function applyHomeRefinance(
   state: GameStateV2,
   command: DetailedFinanceCommand,
   action: Extract<DetailedFinancialAction, { type: "refinance_home" }>,
+  policy: ResolvedDetailedActionPolicyV2,
 ): GameStateV2 {
   if (state.finances.homeValueCents <= 0) {
     throw new DetailedFinanceError("HOME_REQUIRED", "run does not own a home");
@@ -241,7 +244,7 @@ export function applyHomeRefinance(
   const { debt, index } = indexes[0]!;
   const closingCost = multiplyMoneyByRate(
     debt.principalCents,
-    HOME_REFINANCE_COST_PPM,
+    policy.homeRefinanceCostRatePpm,
   );
   requireCash(state, closingCost);
   const nextMinimum = amortizedPayment(

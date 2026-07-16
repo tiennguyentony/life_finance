@@ -16,7 +16,9 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function initialState(): GameStateV2 {
+function initialState(
+  insuranceCoverageIds: readonly string[] = [],
+): GameStateV2 {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
     {
@@ -27,7 +29,7 @@ function initialState(): GameStateV2 {
       benefitsPackageId: "benefits.corporate_flex",
       healthPlanId: "health.hdhp_hsa",
       retirementPlanId: "retirement.401k_standard",
-      insuranceCoverageIds: [],
+      insuranceCoverageIds,
       scenarioId: "scenario.fresh_start",
     },
   );
@@ -103,6 +105,102 @@ function strategyCommand(
 }
 
 describe("v2 recurring strategy planning", () => {
+  it("persists emergency and insurance policies and updates premium obligations exactly once", () => {
+    const initial = initialState(["insurance.renters"]);
+    const configured = setRecurringStrategy(
+      initial,
+      strategyCommand(initial, {
+        emergencyFundTargetMonthsPpm: ratePpm(6_000_000),
+        insuranceCoverageIds: [],
+      }),
+    );
+
+    expect(configured.gameplay.recurringStrategy).toMatchObject({
+      emergencyFundTargetMonthsPpm: 6_000_000,
+      insuranceCoverageIds: [],
+    });
+    expect(configured.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents - 1_800,
+    );
+
+    const replacedAllocations = setRecurringStrategy(
+      configured,
+      {
+        ...strategyCommand(configured),
+        id: "cmd.strategy.replacement",
+      },
+    );
+    expect(replacedAllocations.gameplay.recurringStrategy).toMatchObject({
+      emergencyFundTargetMonthsPpm: 6_000_000,
+      insuranceCoverageIds: [],
+    });
+    expect(replacedAllocations.finances.requiredObligationsCents).toBe(
+      configured.finances.requiredObligationsCents,
+    );
+  });
+
+  it("retains after-tax cash until the emergency-fund target is funded", () => {
+    const initial = initialState();
+    const configured = setRecurringStrategy(
+      initial,
+      strategyCommand(initial, {
+        emergencyFundTargetMonthsPpm: ratePpm(6_000_000),
+      }),
+    );
+    const belowTarget = planRecurringAllocations(
+      configured,
+      moneyCents(1_000_000),
+      moneyCents(100_000),
+    );
+
+    expect(belowTarget.unallocatedAfterTaxCents).toBe(100_000);
+    expect(belowTarget.afterTax).toMatchObject({
+      broadIndexCents: 0,
+      sectorCents: 0,
+      speculativeCents: 0,
+      iraCents: 0,
+      extraDebtPayments: [],
+    });
+
+    const funded = {
+      ...configured,
+      finances: {
+        ...configured.finances,
+        cashCents: moneyCents(
+          configured.finances.requiredObligationsCents * 6,
+        ),
+      },
+    } as GameStateV2;
+    const atTarget = planRecurringAllocations(
+      funded,
+      moneyCents(1_000_000),
+      moneyCents(100_000),
+    );
+    expect(atTarget.unallocatedAfterTaxCents).toBeLessThan(100_000);
+    expect(atTarget.afterTax.broadIndexCents).toBe(20_000);
+  });
+
+  it("rejects protection targets and coverage outside the frozen run selection", () => {
+    const initial = initialState(["insurance.renters"]);
+
+    expect(() =>
+      setRecurringStrategy(
+        initial,
+        strategyCommand(initial, {
+          emergencyFundTargetMonthsPpm: ratePpm(24_000_001),
+        }),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "INVALID_PROTECTION_POLICY" }));
+    expect(() =>
+      setRecurringStrategy(
+        initial,
+        strategyCommand(initial, {
+          insuranceCoverageIds: ["insurance.term_life"],
+        }),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "INVALID_PROTECTION_POLICY" }));
+  });
+
   it.each([
     [20_000, 20_000],
     [30_000, 30_000],

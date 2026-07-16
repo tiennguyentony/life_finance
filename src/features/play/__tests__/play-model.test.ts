@@ -19,10 +19,100 @@ import {
   describeTimePauseV2,
   dollarsToCents,
   percentToPpm,
+  strategyDraftFromState,
 } from "../play-model";
 import { selectionForPreset } from "../onboarding-model";
 
 describe("developer play UI model", () => {
+  it("hydrates every strategy draft field from restored authoritative state", () => {
+    const base = migrateGameStateV1ToV2(createInitialGameState({
+      runId: "run.strategy-restore",
+      startMonth: "2026-07",
+      randomSeed: "strategy-restore",
+      player: {
+        playerId: "player.strategy-restore",
+        birthMonth: "1995-01",
+        locationId: "location.test",
+        careerTrackId: "career.test",
+        filingStatus: "single",
+      },
+      finances: {
+        cashCents: moneyCents(1_000_000),
+        taxableInvestmentsCents: moneyCents(0),
+        retirementCents: moneyCents(0),
+        homeValueCents: moneyCents(0),
+        otherInvestableAssetsCents: moneyCents(0),
+        otherAssetsCents: moneyCents(0),
+        nonCreditLiabilitiesCents: moneyCents(0),
+        creditLimitCents: moneyCents(0),
+        creditUsedCents: moneyCents(0),
+        annualLivingCostCents: moneyCents(600_000),
+        requiredObligationsCents: moneyCents(50_000),
+      },
+      wellbeing: { burnoutPpm: ratePpm(0), happinessPpm: ratePpm(1_000_000) },
+    }));
+    const restored = {
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        benefits: {
+          ...base.gameplay.benefits,
+          insuranceCoverageIds: ["insurance.renters"],
+        },
+        recurringStrategy: {
+          effectiveMonth: base.currentMonth,
+          emergencyFundTargetMonthsPpm: ratePpm(7_500_000),
+          insuranceCoverageIds: [],
+          preTax401kSalaryRatePpm: ratePpm(110_000),
+          preTaxHsaSalaryRatePpm: ratePpm(20_000),
+          afterTaxBroadIndexRatePpm: ratePpm(130_000),
+          afterTaxSectorRatePpm: ratePpm(40_000),
+          afterTaxSpeculativeRatePpm: ratePpm(30_000),
+          afterTaxIraRatePpm: ratePpm(50_000),
+          afterTaxExtraDebtRatePpm: ratePpm(60_000),
+        },
+      },
+    } as const;
+
+    expect(strategyDraftFromState(restored)).toEqual({
+      emergencyFundMonths: 7.5,
+      insuranceCoverageIds: [],
+      retirement: 11,
+      hsa: 2,
+      index: 13,
+      sector: 4,
+      speculative: 3,
+      ira: 5,
+      debt: 6,
+    });
+  });
+
+  it("previews strategy and detailed action commands before applying the exact approved command", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("/commands/preview");
+    expect(source).toContain("approvedPolicyCommand(");
+    expect(source).toContain("submit(approvedCommand, policyPreview.activityMessage)");
+    expect(source).toContain("isCurrentPolicyPreviewGeneration(");
+    expect(source.match(/invalidateCurrentPolicyPreview/g)?.length).toBeGreaterThanOrEqual(5);
+
+    const strategyFlow = source.slice(
+      source.indexOf("const saveStrategy"),
+      source.indexOf("const runMonths"),
+    );
+    const actionFlow = source.slice(
+      source.indexOf("const takeAction"),
+      source.indexOf("const resolveChoice"),
+    );
+    expect(strategyFlow).toContain("previewPolicyCommand(");
+    expect(strategyFlow).not.toContain("submit(");
+    expect(actionFlow).toContain("previewPolicyCommand(");
+    expect(actionFlow).not.toContain("submit(");
+  });
+
   it("uses one advance request and one pause activity for hidden months", () => {
     const source = readFileSync(
       new URL("../play-console.tsx", import.meta.url),

@@ -50,6 +50,14 @@ describe("play action builder", () => {
     });
   });
 
+  it("sends liquidation intent without a client-selected transaction-cost rate", () => {
+    expect(build("liquidate_taxable")).toEqual({
+      type: "liquidate_taxable",
+      bucket: "taxableBroadIndexCents",
+      amountCents: 123_456,
+    });
+  });
+
   it("converts home purchase fields to exact engine units", () => {
     expect(build("purchase_home")).toEqual({
       type: "purchase_home",

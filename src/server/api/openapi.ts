@@ -32,6 +32,8 @@ import {
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
 
@@ -183,6 +185,33 @@ registry.registerPath({
       description: "Tax service is temporarily unavailable; no state was committed",
       content: { "application/json": { schema: apiErrorSchema } },
     },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/commands/preview",
+  operationId: "previewPlayerPolicyCommandV2",
+  summary:
+    "Preview an exact strategy or action command without committing state",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: {
+      content: {
+        "application/json": { schema: playerPolicyPreviewV2RequestSchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Deterministic immediate effects and ledger evidence for caller approval",
+      content: {
+        "application/json": { schema: playerPolicyPreviewV2ResponseSchema },
+      },
+    },
+    ...errorResponses,
   },
 });
 

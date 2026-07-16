@@ -13,6 +13,7 @@ import {
   handleCreateRun,
   handleGetRun,
   handleMigrateRunV2,
+  handlePreviewPlayerPolicyCommandV2,
   handleSubmitCommand,
 } from "../http";
 import { RunApiService } from "../service";
@@ -503,6 +504,69 @@ describe("typed v2 client", () => {
         payload: {},
       });
     expect(String(commandInit?.body)).not.toContain("taxEvidence");
+  });
+
+  it("integrates the authenticated preview client, HTTP handler, and service without applying", async () => {
+    const preview = {
+      schemaVersion: 1 as const,
+      commandType: "take_detailed_action" as const,
+      actionPolicyVersion: "1.0.0" as const,
+      commandChecksum: "1".repeat(64),
+      openingStateChecksum: "2".repeat(64),
+      resultingStateChecksum: "3".repeat(64),
+      openingRevision: 0,
+      resultingRevision: 1,
+      effects: {
+        cashChangeCents: -100_000,
+        automaticLiquidityChangeCents: -100_000,
+        termDebtPrincipalChangeCents: 0,
+        revolvingCreditUsedChangeCents: 0,
+        annualLivingCostChangeCents: 0,
+        requiredObligationsChangeCents: 0,
+      },
+      policyChanges: [],
+      appendedLedgerTransactionIds: [],
+      appendedLedgerTransactions: [],
+    };
+    const previewPlayerPolicyCommand = vi.fn(async () => preview);
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) =>
+      handlePreviewPlayerPolicyCommandV2(
+        new Request(input, init),
+        runId,
+        { previewPlayerPolicyCommand } as unknown as RunApiServiceV2,
+      ),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+    const command = {
+      schemaVersion: 2 as const,
+      id: "action.http-preview",
+      type: "take_detailed_action" as const,
+      expectedRevision: 0,
+      effectiveMonth: "2026-07",
+      payload: {
+        action: {
+          type: "invest_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+
+    await expect(
+      client.previewPlayerPolicyCommandV2(runId, accessSecret, command),
+    ).resolves.toEqual(preview);
+    expect(previewPlayerPolicyCommand).toHaveBeenCalledWith(
+      runId,
+      accessSecret,
+      command,
+    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      `https://example.test/api/v2/runs/${runId}/commands/preview`,
+    );
+    expect(init?.headers).toMatchObject({
+      Authorization: `Bearer ${accessSecret}`,
+    });
   });
 
   it("requests checkpoint evidence by validated revision with bearer auth", async () => {

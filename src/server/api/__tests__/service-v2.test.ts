@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { sha256Canonical } from "../../../core/canonical";
+import { buildPlayerPolicyCommandPreviewV2 } from "../../../core/action-preview-v2";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import { resetAnnualFinancialAccumulatorsV2 } from "../../../core/financial-year-v2";
@@ -23,6 +24,7 @@ import {
   type TaxCalculationRequest,
 } from "../../tax/contracts";
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
+import { reduceGameCommandV2 } from "../../db/run-repository-support";
 import { commandV2ResponseSchema } from "../contracts-v2";
 import { RunApiServiceV2 } from "../service-v2";
 import { summarizeMonthlyRecord } from "../v2/monthly-record";
@@ -90,6 +92,183 @@ function stateWithStrategy() {
     },
   });
 }
+
+describe("player policy preview integration", () => {
+  it("maps, reduces, and reports the exact approvable action without writing", async () => {
+    let state = stateWithStrategy();
+    const applyCommandV2 = vi.fn(async (_runId, _secret, command) => {
+      if (command.type !== "take_detailed_action") {
+        throw new Error("expected a detailed action");
+      }
+      state = reduceDetailedFinanceCommand(state, command);
+      return {
+        state,
+        stateChecksum: sha256Canonical(state),
+        idempotentReplay: false,
+        monthlyRecord: null,
+      };
+    });
+    const previewPlayerPolicyCommand = vi.fn(
+      async (_runId, _secret, command) =>
+        buildPlayerPolicyCommandPreviewV2(
+          state,
+          command,
+          reduceGameCommandV2(state, command).state,
+        ),
+    );
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(),
+      loadMonthlyTaxEvidenceForContext: vi.fn(),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2: vi.fn(),
+      previewPlayerPolicyCommandV2: previewPlayerPolicyCommand,
+      applyCommandV2,
+    };
+    const service = new RunApiServiceV2(repository, { calculate: vi.fn() });
+    const command = {
+      schemaVersion: 2 as const,
+      id: "action.preview-service",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      type: "take_detailed_action" as const,
+      payload: {
+        action: {
+          type: "invest_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+    const openingChecksum = sha256Canonical(state);
+
+    const preview = await service.previewPlayerPolicyCommand(
+      "run-id",
+      "secret",
+      command,
+    );
+
+    expect(applyCommandV2).not.toHaveBeenCalled();
+    expect(sha256Canonical(state)).toBe(openingChecksum);
+    expect(preview).toMatchObject({
+      actionPolicyVersion: "1.0.0",
+      openingStateChecksum: openingChecksum,
+      effects: {
+        cashChangeCents: -100_000,
+        automaticLiquidityChangeCents: -1_000,
+      },
+    });
+    const internal = previewPlayerPolicyCommand.mock.calls[0]?.[2];
+    expect(internal).toMatchObject({
+      payload: { actionPolicyVersion: "1.0.0" },
+    });
+
+    const applied = await service.submitCommand("run-id", "secret", command);
+    expect(applied.stateChecksum).toBe(preview.resultingStateChecksum);
+    expect(applied.state.revision).toBe(preview.resultingRevision);
+  });
+
+  it("replays the exact accepted historical action after server policy ownership changes", async () => {
+    const state = stateWithStrategy();
+    const storedHistoricalCommand: Parameters<
+      typeof reduceDetailedFinanceCommand
+    >[1] = {
+      schemaVersion: 2,
+      id: "action.historical-liquidation",
+      expectedRevision: state.revision,
+      effectiveMonth: state.currentMonth,
+      type: "take_detailed_action",
+      payload: {
+        action: {
+          type: "liquidate_taxable",
+          bucket: "taxableBroadIndexCents",
+          amountCents: moneyCents(50_000),
+          liquidationCostRatePpm: ratePpm(123_456),
+        },
+      },
+    };
+    const applyCommandV2 = vi.fn(async (_runId, _secret, command) => {
+      expect(command).toEqual(storedHistoricalCommand);
+      return {
+        state,
+        stateChecksum: sha256Canonical(state),
+        idempotentReplay: true,
+        monthlyRecord: null,
+      };
+    });
+    const previewPlayerPolicyCommandV2 = vi.fn();
+    const repository: ConstructorParameters<typeof RunApiServiceV2>[0] = {
+      createRunV2: vi.fn(),
+      loadAuthorizedRunV2: vi.fn(async () => state),
+      loadAcceptedCommandV2: vi.fn(async () => storedHistoricalCommand),
+      loadAcceptedMonthlyCommandV2: vi.fn(),
+      loadMonthlyTaxEvidenceForCommand: vi.fn(),
+      loadMonthlyTaxEvidenceForContext: vi.fn(),
+      loadCheckpointEvidenceV2: vi.fn(),
+      migrateRunStateToV2: vi.fn(),
+      previewPlayerPolicyCommandV2,
+      applyCommandV2,
+    };
+    const service = new RunApiServiceV2(repository, { calculate: vi.fn() });
+
+    const response = await service.submitCommand("run-id", "secret", {
+      schemaVersion: 2,
+      id: storedHistoricalCommand.id,
+      expectedRevision: storedHistoricalCommand.expectedRevision,
+      effectiveMonth: storedHistoricalCommand.effectiveMonth,
+      type: "take_detailed_action",
+      payload: {
+        action: {
+          type: "liquidate_taxable",
+          bucket: "taxableBroadIndexCents",
+          amountCents: 50_000,
+          liquidationCostRatePpm: 123_456,
+        },
+      },
+    });
+
+    expect(response.idempotentReplay).toBe(true);
+    expect(applyCommandV2).toHaveBeenCalledOnce();
+    await expect(
+      service.submitCommand("run-id", "secret", {
+        schemaVersion: 2,
+        id: "action.new-client-owned-rate",
+        expectedRevision: state.revision,
+        effectiveMonth: state.currentMonth,
+        type: "take_detailed_action",
+        payload: {
+          action: {
+            type: "liquidate_taxable",
+            bucket: "taxableBroadIndexCents",
+            amountCents: 50_000,
+            liquidationCostRatePpm: 123_456,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_RATE" });
+    await expect(
+      service.previewPlayerPolicyCommand("run-id", "secret", {
+        schemaVersion: 2,
+        id: "action.preview-client-owned-rate",
+        expectedRevision: state.revision,
+        effectiveMonth: state.currentMonth,
+        type: "take_detailed_action",
+        payload: {
+          action: {
+            type: "liquidate_taxable",
+            bucket: "taxableBroadIndexCents",
+            amountCents: 50_000,
+            liquidationCostRatePpm: 123_456,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_RATE" });
+    expect(applyCommandV2).toHaveBeenCalledOnce();
+    expect(previewPlayerPolicyCommandV2).not.toHaveBeenCalled();
+  });
+});
 
 describe("annual tax contribution projection", () => {
   it("keeps the projected year-end total stable after a monthly contribution", () => {

@@ -2,6 +2,7 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
+import { ACTION_POLICY_V1_VERSION } from "../../../core/action-policy-v2";
 import { allocateMoney, moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { DetailedFinanceCommand } from "../../../core/detailed-actions-v2";
@@ -500,6 +501,7 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000028",
     "10000000-0000-4000-8000-000000000029",
     "10000000-0000-4000-8000-000000000030",
+    "10000000-0000-4000-8000-000000000031",
   ];
   let runIndex = 0;
 
@@ -518,6 +520,99 @@ databaseDescribe("Postgres run repository", () => {
 
   afterAll(async () => {
     await connection?.close();
+  });
+
+  it("previews through the repository and exact reducer without any database write", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    const command: DetailedFinanceCommand = {
+      schemaVersion: 2,
+      id: "action.repository-preview",
+      expectedRevision: created.state.revision,
+      effectiveMonth: created.state.currentMonth,
+      type: "take_detailed_action",
+      payload: {
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+        action: {
+          type: "invest_taxable",
+          bucket: "taxableBroadIndexCents",
+          amountCents: moneyCents(100_000),
+        },
+      },
+    };
+    const [acceptedBefore] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    const [ledgerBefore] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    const [stateSnapshotsBefore] = await connection.db
+      .select({ value: count() })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    const [scenarioSnapshotsBefore] = await connection.db
+      .select({ value: count() })
+      .from(runScenarioSnapshots)
+      .where(eq(runScenarioSnapshots.runId, created.runId));
+    const [monthlyRecordsBefore] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTurnRecords)
+      .where(eq(monthlyTurnRecords.runId, created.runId));
+    const [outboxBefore] = await connection.db
+      .select({ value: count() })
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.runId, created.runId));
+
+    const preview = await repository.previewPlayerPolicyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    const unchanged = await repository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const [acceptedAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    const [ledgerAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    const [stateSnapshotsAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    const [scenarioSnapshotsAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(runScenarioSnapshots)
+      .where(eq(runScenarioSnapshots.runId, created.runId));
+    const [monthlyRecordsAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTurnRecords)
+      .where(eq(monthlyTurnRecords.runId, created.runId));
+    const [outboxAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.runId, created.runId));
+
+    expect(sha256Canonical(unchanged)).toBe(preview.openingStateChecksum);
+    expect(acceptedAfterPreview.value).toBe(acceptedBefore.value);
+    expect(ledgerAfterPreview.value).toBe(ledgerBefore.value);
+    expect(stateSnapshotsAfterPreview.value).toBe(stateSnapshotsBefore.value);
+    expect(scenarioSnapshotsAfterPreview.value).toBe(scenarioSnapshotsBefore.value);
+    expect(monthlyRecordsAfterPreview.value).toBe(monthlyRecordsBefore.value);
+    expect(outboxAfterPreview.value).toBe(outboxBefore.value);
+
+    const applied = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    expect(applied.stateChecksum).toBe(preview.resultingStateChecksum);
+    expect(applied.state.revision).toBe(preview.resultingRevision);
   });
 
   it("persists and idempotently replays one atomic multi-month advance", async () => {

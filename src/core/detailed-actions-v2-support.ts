@@ -8,6 +8,10 @@ import {
   DetailedFinanceError,
   type DetailedFinanceCommand,
 } from "./detailed-actions-v2-contracts";
+import {
+  resolveDetailedActionPolicyV2,
+  type ResolvedDetailedActionPolicyV2,
+} from "./action-policy-v2";
 
 const COMMAND_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 
@@ -31,7 +35,7 @@ export function assertPositive(value: MoneyCents): void {
 export function validateEnvelope(
   state: GameStateV2,
   command: DetailedFinanceCommand,
-): void {
+): ResolvedDetailedActionPolicyV2 {
   if (
     command.schemaVersion !== DETAILED_FINANCE_COMMAND_SCHEMA_VERSION ||
     command.type !== "take_detailed_action" ||
@@ -60,6 +64,20 @@ export function validateEnvelope(
   }
   if (state.outcome !== null) {
     throw new DetailedFinanceError("RUN_TERMINAL", "terminal runs reject commands");
+  }
+  try {
+    const action = command.payload.action;
+    return resolveDetailedActionPolicyV2(
+      command.payload.actionPolicyVersion,
+      action.type === "liquidate_taxable"
+        ? action.liquidationCostRatePpm
+        : undefined,
+    );
+  } catch (error) {
+    throw new DetailedFinanceError(
+      "INVALID_COMMAND",
+      error instanceof Error ? error.message : "invalid action policy",
+    );
   }
 }
 

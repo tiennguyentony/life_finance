@@ -10,6 +10,7 @@ import {
   boundedRatePpmSchema,
   checksumSchema,
   identifierSchema,
+  journalTransactionSchema,
   marketRegimeSchema,
   nonNegativeCentsSchema,
   ratePpmSchema,
@@ -37,6 +38,14 @@ const brandedBoundedRatePpmSchema = boundedRatePpmSchema.transform(ratePpm);
 
 const rateGroupSchema = z
   .object({
+    emergencyFundTargetMonthsPpm: z.int().min(0).max(24_000_000).optional(),
+    insuranceCoverageIds: z
+      .array(identifierSchema)
+      .max(16)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "insurance coverage IDs must be unique",
+      })
+      .optional(),
     preTax401kSalaryRatePpm: boundedRatePpmSchema,
     preTaxHsaSalaryRatePpm: boundedRatePpmSchema,
     afterTaxBroadIndexRatePpm: boundedRatePpmSchema,
@@ -186,7 +195,7 @@ const detailedActionSchema = z.discriminatedUnion("type", [
         "taxableLegacyUnclassifiedCents",
       ]),
       amountCents: nonNegativeCentsSchema.min(1),
-      liquidationCostRatePpm: boundedRatePpmSchema,
+      liquidationCostRatePpm: boundedRatePpmSchema.optional(),
     })
     .strict(),
   z.object({ type: z.literal("contribute_ira"), amountCents: nonNegativeCentsSchema.min(1) }).strict(),
@@ -311,6 +320,11 @@ export const gameCommandV2PublicSchema = z.discriminatedUnion("type", [
   manageLifeMilestoneV2CommandSchema,
   processMonthV2PublicCommandSchema,
 ]);
+
+export const playerPolicyPreviewV2RequestSchema = z.discriminatedUnion(
+  "type",
+  [setStrategyV2CommandSchema, detailedActionV2CommandSchema],
+);
 
 const monthlyMarketEvidenceSchema = z
   .object({
@@ -695,6 +709,102 @@ export const commandV2ResponseSchema = getRunV2ResponseSchema
   })
   .strict();
 
+const recurringStrategyPreviewSchema = z
+  .object({
+    effectiveMonth: simulationMonthSchema,
+    emergencyFundTargetMonthsPpm: z.int().min(0).max(24_000_000).optional(),
+    insuranceCoverageIds: z.array(identifierSchema).max(16).optional(),
+    preTax401kSalaryRatePpm: boundedRatePpmSchema,
+    preTaxHsaSalaryRatePpm: boundedRatePpmSchema,
+    afterTaxBroadIndexRatePpm: boundedRatePpmSchema,
+    afterTaxSectorRatePpm: boundedRatePpmSchema,
+    afterTaxSpeculativeRatePpm: boundedRatePpmSchema,
+    afterTaxIraRatePpm: boundedRatePpmSchema,
+    afterTaxExtraDebtRatePpm: boundedRatePpmSchema,
+  })
+  .strict();
+
+const actionPreviewPolicyChangeV2Schema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("annual_living_cost"),
+      effectiveMonth: simulationMonthSchema,
+      previousAnnualLivingCostCents: nonNegativeCentsSchema,
+      resultingAnnualLivingCostCents: nonNegativeCentsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("recurring_strategy"),
+      effectiveMonth: simulationMonthSchema,
+      previous: recurringStrategyPreviewSchema,
+      resulting: recurringStrategyPreviewSchema,
+    })
+    .strict(),
+]);
+
+export const playerPolicyPreviewV2ResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    commandType: z.enum(["take_detailed_action", "set_recurring_strategy"]),
+    actionPolicyVersion: z.literal("1.0.0").nullable(),
+    commandChecksum: checksumSchema,
+    openingStateChecksum: checksumSchema,
+    resultingStateChecksum: checksumSchema,
+    openingRevision: z.int().min(0),
+    resultingRevision: z.int().min(1),
+    effects: z
+      .object({
+        cashChangeCents: signedCentsSchema,
+        automaticLiquidityChangeCents: signedCentsSchema,
+        termDebtPrincipalChangeCents: signedCentsSchema,
+        revolvingCreditUsedChangeCents: signedCentsSchema,
+        annualLivingCostChangeCents: signedCentsSchema,
+        requiredObligationsChangeCents: signedCentsSchema,
+      })
+      .strict(),
+    policyChanges: z.array(actionPreviewPolicyChangeV2Schema).max(8),
+    appendedLedgerTransactionIds: z.array(identifierSchema).max(64),
+    appendedLedgerTransactions: z.array(journalTransactionSchema).max(64),
+  })
+  .strict()
+  .superRefine((preview, context) => {
+    if (preview.resultingRevision !== preview.openingRevision + 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["resultingRevision"],
+        message: "a preview must represent exactly one command revision",
+      });
+    }
+    if (
+      (preview.commandType === "take_detailed_action" &&
+        preview.actionPolicyVersion !== "1.0.0") ||
+      (preview.commandType === "set_recurring_strategy" &&
+        preview.actionPolicyVersion !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["actionPolicyVersion"],
+        message: "action policy ownership must match the previewed command type",
+      });
+    }
+    const transactionIds = preview.appendedLedgerTransactions.map(
+      ({ id }) => id,
+    );
+    if (
+      transactionIds.length !== preview.appendedLedgerTransactionIds.length ||
+      transactionIds.some(
+        (id, index) => id !== preview.appendedLedgerTransactionIds[index],
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["appendedLedgerTransactionIds"],
+        message: "transaction IDs must exactly match appended ledger evidence",
+      });
+    }
+  });
+
 export const checkpointV2QuerySchema = z
   .object({ fromRevision: z.coerce.number().int().min(0) })
   .strict();
@@ -1023,6 +1133,12 @@ export type GameCommandV2Public = z.infer<typeof gameCommandV2PublicSchema>;
 export type GetRunV2Response = z.infer<typeof getRunV2ResponseSchema>;
 export type MigrateRunV2Response = z.infer<typeof migrateRunV2ResponseSchema>;
 export type CommandV2Response = z.infer<typeof commandV2ResponseSchema>;
+export type PlayerPolicyPreviewV2Request = z.infer<
+  typeof playerPolicyPreviewV2RequestSchema
+>;
+export type PlayerPolicyPreviewV2Response = z.infer<
+  typeof playerPolicyPreviewV2ResponseSchema
+>;
 export type CheckpointV2Response = z.infer<typeof checkpointV2ResponseSchema>;
 export type AdvanceTimeV2Request = z.infer<typeof advanceTimeV2RequestSchema>;
 export type AdvanceTimeV2Response = z.infer<typeof advanceTimeV2ResponseSchema>;
