@@ -138,8 +138,7 @@ export class FinancialKernelV2Error extends Error {
     | "INVALID_INPUT"
     | "INVALID_MARKET_STEP"
     | "INVALID_RESOLVED_CASH_FLOW"
-    | "SHORTFALL_NOT_IMPLEMENTED"
-    | "SUCCESSFUL_MONTH_NOT_IMPLEMENTED";
+    | "SHORTFALL_NOT_IMPLEMENTED";
 
   constructor(code: FinancialKernelV2Error["code"], message: string) {
     super(message);
@@ -268,10 +267,17 @@ function applySuppliedMarketMonth(
   simulation: MarketSimulationResult,
 ): Readonly<{
   state: GameStateV2;
+  month: MarketMonth;
   marketValueChangeCents: MoneyCents;
   cumulativePriceIndexPpm: number;
 }> {
-  const month = simulation.month;
+  const month = Object.freeze({
+    ...simulation.month,
+    appliedReturnModifiersPpm: Object.freeze({
+      ...simulation.month.appliedReturnModifiersPpm,
+    }),
+    shocks: Object.freeze({ ...simulation.month.shocks }),
+  });
   const portfolio = state.gameplay.portfolio;
   const portfolioChanges: Record<keyof PortfolioBreakdown, MoneyCents> = {
     taxableBroadIndexCents: signedChange(
@@ -388,7 +394,7 @@ function applySuppliedMarketMonth(
       ...state,
       ledger,
       finances: reconcileFinancesWithLedger(state.finances, ledger),
-      random: simulation.nextState.random,
+      random: { ...simulation.nextState.random },
       marketRegime: simulation.nextState.regime,
       gameplay: {
         ...state.gameplay,
@@ -400,6 +406,7 @@ function applySuppliedMarketMonth(
         },
       },
     }),
+    month,
     marketValueChangeCents,
     cumulativePriceIndexPpm,
   });
@@ -663,8 +670,11 @@ export function simulateFinancialMonthV2(
     input.taxableLiquidationCostRatePpm,
   ).totalAutomaticLiquidityCents;
 
+  const ownedOpeningState = Object.isFrozen(input.state)
+    ? input.state
+    : structuredClone(input.state);
   let working = finalizeGameStateV2(
-    resetAnnualFinancialAccumulatorsV2(input.state),
+    resetAnnualFinancialAccumulatorsV2(ownedOpeningState),
   );
   const claim = applyInsuranceClaim(working, input.insuranceClaim);
   working = claim.state;
@@ -782,7 +792,7 @@ export function simulateFinancialMonthV2(
     afterTaxCashIncomeCents: input.taxEvidence.afterTaxCashIncomeCents,
     resolvedIncomeCents,
     resolvedExpenseCents,
-    market: input.marketStep.month,
+    market: market.month,
     marketValueChangeCents: market.marketValueChangeCents,
     annualInflationIncreaseCents: inflation.annualIncreaseCents,
     monthlyObligationInflationIncreaseCents:
