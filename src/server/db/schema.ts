@@ -343,6 +343,10 @@ export const ledgerTransactions = pgTable(
     effectiveMonth: char("effective_month", { length: 7 }).notNull(),
     reasonCode: varchar("reason_code", { length: 128 }).notNull(),
     description: varchar("description", { length: 500 }).notNull(),
+    sourceSystem: varchar("source_system", { length: 128 }),
+    category: varchar("category", { length: 128 }),
+    causalReferenceKind: varchar("causal_reference_kind", { length: 16 }),
+    causalReferenceId: varchar("causal_reference_id", { length: 128 }),
     reversesTransactionId: varchar("reverses_transaction_id", { length: 128 }),
     transactionIndex: integer("transaction_index").notNull(),
     createdAt,
@@ -361,6 +365,18 @@ export const ledgerTransactions = pgTable(
     check(
       "ledger_transactions_month_format",
       sql`${table.effectiveMonth} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`,
+    ),
+    check(
+      "ledger_transactions_complete_provenance",
+      sql`(
+        (${table.sourceSystem} IS NULL AND ${table.category} IS NULL AND ${table.causalReferenceKind} IS NULL AND ${table.causalReferenceId} IS NULL)
+        OR
+        (${table.sourceSystem} IS NOT NULL AND ${table.category} IS NOT NULL AND ${table.causalReferenceKind} IS NOT NULL AND ${table.causalReferenceId} IS NOT NULL)
+      )`,
+    ),
+    check(
+      "ledger_transactions_causal_kind_valid",
+      sql`${table.causalReferenceKind} IS NULL OR ${table.causalReferenceKind} IN ('command', 'event', 'milestone', 'system')`,
     ),
   ],
 ).enableRLS();

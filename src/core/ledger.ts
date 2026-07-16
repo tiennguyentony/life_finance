@@ -22,15 +22,33 @@ export type JournalPosting = Readonly<{
   creditCents: MoneyCents;
 }>;
 
+export type LedgerCausalReference = Readonly<{
+  kind: "command" | "event" | "milestone" | "system";
+  id: string;
+}>;
+
 export type JournalTransaction = Readonly<{
   id: string;
   commandId: string;
   effectiveMonth: SimulationMonth;
   reasonCode: string;
   description: string;
+  sourceSystem?: string;
+  category?: string;
+  causalReference?: LedgerCausalReference;
   postings: readonly JournalPosting[];
   reversesTransactionId?: string;
 }>;
+
+export type NewJournalTransaction = Readonly<
+  Omit<JournalTransaction, "sourceSystem" | "category" | "causalReference"> &
+    Required<
+      Pick<
+        JournalTransaction,
+        "sourceSystem" | "category" | "causalReference"
+      >
+    >
+>;
 
 export type Ledger = Readonly<{
   accounts: Readonly<Record<string, LedgerAccount>>;
@@ -56,6 +74,8 @@ export class InvalidLedgerError extends Error {
 }
 
 const IDENTIFIER_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
+const CAUSAL_REFERENCE_KINDS: ReadonlySet<LedgerCausalReference["kind"]> =
+  new Set(["command", "event", "milestone", "system"]);
 
 function freezeLedger(ledger: Ledger): Ledger {
   for (const account of Object.values(ledger.accounts)) {
@@ -67,6 +87,9 @@ function freezeLedger(ledger: Ledger): Ledger {
       Object.freeze(posting);
     }
     Object.freeze(transaction.postings);
+    if (transaction.causalReference) {
+      Object.freeze(transaction.causalReference);
+    }
     Object.freeze(transaction);
   }
   Object.freeze(ledger.transactions);
@@ -82,8 +105,88 @@ function addViolation(
   violations.push({ path, code, message });
 }
 
-function hasValidIdentifier(value: string): boolean {
-  return IDENTIFIER_PATTERN.test(value);
+function hasValidIdentifier(value: unknown): value is string {
+  return typeof value === "string" && IDENTIFIER_PATTERN.test(value);
+}
+
+function validateProvenance(
+  transaction: JournalTransaction,
+  path: string,
+): LedgerViolation[] {
+  const violations: LedgerViolation[] = [];
+  const provenanceValues = [
+    transaction.sourceSystem,
+    transaction.category,
+    transaction.causalReference,
+  ];
+  const presentCount = provenanceValues.filter(
+    (value) => value !== undefined,
+  ).length;
+
+  if (presentCount === 0) return violations;
+  if (presentCount !== provenanceValues.length) {
+    addViolation(
+      violations,
+      path,
+      "partial_provenance",
+      "sourceSystem, category, and causalReference must be all present or all absent",
+    );
+    return violations;
+  }
+
+  if (!hasValidIdentifier(transaction.sourceSystem)) {
+    addViolation(
+      violations,
+      `${path}.sourceSystem`,
+      "invalid_identifier",
+      "is invalid",
+    );
+  }
+  if (!hasValidIdentifier(transaction.category)) {
+    addViolation(
+      violations,
+      `${path}.category`,
+      "invalid_identifier",
+      "is invalid",
+    );
+  }
+
+  const causalReference: unknown = transaction.causalReference;
+  if (causalReference === null || typeof causalReference !== "object") {
+    addViolation(
+      violations,
+      `${path}.causalReference`,
+      "invalid_causal_reference",
+      "must contain a valid kind and stable identifier",
+    );
+    return violations;
+  }
+
+  const { kind, id } = causalReference as Readonly<{
+    kind?: unknown;
+    id?: unknown;
+  }>;
+  if (
+    typeof kind !== "string" ||
+    !CAUSAL_REFERENCE_KINDS.has(kind as LedgerCausalReference["kind"])
+  ) {
+    addViolation(
+      violations,
+      `${path}.causalReference.kind`,
+      "invalid_causal_kind",
+      "must be command, event, milestone, or system",
+    );
+  }
+  if (!hasValidIdentifier(id)) {
+    addViolation(
+      violations,
+      `${path}.causalReference.id`,
+      "invalid_identifier",
+      "is invalid",
+    );
+  }
+
+  return violations;
 }
 
 function validateTransaction(
@@ -96,6 +199,8 @@ function validateTransaction(
 ): LedgerViolation[] {
   const violations: LedgerViolation[] = [];
   const path = `transactions.${transactionIndex}`;
+
+  violations.push(...validateProvenance(transaction, path));
 
   if (!hasValidIdentifier(transaction.id)) {
     addViolation(violations, `${path}.id`, "invalid_identifier", "is invalid");
@@ -349,7 +454,7 @@ export function createLedger(accounts: readonly LedgerAccount[]): Ledger {
 
 export function appendTransaction(
   ledger: Ledger,
-  transaction: JournalTransaction,
+  transaction: NewJournalTransaction,
 ): Ledger {
   const next: Ledger = {
     accounts: ledger.accounts,
@@ -357,6 +462,7 @@ export function appendTransaction(
       ...ledger.transactions,
       {
         ...transaction,
+        causalReference: { ...transaction.causalReference },
         postings: transaction.postings.map((posting) => ({ ...posting })),
       },
     ],
@@ -373,7 +479,7 @@ export function createReversalTransaction(input: Readonly<{
   effectiveMonth: SimulationMonth;
   reasonCode: string;
   description: string;
-}>): JournalTransaction {
+}>): NewJournalTransaction {
   const original = input.ledger.transactions.find(
     ({ id }) => id === input.transactionId,
   );
@@ -393,6 +499,12 @@ export function createReversalTransaction(input: Readonly<{
     effectiveMonth: input.effectiveMonth,
     reasonCode: input.reasonCode,
     description: input.description,
+    sourceSystem: original.sourceSystem ?? "ledger",
+    category: original.category ?? "ledger.legacy_reversal",
+    causalReference: {
+      kind: "command",
+      id: input.commandId,
+    },
     reversesTransactionId: original.id,
     postings: original.postings.map((posting) => ({
       accountId: posting.accountId,

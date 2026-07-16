@@ -237,6 +237,12 @@ export function prepareV2ObligationCash(
       effectiveMonth: state.currentMonth,
       reasonCode: "prepare_v2_obligation_cash",
       description: "Raise obligation cash from taxable assets then revolving credit",
+      sourceSystem: "obligation_funding_v2",
+      category: "liquidity.obligation_funding",
+      causalReference: {
+        kind: "command",
+        id: commandId,
+      },
       postings,
     });
   }

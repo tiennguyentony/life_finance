@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
@@ -377,6 +377,17 @@ databaseDescribe("Postgres run repository", () => {
       .select({ value: count() })
       .from(ledgerTransactions)
       .where(eq(ledgerTransactions.runId, created.runId));
+    const persistedLedgerRows = await connection.db
+      .select({
+        transactionId: ledgerTransactions.transactionId,
+        sourceSystem: ledgerTransactions.sourceSystem,
+        category: ledgerTransactions.category,
+        causalReferenceKind: ledgerTransactions.causalReferenceKind,
+        causalReferenceId: ledgerTransactions.causalReferenceId,
+      })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId))
+      .orderBy(asc(ledgerTransactions.transactionIndex));
     const [outboxCount] = await connection.db
       .select({ value: count() })
       .from(transactionalOutbox)
@@ -384,6 +395,22 @@ databaseDescribe("Postgres run repository", () => {
     expect(commandCount.value).toBe(1);
     expect(snapshotCount.value).toBe(2);
     expect(ledgerCount.value).toBe(2);
+    expect(persistedLedgerRows).toEqual([
+      {
+        transactionId: "txn.opening",
+        sourceSystem: "state_initialization",
+        category: "equity.opening",
+        causalReferenceKind: "system",
+        causalReferenceId: "run.opening",
+      },
+      {
+        transactionId: `txn.${command.id}`,
+        sourceSystem: "command_reducer",
+        category: "command.post_transaction",
+        causalReferenceKind: "command",
+        causalReferenceId: command.id,
+      },
+    ]);
     expect(outboxCount.value).toBe(2);
   });
 

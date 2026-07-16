@@ -8,7 +8,7 @@ import {
 import {
   appendTransaction,
   type JournalPosting,
-  type JournalTransaction,
+  type NewJournalTransaction,
 } from "./ledger";
 import { processMonthlyTurn, type MonthlyTurnInput } from "./monthly-turn";
 
@@ -161,12 +161,23 @@ function postTransaction(
     );
   }
 
-  const transaction: JournalTransaction = {
+  const reversalTarget = command.payload.reversesTransactionId
+    ? state.ledger.transactions.find(
+        ({ id }) => id === command.payload.reversesTransactionId,
+      )
+    : undefined;
+  const transaction: NewJournalTransaction = {
     id: command.payload.transactionId,
     commandId: command.id,
     effectiveMonth: command.effectiveMonth,
     reasonCode: command.payload.reasonCode,
     description: command.payload.description,
+    sourceSystem: reversalTarget?.sourceSystem ?? "command_reducer",
+    category: reversalTarget?.category ?? "command.post_transaction",
+    causalReference: {
+      kind: "command",
+      id: command.id,
+    },
     postings: command.payload.postings,
     ...(command.payload.reversesTransactionId
       ? { reversesTransactionId: command.payload.reversesTransactionId }

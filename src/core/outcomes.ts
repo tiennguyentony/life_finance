@@ -290,6 +290,12 @@ export function fundRequiredObligations(
     effectiveMonth,
     reasonCode: "fund_required_obligations",
     description: "Fund required obligations using cash, taxable assets, then credit",
+    sourceSystem: "outcome_obligation_funding",
+    category: "expense.required_obligations",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings,
   });
 

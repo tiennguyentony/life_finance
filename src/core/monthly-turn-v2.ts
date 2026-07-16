@@ -315,6 +315,12 @@ function applyMarketMonthV2(
       effectiveMonth: state.currentMonth,
       reasonCode: "monthly_market_revaluation_v2",
       description: "Apply deterministic market returns to detailed v2 balances",
+      sourceSystem: "monthly_turn_v2",
+      category: "asset.market_revaluation",
+      causalReference: {
+        kind: "command",
+        id: commandId,
+      },
       postings,
     });
     const nextPortfolio = Object.fromEntries(
@@ -409,6 +415,12 @@ function payNonDebtObligations(
     effectiveMonth: state.currentMonth,
     reasonCode: "monthly_non_debt_obligations_v2",
     description: "Pay living, benefit, insurance, and event obligations",
+    sourceSystem: "monthly_turn_v2",
+    category: "expense.non_debt_obligations",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings: [debit("expense.living", amountCents), credit("asset.cash", amountCents)],
   });
   return finalizeGameStateV2({
@@ -471,6 +483,12 @@ function applyAfterTaxPlan(
     effectiveMonth: state.currentMonth,
     reasonCode: "monthly_after_tax_strategy_v2",
     description: "Apply recurring investments, IRA, and extra debt payments",
+    sourceSystem: "monthly_turn_v2",
+    category: "allocation.after_tax_strategy",
+    causalReference: {
+      kind: "command",
+      id: commandId,
+    },
     postings,
   });
   const paymentByDebt = new Map(

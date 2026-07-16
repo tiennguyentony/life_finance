@@ -61,6 +61,10 @@ export function flattenLedger(
       effectiveMonth: transaction.effectiveMonth,
       reasonCode: transaction.reasonCode,
       description: transaction.description,
+      sourceSystem: transaction.sourceSystem,
+      category: transaction.category,
+      causalReferenceKind: transaction.causalReference?.kind,
+      causalReferenceId: transaction.causalReference?.id,
       reversesTransactionId: transaction.reversesTransactionId,
       transactionIndex: startingIndex + offset,
     });
