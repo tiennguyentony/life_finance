@@ -4,11 +4,16 @@ import type { AiContentSource } from "./ai-source";
 import {
   assertValidGameState,
   type GameState as GameStateV1,
+  type MarketRegime,
 } from "./game-state";
 import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
 import type { FinancialGoalV1 } from "./financial-goals-v2";
 import type { LifeMilestoneStateV1 } from "./life-milestones-v2";
 import type { AiLearningMemoryV1 } from "./ai-learning-memory-v2";
+import type {
+  MacroMarketDifficultyV2,
+  MarketMonthV2,
+} from "./market";
 import type {
   EventTier,
   EventTargetV2,
@@ -190,10 +195,24 @@ export type GameplayStateV2 = Readonly<{
     }>[];
   }>;
   market: Readonly<{
-    modelVersion: "regime-v1";
+    modelVersion: "regime-v1" | "regime-v2";
     monthsInRegime: number;
     /** Optional only for backward compatibility with earlier schema-v2 runs. */
     cumulativePriceIndexPpm?: number;
+    /** Required structured macro evidence once a run opts into regime-v2. */
+    calibrationVersion?: MarketMonthV2["calibrationVersion"];
+    macroDifficulty?: MacroMarketDifficultyV2;
+    observedRegime?: MarketRegime;
+    observedMonth?: SimulationMonth;
+    borrowingRatePpm?: RatePpm;
+    laborDemandChangePpm?: RatePpm;
+    volatilityPpm?: RatePpm;
+    lastInflationPpm?: RatePpm;
+    broadMarketReturnPpm?: RatePpm;
+    sectorMarketReturnPpm?: RatePpm;
+    speculativeMarketReturnPpm?: RatePpm;
+    housingReturnPpm?: RatePpm;
+    cashYieldPpm?: RatePpm;
   }>;
   recurringStrategy: RecurringStrategy;
   exposure: Readonly<{

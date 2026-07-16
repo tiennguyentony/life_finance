@@ -94,6 +94,116 @@ function command(
 }
 
 describe("detailed v2 financial commands", () => {
+  it("quotes new fixed-rate mortgages from the accepted macro borrowing environment", () => {
+    const initial = state([]);
+    const macroState = finalizeGameStateV2({
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        market: {
+          modelVersion: "regime-v2",
+          calibrationVersion: "us-balanced-2026-v1",
+          macroDifficulty: "normal",
+          observedRegime: "expansion",
+          observedMonth: initial.currentMonth,
+          monthsInRegime: 4,
+          cumulativePriceIndexPpm: 1_010_000,
+          borrowingRatePpm: ratePpm(60_000),
+          laborDemandChangePpm: ratePpm(5_000),
+          volatilityPpm: ratePpm(250_000),
+          lastInflationPpm: ratePpm(3_000),
+          broadMarketReturnPpm: ratePpm(10_000),
+          sectorMarketReturnPpm: ratePpm(12_000),
+          speculativeMarketReturnPpm: ratePpm(18_000),
+          housingReturnPpm: ratePpm(4_000),
+          cashYieldPpm: ratePpm(2_000),
+        },
+      },
+    });
+    const purchase = command(
+      macroState,
+      "cmd.macro-mortgage",
+      {
+        type: "purchase_home",
+        purchasePriceCents: moneyCents(2_000_000),
+        downPaymentCents: moneyCents(1_000_000),
+        mortgageAnnualInterestRatePpm: ratePpm(900_000),
+        mortgageTermMonths: 360,
+      },
+    );
+    const accepted = reduceDetailedFinanceCommand(macroState, {
+      ...purchase,
+      payload: {
+        ...purchase.payload,
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+      },
+    });
+
+    expect(accepted.gameplay.debts.termDebts).toEqual([
+      expect.objectContaining({
+        kind: "mortgage",
+        annualInterestRatePpm: 80_000,
+      }),
+    ]);
+    expect(
+      sha256Canonical(
+        reduceDetailedFinanceCommand(macroState, {
+          ...purchase,
+          payload: {
+            ...purchase.payload,
+            actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+          },
+        }),
+      ),
+    ).toBe(sha256Canonical(accepted));
+
+    const cappedQuoteState = finalizeGameStateV2({
+      ...accepted,
+      gameplay: {
+        ...accepted.gameplay,
+        market: {
+          ...accepted.gameplay.market,
+          borrowingRatePpm: ratePpm(490_000),
+        },
+      },
+    });
+    const refinance = command(
+      cappedQuoteState,
+      "cmd.macro-mortgage-refinance",
+      {
+        type: "refinance_home",
+        mortgageAnnualInterestRatePpm: ratePpm(1_000),
+        mortgageTermMonths: 360,
+      },
+    );
+    const refinanced = reduceDetailedFinanceCommand(cappedQuoteState, {
+      ...refinance,
+      payload: {
+        ...refinance.payload,
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+      },
+    });
+    expect(
+      refinanced.gameplay.debts.termDebts.find(
+        ({ kind }) => kind === "mortgage",
+      )?.annualInterestRatePpm,
+    ).toBe(500_000);
+
+    const historical = reduceDetailedFinanceCommand(
+      macroState,
+      command(macroState, "cmd.historical-mortgage-rate", {
+        type: "purchase_home",
+        purchasePriceCents: moneyCents(2_000_000),
+        downPaymentCents: moneyCents(1_000_000),
+        mortgageAnnualInterestRatePpm: ratePpm(90_000),
+        mortgageTermMonths: 360,
+      }),
+    );
+    expect(historical.gameplay.debts.termDebts[0]!.annualInterestRatePpm).toBe(
+      90_000,
+    );
+  });
+
   it("uses a versioned liquidation policy while replaying absent-version rates", () => {
     const initial = state();
     const historical = reduceDetailedFinanceCommand(

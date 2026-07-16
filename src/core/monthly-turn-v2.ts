@@ -48,10 +48,16 @@ import {
 } from "./insurance-v2";
 import { appendTransaction, type JournalPosting, type Ledger } from "./ledger";
 import {
+  MACRO_MARKET_MODEL_V2_VERSION,
+  MARKET_MODEL_VERSION,
   marketSimulationState,
+  marketSimulationStateV2,
   simulateMarketMonth,
+  simulateMarketMonthV2,
+  type MacroMarketDifficultyV2,
   type MarketMonth,
-  type MarketSimulationResult,
+  type SupportedMarketMonth,
+  type SupportedMarketSimulationResult,
 } from "./market";
 import {
   activeMacroReturnModifiersV2,
@@ -114,6 +120,10 @@ export type ProcessMonthV2Command = Readonly<{
     financialKernelVersion?: FinancialKernelVersionV2;
     outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
     eventSchedulerVersion?: typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION;
+    marketModelVersion?:
+      | typeof MARKET_MODEL_VERSION
+      | typeof MACRO_MARKET_MODEL_V2_VERSION;
+    macroDifficulty?: MacroMarketDifficultyV2;
     taxEvidence: MonthlyTaxEvidence;
     taxableLiquidationCostRatePpm: RatePpm;
     insuranceClaim?: MonthlyInsuranceClaim;
@@ -129,7 +139,7 @@ export type MonthlyTurnV2Record = Readonly<{
   grossIncomeCents: MoneyCents;
   totalTaxCents: MoneyCents;
   afterTaxCashIncomeCents: MoneyCents;
-  market: MarketMonth;
+  market: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   annualInflationIncreaseCents: MoneyCents;
   insurancePlayerCostCents: MoneyCents;
@@ -171,6 +181,7 @@ export class MonthlyTurnV2Error extends Error {
     | "UNSUPPORTED_FINANCIAL_KERNEL_VERSION"
     | "UNSUPPORTED_OUTCOME_POLICY_VERSION"
     | "UNSUPPORTED_EVENT_SCHEDULER_VERSION"
+    | "UNSUPPORTED_MARKET_MODEL_VERSION"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
 
@@ -221,6 +232,40 @@ export function eventSchedulerVersionForCommandV2(
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
     `unsupported event scheduler version: ${String(version)}`,
+  );
+}
+
+export type MarketModelSelectionV2 = Readonly<
+  | {
+      modelVersion: typeof MARKET_MODEL_VERSION;
+      difficulty: null;
+    }
+  | {
+      modelVersion: typeof MACRO_MARKET_MODEL_V2_VERSION;
+      difficulty: MacroMarketDifficultyV2;
+    }
+>;
+
+export function marketModelVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): MarketModelSelectionV2 {
+  const version = command.payload.marketModelVersion;
+  const difficulty = command.payload.macroDifficulty;
+  if (version === undefined || version === MARKET_MODEL_VERSION) {
+    if (difficulty === undefined) {
+      return Object.freeze({ modelVersion: MARKET_MODEL_VERSION, difficulty: null });
+    }
+  } else if (
+    version === MACRO_MARKET_MODEL_V2_VERSION &&
+    (["guided", "normal", "hard"] as const).includes(
+      difficulty as MacroMarketDifficultyV2,
+    )
+  ) {
+    return Object.freeze({ modelVersion: version, difficulty: difficulty! });
+  }
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_MARKET_MODEL_VERSION",
+    "market model selection requires regime-v1 without difficulty or regime-v2 with a supported difficulty",
   );
 }
 
@@ -673,6 +718,7 @@ export function processMonthlyTurnV2(
   const version = financialKernelVersionForCommandV2(command);
   const outcomePolicyVersion = outcomePolicyVersionForCommandV2(command);
   const eventSchedulerVersion = eventSchedulerVersionForCommandV2(command);
+  const marketSelection = marketModelVersionForCommandV2(command);
   if (
     outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION &&
     version !== FINANCIAL_KERNEL_V2_VERSION
@@ -691,6 +737,15 @@ export function processMonthlyTurnV2(
       "causal event scheduling requires financial kernel 2.0.0",
     );
   }
+  if (
+    marketSelection.modelVersion === MACRO_MARKET_MODEL_V2_VERSION &&
+    version !== FINANCIAL_KERNEL_V2_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_MARKET_MODEL_VERSION",
+      "regime-v2 requires financial kernel 2.0.0",
+    );
+  }
   if (version === FINANCIAL_KERNEL_V2_VERSION) {
     return processMonthlyTurnV2Kernel200(
       state,
@@ -698,6 +753,7 @@ export function processMonthlyTurnV2(
       dependencies,
       outcomePolicyVersion,
       eventSchedulerVersion,
+      marketSelection,
     );
   }
   return processMonthlyTurnV2Legacy410(state, command, dependencies);
@@ -705,7 +761,19 @@ export function processMonthlyTurnV2(
 
 function sampleFinancialMarketStepV2(
   state: GameStateV2,
-): MarketSimulationResult {
+  marketSelection: MarketModelSelectionV2,
+): SupportedMarketSimulationResult {
+  if (marketSelection.modelVersion === MACRO_MARKET_MODEL_V2_VERSION) {
+    return simulateMarketMonthV2(
+      marketSimulationStateV2(
+        state.marketRegime,
+        state.random,
+        marketSelection.difficulty,
+        state.gameplay.market.monthsInRegime,
+      ),
+      activeMacroReturnModifiersV2(state),
+    );
+  }
   return simulateMarketMonth(
     marketSimulationState(
       state.marketRegime,
@@ -722,10 +790,11 @@ function processMonthlyTurnV2Kernel200(
   dependencies: MonthlyTurnV2Dependencies,
   outcomePolicyVersion: OutcomePolicyVersionV2,
   eventSchedulerVersion: EventSchedulerVersionV2,
+  marketSelection: MarketModelSelectionV2,
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   try {
-    const marketStep = sampleFinancialMarketStepV2(state);
+    const marketStep = sampleFinancialMarketStepV2(state, marketSelection);
     const financial = simulateFinancialMonthV2({
       version: FINANCIAL_KERNEL_V2_VERSION,
       commandId: command.id,
