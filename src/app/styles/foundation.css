@@ -1,28 +1,131 @@
+/*
+ * Life Finance design foundation.
+ *
+ * Register: product UI with a playful, toy-like brand (see PRODUCT.md).
+ * Color anchors on Sprout's leaf green plus coin gold; every state color
+ * exists in both themes so components never hard-code hex values.
+ */
+
 :root {
   color-scheme: light dark;
-  --background: #f1f5f0;
-  --surface: #fbfdfb;
-  --surface-strong: #e4ebe5;
-  --text: #132019;
-  --muted: #526159;
-  --line: #c8d3ca;
-  --accent: #176c42;
-  --accent-contrast: #f7fff9;
-  --shadow: rgb(29 59 42 / 12%);
+
+  /* Surfaces and ink */
+  --background: oklch(0.972 0.009 150);
+  --surface: oklch(0.993 0.003 150);
+  --surface-strong: oklch(0.932 0.015 152);
+  --surface-sunken: oklch(0.953 0.011 151);
+  --text: oklch(0.235 0.021 156);
+  --muted: oklch(0.435 0.024 158);
+  --faint: oklch(0.52 0.022 158);
+  --line: oklch(0.885 0.013 152);
+  --line-strong: oklch(0.795 0.017 153);
+
+  /* Brand */
+  --accent: oklch(0.468 0.093 158);
+  --accent-contrast: oklch(0.988 0.011 150);
+  --accent-soft: oklch(0.938 0.049 151);
+  --accent-bright: oklch(0.775 0.168 134);
+  --gold: oklch(0.795 0.131 88);
+  --gold-deep: oklch(0.545 0.112 80);
+
+  /* States */
+  --danger: oklch(0.515 0.185 27);
+  --danger-soft: oklch(0.945 0.038 27);
+  --warning: oklch(0.545 0.118 76);
+  --warning-soft: oklch(0.952 0.048 86);
+  --info: oklch(0.495 0.088 231);
+  --info-soft: oklch(0.943 0.03 231);
+  --positive: var(--accent);
+  --negative: var(--danger);
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px oklch(0.32 0.05 155 / 0.1);
+  --shadow-2:
+    0 1px 2px oklch(0.32 0.05 155 / 0.08),
+    0 6px 16px -6px oklch(0.32 0.05 155 / 0.16);
+  --shadow-3:
+    0 2px 4px oklch(0.32 0.05 155 / 0.08),
+    0 18px 40px -16px oklch(0.32 0.05 155 / 0.24);
+
+  /* Shape */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
   --radius: 16px;
+  --radius-lg: 24px;
+  --radius-full: 999px;
+
+  /* Type: fixed rem scale for product surfaces */
+  --font-body:
+    "Aptos", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+
+  /* Motion: strong exponential ease-outs; spring reserved for playful moments */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-spring: linear(
+    0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017,
+    1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%,
+    1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%,
+    0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1
+  );
+
+  /* Motion: durations and entrance distances collapse under reduced motion */
+  --t-tap: 120ms;
+  --t-quick: 180ms;
+  --t-move: 260ms;
+  --t-reveal: 420ms;
+  --t-fade: 200ms;
+  --rise: 10px;
+  --pop-scale: 0.97;
+
+  /* Layers */
+  --z-header: 10;
+  --z-sticky: 20;
+  --z-overlay: 30;
+  --z-toast: 40;
+
+  accent-color: var(--accent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #09110d;
-    --surface: #101b15;
-    --surface-strong: #18271f;
-    --text: #edf5ef;
-    --muted: #a8b7ad;
-    --line: #2c4034;
-    --accent: #62c88e;
-    --accent-contrast: #07120c;
-    --shadow: rgb(0 0 0 / 26%);
+    --background: oklch(0.187 0.014 160);
+    --surface: oklch(0.227 0.016 158);
+    --surface-strong: oklch(0.285 0.021 157);
+    --surface-sunken: oklch(0.162 0.012 160);
+    --text: oklch(0.955 0.009 150);
+    --muted: oklch(0.745 0.021 154);
+    --faint: oklch(0.635 0.02 155);
+    --line: oklch(0.325 0.021 158);
+    --line-strong: oklch(0.425 0.023 158);
+
+    --accent: oklch(0.755 0.128 152);
+    --accent-contrast: oklch(0.165 0.03 158);
+    --accent-soft: oklch(0.305 0.047 155);
+    --accent-bright: oklch(0.8 0.17 134);
+    --gold: oklch(0.805 0.128 88);
+    --gold-deep: oklch(0.845 0.108 90);
+
+    --danger: oklch(0.705 0.155 25);
+    --danger-soft: oklch(0.305 0.058 26);
+    --warning: oklch(0.795 0.126 80);
+    --warning-soft: oklch(0.3 0.05 80);
+    --info: oklch(0.755 0.088 230);
+    --info-soft: oklch(0.285 0.04 230);
+
+    --shadow-1: 0 1px 2px oklch(0 0 0 / 0.3);
+    --shadow-2:
+      0 1px 2px oklch(0 0 0 / 0.28),
+      0 6px 16px -6px oklch(0 0 0 / 0.42);
+    --shadow-3:
+      0 2px 4px oklch(0 0 0 / 0.3),
+      0 18px 40px -16px oklch(0 0 0 / 0.55);
   }
 }
 
@@ -41,10 +144,14 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font-family:
-    "Aptos", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-body);
   line-height: 1.5;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
 }
 
 a {
@@ -52,21 +159,31 @@ a {
   text-decoration: none;
 }
 
-a:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
+/* One focus vocabulary for every interactive element. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Money and metric alignment: numerals keep a fixed width. */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 .skip-link {
   position: fixed;
   top: 0.75rem;
   left: 0.75rem;
-  z-index: 2;
+  z-index: var(--z-toast);
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-contrast);
+  font-weight: 700;
+  box-shadow: var(--shadow-2);
   transform: translateY(-180%);
+  transition: transform var(--t-quick) var(--ease-out);
 }
 
 .skip-link:focus {
@@ -76,10 +193,10 @@ a:focus-visible {
 .site-header {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-header);
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--background) 92%, transparent);
-  backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--background) 86%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
 }
 
 .header-inner,
@@ -89,3 +206,32 @@ a:focus-visible {
   margin-inline: auto;
 }
 
+/* Reduced motion: movement collapses, comprehension-aiding fades remain. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-tap: 0ms;
+    --t-quick: 0ms;
+    --t-move: 0ms;
+    --t-reveal: 0ms;
+    --rise: 0px;
+    --pop-scale: 1;
+    --ease-spring: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .site-header {
+    background: var(--background);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --line: var(--line-strong);
+  }
+}
