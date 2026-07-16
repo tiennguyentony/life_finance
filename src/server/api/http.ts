@@ -252,6 +252,8 @@ export async function handleCreateRun(
   _request: Request,
   _service: RunApiService,
 ): Promise<Response> {
+  void _request;
+  void _service;
   return handleDeprecatedLegacyWrite();
 }
 
@@ -277,6 +279,9 @@ export async function handleSubmitCommand(
   _runId: string,
   _service: RunApiService,
 ): Promise<Response> {
+  void _request;
+  void _runId;
+  void _service;
   return handleDeprecatedLegacyWrite();
 }
 
