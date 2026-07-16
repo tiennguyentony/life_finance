@@ -31,6 +31,7 @@ import {
   type RuntimeBalanceStateV1,
 } from "./runtime-balance-state-v1";
 import type { RuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
+import type { OnboardingInitializationEvidenceV1 } from "./onboarding-v1-contracts";
 
 export {
   ENGINE_V2_VERSION,
@@ -189,6 +190,8 @@ export type ActivePersonalEventCashFlowV2 = Readonly<{
 }>;
 
 export type GameplayStateV2 = Readonly<{
+  /** Optional for historical/direct states; present only after a confirmed onboarding review. */
+  initialization?: OnboardingInitializationEvidenceV1;
   /** Optional only for backward compatibility with earlier schema-v2 runs. */
   runtimeBalance?: RuntimeBalanceStateV1 | RuntimeBalanceStateV2;
   /** Optional only for backward compatibility with schema-v2 runs created before goals-v1. */

@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type {
+  OnboardingAiExtractionResultV1,
+  OnboardingDraftV1,
+} from "@/core/onboarding-v1-contracts";
+import {
+  onboardingDraftForPersonaV1,
+  type OnboardingPersonaIdV1,
+} from "@/core/onboarding-personas-v1";
+import type {
   AdvanceTimeV2Response,
   CheckpointV2Response,
   CommandV2Response,
@@ -29,19 +37,28 @@ import {
   StrategyPanel,
 } from "./decision-panels";
 import { EventPanel } from "./event-panel";
-import { OnboardingPanel } from "./onboarding-panel";
-import { selectionForPreset } from "./onboarding-model";
+import {
+  applyOnboardingAiExtractionAsTypedV1,
+  OnboardingRequestCoordinatorV1,
+  requestOnboardingConfirmationV1,
+  requestOnboardingParseV1,
+  requestOnboardingReviewV1,
+} from "./onboarding-browser-flow-v1";
+import { OnboardingFlowPanelV1 } from "./onboarding-flow-panel-v1";
+import {
+  acceptOnboardingReviewV1,
+  createOnboardingReviewSessionV1,
+  updateOnboardingReviewDraftV1,
+} from "./onboarding-review-session-v1";
 import { MilestonePanel } from "./milestone-panel";
 import { dueLifeMilestones } from "../../core/life-milestones-v2";
 import { OverviewPanel } from "./overview-panel";
 import {
-  buildCreateRequest,
   calculateAgeYears,
   calculateNetWorth,
   describeTimePauseV2,
   formatMoney,
   percentToPpm,
-  PLAYER_PRESETS,
   strategyDraftFromState,
 } from "./play-model";
 import {
@@ -55,7 +72,6 @@ import type {
   ActionDraft,
   MonthlyRecap,
   MilestoneDraft,
-  OnboardingDraft,
   PlayTab,
   RunCredential,
   RunResponse,
@@ -82,20 +98,10 @@ import {
   TeachingRevisionCoordinatorV2,
 } from "./teaching-revision-coordinator-v2";
 
-const DEFAULT_ONBOARDING: OnboardingDraft = {
-  setupMode: "quick",
-  presetId: "software",
-  selection: selectionForPreset("software"),
-  salary: 120_000,
-  cash: 25_000,
-  studentDebt: 15_000,
-  studentDebtPayment: 250,
-  healthPlanId: "health.hdhp_hsa",
-  coverageIds: ["insurance.renters"],
-  desiredAnnualFiSpending: 65_000,
-  safeWithdrawalRate: 4,
-  targetAgeYears: 50,
-};
+const DEFAULT_ONBOARDING_DRAFT = onboardingDraftForPersonaV1(
+  "software",
+  "browser-default-seed",
+);
 
 const DEFAULT_STRATEGY: StrategyDraft = {
   emergencyFundMonths: 6,
@@ -128,7 +134,13 @@ const DEFAULT_MILESTONE: MilestoneDraft = {
 export function PlayConsole() {
   const [credential, setCredential] = useState<RunCredential | null>(null);
   const [state, setState] = useState<GameStateV2 | null>(null);
-  const [onboarding, setOnboarding] = useState(DEFAULT_ONBOARDING);
+  const [onboardingSession, setOnboardingSession] = useState(() =>
+    createOnboardingReviewSessionV1(DEFAULT_ONBOARDING_DRAFT),
+  );
+  const [onboardingAiConsent, setOnboardingAiConsent] = useState(false);
+  const [onboardingFreeText, setOnboardingFreeText] = useState("");
+  const [onboardingAiResult, setOnboardingAiResult] =
+    useState<OnboardingAiExtractionResultV1 | null>(null);
   const [strategy, setStrategy] = useState(DEFAULT_STRATEGY);
   const [actionDraft, setActionDraft] = useState(DEFAULT_ACTION);
   const [milestoneDraft, setMilestoneDraft] = useState(DEFAULT_MILESTONE);
@@ -169,6 +181,10 @@ export function PlayConsole() {
   const automaticTeachingRevision = useRef<number | null>(null);
   const deterministicDebriefRevision = useRef<number | null>(null);
   const revisionCoordinator = useRef(new TeachingRevisionCoordinatorV2());
+  const onboardingRequestCoordinator = useRef(
+    new OnboardingRequestCoordinatorV1(),
+  );
+  const onboardingRequestInFlight = useRef(false);
   const authoritativeStateRef = useRef<GameStateV2 | null>(null);
   const pendingBusyOperations = useRef(0);
 
@@ -270,6 +286,8 @@ export function PlayConsole() {
       })
         .then((result) => {
           if (cancelled) return;
+          onboardingRequestCoordinator.current.reset();
+          onboardingRequestInFlight.current = false;
           revisionCoordinator.current.reset();
           authoritativeStateRef.current = result.state;
           setCredential(saved);
@@ -376,36 +394,123 @@ export function PlayConsole() {
     });
   }, [captureRevisionSession, credential, isCurrentRunSession, state]);
 
-  const createGame = async () => {
-    setBusy(true);
-    setBusyLabel("Creating your balance sheet…");
+  const updateOnboardingDraft = (draft: OnboardingDraftV1) => {
+    onboardingRequestCoordinator.current.reset();
+    onboardingRequestInFlight.current = false;
+    setBusy(false);
+    setBusyLabel("");
     setError(null);
+    setOnboardingAiResult(null);
+    setOnboardingSession((current) =>
+      updateOnboardingReviewDraftV1(current, draft),
+    );
+  };
+
+  const selectOnboardingPersona = (personaId: OnboardingPersonaIdV1) => {
+    updateOnboardingDraft(
+      onboardingDraftForPersonaV1(
+        personaId,
+        onboardingSession.draft.randomSeed ?? "browser-default-seed",
+      ),
+    );
+  };
+
+  const useManualOnboarding = () => {
+    updateOnboardingDraft({
+      ...onboardingSession.draft,
+      sourceMode: "typed",
+      personaId: undefined,
+    });
+  };
+
+  const beginOnboardingRequest = (label: string): number | null => {
+    if (onboardingRequestInFlight.current) return null;
+    onboardingRequestInFlight.current = true;
+    const requestEpoch = onboardingRequestCoordinator.current.begin();
+    setBusy(true);
+    setBusyLabel(label);
+    setError(null);
+    return requestEpoch;
+  };
+
+  const finishOnboardingRequest = (requestEpoch: number) => {
+    if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+    onboardingRequestInFlight.current = false;
+    setBusy(false);
+    setBusyLabel("");
+  };
+
+  const reviewOnboarding = async () => {
+    const requestEpoch = beginOnboardingRequest(
+      "Validating your starting position with deterministic owners…",
+    );
+    if (requestEpoch === null) return;
+    const reviewedDraft = onboardingSession.draft;
     try {
-      const request = buildCreateRequest(
-        onboarding.presetId,
-        onboarding.salary,
-        onboarding.cash,
-        `browser-${crypto.randomUUID()}`,
-        {
-          studentDebtDollars: onboarding.studentDebt,
-          studentDebtPaymentDollars: onboarding.studentDebtPayment,
-          healthPlanId: onboarding.healthPlanId,
-          insuranceCoverageIds: onboarding.coverageIds,
-          selection: onboarding.selection,
-          financialGoal: {
-            desiredAnnualSpendingDollars:
-              onboarding.desiredAnnualFiSpending,
-            safeWithdrawalRatePercent: onboarding.safeWithdrawalRate,
-            targetAgeYears: onboarding.targetAgeYears,
-          },
-        },
+      const review = await requestOnboardingReviewV1(apiRequest, reviewedDraft);
+      if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+      setOnboardingSession((current) =>
+        current.draft === reviewedDraft
+          ? acceptOnboardingReviewV1(current, review)
+          : current,
       );
-      const result = await apiRequest<RunResponse & RunCredential>("/api/v2/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      });
+    } catch (caught) {
+      if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+      setError(caught instanceof Error ? caught.message : "Onboarding review failed");
+    } finally {
+      finishOnboardingRequest(requestEpoch);
+    }
+  };
+
+  const parseOnboardingDescription = async () => {
+    if (!onboardingAiConsent) return;
+    const freeText = onboardingFreeText.trim();
+    if (freeText.length === 0) return;
+    const requestEpoch = beginOnboardingRequest(
+      "Extracting optional candidates without creating state…",
+    );
+    if (requestEpoch === null) return;
+    setOnboardingFreeText("");
+    try {
+      const result = await requestOnboardingParseV1(apiRequest, freeText);
+      if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+      setOnboardingAiResult(result);
+    } catch (caught) {
+      if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+      setError(caught instanceof Error ? caught.message : "Optional AI extraction failed");
+    } finally {
+      finishOnboardingRequest(requestEpoch);
+    }
+  };
+
+  const applyOnboardingAiCandidates = () => {
+    if (!onboardingAiResult) return;
+    updateOnboardingDraft(
+      applyOnboardingAiExtractionAsTypedV1(
+        onboardingSession.draft,
+        onboardingAiResult,
+      ),
+    );
+  };
+
+  const confirmOnboarding = async () => {
+    const requestEpoch = beginOnboardingRequest(
+      "Creating the checksum-confirmed authoritative state…",
+    );
+    if (requestEpoch === null) return;
+    const confirmedSession = onboardingSession;
+    try {
+      const result = await requestOnboardingConfirmationV1(
+        apiRequest,
+        confirmedSession,
+      );
+      if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+      if (result.state.runId !== result.runId) {
+        throw new Error("Confirmed onboarding returned a mismatched run identity.");
+      }
       const saved = { runId: result.runId, accessSecret: result.accessSecret };
+      onboardingRequestCoordinator.current.reset();
+      onboardingRequestInFlight.current = false;
       revisionCoordinator.current.reset();
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved));
       setCredential(saved);
@@ -420,12 +525,16 @@ export function PlayConsole() {
       setPolicyPreview(null);
       setTurnHistory([]);
       sessionStorage.removeItem(RECAP_SESSION_KEY);
-      setActivity([`Created ${PLAYER_PRESETS[onboarding.presetId].label} run.`]);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create game");
-    } finally {
+      setOnboardingFreeText("");
+      setOnboardingAiResult(null);
+      setActivity(["Created a checksum-confirmed reviewed run."]);
       setBusy(false);
       setBusyLabel("");
+    } catch (caught) {
+      if (!onboardingRequestCoordinator.current.isCurrent(requestEpoch)) return;
+      setError(caught instanceof Error ? caught.message : "Could not create game");
+    } finally {
+      finishOnboardingRequest(requestEpoch);
     }
   };
 
@@ -943,6 +1052,8 @@ export function PlayConsole() {
     sessionStorage.removeItem(RECAP_SESSION_KEY);
     setCredential(null);
     authoritativeStateRef.current = null;
+    onboardingRequestCoordinator.current.reset();
+    onboardingRequestInFlight.current = false;
     revisionCoordinator.current.reset();
     pendingBusyOperations.current = 0;
     setBusy(false);
@@ -962,18 +1073,34 @@ export function PlayConsole() {
     setAiLesson(null);
     setAiDebrief(null);
     setAiConsent(false);
+    setOnboardingSession(
+      createOnboardingReviewSessionV1(DEFAULT_ONBOARDING_DRAFT),
+    );
+    setOnboardingAiConsent(false);
+    setOnboardingFreeText("");
+    setOnboardingAiResult(null);
     setError(null);
   };
 
   if (!state) {
     return (
-      <OnboardingPanel
-        draft={onboarding}
+      <OnboardingFlowPanelV1
+        session={onboardingSession}
         busy={busy}
         busyLabel={busyLabel}
         error={error}
-        onChange={setOnboarding}
-        onCreate={() => void createGame()}
+        aiConsent={onboardingAiConsent}
+        aiFreeText={onboardingFreeText}
+        aiResult={onboardingAiResult}
+        onDraftChange={updateOnboardingDraft}
+        onPersonaChange={selectOnboardingPersona}
+        onManualMode={useManualOnboarding}
+        onReview={() => void reviewOnboarding()}
+        onConfirm={() => void confirmOnboarding()}
+        onAiConsentChange={setOnboardingAiConsent}
+        onAiFreeTextChange={setOnboardingFreeText}
+        onParseAi={() => void parseOnboardingDescription()}
+        onApplyAi={applyOnboardingAiCandidates}
       />
     );
   }

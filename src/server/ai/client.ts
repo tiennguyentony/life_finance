@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
@@ -28,7 +28,7 @@ const ROLE_INSTRUCTIONS: Readonly<Record<AiRole, string>> = Object.freeze({
   teacher:
     "You are a precise personal-finance teacher. Explain the supplied engine-computed outcome and identify at most three decisive supplied decisions. The grade is immutable. Every lesson must cite only supplied evidence IDs. Do not recompute money, invent facts, or give regulated professional advice. Return only the required structured output.",
   onboarding:
-    "Extract only facts explicitly stated by the learner. Preserve monetary values exactly as source strings; never calculate, normalize, infer, or convert money. Use only supplied location and career IDs. Use null and missingFields when uncertain, and ask one concise clarification question when needed. Return only the required structured output.",
+    "Extract only facts explicitly stated by the learner. Preserve monetary values exactly as source strings and label explicitly stated monthly/annual periods and gross/take-home basis; never calculate, normalize, infer, or convert money. Use only supplied location and career IDs. Use null and missingFields when uncertain, and ask one concise clarification question when needed. Return only the required structured output.",
   explanation:
     "Give a concise, beginner-friendly explanation of the supplied financial concept using only supplied context and evidence. Cite only supplied evidence IDs. Never recompute financial values or invent personalized facts. Return only the required structured output.",
 });
@@ -77,6 +77,40 @@ export type AiAuditRecord = Readonly<{
 
 export interface AiAuditRecorder {
   record(record: AiAuditRecord): Promise<void>;
+}
+
+function auditRecordForPersistence(record: AiAuditRecord): AiAuditRecord {
+  if (record.role !== "onboarding") return record;
+  const input = record.prompt.input as Readonly<{
+    contractVersion: number;
+    privacyNoticeVersion: number;
+    dataUseAccepted: true;
+    role: "onboarding";
+    sanitizedFreeText: string;
+    allowedLocationIds: readonly string[];
+    allowedCareerTrackIds: readonly string[];
+  }>;
+  return Object.freeze({
+    ...record,
+    prompt: Object.freeze({
+      instructions: record.prompt.instructions,
+      input: Object.freeze({
+        contractVersion: input.contractVersion,
+        privacyNoticeVersion: input.privacyNoticeVersion,
+        dataUseAccepted: input.dataUseAccepted,
+        role: input.role,
+        sanitizedFreeTextHash: createHash("sha256")
+          .update(input.sanitizedFreeText, "utf8")
+          .digest("hex"),
+        sanitizedFreeTextLength: input.sanitizedFreeText.length,
+        allowedLocationCount: input.allowedLocationIds.length,
+        allowedCareerTrackCount: input.allowedCareerTrackIds.length,
+      }),
+    }),
+    attempts: Object.freeze(
+      record.attempts.map((attempt) => Object.freeze({ ...attempt, output: null })),
+    ),
+  });
 }
 
 export class AiServiceError extends Error {
@@ -409,7 +443,7 @@ export class AiRoleClient {
     }
 
     try {
-      await this.auditRecorder.record({
+      await this.auditRecorder.record(auditRecordForPersistence({
         invocationId,
         contractVersion: parsedRequest.data.contractVersion,
         role,
@@ -420,7 +454,7 @@ export class AiRoleClient {
         },
         attempts: Object.freeze([...attempts]),
         outcome: finalValue === undefined ? "failure" : "success",
-      });
+      }));
     } catch (error) {
       throw new AiServiceError(
         "AUDIT_UNAVAILABLE",

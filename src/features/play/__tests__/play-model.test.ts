@@ -164,9 +164,31 @@ describe("developer play UI model", () => {
 
     const deterministicDebriefFlow = source.slice(
       source.indexOf("deterministicDebriefRevision.current === state.revision"),
-      source.indexOf("const createGame"),
+      source.indexOf("const updateOnboardingDraft"),
     );
     expect(deterministicDebriefFlow).not.toContain("aiConsent");
+  });
+
+  it("wires onboarding through review and checksum confirmation without the legacy direct-create bypass", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+    const onboardingFlow = source.slice(
+      source.indexOf("const updateOnboardingDraft"),
+      source.indexOf("const submit"),
+    );
+
+    expect(source).toContain("OnboardingFlowPanelV1");
+    expect(onboardingFlow).toContain("requestOnboardingReviewV1");
+    expect(onboardingFlow).toContain("requestOnboardingConfirmationV1");
+    expect(onboardingFlow).toContain("requestOnboardingParseV1");
+    expect(onboardingFlow).toContain("setOnboardingFreeText(\"\")");
+    expect(onboardingFlow).toContain("onboardingRequestCoordinator.current.begin()");
+    expect(onboardingFlow).toContain("onboardingRequestCoordinator.current.isCurrent(");
+    expect(onboardingFlow).toContain("sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved))");
+    expect(onboardingFlow).not.toContain('apiRequest<RunResponse & RunCredential>("/api/v2/runs"');
+    expect(source).not.toContain('onCreate={() => void createGame()}');
   });
 
   it("discards old submit, advance, and teaching responses after a session reset", () => {
