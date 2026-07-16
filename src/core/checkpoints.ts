@@ -1,3 +1,7 @@
+/**
+ * Historical schema-v1 checkpoint compatibility. Prompt 03 owns a future v2
+ * controller; this module must not become an alternate financial engine.
+ */
 import {
   divideRoundHalfAwayFromZero,
   safeBigIntToNumber,

@@ -713,6 +713,7 @@ function processMonthlyTurnV2Kernel200(
   }
 }
 
+/** Frozen unversioned/legacy-4.1.0 replay compatibility; dispatcher-only. */
 function processMonthlyTurnV2Legacy410(
   state: GameStateV2,
   command: ProcessMonthV2Command,

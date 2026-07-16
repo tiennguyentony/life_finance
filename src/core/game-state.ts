@@ -560,6 +560,7 @@ export function calculateInvestableAssets(
   return moneyCents(safeBigIntToNumber(investable, "investable assets"));
 }
 
+/** Historical schema-v1 25x outcome compatibility; not a v2 goal authority. */
 export function hasReachedFinancialIndependence(
   finances: FinancialSnapshot,
 ): boolean {

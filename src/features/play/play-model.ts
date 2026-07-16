@@ -3,6 +3,10 @@ import type { CreateRunV2Request } from "@/server/api/contracts-v2";
 
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
 import {
+  calculateInvestableAssets as calculateCanonicalInvestableAssets,
+  calculateNetWorth as calculateCanonicalNetWorth,
+} from "../../core/game-state";
+import {
   selectionForPreset,
   type PlayerPresetId,
   type StartingSelection,
@@ -43,26 +47,11 @@ export function formatMoney(cents: number): string {
 }
 
 export function calculateNetWorth(state: GameStateV2): number {
-  const finances = state.finances;
-  return (
-    finances.cashCents +
-    finances.taxableInvestmentsCents +
-    finances.retirementCents +
-    finances.homeValueCents +
-    finances.otherInvestableAssetsCents +
-    finances.otherAssetsCents -
-    finances.nonCreditLiabilitiesCents -
-    finances.creditUsedCents
-  );
+  return calculateCanonicalNetWorth(state.finances);
 }
 
 export function calculateInvestableAssets(state: GameStateV2): number {
-  return (
-    state.finances.cashCents +
-    state.finances.taxableInvestmentsCents +
-    state.finances.retirementCents +
-    state.finances.otherInvestableAssetsCents
-  );
+  return calculateCanonicalInvestableAssets(state.finances);
 }
 
 export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
