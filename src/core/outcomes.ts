@@ -55,6 +55,8 @@ export class OutcomeDomainError extends Error {
   }
 }
 
+// Historical v1 outcome compatibility. New v2 financial processing consumes
+// the canonical obligation-funding plan and hands its shortfall to outcomes.
 function assertLiquidationRate(rate: RatePpm): void {
   if (!Number.isSafeInteger(rate) || rate < 0 || rate > 1_000_000) {
     throw new OutcomeDomainError(
@@ -168,7 +170,7 @@ export function evaluateTerminalOutcome(
   return null;
 }
 
-function netLiquidationValue(
+function netLiquidationValueV1Compatibility(
   grossCents: MoneyCents,
   costRatePpm: RatePpm,
 ): MoneyCents {
@@ -178,7 +180,7 @@ function netLiquidationValue(
   );
 }
 
-function minimumGrossLiquidation(
+function minimumGrossLiquidationV1Compatibility(
   requiredNetCents: MoneyCents,
   maximumGrossCents: MoneyCents,
   costRatePpm: RatePpm,
@@ -188,7 +190,10 @@ function minimumGrossLiquidation(
   let high: number = maximumGrossCents;
   while (low < high) {
     const middle = low + Math.floor((high - low) / 2);
-    if (netLiquidationValue(moneyCents(middle), costRatePpm) >= requiredNetCents) {
+    if (
+      netLiquidationValueV1Compatibility(moneyCents(middle), costRatePpm) >=
+      requiredNetCents
+    ) {
       high = middle;
     } else {
       low = middle + 1;
@@ -254,12 +259,12 @@ export function fundRequiredObligations(
       ? moneyCents(0)
       : netInvestmentsUsed === maximumNetLiquidation
         ? state.finances.taxableInvestmentsCents
-        : minimumGrossLiquidation(
+        : minimumGrossLiquidationV1Compatibility(
             netInvestmentsUsed,
             state.finances.taxableInvestmentsCents,
             taxableLiquidationCostRatePpm,
           );
-  const actualNetProceeds = netLiquidationValue(
+  const actualNetProceeds = netLiquidationValueV1Compatibility(
     grossLiquidation,
     taxableLiquidationCostRatePpm,
   );

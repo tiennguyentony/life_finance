@@ -530,6 +530,11 @@ export function calculateRemainingCredit(
   return moneyCents(finances.creditLimitCents - finances.creditUsedCents);
 }
 
+/**
+ * Legacy gross-liquidity selector retained for display and historical callers.
+ * New v2 obligation funding must use planV2ObligationFunding so taxable sale
+ * cost, exact credit use, and residual shortfall share one calculation.
+ */
 export function calculateAutomaticLiquidity(
   finances: FinancialSnapshot,
 ): MoneyCents {
