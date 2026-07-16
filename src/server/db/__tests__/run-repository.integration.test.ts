@@ -2,7 +2,7 @@ import { asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
-import { moneyCents, ratePpm } from "../../../core/domain/money";
+import { allocateMoney, moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { DetailedFinanceCommand } from "../../../core/detailed-actions-v2";
 import { queueScheduledPersonalEventV2 } from "../../../core/event-lifecycle-v2";
@@ -10,11 +10,15 @@ import { createInitialGameState } from "../../../core/game-state";
 import {
   migrateGameStateV1ToV2,
   V1_TO_V2_MIGRATION_VERSION,
+  type GameStateV2,
 } from "../../../core/game-state-v2";
 import { sha256Canonical } from "../../../core/canonical";
 import type { ProcessMonthV2Command } from "../../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
-import type { SetRecurringStrategyCommand } from "../../../core/recurring-strategy-v2";
+import {
+  planRecurringAllocations,
+  type SetRecurringStrategyCommand,
+} from "../../../core/recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../../../core/scenario-catalog";
 import {
   US_2026_SCENARIO_CATALOG,
@@ -174,6 +178,106 @@ function nativeStateV2(runId: string) {
   });
 }
 
+function sparseStateV2(
+  runId: string,
+  options: Readonly<{ terminalOnNextMonth?: boolean }> = {},
+) {
+  const resolvedScenario = resolveScenarioCatalogSelection(
+    US_2026_SCENARIO_CATALOG,
+    {
+      catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
+      locationId: "location.seattle",
+      careerId: "career.software",
+      householdId: "household.single",
+      benefitsPackageId: "benefits.corporate_flex",
+      healthPlanId: "health.hdhp_hsa",
+      retirementPlanId: "retirement.401k_standard",
+      insuranceCoverageIds: ["insurance.renters"],
+      scenarioId: "scenario.fresh_start",
+    },
+  );
+  const terminalAsset = options.terminalOnNextMonth ? 200_000_000 : 3_000_000;
+  return createNativeGameStateV2({
+    runId,
+    playerId: "player.sparse-v2",
+    birthMonth: simulationMonth("1995-01"),
+    startMonth: simulationMonth("2026-01"),
+    randomSeed: "repository-sparse-v2",
+    resolvedScenario,
+    annualGrossSalaryCents: moneyCents(12_000_000),
+    finances: {
+      cashCents: moneyCents(20_000_000),
+      taxableBroadIndexCents: moneyCents(terminalAsset),
+      taxableSectorCents: moneyCents(3_000_000),
+      taxableSpeculativeCents: moneyCents(3_000_000),
+      retirement401kCents: moneyCents(3_000_000),
+      retirementIraCents: moneyCents(3_000_000),
+      hsaCents: moneyCents(3_000_000),
+      homeValueCents: moneyCents(0),
+      otherAssetsCents: moneyCents(0),
+      termDebts: [],
+      revolvingCreditLimitCents: moneyCents(1_000_000),
+      revolvingCreditUsedCents: moneyCents(0),
+    },
+    wellbeing: {
+      burnoutPpm: ratePpm(100_000),
+      happinessPpm: ratePpm(900_000),
+    },
+  });
+}
+
+function sparseMonthCommandV2(state: GameStateV2): ProcessMonthV2Command {
+  if (state.gameplay.employment.status !== "employed") {
+    throw new Error("sparse snapshot fixture requires active employment");
+  }
+  const grossIncomeCents = allocateMoney(
+    state.gameplay.employment.annualGrossSalaryCents,
+    1,
+    12,
+  );
+  const allocations = planRecurringAllocations(
+    state,
+    grossIncomeCents,
+    moneyCents(0),
+  );
+  const totalTaxCents = 200_000;
+  const afterTaxCashIncomeCents = moneyCents(
+    grossIncomeCents -
+      allocations.preTax.employee401kCents -
+      allocations.preTax.hsaCents -
+      totalTaxCents,
+  );
+  const id = `cmd.sparse.month.${state.revision}`;
+  return {
+    schemaVersion: 2,
+    id,
+    type: "process_month_v2",
+    expectedRevision: state.revision,
+    effectiveMonth: state.currentMonth,
+    payload: {
+      taxEvidence: {
+        schemaVersion: 1,
+        traceId: `tax.${id}`,
+        economicYear: Number(state.currentMonth.slice(0, 4)),
+        policyYear: 2026,
+        stateCode: "WA",
+        filingStatus: "single",
+        provider: "PolicyEngine US",
+        bundleVersion: "4.21.0",
+        rulesVersion: "1.764.6",
+        projectedFromFrozenPolicy: !state.currentMonth.startsWith("2026-"),
+        grossIncomeCents,
+        employee401kContributionCents:
+          allocations.preTax.employee401kCents,
+        employeeHsaContributionCents: allocations.preTax.hsaCents,
+        totalTaxCents,
+        afterTaxCashIncomeCents,
+      },
+      taxableLiquidationCostRatePpm: ratePpm(10_000),
+    },
+  };
+}
+
 function strategyCommandV2(): SetRecurringStrategyCommand {
   return {
     schemaVersion: 2,
@@ -315,6 +419,14 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000015",
     "10000000-0000-4000-8000-000000000016",
     "10000000-0000-4000-8000-000000000017",
+    "10000000-0000-4000-8000-000000000018",
+    "10000000-0000-4000-8000-000000000019",
+    "10000000-0000-4000-8000-000000000020",
+    "10000000-0000-4000-8000-000000000021",
+    "10000000-0000-4000-8000-000000000022",
+    "10000000-0000-4000-8000-000000000023",
+    "10000000-0000-4000-8000-000000000024",
+    "10000000-0000-4000-8000-000000000025",
   ];
   let runIndex = 0;
 
@@ -926,6 +1038,246 @@ databaseDescribe("Postgres run repository", () => {
     expect(replayed).toMatchObject({
       idempotentReplay: true,
       stateChecksum: applied.stateChecksum,
+    });
+  });
+
+  it("keeps ordinary months sparse and checkpoints the twelfth processed month", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    let state = created.state;
+    for (let month = 0; month < 11; month += 1) {
+      state = (
+        await repository.applyCommandV2(
+          created.runId,
+          created.accessSecret,
+          sparseMonthCommandV2(state),
+        )
+      ).state;
+      expect(state.gameplay.eventLifecycle.pending).toBeNull();
+    }
+
+    const firstRows = await connection.db
+      .select({
+        revision: runStateSnapshots.revision,
+        snapshotKind: runStateSnapshots.snapshotKind,
+      })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId))
+      .orderBy(asc(runStateSnapshots.revision));
+    expect(firstRows).toEqual([{ revision: 0, snapshotKind: "run_start" }]);
+
+    state = (
+      await repository.applyCommandV2(
+        created.runId,
+        created.accessSecret,
+        sparseMonthCommandV2(state),
+      )
+    ).state;
+    const annualRows = await connection.db
+      .select({
+        revision: runStateSnapshots.revision,
+        snapshotKind: runStateSnapshots.snapshotKind,
+      })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId))
+      .orderBy(asc(runStateSnapshots.revision));
+    expect(state.revision).toBe(12);
+    expect(annualRows).toEqual([
+      { revision: 0, snapshotKind: "run_start" },
+      { revision: 12, snapshotKind: "checkpoint" },
+    ]);
+  });
+
+  it("replays an unsnapshotted retry and checkpoint start revision", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const learning = {
+      schemaVersion: 2 as const,
+      id: "cmd.sparse.learning",
+      type: "record_learning_interaction_v2" as const,
+      expectedRevision: 0,
+      effectiveMonth: simulationMonth("2026-01"),
+      payload: { conceptId: "compound_interest", kind: "ai_explanation" as const },
+    };
+    const applied = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      learning,
+    );
+    const replayed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      learning,
+    );
+    const snapshotRows = await connection.db
+      .select({ revision: runStateSnapshots.revision })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    expect(snapshotRows).toEqual([{ revision: 0 }]);
+    expect(replayed).toEqual({ ...applied, idempotentReplay: true });
+
+    const processed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      sparseMonthCommandV2(applied.state),
+    );
+    expect(
+      await repository.loadCheckpointEvidenceV2(
+        created.runId,
+        created.accessSecret,
+        1,
+      ),
+    ).toMatchObject({
+      start: { month: "2026-01" },
+      end: { month: "2026-02" },
+      monthsProcessed: 1,
+      monthlyCommandIds: [processed.monthlyRecord!.commandId],
+    });
+  });
+
+  it("rejects replay checksum corruption at an unsnapshotted revision", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const command = {
+      schemaVersion: 2 as const,
+      id: "cmd.sparse.corrupt",
+      type: "record_learning_interaction_v2" as const,
+      expectedRevision: 0,
+      effectiveMonth: simulationMonth("2026-01"),
+      payload: { conceptId: "risk", kind: "decision_feedback" as const },
+    };
+    await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    await connection.db
+      .update(acceptedCommands)
+      .set({ resultingStateChecksum: "0".repeat(64) })
+      .where(eq(acceptedCommands.runId, created.runId));
+
+    await expect(
+      repository.applyCommandV2(
+        created.runId,
+        created.accessSecret,
+        command,
+      ),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("uses a migration target as the replay anchor", async () => {
+    const created = await repository.createRun(initialState);
+    const migrated = await repository.migrateRunStateToV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const command = {
+      schemaVersion: 2 as const,
+      id: "cmd.sparse.migrated",
+      type: "record_learning_interaction_v2" as const,
+      expectedRevision: migrated.state.revision,
+      effectiveMonth: migrated.state.currentMonth,
+      payload: { conceptId: "migration", kind: "debrief" as const },
+    };
+    const applied = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    const replayed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+
+    expect(replayed).toEqual({ ...applied, idempotentReplay: true });
+  });
+
+  it("persists event, milestone, and terminal boundary snapshots", async () => {
+    const template = getEventTemplate("personal.medical_bill");
+    const eventRun = await repository.createRunV2((runId) =>
+      queueScheduledPersonalEventV2(sparseStateV2(runId), {
+        proposal: {
+          eventId: "evt.sparse.medical",
+          templateId: template.id,
+          templateVersion: template.version,
+          parameters: { gross_bill_cents: 1_000_000 },
+        },
+        template,
+        targetedWeakness: "low_emergency_fund",
+      }),
+    );
+    await repository.applyCommandV2(eventRun.runId, eventRun.accessSecret, {
+      schemaVersion: 2,
+      id: "cmd.sparse.event",
+      type: "resolve_event_choice",
+      expectedRevision: 0,
+      effectiveMonth: simulationMonth("2026-01"),
+      payload: { eventId: "evt.sparse.medical", choiceId: "use_insurance" },
+    });
+    const eventRows = await connection.db
+      .select({
+        revision: runStateSnapshots.revision,
+        snapshotKind: runStateSnapshots.snapshotKind,
+      })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, eventRun.runId))
+      .orderBy(asc(runStateSnapshots.revision));
+    expect(eventRows).toEqual([
+      { revision: 0, snapshotKind: "before_event" },
+      { revision: 1, snapshotKind: "after_event" },
+    ]);
+
+    const milestoneRun = await repository.createRunV2(sparseStateV2);
+    await repository.applyCommandV2(
+      milestoneRun.runId,
+      milestoneRun.accessSecret,
+      {
+        schemaVersion: 2,
+        id: "cmd.sparse.milestone",
+        type: "manage_life_milestone",
+        expectedRevision: 0,
+        effectiveMonth: simulationMonth("2026-01"),
+        payload: {
+          action: "schedule",
+          milestoneId: "milestone.sparse",
+          kind: "travel",
+          label: "Sparse replay trip",
+          targetMonth: simulationMonth("2026-07"),
+          estimatedCostCents: moneyCents(100_000),
+        },
+      },
+    );
+    const milestoneRows = await connection.db
+      .select({
+        revision: runStateSnapshots.revision,
+        snapshotKind: runStateSnapshots.snapshotKind,
+      })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, milestoneRun.runId))
+      .orderBy(asc(runStateSnapshots.revision));
+    expect(milestoneRows).toEqual([
+      { revision: 0, snapshotKind: "before_milestone" },
+      { revision: 1, snapshotKind: "after_milestone" },
+    ]);
+
+    const terminalRun = await repository.createRunV2((runId) =>
+      sparseStateV2(runId, { terminalOnNextMonth: true }),
+    );
+    const terminal = await repository.applyCommandV2(
+      terminalRun.runId,
+      terminalRun.accessSecret,
+      sparseMonthCommandV2(terminalRun.state),
+    );
+    const terminalRows = await connection.db
+      .select({
+        revision: runStateSnapshots.revision,
+        snapshotKind: runStateSnapshots.snapshotKind,
+      })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, terminalRun.runId))
+      .orderBy(asc(runStateSnapshots.revision));
+    expect(terminal.state.outcome).not.toBeNull();
+    expect(terminalRows.at(-1)).toEqual({
+      revision: 1,
+      snapshotKind: "terminal",
     });
   });
 

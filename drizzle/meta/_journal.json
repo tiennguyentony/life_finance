@@ -43,6 +43,13 @@
       "when": 1784168131007,
       "tag": "0005_milky_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784170866654,
+      "tag": "0006_quiet_photon",
+      "breakpoints": true
     }
   ]
 }

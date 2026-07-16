@@ -24,6 +24,7 @@ import type { JournalPosting } from "../../core/ledger";
 import type { MonthlyTurnV2Record } from "../../core/monthly-turn-v2";
 import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import type { ResolvedScenarioSnapshot } from "../../core/scenario-catalog";
+import type { RunStateSnapshotKind } from "./snapshot-policy-v2";
 
 export const runStatus = pgEnum("run_status", ["active", "terminal"]);
 export const outboxStatus = pgEnum("outbox_status", [
@@ -108,6 +109,11 @@ export const runStateSnapshots = pgTable(
     engineVersion: varchar("engine_version", { length: 32 }).notNull(),
     state: jsonb("state").$type<PersistedGameState>().notNull(),
     stateChecksum: char("state_checksum", { length: 64 }).notNull(),
+    snapshotKind: varchar("snapshot_kind", { length: 32 })
+      .$type<RunStateSnapshotKind>()
+      .notNull()
+      .default("legacy_command_result"),
+    causalCommandId: varchar("causal_command_id", { length: 128 }),
     createdAt,
   },
   (table) => [
@@ -120,6 +126,10 @@ export const runStateSnapshots = pgTable(
     check(
       "run_state_snapshots_checksum_format",
       sql`${table.stateChecksum} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "run_state_snapshots_kind_valid",
+      sql`${table.snapshotKind} IN ('run_start', 'checkpoint', 'before_event', 'after_event', 'before_milestone', 'after_milestone', 'terminal', 'migration', 'legacy_command_result')`,
     ),
   ],
 ).enableRLS();
@@ -205,11 +215,6 @@ export const acceptedCommands = pgTable(
       table.resultingRevision,
     ),
     index("accepted_commands_run_created_idx").on(table.runId, table.createdAt),
-    foreignKey({
-      columns: [table.runId, table.resultingRevision],
-      foreignColumns: [runStateSnapshots.runId, runStateSnapshots.revision],
-      name: "accepted_commands_resulting_snapshot_fk",
-    }).onDelete("cascade"),
     check(
       "accepted_commands_revision_sequence",
       sql`${table.expectedRevision} >= 0 AND ${table.resultingRevision} = ${table.expectedRevision} + 1`,
@@ -306,11 +311,6 @@ export const monthlyTurnRecords = pgTable(
       columns: [table.runId, table.commandId],
       foreignColumns: [acceptedCommands.runId, acceptedCommands.commandId],
       name: "monthly_turn_records_command_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.runId, table.resultingRevision],
-      foreignColumns: [runStateSnapshots.runId, runStateSnapshots.revision],
-      name: "monthly_turn_records_snapshot_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [table.runId, table.taxTraceId],
