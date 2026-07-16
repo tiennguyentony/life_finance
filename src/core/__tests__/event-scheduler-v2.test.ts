@@ -6,6 +6,7 @@ import { createInitialGameState } from "../game-state";
 import { finalizeGameStateV2, migrateGameStateV1ToV2 } from "../game-state-v2";
 import {
   CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
   schedulePersonalEventV2,
 } from "../event-scheduler-v2";
 
@@ -63,6 +64,29 @@ function exposedState() {
 }
 
 describe("fair v2 personal-event scheduling", () => {
+  it("dispatches explicit declarative-events-v2 without changing either historical path", () => {
+    const opening = exposedState();
+    const result = schedulePersonalEventV2(
+      opening,
+      ALWAYS,
+      DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+    );
+    expect(result.eligibleTemplateIds).toEqual(expect.arrayContaining([
+      "personal.medical_bill",
+      "personal.lifestyle_upgrade",
+      "personal.utility_rebate",
+    ]));
+    expect(result.nextRandom).not.toEqual(opening.random);
+    if (result.event) expect(result.event.template.schemaVersion).toBe(2);
+
+    expect(schedulePersonalEventV2(opening, ALWAYS)).toEqual(
+      schedulePersonalEventV2(opening, ALWAYS),
+    );
+    expect(schedulePersonalEventV2(opening, ALWAYS, CAUSAL_EVENT_SCHEDULER_V1_VERSION)).toEqual(
+      schedulePersonalEventV2(opening, ALWAYS, CAUSAL_EVENT_SCHEDULER_V1_VERSION),
+    );
+  });
+
   it("keeps causal hazard draws and candidates independent of financial vulnerability", () => {
     const vulnerable = exposedState();
     const resilient = {

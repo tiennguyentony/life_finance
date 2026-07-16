@@ -9,7 +9,7 @@ import {
   type MoneyCents,
   type RatePpm,
 } from "./domain/money";
-import { addMonths, type SimulationMonth } from "./domain/month";
+import { addMonths, compareMonths, type SimulationMonth } from "./domain/month";
 import {
   applyDebtPaymentV2,
   planMonthlyDebtService,
@@ -34,9 +34,14 @@ import {
   type PortfolioBreakdown,
 } from "./game-state-v2";
 import { calculateMonthlyLivingCostInflationV2 } from "./inflation-v2";
-import { queueScheduledPersonalEventV2 } from "./event-lifecycle-v2";
+import {
+  queueScheduledDeclarativePersonalEventV2,
+  queueScheduledPersonalEventV2,
+} from "./event-lifecycle-v2";
 import {
   CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+  isScheduledDeclarativePersonalEventV2,
   LEGACY_EXPOSURE_EVENT_SCHEDULER,
   schedulePersonalEventV2,
   type EventSchedulerVersionV2,
@@ -119,7 +124,9 @@ export type ProcessMonthV2Command = Readonly<{
   payload: Readonly<{
     financialKernelVersion?: FinancialKernelVersionV2;
     outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
-    eventSchedulerVersion?: typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION;
+    eventSchedulerVersion?:
+      | typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION
+      | typeof DECLARATIVE_EVENT_SCHEDULER_V2_VERSION;
     marketModelVersion?:
       | typeof MARKET_MODEL_VERSION
       | typeof MACRO_MARKET_MODEL_V2_VERSION;
@@ -228,7 +235,10 @@ export function eventSchedulerVersionForCommandV2(
 ): EventSchedulerVersionV2 {
   const version = command.payload.eventSchedulerVersion;
   if (version === undefined) return LEGACY_EXPOSURE_EVENT_SCHEDULER;
-  if (version === CAUSAL_EVENT_SCHEDULER_V1_VERSION) return version;
+  if (
+    version === CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+    version === DECLARATIVE_EVENT_SCHEDULER_V2_VERSION
+  ) return version;
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
     `unsupported event scheduler version: ${String(version)}`,
@@ -729,7 +739,8 @@ export function processMonthlyTurnV2(
     );
   }
   if (
-    eventSchedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION &&
+    (eventSchedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+      eventSchedulerVersion === DECLARATIVE_EVENT_SCHEDULER_V2_VERSION) &&
     version !== FINANCIAL_KERNEL_V2_VERSION
   ) {
     throw new MonthlyTurnV2Error(
@@ -795,6 +806,14 @@ function processMonthlyTurnV2Kernel200(
   validateCommand(state, command);
   try {
     const marketStep = sampleFinancialMarketStepV2(state, marketSelection);
+    const eventCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
+      .filter(({ startMonth }) => compareMonths(startMonth, state.currentMonth) <= 0)
+      .map(({ id, kind, amountCents }) => ({
+        id,
+        kind,
+        amountCents,
+        sourceSystem: "personal_event_v2",
+      })) satisfies readonly ResolvedCashFlowV2[];
     const financial = simulateFinancialMonthV2({
       version: FINANCIAL_KERNEL_V2_VERSION,
       commandId: command.id,
@@ -804,10 +823,31 @@ function processMonthlyTurnV2Kernel200(
       taxableLiquidationCostRatePpm:
         command.payload.taxableLiquidationCostRatePpm,
       insuranceClaim: command.payload.insuranceClaim,
-      resolvedCashFlows: command.payload.resolvedCashFlows,
+      resolvedCashFlows: [
+        ...(command.payload.resolvedCashFlows ?? []),
+        ...eventCashFlows,
+      ],
     });
+    const consumedCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
+      .map((flow) => compareMonths(flow.startMonth, state.currentMonth) <= 0
+        ? { ...flow, remainingMonths: flow.remainingMonths - 1 }
+        : flow)
+      .filter(({ remainingMonths }) => remainingMonths > 0);
+    const persistedCashFlows = state.gameplay.eventLifecycle.activeCashFlows === undefined
+      ? {}
+      : { activeCashFlows: consumedCashFlows };
+    const rehydrated = rehydrateFinancialClosingStateV2(state, financial.state);
     const careerCompleted = completeCareerDevelopmentV2(
-      rehydrateFinancialClosingStateV2(state, financial.state),
+      {
+        ...rehydrated,
+        gameplay: {
+          ...rehydrated.gameplay,
+          eventLifecycle: {
+            ...rehydrated.gameplay.eventLifecycle,
+            ...persistedCashFlows,
+          },
+        },
+      },
     );
     const accepted = acceptFinancialMonthCommandV2(
       state,
@@ -839,7 +879,9 @@ function processMonthlyTurnV2Kernel200(
         random: schedule.nextRandom,
       });
       if (schedule.event) {
-        nextState = queueScheduledPersonalEventV2(nextState, schedule.event);
+        nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
+          ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event)
+          : queueScheduledPersonalEventV2(nextState, schedule.event);
       }
     }
     const record = Object.freeze({
@@ -1021,7 +1063,9 @@ function processMonthlyTurnV2Legacy410(
         random: schedule.nextRandom,
       });
       if (schedule.event) {
-        nextState = queueScheduledPersonalEventV2(nextState, schedule.event);
+        nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
+          ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event)
+          : queueScheduledPersonalEventV2(nextState, schedule.event);
       }
     }
     return Object.freeze({

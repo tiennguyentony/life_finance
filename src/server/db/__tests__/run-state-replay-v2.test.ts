@@ -752,6 +752,33 @@ describe("verified v2 run-state replay", () => {
     ).toMatchObject({ code: "CORRUPT_STATE" });
   });
 
+  it("strictly decodes declarative event scheduling and rejects it without the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "declarative-events-v2",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: "declarative-events-v2",
+      },
+    });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            eventSchedulerVersion: "declarative-events-v2",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
   it("strictly decodes regime-v2 with explicit difficulty and preserves absent historical market evidence", () => {
     expect(
       rebuildGameCommandV2(
