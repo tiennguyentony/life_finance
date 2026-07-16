@@ -15,11 +15,13 @@ import {
   commandV2ResponseSchema,
   createRunV2ResponseSchema,
   getRunV2ResponseSchema,
+  migrateRunV2ResponseSchema,
   type CommandV2Response,
   type CreateRunV2Request,
   type CreateRunV2Response,
   type GameCommandV2Public,
   type GetRunV2Response,
+  type MigrateRunV2Response,
 } from "./contracts-v2";
 import { mapPlayerCommand } from "./v2/command-mapper";
 import { RunApiV2Error } from "./v2/errors";
@@ -139,6 +141,15 @@ export class RunApiServiceV2 {
       state,
       stateChecksum: sha256Canonical(state),
     });
+  }
+
+  async migrateRun(
+    runId: string,
+    accessSecret: string,
+  ): Promise<MigrateRunV2Response> {
+    return migrateRunV2ResponseSchema.parse(
+      await this.#repository.migrateRunStateToV2(runId, accessSecret),
+    );
   }
 
   async getCheckpoint(

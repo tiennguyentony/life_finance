@@ -21,6 +21,7 @@ import {
   createRunV2ResponseSchema,
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
+  migrateRunV2ResponseSchema,
   runIdV2PathSchema,
   type CommandV2Response,
   type CheckpointV2Response,
@@ -28,6 +29,7 @@ import {
   type CreateRunV2Response,
   type GameCommandV2Public,
   type GetRunV2Response,
+  type MigrateRunV2Response,
 } from "./contracts-v2";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -175,6 +177,21 @@ export class LifeFinanceApiClient {
       getRunV2ResponseSchema,
       {
         method: "GET",
+        headers: this.#authorization(accessSecret),
+      },
+    );
+  }
+
+  async migrateRunV2(
+    runId: string,
+    accessSecret: string,
+  ): Promise<MigrateRunV2Response> {
+    const path = runIdV2PathSchema.parse({ runId });
+    return this.#request(
+      `/api/v2/runs/${encodeURIComponent(path.runId)}/migrate`,
+      migrateRunV2ResponseSchema,
+      {
+        method: "POST",
         headers: this.#authorization(accessSecret),
       },
     );

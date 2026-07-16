@@ -1,8 +1,7 @@
-import { handleCreateRun } from "@/server/api/http";
-import { getRunApiService } from "@/server/api/runtime";
+import { handleDeprecatedLegacyWrite } from "@/server/api/http";
 
 export const runtime = "nodejs";
 
-export function POST(request: Request): Promise<Response> {
-  return handleCreateRun(request, getRunApiService());
+export function POST(): Response {
+  return handleDeprecatedLegacyWrite();
 }
