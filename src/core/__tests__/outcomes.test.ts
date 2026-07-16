@@ -53,7 +53,7 @@ function state(
   });
 }
 
-describe("bankruptcy liquidity", () => {
+describe("historical v1 bankruptcy liquidity", () => {
   it("excludes retirement and home equity from automatic liquidity", () => {
     const assessment = assessRequiredObligationLiquidity(
       finances({
@@ -115,6 +115,20 @@ describe("bankruptcy liquidity", () => {
     expect(funded.liquidationCostCents).toBe(5_56);
     expect(funded.creditDrawnCents).toBe(0);
     expect(funded.finances.taxableInvestmentsCents).toBe(44_44);
+  });
+
+  it("preserves the historical full-sale result at exact maximum-net equality", () => {
+    const before = state({ requiredObligationsCents: moneyCents(190_00) });
+    const funded = fundRequiredObligations(
+      before,
+      "cmd.obligations.maximum-net",
+      before.currentMonth,
+      ratePpm(100_000),
+    );
+
+    expect(funded.taxableInvestmentsLiquidatedCents).toBe(100_00);
+    expect(funded.liquidationCostCents).toBe(10_00);
+    expect(funded.creditDrawnCents).toBe(0);
   });
 });
 
