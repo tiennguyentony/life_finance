@@ -77,9 +77,9 @@ annual tax context use persisted evidence and expose a `tax.cache.*` trace.
   401(k)/HSA contributions, deductions, and tax year are unchanged. Command
   traces and evidence remain unique; PolicyEngine runs again on a real context
   change rather than on every Next Month click.
-- Drizzle/PostgreSQL persistence with RLS, immutable snapshots and ledger
-  entries, optimistic revisions, command idempotency, and a transactional
-  outbox.
+- Drizzle/PostgreSQL persistence with RLS, a checksum-validated current save,
+  sparse verified historical anchors, immutable ledger entries, optimistic
+  revisions, command idempotency, and a transactional outbox.
 - Anonymous 256-bit run credentials whose server-side representation is a
   peppered HMAC digest.
 - Strict REST/Zod contracts, OpenAPI 3.1, response-validating TypeScript client,
@@ -110,9 +110,10 @@ drizzle/              Reviewed PostgreSQL migrations
 docs/architecture/    Architecture contracts and repository boundaries
 ```
 
-Read [the V4 backend architecture](docs/architecture/backend-v4.md) and
-[repository architecture](docs/architecture/repository.md) before changing an
-authority boundary.
+Read [the V4 backend architecture](docs/architecture/backend-v4.md),
+[repository architecture](docs/architecture/repository.md), and
+[authoritative state and ledger contract](docs/architecture/state-and-ledger.md)
+before changing an authority boundary.
 
 ## Prerequisites
 
@@ -247,15 +248,21 @@ misrepresented as a GPT-5.6 API call.
 | --- | --- |
 | `GET /api/v1/health` | Dependency readiness without secret details |
 | `GET /api/v1/openapi.json` | Generated OpenAPI 3.1 contract |
-| `POST /api/v1/runs` | Create an authoritative run and return its one-time access secret |
-| `GET /api/v1/runs/{runId}` | Read a run using its bearer secret |
-| `POST /api/v1/runs/{runId}/commands` | Submit a player action with optimistic revision and idempotency ID |
+| `POST /api/v1/runs` | Return HTTP 410; legacy creation is retired, so create a v2 run instead |
+| `GET /api/v1/runs/{runId}` | Inspect an authenticated legacy run before migration |
+| `POST /api/v1/runs/{runId}/commands` | Return HTTP 410; legacy state is read-only and must be migrated before mutation |
 | `POST /api/v2/runs` | Create a native catalog-backed v2 run and return its one-time access secret |
 | `GET /api/v2/runs/{runId}` | Read an authorized detailed v2 state |
+| `POST /api/v2/runs/{runId}/migrate` | Authenticated, idempotent migration of an existing v1 save to authoritative v2 |
 | `POST /api/v2/runs/{runId}/commands` | Configure strategy, take a detailed action, or request server-owned monthly processing |
 | `POST /api/v2/runs/{runId}/ai/explanation` | Generate an adaptive evidence-grounded lesson and update bounded learning memory |
 | `POST /api/v2/runs/{runId}/ai/world-event` | Select and queue one engine-eligible event without delegating financial authority |
 | `POST /api/v2/runs/{runId}/ai/debrief` | Explain a terminal run without changing its engine-owned outcome or grade |
+
+Authenticated v1 reads remain available so an old save can be inspected before
+migration. Both public v1 write endpoints return `STATE_SCHEMA_DEPRECATED`
+without invoking legacy mutation code; use the v2 migration endpoint with the
+same run bearer secret before submitting new gameplay commands.
 
 Only player-authored choices cross the public command boundary. A v2
 `process_month` request contains only its idempotency/revision/month envelope;
