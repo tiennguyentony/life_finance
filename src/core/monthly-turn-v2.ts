@@ -47,6 +47,23 @@ import {
   type EventSchedulerVersionV2,
   type EventSchedulingPolicyV2,
 } from "./event-scheduler-v2";
+import { PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
+import {
+  generateDeclarativePersonalEventCandidatesV2,
+  type PersonalEventTemplateV2,
+} from "./personal-event-v2";
+import {
+  chooseBalancedEventV2,
+  type RuntimeBalanceDecisionV2,
+} from "./runtime-balance-controller-v2";
+import {
+  RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+} from "./runtime-balance-policy-v2";
+import {
+  advanceRuntimeBalanceCalendarMonthV2,
+  recordRuntimeBalanceCashFlowV2,
+  runtimeBalanceStateV2,
+} from "./runtime-balance-state-v2";
 import {
   adjudicateCoverageClaim,
   adjudicateHealthClaim,
@@ -127,6 +144,8 @@ export type ProcessMonthV2Command = Readonly<{
     eventSchedulerVersion?:
       | typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION
       | typeof DECLARATIVE_EVENT_SCHEDULER_V2_VERSION;
+    runtimeBalanceControllerVersion?:
+      typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
     marketModelVersion?:
       | typeof MARKET_MODEL_VERSION
       | typeof MACRO_MARKET_MODEL_V2_VERSION;
@@ -159,6 +178,13 @@ export type MonthlyTurnV2Record = Readonly<{
   outcome: GameStateV2["outcome"];
   financialKernelVersion?: typeof FINANCIAL_KERNEL_V2_VERSION;
   outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
+  runtimeBalanceControllerVersion?:
+    typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
+  runtimeBalanceDecision?: RuntimeBalanceDecisionV2;
+  runtimeBalanceCandidateSet?: Readonly<{
+    eligibleTemplateIds: readonly string[];
+    candidateTemplateIds: readonly string[];
+  }>;
   openingNetWorthCents?: MoneyCents;
   closingNetWorthCents?: MoneyCents;
   openingAutomaticLiquidityCents?: MoneyCents;
@@ -188,6 +214,7 @@ export class MonthlyTurnV2Error extends Error {
     | "UNSUPPORTED_FINANCIAL_KERNEL_VERSION"
     | "UNSUPPORTED_OUTCOME_POLICY_VERSION"
     | "UNSUPPORTED_EVENT_SCHEDULER_VERSION"
+    | "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION"
     | "UNSUPPORTED_MARKET_MODEL_VERSION"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
@@ -242,6 +269,18 @@ export function eventSchedulerVersionForCommandV2(
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
     `unsupported event scheduler version: ${String(version)}`,
+  );
+}
+
+export function runtimeBalanceControllerVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION | null {
+  const version = command.payload.runtimeBalanceControllerVersion;
+  if (version === undefined) return null;
+  if (version === RUNTIME_BALANCE_CONTROLLER_V1_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+    `unsupported Runtime Balance controller version: ${String(version)}`,
   );
 }
 
@@ -718,6 +757,7 @@ function applyAfterTaxPlan(
 type MonthlyTurnV2Dependencies = Readonly<{
   eventSchedulingPolicy?: EventSchedulingPolicyV2;
   macroStoryPolicy?: MacroStoryPolicyV2;
+  personalEventCatalog?: readonly PersonalEventTemplateV2[];
 }>;
 
 export function processMonthlyTurnV2(
@@ -728,6 +768,8 @@ export function processMonthlyTurnV2(
   const version = financialKernelVersionForCommandV2(command);
   const outcomePolicyVersion = outcomePolicyVersionForCommandV2(command);
   const eventSchedulerVersion = eventSchedulerVersionForCommandV2(command);
+  const runtimeBalanceControllerVersion =
+    runtimeBalanceControllerVersionForCommandV2(command);
   const marketSelection = marketModelVersionForCommandV2(command);
   if (
     outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION &&
@@ -736,6 +778,36 @@ export function processMonthlyTurnV2(
     throw new MonthlyTurnV2Error(
       "UNSUPPORTED_OUTCOME_POLICY_VERSION",
       "outcome policy 1.0.0 requires financial kernel 2.0.0",
+    );
+  }
+  if (
+    runtimeBalanceControllerVersion === RUNTIME_BALANCE_CONTROLLER_V1_VERSION &&
+    (version !== FINANCIAL_KERNEL_V2_VERSION ||
+      eventSchedulerVersion !== DECLARATIVE_EVENT_SCHEDULER_V2_VERSION)
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+      "runtime-balance-v1 requires financial kernel 2.0.0 and declarative-events-v2",
+    );
+  }
+  if (
+    runtimeBalanceControllerVersion === null &&
+    state.gameplay.runtimeBalance?.version === 2
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+      "Runtime Balance state v2 cannot downgrade to direct declarative scheduling",
+    );
+  }
+  if (
+    runtimeBalanceControllerVersion === RUNTIME_BALANCE_CONTROLLER_V1_VERSION &&
+    state.gameplay.runtimeBalance?.version === 2 &&
+    marketSelection.difficulty !== null &&
+    state.gameplay.runtimeBalance.difficulty !== marketSelection.difficulty
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+      "Runtime Balance difficulty must match the explicit macro difficulty",
     );
   }
   if (
@@ -764,6 +836,7 @@ export function processMonthlyTurnV2(
       dependencies,
       outcomePolicyVersion,
       eventSchedulerVersion,
+      runtimeBalanceControllerVersion,
       marketSelection,
     );
   }
@@ -801,6 +874,9 @@ function processMonthlyTurnV2Kernel200(
   dependencies: MonthlyTurnV2Dependencies,
   outcomePolicyVersion: OutcomePolicyVersionV2,
   eventSchedulerVersion: EventSchedulerVersionV2,
+  runtimeBalanceControllerVersion:
+    | typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+    | null,
   marketSelection: MarketModelSelectionV2,
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
@@ -836,7 +912,26 @@ function processMonthlyTurnV2Kernel200(
     const persistedCashFlows = state.gameplay.eventLifecycle.activeCashFlows === undefined
       ? {}
       : { activeCashFlows: consumedCashFlows };
-    const rehydrated = rehydrateFinancialClosingStateV2(state, financial.state);
+    const financialClosing = rehydrateFinancialClosingStateV2(state, financial.state);
+    const advancedRuntimeBalance =
+      runtimeBalanceControllerVersion === RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+        ? advanceRuntimeBalanceCalendarMonthV2(runtimeBalanceStateV2(
+            state.gameplay.runtimeBalance,
+            state.gameplay.runtimeBalance?.version === 2
+              ? state.gameplay.runtimeBalance.difficulty
+              : marketSelection.difficulty ?? "normal",
+            state.currentMonth,
+          ))
+        : null;
+    const rehydrated = advancedRuntimeBalance === null
+      ? financialClosing
+      : {
+          ...financialClosing,
+          gameplay: {
+            ...financialClosing.gameplay,
+            runtimeBalance: advancedRuntimeBalance,
+          },
+        };
     const careerCompleted = completeCareerDevelopmentV2(
       {
         ...rehydrated,
@@ -863,25 +958,94 @@ function processMonthlyTurnV2Kernel200(
             outcomePolicyVersion,
           )
         : evaluateTerminalOutcomeV2(exposed, financial.shortfall);
-    let nextState = finalizeGameStateV2({ ...exposed, outcome });
+    const exposedWithRuntimeBalance = advancedRuntimeBalance === null
+      ? exposed
+      : {
+          ...exposed,
+          gameplay: {
+            ...exposed.gameplay,
+            runtimeBalance: recordRuntimeBalanceCashFlowV2(
+              advancedRuntimeBalance,
+              BigInt(financial.record.afterTaxCashIncomeCents) +
+                  BigInt(financial.record.resolvedIncomeCents) <
+                BigInt(financial.record.requiredCashCents),
+            ),
+          },
+        };
+    let nextState = finalizeGameStateV2({ ...exposedWithRuntimeBalance, outcome });
+    let runtimeBalanceDecision: RuntimeBalanceDecisionV2 | undefined;
+    let runtimeBalanceCandidateSet:
+      | MonthlyTurnV2Record["runtimeBalanceCandidateSet"]
+      | undefined;
     if (outcome === null) {
       nextState = advanceMacroStoriesV2(
         nextState,
         dependencies.macroStoryPolicy,
       );
-      const schedule = schedulePersonalEventV2(
-        nextState,
-        dependencies.eventSchedulingPolicy,
-        eventSchedulerVersion,
-      );
-      nextState = finalizeGameStateV2({
-        ...nextState,
-        random: schedule.nextRandom,
-      });
-      if (schedule.event) {
-        nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
-          ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event)
-          : queueScheduledPersonalEventV2(nextState, schedule.event);
+      if (
+        runtimeBalanceControllerVersion ===
+        RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+      ) {
+        const balance = nextState.gameplay.runtimeBalance;
+        if (balance?.version !== 2) {
+          throw new RangeError("Runtime Balance v2 must be advanced before scheduling");
+        }
+        const eventCatalog = dependencies.personalEventCatalog ??
+          PERSONAL_EVENT_TEMPLATES_V2;
+        const candidates = generateDeclarativePersonalEventCandidatesV2(
+          nextState,
+          eventCatalog,
+        );
+        runtimeBalanceCandidateSet = Object.freeze({
+          eligibleTemplateIds: candidates.eligibleTemplateIds,
+          candidateTemplateIds: candidates.candidateTemplateIds,
+        });
+        const choice = chooseBalancedEventV2(
+          nextState,
+          candidates.candidates,
+          candidates.nextRandom,
+          command.payload.taxableLiquidationCostRatePpm,
+          {
+            eventCatalog,
+            monthlyCashFlowEvidence: {
+              monthlyCashInflowCents: moneyCents(
+                safeBigIntToNumber(
+                  BigInt(financial.record.afterTaxCashIncomeCents) +
+                    BigInt(financial.record.resolvedIncomeCents),
+                  "runtime balance monthly cash inflow",
+                ),
+              ),
+              requiredCashCents: financial.record.requiredCashCents,
+            },
+          },
+        );
+        runtimeBalanceDecision = choice.decision;
+        const chosenState = {
+          ...nextState,
+          random: choice.nextRandom,
+          gameplay: {
+            ...nextState.gameplay,
+            runtimeBalance: choice.runtimeBalance,
+          },
+        } as GameStateV2;
+        nextState = choice.event === null
+          ? finalizeGameStateV2(chosenState)
+          : queueScheduledDeclarativePersonalEventV2(chosenState, choice.event);
+      } else {
+        const schedule = schedulePersonalEventV2(
+          nextState,
+          dependencies.eventSchedulingPolicy,
+          eventSchedulerVersion,
+        );
+        nextState = finalizeGameStateV2({
+          ...nextState,
+          random: schedule.nextRandom,
+        });
+        if (schedule.event) {
+          nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
+            ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event)
+            : queueScheduledPersonalEventV2(nextState, schedule.event);
+        }
       }
     }
     const record = Object.freeze({
@@ -891,6 +1055,15 @@ function processMonthlyTurnV2Kernel200(
         ? { outcomePolicyVersion }
         : {}),
       scheduledEvent: nextState.gameplay.eventLifecycle.pending,
+      ...(runtimeBalanceControllerVersion === null
+        ? {}
+        : { runtimeBalanceControllerVersion }),
+      ...(runtimeBalanceDecision === undefined
+        ? {}
+        : { runtimeBalanceDecision }),
+      ...(runtimeBalanceCandidateSet === undefined
+        ? {}
+        : { runtimeBalanceCandidateSet }),
       outcome,
     }) satisfies MonthlyTurnV2Record;
     return Object.freeze({ state: nextState, record });

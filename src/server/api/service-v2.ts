@@ -7,6 +7,7 @@ import { safeBigIntToNumber } from "../../core/domain/integer";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { monthsBetween, simulationMonth } from "../../core/domain/month";
 import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../../core/event-scheduler-v2";
+import type { GameStateV2 } from "../../core/game-state-v2";
 import { MACRO_MARKET_MODEL_V2_VERSION } from "../../core/market";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
@@ -14,6 +15,7 @@ import {
 } from "../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
 import { OUTCOME_POLICY_V1_VERSION } from "../../core/outcome-policy-v2";
+import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../core/runtime-balance-policy-v2";
 import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
 import {
   advanceTimeV2,
@@ -54,6 +56,14 @@ import { buildTaxRequest, resolveMonthlyTaxEvidence } from "./v2/tax-orchestrato
 import { fingerprintAnnualTaxContext } from "../tax/context-cache";
 
 const AUTOMATIC_LIQUIDATION_COST_RATE_PPM = ratePpm(10_000);
+
+function runtimeBalanceDifficultyForStateV2(
+  state: Pick<GameStateV2, "gameplay">,
+): "guided" | "normal" | "hard" {
+  return state.gameplay.runtimeBalance?.version === 2
+    ? state.gameplay.runtimeBalance.difficulty
+    : "normal";
+}
 
 export class RunApiServiceV2 {
   readonly #repository: V2Repository;
@@ -206,6 +216,7 @@ export class RunApiServiceV2 {
         repository: this.#repository,
         taxCalculator: this.#taxCalculator,
       });
+      const runtimeBalanceDifficulty = runtimeBalanceDifficultyForStateV2(state);
       const monthlyInputs = Array.from({ length: segmentMonths }, (_, offset) => {
         const commandId = monthlyBatchCommandId(
           request.id,
@@ -217,8 +228,10 @@ export class RunApiServiceV2 {
             financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
             outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
             eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+            runtimeBalanceControllerVersion:
+              RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
             marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
-            macroDifficulty: "normal" as const,
+            macroDifficulty: runtimeBalanceDifficulty,
             taxEvidence:
               offset === 0
                 ? evidence
@@ -329,6 +342,7 @@ export class RunApiServiceV2 {
         startMonth: simulationMonth(request.startMonth),
         randomSeed: String(request.randomSeed),
         resolvedScenario,
+        runtimeBalanceDifficulty: "normal",
         annualGrossSalaryCents: moneyCents(request.annualGrossSalaryCents),
         ...(request.financialGoal
           ? {
@@ -480,6 +494,7 @@ export class RunApiServiceV2 {
         repository: this.#repository,
         taxCalculator: this.#taxCalculator,
       });
+      const runtimeBalanceDifficulty = runtimeBalanceDifficultyForStateV2(current);
       internal = {
         schemaVersion: 2,
         id: command.id,
@@ -490,8 +505,10 @@ export class RunApiServiceV2 {
           financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
           outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
           eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          runtimeBalanceControllerVersion:
+            RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
           marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
-          macroDifficulty: "normal",
+          macroDifficulty: runtimeBalanceDifficulty,
           taxEvidence: evidence,
           taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
           resolvedCashFlows: [],

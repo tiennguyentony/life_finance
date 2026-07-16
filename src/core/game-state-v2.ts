@@ -30,6 +30,7 @@ import {
   createInitialRuntimeBalanceStateV1,
   type RuntimeBalanceStateV1,
 } from "./runtime-balance-state-v1";
+import type { RuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
 
 export {
   ENGINE_V2_VERSION,
@@ -189,7 +190,7 @@ export type ActivePersonalEventCashFlowV2 = Readonly<{
 
 export type GameplayStateV2 = Readonly<{
   /** Optional only for backward compatibility with earlier schema-v2 runs. */
-  runtimeBalance?: RuntimeBalanceStateV1;
+  runtimeBalance?: RuntimeBalanceStateV1 | RuntimeBalanceStateV2;
   /** Optional only for backward compatibility with schema-v2 runs created before goals-v1. */
   financialGoal?: FinancialGoalV1;
   /** Optional only for backward compatibility with earlier schema-v2 runs. */

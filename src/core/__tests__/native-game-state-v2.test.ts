@@ -127,6 +127,19 @@ describe("native game state v2 creation", () => {
     expect(Object.isFrozen(state.gameplay.catalogSnapshot)).toBe(true);
   });
 
+  it("opts into Runtime Balance v2 only when difficulty is explicit", () => {
+    const legacyCompatible = createNativeGameStateV2(input());
+    const guided = createNativeGameStateV2(
+      input({ runtimeBalanceDifficulty: "guided" }),
+    );
+
+    expect(legacyCompatible.gameplay.runtimeBalance).toMatchObject({ version: 1 });
+    expect(guided.gameplay.runtimeBalance).toMatchObject({
+      version: 2,
+      difficulty: "guided",
+    });
+  });
+
   it("rejects salary, cash, HSA, home, and debt combinations outside catalog constraints", () => {
     expect(() =>
       createNativeGameStateV2(

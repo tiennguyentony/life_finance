@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { sha256Canonical } from "../canonical";
 import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
@@ -7,7 +8,11 @@ import {
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import {
+  finalizeGameStateV2,
+} from "../game-state-v2";
+import {
   queueScheduledDeclarativePersonalEventV2,
+  queueScheduledPersonalEventV2,
   resolveEventChoiceV2,
 } from "../event-lifecycle-v2";
 import {
@@ -24,7 +29,15 @@ import {
 } from "../monthly-turn-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
-import type { DeclarativePersonalEventScheduleV2 } from "../personal-event-v2";
+import type {
+  DeclarativePersonalEventScheduleV2,
+  PersonalEventTemplateV2,
+} from "../personal-event-v2";
+import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../runtime-balance-policy-v2";
+import { createInitialRuntimeBalanceStateV2 } from "../runtime-balance-state-v2";
+import { getPersonalEventTemplateV2 } from "../../data/personal-event-templates-v2";
+import { getEventTemplate } from "../../data/event-templates";
+import { decodePersistedGameState } from "../persisted-game-state";
 
 function state(randomSeed: string) {
   const resolvedScenario = resolveScenarioCatalogSelection(
@@ -207,5 +220,127 @@ describe("declarative personal-event v2 integration", () => {
     expect(scheduled?.state.gameplay.eventLifecycle.pending).toEqual(
       scheduled?.record.scheduledEvent,
     );
+  });
+
+  it("round-trips lifecycle-backed recovery into the next financial month and blocks catastrophe", () => {
+    const medical = getPersonalEventTemplateV2("personal.medical_bill");
+    const catastrophe: PersonalEventTemplateV2 = {
+      ...medical,
+      id: "personal.integration_catastrophe",
+      severityTier: "catastrophe",
+      pressureCost: 7,
+      hazard: {
+        ...medical.hazard,
+        baseChancePpm: 1_000_000,
+        minimumChancePpm: 1_000_000,
+        maximumChancePpm: 1_000_000,
+      },
+      parameters: [{
+        ...medical.parameters[0]!,
+        minimum: 100_000,
+        maximum: 100_000,
+      }],
+      cooldowns: { eventMonths: 8, categoryMonths: 0, lessonMonths: 0 },
+      recovery: { durationMonths: 8 },
+      maximumOccurrences: 10,
+    };
+    const native = state("runtime-balance-recovery.integration");
+    const legacyLarge = getEventTemplate("personal.industry_layoff");
+    const sourceEventId = "evt.2026-07.personal.industry_layoff.v1";
+    const queued = queueScheduledPersonalEventV2(native, {
+      proposal: {
+        eventId: sourceEventId,
+        templateId: legacyLarge.id,
+        templateVersion: legacyLarge.version,
+        parameters: { income_gap_cents: 300_000 },
+      },
+      template: legacyLarge,
+      targetedWeakness: "unrelated_hazard",
+    });
+    const resolved = resolveEventChoiceV2(queued, {
+      schemaVersion: 2,
+      id: "resolve.recovery.source",
+      type: "resolve_event_choice",
+      expectedRevision: queued.revision,
+      effectiveMonth: queued.currentMonth,
+      payload: {
+        eventId: sourceEventId,
+        choiceId: "emergency_budget",
+      },
+    });
+    const sourceEvidence = resolved.gameplay.eventLifecycle.history.at(-1)!;
+    const recovering = finalizeGameStateV2({
+      ...resolved,
+      gameplay: {
+        ...resolved.gameplay,
+        runtimeBalance: {
+          ...createInitialRuntimeBalanceStateV2("normal"),
+          pressureUnits: 10,
+          monthsSinceAnyEvent: 0,
+          monthsSinceLargeEvent: 0,
+          recovery: {
+            sourceEventId,
+            sourceTier: "large",
+            targetedWeakness: sourceEvidence.targetedWeakness,
+            remainingMonths: 4,
+          },
+          recentEvents: [{
+            eventId: sourceEventId,
+            templateId: sourceEvidence.templateId,
+            templateVersion: sourceEvidence.templateVersion,
+            category: "career",
+            lessonTags: ["lesson.emergency_fund"],
+            tier: "large",
+            targetedWeakness: sourceEvidence.targetedWeakness,
+            approvedMonth: sourceEvidence.scheduledMonth,
+          }],
+        },
+      },
+    });
+    const decodedRecovery = decodePersistedGameState(
+      JSON.parse(JSON.stringify(recovering)) as unknown,
+    );
+    if (decodedRecovery.schemaVersion !== 2) {
+      throw new Error("recovery fixture must remain schema v2");
+    }
+    expect(sha256Canonical(decodedRecovery)).toBe(
+      sha256Canonical(recovering),
+    );
+    const baseCommand = monthCommand(
+      decodedRecovery as ReturnType<typeof state>,
+      "recovery-block",
+      DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+    );
+    const result = processMonthlyTurnV2(
+      decodedRecovery,
+      {
+        ...baseCommand,
+        payload: {
+          ...baseCommand.payload,
+          runtimeBalanceControllerVersion:
+            RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        },
+      },
+      { personalEventCatalog: [catastrophe] },
+    );
+
+    expect(result.state.currentMonth).not.toBe(decodedRecovery.currentMonth);
+    expect(result.state.ledger.transactions.length).toBeGreaterThan(
+      decodedRecovery.ledger.transactions.length,
+    );
+    expect(result.record.runtimeBalanceDecision).toMatchObject({
+      status: "none",
+      candidates: [
+        expect.objectContaining({
+          templateId: catastrophe.id,
+          rejectionCodes: expect.arrayContaining(["recovery_block"]),
+        }),
+      ],
+    });
+    expect(result.state.gameplay.eventLifecycle.pending).toBeNull();
+    expect(result.state.gameplay.runtimeBalance).toMatchObject({
+      version: 2,
+      recovery: { remainingMonths: 3 },
+    });
   });
 });
