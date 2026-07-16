@@ -1,6 +1,7 @@
 import { canonicalJson } from "./canonical";
 import { addMonths } from "./domain/month";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
+import { ownForDeepFreeze } from "./immutable-ownership";
 import { assertValidGameStateTransitionV2 } from "./state-transition-v2";
 
 export type FinancialTransitionV2ErrorCode =
@@ -113,10 +114,13 @@ export function acceptFinancialMonthCommandV2(
   }
 
   try {
+    const ownedFinancialState = ownForDeepFreeze(financialState);
+    const ownedOutcome = ownForDeepFreeze(previous.outcome);
     const accepted = finalizeGameStateV2({
-      ...financialState,
+      ...ownedFinancialState,
       revision: previous.revision + 1,
       acceptedCommandIds: [...previous.acceptedCommandIds, commandId],
+      outcome: ownedOutcome,
     });
     assertValidGameStateTransitionV2(previous, accepted, commandId);
     return accepted;

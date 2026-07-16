@@ -29,6 +29,7 @@ import {
   currentCumulativePriceIndexPpmV2,
 } from "./inflation-v2";
 import { adjudicateCoverageClaim, adjudicateHealthClaim } from "./insurance-v2";
+import { ownForDeepFreeze } from "./immutable-ownership";
 import { appendTransaction, type JournalPosting } from "./ledger";
 import {
   MARKET_MODEL_VERSION,
@@ -49,6 +50,7 @@ import {
 } from "./recurring-strategy-v2";
 
 export const FINANCIAL_KERNEL_V2_VERSION = "2.0.0" as const;
+export const FINANCIAL_CLOSING_STATE_V2_KIND = "financial_closing_v2" as const;
 
 export type MonthlyInsuranceClaimV2 =
   | Readonly<{
@@ -124,11 +126,17 @@ export type FinancialMonthRecordV2 = Readonly<{
   shortfall: FinancialShortfallV2 | null;
 }>;
 
+export type FinancialClosingStateV2 = Readonly<
+  Omit<GameStateV2, "revision" | "acceptedCommandIds" | "outcome"> & {
+    closingStateKind: typeof FINANCIAL_CLOSING_STATE_V2_KIND;
+  }
+>;
+
 export type FinancialMonthResultV2 = Readonly<{
   version: typeof FINANCIAL_KERNEL_V2_VERSION;
   processedMonth: SimulationMonth;
   nextMonth: SimulationMonth;
-  state: GameStateV2;
+  state: FinancialClosingStateV2;
   record: FinancialMonthRecordV2;
   shortfall: FinancialShortfallV2 | null;
 }>;
@@ -150,7 +158,6 @@ const COMMAND_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/;
 const FLOW_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const SOURCE_SYSTEM = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,63}$/;
 const ZERO = moneyCents(0);
-const VERIFIED_DEEP_FROZEN_GRAPHS = new WeakSet<object>();
 const FNV_1A_64_OFFSET = BigInt("0xcbf29ce484222325");
 const FNV_1A_64_ALT_OFFSET = BigInt("0x84222325cbf29ce4");
 const FNV_1A_64_PRIME = BigInt("0x100000001b3");
@@ -171,40 +178,6 @@ function resolvedFlowTransactionId(commandId: string, flowId: string): string {
     fnv1a64(payload, FNV_1A_64_OFFSET) +
     fnv1a64(payload, FNV_1A_64_ALT_OFFSET);
   return `txn.flow.${digest}`;
-}
-
-function isDeepFrozenGraph(value: unknown): boolean {
-  const visited = new WeakSet<object>();
-  const verified: object[] = [];
-
-  function visit(candidate: unknown): boolean {
-    if (candidate === null || typeof candidate !== "object") return true;
-    if (VERIFIED_DEEP_FROZEN_GRAPHS.has(candidate)) return true;
-    if (visited.has(candidate)) return true;
-    if (!Object.isFrozen(candidate)) return false;
-
-    visited.add(candidate);
-    verified.push(candidate);
-    for (const key of Reflect.ownKeys(candidate)) {
-      const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
-      if (
-        descriptor !== undefined &&
-        "value" in descriptor &&
-        !visit(descriptor.value)
-      ) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  const result = visit(value);
-  if (result) {
-    for (const candidate of verified) {
-      VERIFIED_DEEP_FROZEN_GRAPHS.add(candidate);
-    }
-  }
-  return result;
 }
 
 function debit(accountId: string, amountCents: MoneyCents): JournalPosting {
@@ -714,11 +687,26 @@ function applyAfterTaxPlan(
 function closeFinancialMonthState(
   state: GameStateV2,
   nextMonth: SimulationMonth,
-): GameStateV2 {
+): FinancialClosingStateV2 {
   // Advancing the month can make non-financial career/event evidence due.
-  // The command wrapper owns resolving that transient boundary and performs
-  // full state validation before accepting the command metadata.
-  return Object.freeze({ ...state, currentMonth: nextMonth });
+  // Omit authoritative transition metadata so this evidence cannot be
+  // mistaken for a persistable GameStateV2 before wrapper orchestration.
+  return Object.freeze({
+    closingStateKind: FINANCIAL_CLOSING_STATE_V2_KIND,
+    schemaVersion: state.schemaVersion,
+    engineVersion: state.engineVersion,
+    runId: state.runId,
+    startMonth: state.startMonth,
+    currentMonth: nextMonth,
+    player: state.player,
+    finances: state.finances,
+    wellbeing: state.wellbeing,
+    marketRegime: state.marketRegime,
+    random: state.random,
+    ledger: state.ledger,
+    gameplay: state.gameplay,
+    migration: state.migration,
+  });
 }
 
 export function simulateFinancialMonthV2(
@@ -735,9 +723,7 @@ export function simulateFinancialMonthV2(
     input.taxableLiquidationCostRatePpm,
   ).totalAutomaticLiquidityCents;
 
-  const ownedOpeningState = isDeepFrozenGraph(input.state)
-    ? input.state
-    : structuredClone(input.state);
+  const ownedOpeningState = ownForDeepFreeze(input.state);
   let working = finalizeGameStateV2(
     resetAnnualFinancialAccumulatorsV2(ownedOpeningState),
   );
@@ -887,13 +873,13 @@ export function simulateFinancialMonthV2(
     preTax: payroll.allocationPlan.preTax,
   });
   working = applyAfterTaxPlan(working, input.commandId, recurringAllocations);
-  const state = closeFinancialMonthState(working, nextMonth);
-  const closingNetWorthCents = calculateNetWorth(state.finances);
   const closingAutomaticLiquidityCents = assessV2Liquidity(
-    state,
+    working,
     ZERO,
     input.taxableLiquidationCostRatePpm,
   ).totalAutomaticLiquidityCents;
+  const state = closeFinancialMonthState(working, nextMonth);
+  const closingNetWorthCents = calculateNetWorth(state.finances);
   const record = Object.freeze({
     version: FINANCIAL_KERNEL_V2_VERSION,
     commandId: input.commandId,
