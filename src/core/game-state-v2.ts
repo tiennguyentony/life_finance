@@ -21,6 +21,10 @@ import {
   V1_TO_V2_MIGRATION_VERSION,
 } from "./game-state-v2-constants";
 import { assertValidGameStateV2 } from "./game-state-v2-validation";
+import {
+  createInitialRuntimeBalanceStateV1,
+  type RuntimeBalanceStateV1,
+} from "./runtime-balance-state-v1";
 
 export {
   ENGINE_V2_VERSION,
@@ -138,6 +142,8 @@ export type ResolvedEventEvidenceV2 = Readonly<{
 }>;
 
 export type GameplayStateV2 = Readonly<{
+  /** Optional only for backward compatibility with earlier schema-v2 runs. */
+  runtimeBalance?: RuntimeBalanceStateV1;
   /** Optional only for backward compatibility with schema-v2 runs created before goals-v1. */
   financialGoal?: FinancialGoalV1;
   /** Optional only for backward compatibility with earlier schema-v2 runs. */
@@ -264,6 +270,7 @@ export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
     schemaVersion: GAME_STATE_V2_SCHEMA_VERSION,
     engineVersion: ENGINE_V2_VERSION,
     gameplay: {
+      runtimeBalance: createInitialRuntimeBalanceStateV1(),
       catalogs: {
         location: { id: state.player.locationId, version: LEGACY_CATALOG_VERSION },
         career: { id: state.player.careerTrackId, version: LEGACY_CATALOG_VERSION },

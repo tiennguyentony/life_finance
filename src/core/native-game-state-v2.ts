@@ -24,6 +24,7 @@ import {
   validateFinancialGoal,
   type FinancialGoalV1,
 } from "./financial-goals-v2";
+import { createInitialRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
 
 export type NativeGameStateV2Input = Readonly<{
   runId: string;
@@ -242,6 +243,7 @@ export function createNativeGameStateV2(
     engineVersion: ENGINE_V2_VERSION,
     migration: null,
     gameplay: {
+      runtimeBalance: createInitialRuntimeBalanceStateV1(),
       aiLearningMemory: emptyAiLearningMemory(),
       lifeMilestones: emptyLifeMilestoneState(),
       financialGoal:

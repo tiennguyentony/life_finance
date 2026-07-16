@@ -2,8 +2,13 @@ import { canonicalJson, sha256Canonical } from "../../core/canonical";
 import type { GameCommand } from "../../core/commands";
 import { reduceDetailedFinanceCommand } from "../../core/detailed-actions-v2";
 import { assertValidGameState, type GameState } from "../../core/game-state";
-import type { GameStateV2 } from "../../core/game-state-v2";
+import {
+  finalizeGameStateV2,
+  type GameStateV2,
+} from "../../core/game-state-v2";
 import type { JournalTransaction } from "../../core/ledger";
+import { runtimeBalanceStateV1 } from "../../core/runtime-balance-state-v1";
+import { assertValidGameStateTransitionV2 } from "../../core/state-transition-v2";
 import {
   EventLifecycleV2Error,
   resolveEventChoiceV2,
@@ -228,24 +233,76 @@ export function reduceGameCommandV2(
     );
   }
   if (command.type === "resolve_event_choice") {
-    return { state: resolveEventChoiceV2(state, command), monthlyRecord: null };
+    return acceptedGameCommandV2(
+      state,
+      command.id,
+      resolveEventChoiceV2(state, command),
+      null,
+    );
   }
   if (command.type === "take_detailed_action") {
-    return { state: reduceDetailedFinanceCommand(state, command), monthlyRecord: null };
+    return acceptedGameCommandV2(
+      state,
+      command.id,
+      reduceDetailedFinanceCommand(state, command),
+      null,
+    );
   }
   if (command.type === "set_recurring_strategy") {
-    return { state: setRecurringStrategy(state, command), monthlyRecord: null };
+    return acceptedGameCommandV2(
+      state,
+      command.id,
+      setRecurringStrategy(state, command),
+      null,
+    );
   }
   if (command.type === "manage_life_milestone") {
-    return { state: manageLifeMilestoneV2(state, command), monthlyRecord: null };
+    return acceptedGameCommandV2(
+      state,
+      command.id,
+      manageLifeMilestoneV2(state, command),
+      null,
+    );
   }
   if (command.type === "record_learning_interaction_v2") {
-    return { state: recordLearningInteractionV2(state, command), monthlyRecord: null };
+    return acceptedGameCommandV2(
+      state,
+      command.id,
+      recordLearningInteractionV2(state, command),
+      null,
+    );
   }
   if (command.type === "queue_ai_world_event_v2") {
-    return { state: queueAiWorldEventV2(state, command), monthlyRecord: null };
+    return acceptedGameCommandV2(
+      state,
+      command.id,
+      queueAiWorldEventV2(state, command),
+      null,
+    );
   }
   assertNoDueLifeMilestone(state);
   const result = processMonthlyTurnV2(state, command);
-  return { state: result.state, monthlyRecord: result.record };
+  return acceptedGameCommandV2(
+    state,
+    command.id,
+    result.state,
+    result.record,
+  );
+}
+
+function acceptedGameCommandV2(
+  previous: GameStateV2,
+  commandId: string,
+  reduced: GameStateV2,
+  monthlyRecord: MonthlyTurnV2Record | null,
+): Readonly<{ state: GameStateV2; monthlyRecord: MonthlyTurnV2Record | null }> {
+  const state = finalizeGameStateV2({
+    ...reduced,
+    gameplay: {
+      ...reduced.gameplay,
+      runtimeBalance: runtimeBalanceStateV1(reduced),
+    },
+  });
+  assertValidGameStateTransitionV2(previous, state, commandId);
+  return { state, monthlyRecord };
 }
