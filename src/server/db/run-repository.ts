@@ -42,6 +42,7 @@ import {
   loadAcceptedCommandV2,
   loadAcceptedMonthlyCommandV2,
   loadCheckpointEvidenceV2,
+  loadTeachingCheckpointOwnerBundleV2,
   loadMonthlyTaxEvidenceForCommand,
   loadMonthlyTaxEvidenceForContext,
 } from "./run-repository-read";
@@ -603,6 +604,20 @@ export class RunRepository {
     fromRevision: number,
   ): Promise<CheckpointEvidenceV2> {
     return loadCheckpointEvidenceV2(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+      fromRevision,
+    );
+  }
+
+  async loadTeachingCheckpointOwnerBundleV2(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ) {
+    return loadTeachingCheckpointOwnerBundleV2(
       this.#db,
       this.#secretCodec,
       runId,
