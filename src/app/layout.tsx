@@ -26,7 +26,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html className={displayFont.variable} lang="en">
-      <body>
+      {/* Browser extensions (Grammarly, etc.) inject attributes here before
+          hydration; suppress the resulting mismatch warning on this tag only. */}
+      <body suppressHydrationWarning>
         <a className="skip-link" href="#main-content">
           Skip to content
         </a>
