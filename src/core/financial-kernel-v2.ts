@@ -711,6 +711,16 @@ function applyAfterTaxPlan(
   });
 }
 
+function closeFinancialMonthState(
+  state: GameStateV2,
+  nextMonth: SimulationMonth,
+): GameStateV2 {
+  // Advancing the month can make non-financial career/event evidence due.
+  // The command wrapper owns resolving that transient boundary and performs
+  // full state validation before accepting the command metadata.
+  return Object.freeze({ ...state, currentMonth: nextMonth });
+}
+
 export function simulateFinancialMonthV2(
   input: FinancialMonthInputV2,
 ): FinancialMonthResultV2 {
@@ -798,7 +808,7 @@ export function simulateFinancialMonthV2(
       ],
       "financial kernel shortfall automatic liquidity",
     );
-    const state = finalizeGameStateV2({ ...working, currentMonth: nextMonth });
+    const state = closeFinancialMonthState(working, nextMonth);
     const closingNetWorthCents = calculateNetWorth(state.finances);
     const shortfall = Object.freeze({
       requiredCashCents,
@@ -877,7 +887,7 @@ export function simulateFinancialMonthV2(
     preTax: payroll.allocationPlan.preTax,
   });
   working = applyAfterTaxPlan(working, input.commandId, recurringAllocations);
-  const state = finalizeGameStateV2({ ...working, currentMonth: nextMonth });
+  const state = closeFinancialMonthState(working, nextMonth);
   const closingNetWorthCents = calculateNetWorth(state.finances);
   const closingAutomaticLiquidityCents = assessV2Liquidity(
     state,

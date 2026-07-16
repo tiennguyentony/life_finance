@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../domain/money";
+import type { FinancialShortfallV2 } from "../financial-kernel-v2";
 import { createInitialGameState, type FinancialSnapshot } from "../game-state";
+import {
+  finalizeGameStateV2,
+  migrateGameStateV1ToV2,
+} from "../game-state-v2";
 import type { FinancialGoalV1 } from "../financial-goals-v2";
 import {
   assessRequiredObligationLiquidity,
   evaluateTerminalOutcome,
+  evaluateTerminalOutcomeV2,
   fundRequiredObligations,
   gradeRetirementProgress,
 } from "../outcomes";
@@ -50,6 +56,32 @@ function state(
       burnoutPpm: ratePpm(100_000),
       happinessPpm: ratePpm(900_000),
     },
+  });
+}
+
+function financialShortfall(
+  residualShortfallCents = moneyCents(1),
+): FinancialShortfallV2 {
+  const requiredCashCents = residualShortfallCents;
+  const fundingPlan = Object.freeze({
+    requiredCashCents,
+    cashAvailableCents: moneyCents(0),
+    cashUsedCents: moneyCents(0),
+    taxableLiquidations: [],
+    grossLiquidationCents: moneyCents(0),
+    liquidationCostCents: moneyCents(0),
+    netLiquidationProceedsCents: moneyCents(0),
+    remainingCreditCents: moneyCents(0),
+    creditUsedCents: moneyCents(0),
+    residualShortfallCents,
+    fullyFunded: false,
+  });
+  return Object.freeze({
+    requiredCashCents,
+    residualShortfallCents,
+    fundingPlan,
+    netWorthCents: moneyCents(0),
+    automaticLiquidityCents: moneyCents(0),
   });
 }
 
@@ -234,5 +266,62 @@ describe("terminal outcomes", () => {
       kind: "retirement_age",
       reasonCode: "reached_player_target_age",
     });
+  });
+});
+
+describe("v2 terminal outcomes from kernel evidence", () => {
+  it("gives an actual shortfall precedence over FI and retirement age", () => {
+    const wealthyButRestricted = migrateGameStateV1ToV2(
+      state(
+        {
+          cashCents: moneyCents(0),
+          taxableInvestmentsCents: moneyCents(0),
+          retirementCents: moneyCents(25_000_000),
+          homeValueCents: moneyCents(100_000_000),
+          creditLimitCents: moneyCents(0),
+          requiredObligationsCents: moneyCents(1),
+        },
+        "1960-01",
+      ),
+    );
+
+    expect(
+      evaluateTerminalOutcomeV2(
+        wealthyButRestricted,
+        financialShortfall(),
+      ),
+    ).toMatchObject({ kind: "bankruptcy", grade: "F" });
+  });
+
+  it("does not predict bankruptcy after a fully paid current month", () => {
+    const cannotPrefundAnotherMonth = migrateGameStateV1ToV2(
+      state({
+        cashCents: moneyCents(0),
+        taxableInvestmentsCents: moneyCents(0),
+        creditLimitCents: moneyCents(0),
+        requiredObligationsCents: moneyCents(1),
+      }),
+    );
+
+    expect(
+      evaluateTerminalOutcomeV2(cannotPrefundAnotherMonth, null),
+    ).toBeNull();
+  });
+
+  it("keeps an existing terminal outcome immutable", () => {
+    const active = migrateGameStateV1ToV2(state());
+    const terminal = finalizeGameStateV2({
+      ...active,
+      outcome: {
+        kind: "financial_independence",
+        grade: "S",
+        reachedMonth: active.currentMonth,
+        reasonCode: "existing_terminal",
+      },
+    });
+
+    expect(evaluateTerminalOutcomeV2(terminal, financialShortfall())).toBe(
+      terminal.outcome,
+    );
   });
 });
