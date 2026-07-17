@@ -57,7 +57,11 @@ export function hopPose(
   // Parabola 4t(1-t): grounded at both ends, apex exactly at t=0.5.
   const y = peak * 4 * t * (1 - t);
 
-  const stretch = STRETCH_AMOUNT * Math.sin(Math.PI * t);
+  // Stretch tracks vertical speed: neutral at the grounded ends (t=0, t=1)
+  // and at the weightless apex (t=0.5), peaking mid-rise and mid-fall. This
+  // keeps the character stretched while moving fast instead of ballooning
+  // tallest at the top where it hangs motionless.
+  const stretch = STRETCH_AMOUNT * Math.abs(Math.sin(2 * Math.PI * t));
   const squash =
     SQUASH_AMOUNT * (edgeBump(t / SQUASH_WINDOW) + edgeBump((1 - t) / SQUASH_WINDOW));
   const scaleY = 1 + stretch - squash;
