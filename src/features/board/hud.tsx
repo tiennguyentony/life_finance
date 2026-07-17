@@ -40,7 +40,14 @@ export function BoardHud({ actionLabel, actionHint, onTakeAction, onStub, toast 
           <div className="board-player-meta">
             <strong>{BOARD_PLAYER.name}</strong>
             <span>Level {BOARD_PLAYER.level}</span>
-            <span aria-label={`Experience ${BOARD_PLAYER.xpPercent} percent`} className="board-xp">
+            <span
+              aria-label={`Experience ${BOARD_PLAYER.xpPercent} percent`}
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={BOARD_PLAYER.xpPercent}
+              className="board-xp"
+              role="progressbar"
+            >
               <i style={{ width: `${BOARD_PLAYER.xpPercent}%` }} />
             </span>
           </div>
@@ -97,6 +104,9 @@ export function BoardHud({ actionLabel, actionHint, onTakeAction, onStub, toast 
           <span className="board-goal-label">{BOARD_GOAL.label}</span>
           <span
             aria-label={`Goal progress ${goalPercent} percent`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={goalPercent}
             className="board-goal-bar"
             role="progressbar"
           >
