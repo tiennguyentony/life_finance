@@ -46,9 +46,13 @@ describe("hopPose", () => {
     expect(pose.scaleY).toBeLessThan(1);
   });
 
-  it("stretches at the apex of the jump", () => {
-    const pose = hopPose(FROM, TO, 0.5);
-    expect(pose.scaleY).toBeGreaterThan(1);
+  it("stretches during the fast rise, and is neutral at the weightless apex", () => {
+    // Real squash-and-stretch tracks speed: a body stretches when moving
+    // fast (rise/fall) and hangs neutral at the top where velocity is zero.
+    const rising = hopPose(FROM, TO, 0.28);
+    expect(rising.scaleY).toBeGreaterThan(1);
+    const apex = hopPose(FROM, TO, 0.5);
+    expect(apex.scaleY).toBeCloseTo(1, 2);
   });
 
   it("squashes again on landing", () => {
