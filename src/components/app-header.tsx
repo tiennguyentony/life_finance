@@ -10,11 +10,12 @@ export function AppHeader() {
   const router = useRouter();
   const { machine, resetGame } = useGame();
   const inBrightwater = pathname.startsWith("/game/brightwater");
+  const inBoard = pathname.startsWith("/board");
   const inGame = pathname.startsWith("/game") && !inBrightwater;
 
-  /* Brightwater City is a self-contained game with its own full-screen HUD;
-   * it renders no shared chrome, same as the landing page. */
-  if (pathname === "/" || inBrightwater) {
+  /* Brightwater City and the board are self-contained games with their own
+   * full-screen HUDs; they render no shared chrome, same as the landing page. */
+  if (pathname === "/" || inBrightwater || inBoard) {
     return null;
   }
 
