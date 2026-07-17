@@ -1,6 +1,13 @@
 "use client";
 
-import { Clone, Html, OrbitControls, useCursor, useGLTF } from "@react-three/drei";
+import {
+  Clone,
+  ContactShadows,
+  Html,
+  OrbitControls,
+  useCursor,
+  useGLTF,
+} from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef, useState } from "react";
 import type { Group, Mesh, MeshStandardMaterial } from "three";
@@ -560,6 +567,18 @@ export default function BoardScene({
       <directionalLight color="#dff2ef" intensity={0.35} position={[-8, 7, -6]} />
 
       <Water />
+      {/* Grounds the floating islands with soft blob shadows on the water so
+          nothing reads as pasted in. Rendered on the water plane just below
+          the platforms; warm dark tint to match the daylight scene. */}
+      <ContactShadows
+        blur={2.2}
+        color="#2e2818"
+        far={7}
+        opacity={0.55}
+        position={[0, -0.86, 0]}
+        resolution={1024}
+        scale={46}
+      />
       {mode === "loop" ? (
         <Suspense fallback={null}>
           <TrackTiles reducedMotion={reducedMotion} />
