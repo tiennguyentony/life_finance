@@ -22,6 +22,13 @@ type BoardHudProps = Readonly<{
   toastVisible: boolean;
 }>;
 
+/** Count badge that hides at zero and caps at "9+" so it never shows a
+ * meaningless "0" or overflows its circle at 3+ digits. */
+function PanelBadge({ count }: Readonly<{ count: number }>) {
+  if (count <= 0) return null;
+  return <span className="board-badge">{count > 9 ? "9+" : count}</span>;
+}
+
 export function BoardHud({
   actionLabel,
   actionHint,
@@ -87,7 +94,7 @@ export function BoardHud({
             type="button"
           >
             {panel.label}
-            <span className="board-badge">{panel.badge}</span>
+            <PanelBadge count={panel.badge} />
           </button>
         ))}
       </nav>
@@ -98,7 +105,7 @@ export function BoardHud({
           type="button"
         >
           {journal!.label}
-          <span className="board-badge">{journal!.badge}</span>
+          <PanelBadge count={journal!.badge} />
         </button>
       </nav>
 
