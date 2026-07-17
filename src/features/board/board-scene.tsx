@@ -2,7 +2,6 @@
 
 import { Clone, Html, OrbitControls, useCursor, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { Suspense, useMemo, useRef, useState } from "react";
 import type { Group, Mesh, MeshStandardMaterial } from "three";
 
@@ -493,8 +492,11 @@ function CenterDie({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
 function Water() {
   return (
     <mesh position={[0, -0.95, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      {/* Warm, desaturated seafoam that sits near the cream --paper family,
+          so the board's dominant field reads warm like the landing instead
+          of the old saturated cool teal. */}
       <circleGeometry args={[46, 48]} />
-      <meshStandardMaterial color="#78cbd1" metalness={0.15} roughness={0.35} />
+      <meshStandardMaterial color="#a8ccbb" metalness={0.1} roughness={0.4} />
     </mesh>
   );
 }
@@ -590,12 +592,6 @@ export default function BoardScene({
           standingAt={standingAt}
         />
       </Suspense>
-
-      {/* Daylight bloom is subtle: only genuinely bright spots (coins, the
-          gold roof) should catch it, not every mid-tone surface. */}
-      <EffectComposer>
-        <Bloom intensity={0.35} luminanceSmoothing={0.3} luminanceThreshold={1.3} mipmapBlur />
-      </EffectComposer>
     </Canvas>
   );
 }
