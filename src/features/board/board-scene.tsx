@@ -529,13 +529,17 @@ export default function BoardScene({
     <Canvas
       camera={{ position: [0, 15.5, 19], fov: 30, near: 0.5, far: 110 }}
       dpr={[1, 2]}
+      // With reduced motion every useFrame is static, so render on demand
+      // (invalidated by interaction/state) instead of compositing 60fps forever.
+      frameloop={reducedMotion ? "demand" : "always"}
     >
       {/* Wheel-zoom only: the view stays locked (no rotate/pan) so the board
           keeps its fixed 3/4 look, but you can pull back to see every corner
           building or lean in on a stop. Target matches the old lookAt point. */}
       <OrbitControls
         dampingFactor={0.12}
-        enableDamping
+        // Damping needs a continuous loop; skip it under demand-mode frameloop.
+        enableDamping={!reducedMotion}
         enablePan={false}
         enableRotate={false}
         enableZoom

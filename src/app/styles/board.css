@@ -212,11 +212,18 @@
   padding: 0.62rem 1.1rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
   font-size: 0.86rem;
-  transition: transform 120ms ease;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 120ms ease;
 }
 
 .board-icon-button:hover {
   transform: translateY(-2px);
+}
+
+/* Press feedback: sink the sticker into the surface, matching the primary
+ * CTA's idiom, so the most-clicked controls answer on pointer-down. */
+.board-icon-button:active {
+  transform: translateY(1px);
+  box-shadow: 2px 3px 0 var(--ink);
 }
 
 /* -------------------------------- sides -------------------------------- */
@@ -242,11 +249,16 @@
   padding: 0.85rem 1.2rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
   font-size: 0.9rem;
-  transition: transform 120ms ease;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 120ms ease;
 }
 
 .board-side-button:hover {
   transform: translateY(-2px);
+}
+
+.board-side-button:active {
+  transform: translateY(1px);
+  box-shadow: 2px 3px 0 var(--ink);
 }
 
 .board-badge {
@@ -380,12 +392,17 @@
   cursor: pointer;
   font: inherit;
   box-shadow: 3px 4px 0 var(--ink);
-  transition: transform 120ms ease;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 120ms ease;
   white-space: nowrap;
 }
 
 .board-chip:hover {
   transform: translateY(-2px);
+}
+
+.board-chip:active {
+  transform: translateY(1px);
+  box-shadow: 1px 2px 0 var(--ink);
 }
 
 .board-chip strong {
@@ -436,5 +453,18 @@
   .board-chip {
     animation: none;
     transition: none;
+  }
+
+  /* Reduced motion means no movement, not just no easing: neutralize the
+   * hover/press translate so controls don't jump on interaction. */
+  .board-icon-button:hover,
+  .board-icon-button:active,
+  .board-side-button:hover,
+  .board-side-button:active,
+  .board-take-action:hover,
+  .board-take-action:active,
+  .board-chip:hover,
+  .board-chip:active {
+    transform: none;
   }
 }
