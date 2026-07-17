@@ -166,7 +166,9 @@
 }
 
 .board-stat-lime dd {
-  color: var(--lime-dark);
+  /* --lime-dark (#65a82f) is only 2.84:1 on the cream card; this darker
+   * green clears WCAG AA (5.0:1). The token stays on the border. */
+  color: #2e7d32;
 }
 
 .board-stat-blue {
@@ -184,7 +186,9 @@
 }
 
 .board-stat-coral dd {
-  color: var(--coral);
+  /* --coral (#ff7754) is only 2.55:1 on the cream card -- and Debt is the
+   * most-read number in a money game. This dark coral clears AA (5.3:1). */
+  color: #c0392b;
 }
 
 .board-top-right {
@@ -198,8 +202,9 @@
   padding: 0.62rem 1rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
   font-size: 0.86rem;
-  /* Darker than --gold, which is too light for text on a cream card. */
-  color: #a9791b;
+  /* #a9791b is only 3.76:1 on the cream card; this deeper amber clears
+   * AA (5.2:1) at this small bold size. --gold stays on the border. */
+  color: #8a6414;
   border-color: var(--gold);
 }
 
@@ -255,7 +260,8 @@
   border-radius: 50%;
   background: var(--coral);
   border: 2px solid var(--ink);
-  color: var(--white);
+  /* white on --coral is only 2.56:1; ink on coral clears AA (6.2:1). */
+  color: var(--ink);
   font-size: 0.72rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
 }
