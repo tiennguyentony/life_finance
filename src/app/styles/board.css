@@ -426,23 +426,23 @@
   position: absolute;
   left: 50%;
   bottom: 7.2rem;
-  transform: translateX(-50%);
   margin: 0;
   padding: 0.7rem 1.3rem;
+  max-width: min(92vw, 34rem);
   font-size: 0.9rem;
-  animation: board-toast-in 200ms ease-out;
-  white-space: nowrap;
+  text-align: center;
+  /* Hidden resting state; slides up + fades in when data-visible flips true,
+   * and reverses on the way out (a transition, not a one-shot keyframe, so a
+   * new message on the still-mounted node re-animates and can interrupt). */
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+  pointer-events: none;
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
 }
 
-@keyframes board-toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+.board-toast[data-visible="true"] {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
