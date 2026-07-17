@@ -20,6 +20,7 @@
     "@asteasolutions/zod-to-openapi": "9.0.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
     "drizzle-orm": "0.45.2",
     "next": "16.2.10",
     "openai": "6.47.0",
