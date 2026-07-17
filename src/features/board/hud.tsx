@@ -18,10 +18,18 @@ type BoardHudProps = Readonly<{
   onTakeAction: () => void;
   /** Placeholder handler for panels that have no screen yet. */
   onStub: (label: string) => void;
-  toast: string | null;
+  toastMessage: string;
+  toastVisible: boolean;
 }>;
 
-export function BoardHud({ actionLabel, actionHint, onTakeAction, onStub, toast }: BoardHudProps) {
+export function BoardHud({
+  actionLabel,
+  actionHint,
+  onTakeAction,
+  onStub,
+  toastMessage,
+  toastVisible,
+}: BoardHudProps) {
   const goalPercent = Math.round((BOARD_GOAL.current / BOARD_GOAL.target) * 100);
   const [goals, events, journal] = BOARD_SIDE_PANELS;
 
@@ -123,11 +131,11 @@ export function BoardHud({ actionLabel, actionHint, onTakeAction, onStub, toast 
         </button>
       </footer>
 
-      {toast ? (
-        <p className="board-toast" role="status">
-          {toast}
-        </p>
-      ) : null}
+      {/* Always mounted so the live region reliably announces on text change;
+          `data-visible` drives the enter/exit transition and hides it at rest. */}
+      <p aria-live="polite" className="board-toast" data-visible={toastVisible} role="status">
+        {toastMessage}
+      </p>
     </div>
   );
 }
