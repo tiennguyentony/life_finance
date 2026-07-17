@@ -111,7 +111,7 @@ describe("Onboarding API service v1", () => {
     expect(created.state.gameplay.initialization?.reviewChecksum).toBe(
       review.reviewChecksum,
     );
-    expect(created.state.gameplay.exposure.current).not.toBeNull();
+    expect(created.state.gameplay.exposure).toEqual({ current: null, history: [] });
     expect(created.state.ledger.transactions.length).toBeGreaterThan(0);
   });
 

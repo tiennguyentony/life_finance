@@ -205,7 +205,7 @@ describe("named world random monthly routing", () => {
       WORLD_RANDOM_VERSION_V1,
     );
     expect(sha256Canonical(first.state)).toBe(
-      "c135f690ace8f7387c64e2d7273afeae947ed14344deff0240f7269dc37b6166",
+      "7c8b5ad039c1e5914246919a538f37e04a4b61f3bcb39897d766a81dc9b8e4e9",
     );
   });
 
@@ -459,6 +459,20 @@ describe("atomic v2 monthly turn", () => {
     );
   });
 
+  it("does not persist Exposure snapshots on the causal scheduler path", () => {
+    const initial = configuredState();
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.state.gameplay.exposure).toEqual(initial.gameplay.exposure);
+  });
+
   it("requires an explicit compatible Runtime Balance controller selection", () => {
     const initial = configuredState();
     expect(runtimeBalanceControllerVersionForCommandV2(command(initial))).toBeNull();
@@ -634,12 +648,12 @@ describe("atomic v2 monthly turn", () => {
       approvedCandidate:
         first.record.runtimeBalanceDecision?.approved?.templateId ?? null,
     }).toEqual({
-      stateChecksum: "8fb7dff1bec998724003a45498ce8942bd6ce82eedab02f5dbc31720df813086",
+      stateChecksum: "986abcc6cc2ba10e9aa31a6c0652a1d31c8e522b14790463f33ebebad93bc9b7",
       randomValue: 2_643_935_435,
       candidateSetChecksum:
-        "465ddc3a391c9997af300a8ef612573c396bf355399f21fab8bc668ad72c2b00",
+        "3acb64aa2450184824091ffa309af84d07e971b470d1b9937ae36a62e93e4455",
       rankingInputChecksum:
-        "dee6f9c9e3a50908969f593139c6f3e1245f55eac0f2e5e8319552672eb1bf4d",
+        "58a2a8e03833deccf6bab3c658a449e510dad8899ac25a078e5f3b79565243c8",
       topCandidate: "personal.utility_rebate",
       approvedCandidate: "personal.utility_rebate",
     });
@@ -710,7 +724,7 @@ describe("atomic v2 monthly turn", () => {
       approvedEventId:
         observed.record.runtimeBalanceDecision?.approved?.eventId,
     }).toEqual({
-      checksum: "6e4f6d0c8661b95fb5361e09a7e2b8b821913332977bf2588506858a75a99230",
+      checksum: "9b92b81d2fcb316432c04d11b0e678d2c6860a2cecfedc177943fc04b8a77c15",
       randomValue: 2_643_935_435,
       approvedEventId: "evt.2026-08.personal.utility_rebate.v2",
     });
@@ -1398,7 +1412,7 @@ describe("atomic v2 monthly turn", () => {
     expect(checkpoint.totalDebtInterestCents).toBe(
       result.record.debtService.totalInterestCents,
     );
-    expect(checkpoint.end.exposure).toMatchObject({ month: "2026-08" });
+    expect(checkpoint.end.exposure).toBeNull();
     expect(checkpoint.end.financialIndependenceTargetCents).toBe(
       projectFinancialGoal(
         result.state.finances,

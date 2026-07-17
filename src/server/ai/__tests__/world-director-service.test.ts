@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { sha256Canonical } from "../../../core/canonical";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
+import { simulationMonth } from "../../../core/domain/month";
 import { recordExposureSnapshotV2 } from "../../../core/exposure-v2";
 import { createInitialGameState } from "../../../core/game-state";
 import {
@@ -55,6 +56,54 @@ function exposedState(): GameStateV2 {
       ...exposed.gameplay,
       eventLifecycle: {
         ...exposed.gameplay.eventLifecycle,
+        history: [
+          {
+            commandId: "cmd.world-service.use-insurance",
+            resultingRevision: 1,
+            eventId: "event.world-service.lifestyle",
+            templateId: "personal.lifestyle_upgrade",
+            templateVersion: 2,
+            tier: "medium",
+            targetedWeakness: "unrelated_hazard",
+            parameters: { annual_cost_increase_cents: 120_000 },
+            choiceId: "keep_current_lifestyle",
+            availableChoiceIds: ["accept_upgrade", "keep_current_lifestyle"],
+            scheduledMonth: exposed.currentMonth,
+            resolvedMonth: exposed.currentMonth,
+            playerCostCents: moneyCents(0),
+            insurerCostCents: moneyCents(0),
+            eventSchemaVersion: 2,
+            category: "behavioral_trap",
+            classification: "neutral",
+            lessonTags: {
+              primary: "lesson.lifestyle_creep",
+              secondary: ["lesson.goal_tradeoff"],
+            },
+            pressureCost: 2,
+            recoveryDurationMonths: 1,
+            fallbackNarrative: {
+              headline: "A lifestyle upgrade is within reach",
+              body: "The offer is appealing, but accepting it permanently raises annual spending.",
+            },
+          },
+        ],
+        activeStoryIds: ["story.2026-07.macro.tech_boom"],
+        macroStories: [
+          {
+            storyId: "story.2026-07.macro.tech_boom",
+            templateId: "macro.tech_boom",
+            templateVersion: 1,
+            parameters: { equity_boost_ppm: 10_000 },
+            startedMonth: exposed.currentMonth,
+            expiresMonth: simulationMonth("2026-09"),
+            returnModifiersPpm: {
+              equity: ratePpm(10_000),
+              bonds: ratePpm(-2_000),
+              cash: ratePpm(0),
+              housing: ratePpm(0),
+            },
+          },
+        ],
         scheduledFollowUps: [
           {
             sourceEventId: "event.prior",
@@ -95,6 +144,32 @@ function validAiResponse(request: ScenarioDirectorRequest) {
 }
 
 describe("AI World Director service", () => {
+  it("ranks from fresh Risk v1 without requiring a persisted Exposure snapshot", async () => {
+    const prior = exposedState();
+    const state = {
+      ...prior,
+      gameplay: {
+        ...prior.gameplay,
+        exposure: { current: null, history: [] },
+      },
+    } as GameStateV2;
+    const { repository } = repositoryFor(state);
+    const service = new AiWorldDirectorService(repository, () => ({
+      generate: async () => {
+        throw new Error("offline");
+      },
+    }) as never);
+
+    const result = await service.createEvent("run", "secret", {
+      expectedRevision: 0,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+    });
+
+    expect(result.ranking.riskAsOfMonth).toBe(state.currentMonth);
+    expect(result.ranking.riskVersion).toBe("risk-v1");
+  });
+
   it("falls back deterministically and returns a read-only rank preview during an outage", async () => {
     const state = exposedState();
     const before = sha256Canonical(state);
@@ -168,6 +243,19 @@ describe("AI World Director service", () => {
             reasonCodes: expect.any(Array),
           }),
         ],
+        recentDecisions: [
+          expect.objectContaining({
+            reasonCode: "choice.keep_current_lifestyle",
+            semanticTags: expect.arrayContaining([
+              "choice.keep_current_lifestyle",
+              "lesson.lifestyle_creep",
+            ]),
+          }),
+        ],
+        storyArc: {
+          arcId: "story.2026-07.macro.tech_boom",
+          tags: expect.arrayContaining(["category.opportunity"]),
+        },
       },
     });
     const serialized = JSON.stringify(observed);

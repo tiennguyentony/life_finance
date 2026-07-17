@@ -12,6 +12,8 @@ import {
   migrateGameStateV1ToV2,
   type GameStateV2,
 } from "../../../core/game-state-v2";
+import { recordExposureSnapshotV2 } from "../../../core/exposure-v2";
+import { analyzeRiskV1 } from "../../../core/risk-v1";
 import { buildAiGameContext, contextEvidence } from "../game-context";
 
 function state(overrides: Partial<FinancialSnapshot> = {}) {
@@ -50,7 +52,7 @@ describe("AI game context assembler", () => {
     const context = buildAiGameContext(current);
 
     expect(context).toMatchObject({
-      version: "ai-game-context-v1",
+      version: "ai-game-context-v2",
       month: "2026-07",
       finances: {
         cashCents: 100_000,
@@ -68,7 +70,7 @@ describe("AI game context assembler", () => {
       calculateNetWorth(current.finances),
     );
     expect(context.finances).not.toHaveProperty("automaticLiquidityCents");
-    expect(contextEvidence(context)).toHaveLength(8);
+    expect(contextEvidence(context)).toHaveLength(10);
     expect(Object.isFrozen(context)).toBe(true);
   });
 
@@ -89,6 +91,29 @@ describe("AI game context assembler", () => {
     expect(calculateNetWorth(restricted.finances)).toBe(-1);
     expect(buildAiGameContext(restricted).finances.netWorthCents).toBe(
       calculateNetWorth(restricted.finances),
+    );
+  });
+
+  it("derives current Risk v1 after a non-month state change instead of exporting stale Exposure", () => {
+    const exposed = recordExposureSnapshotV2(state());
+    const current = {
+      ...exposed,
+      finances: {
+        ...exposed.finances,
+        cashCents: moneyCents(2_000_000),
+      },
+    } as GameStateV2;
+    const context = buildAiGameContext(current);
+
+    expect(context).not.toHaveProperty("exposure");
+    expect(context.risk).toEqual(analyzeRiskV1(current));
+    expect(contextEvidence(context)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "context.risk.emergency_fund_months",
+          value: `${analyzeRiskV1(current).metrics.emergency_fund_months.rawValue} months_ppm`,
+        }),
+      ]),
     );
   });
 

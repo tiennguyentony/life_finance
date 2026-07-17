@@ -369,6 +369,64 @@ describe("v2 event lifecycle", () => {
     );
   });
 
+  it("validates new living-cost plan evidence while preserving older event replay", () => {
+    const initial = state();
+    const template = getPersonalEventTemplateV2("personal.lifestyle_upgrade");
+    const queued = queueScheduledDeclarativePersonalEventV2(initial, {
+      proposal: {
+        eventId: "evt.validate.lifestyle-plan.v2",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { annual_cost_increase_cents: 120_006 },
+      },
+      template,
+      targetedWeakness: "unrelated_hazard",
+    });
+    const resolved = resolveEventChoiceV2(
+      queued,
+      command(queued, "accept_upgrade"),
+    );
+    const evidence = resolved.gameplay.eventLifecycle.history[0]!
+      .livingCostPlans![0]!;
+    const corrupt = {
+      ...resolved,
+      gameplay: {
+        ...resolved.gameplay,
+        eventLifecycle: {
+          ...resolved.gameplay.eventLifecycle,
+          history: [{
+            ...resolved.gameplay.eventLifecycle.history[0]!,
+            livingCostPlans: [{
+              ...evidence,
+              monthlyRequiredObligationDeltaCents:
+                moneyCents(evidence.monthlyRequiredObligationDeltaCents + 1),
+            }],
+          }],
+        },
+      },
+    } as typeof resolved;
+    expect(validateGameStateV2(corrupt).map(({ code }) => code)).toContain(
+      "event_living_cost_plan_mismatch",
+    );
+
+    const historicalShape = {
+      ...resolved,
+      gameplay: {
+        ...resolved.gameplay,
+        eventLifecycle: {
+          ...resolved.gameplay.eventLifecycle,
+          history: resolved.gameplay.eventLifecycle.history.map((event) => {
+            const historicalEvent = { ...event };
+            delete historicalEvent.livingCostPlans;
+            return historicalEvent;
+          }),
+        },
+      },
+    } as typeof resolved;
+    expect(validateGameStateV2(historicalShape).map(({ code }) => code))
+      .not.toContain("event_living_cost_plan_mismatch");
+  });
+
   it("queues a due exact-version follow-up once and consumes its persisted schedule", () => {
     const initial = state();
     const template = getPersonalEventTemplateV2("personal.performance_bonus");

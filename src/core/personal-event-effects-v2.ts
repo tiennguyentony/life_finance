@@ -27,6 +27,10 @@ import {
   validatePersonalEventTemplateV2,
 } from "./personal-event-v2";
 import type { EventProposal } from "./events";
+import {
+  applyLivingCostPlanChangeV2,
+  type FinancialLivingCostPlanEvidenceV2,
+} from "./financial-living-cost-plan-v2";
 
 export class PersonalEventEffectV2Error extends Error {
   readonly code:
@@ -51,6 +55,7 @@ export type PersonalEventEffectResolutionV2 = Readonly<{
   insurerCostCents: MoneyCents;
   activeCashFlows: readonly ActivePersonalEventCashFlowV2[];
   scheduledCashFlows: readonly ScheduledPersonalEventCashFlowV2[];
+  livingCostPlans: readonly FinancialLivingCostPlanEvidenceV2[];
 }>;
 
 function addPlayerCost(current: number, amount: number, durationMonths = 1): number {
@@ -180,6 +185,7 @@ export function resolvePersonalEventResponseV2(
     ...(state.gameplay.eventLifecycle.activeCashFlows ?? []),
   ];
   const scheduledCashFlows: ScheduledPersonalEventCashFlowV2[] = [];
+  const livingCostPlans: FinancialLivingCostPlanEvidenceV2[] = [];
   const scheduleCashFlow = (
     effectIndex: number,
     kind: ScheduledPersonalEventCashFlowV2["kind"],
@@ -282,7 +288,25 @@ export function resolvePersonalEventResponseV2(
       requiredObligations += amount;
       if (amount > 0) playerCost = addPlayerCost(playerCost, amount);
     } else if (effect.type === "annual_living_cost_delta") {
-      annualLivingCost += amount;
+      try {
+        const application = applyLivingCostPlanChangeV2(
+          {
+            annualLivingCostCents: moneyCents(annualLivingCost),
+            requiredObligationsCents: moneyCents(requiredObligations),
+          },
+          moneyCents(amount),
+        );
+        annualLivingCost = application.finances.annualLivingCostCents;
+        requiredObligations = application.finances.requiredObligationsCents;
+        livingCostPlans.push(application.evidence);
+      } catch (cause) {
+        throw new PersonalEventEffectV2Error(
+          "EFFECT_OUT_OF_RANGE",
+          cause instanceof Error
+            ? cause.message
+            : "living-cost plan is outside safe authoritative bounds",
+        );
+      }
     } else if (effect.type === "wellbeing_delta") {
       if (effect.field === "burnoutPpm") burnout += amount;
       else happiness += amount;
@@ -335,5 +359,6 @@ export function resolvePersonalEventResponseV2(
     insurerCostCents: moneyCents(insurerCost),
     activeCashFlows: Object.freeze(activeCashFlows),
     scheduledCashFlows: Object.freeze(scheduledCashFlows),
+    livingCostPlans: Object.freeze(livingCostPlans),
   });
 }

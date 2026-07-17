@@ -1,6 +1,5 @@
 import {
   addMoney,
-  allocateMoney,
   moneyCents,
   multiplyMoneyByRate,
   subtractMoney,
@@ -17,6 +16,7 @@ import {
   type GameStateV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import type { JournalPosting } from "./ledger";
 import { getUpskillProgram } from "../data/upskill-programs";
 import type { ResolvedDetailedActionPolicyV2 } from "./action-policy-v2";
@@ -40,6 +40,7 @@ import {
   applyHomeRefinance,
   applyHomeSale,
 } from "./detailed-actions-v2-housing";
+import { applyLivingCostPlanChangeV2 } from "./financial-living-cost-plan-v2";
 
 export {
   DETAILED_FINANCE_COMMAND_SCHEMA_VERSION,
@@ -376,22 +377,17 @@ function applyLifestyleChange(
       "lifestyle delta must be a non-zero safe integer number of cents",
     );
   }
-  const annual = state.finances.annualLivingCostCents + delta;
-  const monthlyDelta = allocateMoney(delta, 1, 12);
-  const required = state.finances.requiredObligationsCents + monthlyDelta;
-  if (!Number.isSafeInteger(annual) || annual < 0 || required < 0) {
+  try {
+    const application = applyLivingCostPlanChangeV2(state.finances, delta);
+    return accept(state, command, {
+      finances: application.finances,
+    });
+  } catch {
     throw new DetailedFinanceError(
       "LIFESTYLE_OUT_OF_RANGE",
       "lifestyle change cannot make living cost or obligations negative",
     );
   }
-  return accept(state, command, {
-    finances: {
-      ...state.finances,
-      annualLivingCostCents: moneyCents(annual),
-      requiredObligationsCents: moneyCents(required),
-    },
-  });
 }
 
 function applyStartUpskill(
@@ -449,7 +445,10 @@ function applyStartUpskill(
   });
 }
 
-export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
+export function completeCareerDevelopmentV2(
+  state: GameStateV2,
+  validationOptions: GameStateV2ValidationOptions = {},
+): GameStateV2 {
   const retainedStories = state.gameplay.eventLifecycle.macroStories.filter(
     ({ expiresMonth }) => compareMonths(expiresMonth, state.currentMonth) >= 0,
   );
@@ -467,7 +466,9 @@ export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
   const completed = working.gameplay.careerDevelopment.pending.filter(
     ({ completesMonth }) => completesMonth === working.currentMonth,
   );
-  if (completed.length === 0) return finalizeGameStateV2(working);
+  if (completed.length === 0) {
+    return finalizeGameStateV2(working, validationOptions);
+  }
   if (working.gameplay.employment.status !== "employed") {
     throw new DetailedFinanceError(
       "EMPLOYMENT_REQUIRED",
@@ -511,7 +512,7 @@ export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
         ],
       },
     },
-  });
+  }, validationOptions);
 }
 
 export function reduceDetailedFinanceCommand(

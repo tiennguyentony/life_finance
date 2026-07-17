@@ -10,7 +10,7 @@ import {
 import { onboardingDraftForPersonaV1 } from "../onboarding-personas-v1";
 
 describe("Onboarding v1 authoritative state integration", () => {
-  it("confirms a review into the native state, owner-derived exposure, and strict save/load", () => {
+  it("confirms a review into native state with fresh Risk v1 ownership and no live Exposure snapshot", () => {
     const review = prepareOnboardingReviewV1(
       onboardingDraftForPersonaV1("software", "onboarding-integration-seed"),
     );
@@ -27,7 +27,7 @@ describe("Onboarding v1 authoritative state integration", () => {
 
     expect(first.stateChecksum).toBe(second.stateChecksum);
     expect(first.state.gameplay.catalogs.scenario.id).toBe("scenario.fresh_start");
-    expect(first.state.gameplay.exposure.current?.month).toBe("2026-07");
+    expect(first.state.gameplay.exposure).toEqual({ current: null, history: [] });
     expect(first.state.gameplay.initialization).toMatchObject({
       version: "onboarding-v1",
       schemaVersion: 2,
@@ -38,7 +38,7 @@ describe("Onboarding v1 authoritative state integration", () => {
       derivedOwners: {
         stateAndObligations: "createNativeGameStateV2",
         financialGoal: "projectFinancialGoal",
-        exposure: "recordExposureSnapshotV2",
+        risk: "analyzeRiskV1",
       },
     });
     expect(first.stateChecksum).toBe(sha256Canonical(first.state));

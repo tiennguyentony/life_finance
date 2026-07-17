@@ -3,7 +3,7 @@ import { canonicalJson } from "./canonical";
 import { getPersonalEventTemplateV2 } from "../data/personal-event-templates-v2";
 import { isAiContentSource } from "./ai-source";
 import { divideRoundHalfAwayFromZero, safeBigIntToNumber } from "./domain/integer";
-import { moneyCents } from "./domain/money";
+import { addMoney, moneyCents, subtractMoney } from "./domain/money";
 import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
 import type { StateInvariantViolation } from "./game-state";
 import type {
@@ -17,6 +17,10 @@ import {
   type PersonalEventMagnitudeV2,
   type PersonalEventTemplateV2,
 } from "./personal-event-v2";
+import {
+  FINANCIAL_LIVING_COST_PLAN_V2_VERSION,
+  monthlyLivingCostFromAnnualV2,
+} from "./financial-living-cost-plan-v2";
 
 function personalEventTemplateForValidationV2(
   templateId: string,
@@ -179,6 +183,98 @@ function canonicalScheduledCashFlows(
     }
   }
   return flows;
+}
+
+function assertCanonicalLivingCostPlans(
+  event: ResolvedEventEvidenceV2,
+  template: PersonalEventTemplateV2,
+): void {
+  if (event.livingCostPlans === undefined) return;
+  const response = template.responses.find(({ id }) => id === event.choiceId);
+  if (!response) throw new RangeError("unknown resolved response");
+  const livingEffects = response.effects
+    .map((effect, effectIndex) => ({ effect, effectIndex }))
+    .filter(({ effect }) => effect.type === "annual_living_cost_delta")
+    .map(({ effect, effectIndex }) => {
+      if (effect.type !== "annual_living_cost_delta") {
+        throw new RangeError("unexpected living-cost effect");
+      }
+      return {
+        effectIndex,
+        annualDelta: moneyCents(
+          resolveEvidenceMagnitude(effect.magnitude, event.parameters),
+        ),
+      };
+    });
+  if (event.livingCostPlans.length !== livingEffects.length) {
+    throw new RangeError("living-cost evidence count mismatch");
+  }
+  event.livingCostPlans.forEach((plan, index) => {
+    const livingEffect = livingEffects[index]!;
+    const annualDelta = livingEffect.annualDelta;
+    const resultingAnnualLivingCostCents = addMoney(
+      plan.previousAnnualLivingCostCents,
+      annualDelta,
+    );
+    const previousMonthlyLivingCostCents = monthlyLivingCostFromAnnualV2(
+      plan.previousAnnualLivingCostCents,
+    );
+    const resultingMonthlyLivingCostCents = monthlyLivingCostFromAnnualV2(
+      resultingAnnualLivingCostCents,
+    );
+    const monthlyDelta = subtractMoney(
+      resultingMonthlyLivingCostCents,
+      previousMonthlyLivingCostCents,
+    );
+    const expected = {
+      version: FINANCIAL_LIVING_COST_PLAN_V2_VERSION,
+      previousAnnualLivingCostCents: plan.previousAnnualLivingCostCents,
+      annualLivingCostDeltaCents: annualDelta,
+      resultingAnnualLivingCostCents,
+      previousMonthlyLivingCostCents,
+      resultingMonthlyLivingCostCents,
+      previousRequiredObligationsCents: plan.previousRequiredObligationsCents,
+      monthlyRequiredObligationDeltaCents: monthlyDelta,
+      resultingRequiredObligationsCents: addMoney(
+        plan.previousRequiredObligationsCents,
+        monthlyDelta,
+      ),
+    };
+    if (
+      expected.resultingAnnualLivingCostCents < 0 ||
+      expected.resultingRequiredObligationsCents < 0 ||
+      canonicalJson(plan) !== canonicalJson(expected)
+    ) {
+      throw new RangeError("living-cost evidence mismatch");
+    }
+    if (index > 0) {
+      const previous = event.livingCostPlans![index - 1]!;
+      const previousEffect = livingEffects[index - 1]!;
+      const interveningRequiredDelta = response.effects
+        .slice(previousEffect.effectIndex + 1, livingEffect.effectIndex)
+        .filter(({ type }) => type === "required_obligation_delta")
+        .reduce((total, effect) => {
+          if (effect.type !== "required_obligation_delta") return total;
+          return addMoney(
+            total,
+            moneyCents(
+              resolveEvidenceMagnitude(effect.magnitude, event.parameters),
+            ),
+          );
+        }, moneyCents(0));
+      if (
+        plan.previousAnnualLivingCostCents !==
+          previous.resultingAnnualLivingCostCents ||
+        plan.previousRequiredObligationsCents !==
+          addMoney(
+            previous.resultingRequiredObligationsCents,
+            interveningRequiredDelta,
+          )
+      ) {
+        throw new RangeError("living-cost evidence chain mismatch");
+      }
+    }
+  });
 }
 
 export function validateEventAndCareerStateV2(
@@ -434,6 +530,20 @@ export function validateEventAndCareerStateV2(
           `gameplay.eventLifecycle.history.${index}.scheduledCashFlows`,
           "event_scheduled_cash_flow_mismatch",
           "scheduled cash flows must exactly match the resolved template response and financial evidence",
+        ));
+      }
+      try {
+        const template = personalEventTemplateForValidationV2(
+          event.templateId,
+          event.templateVersion,
+          personalEventCatalog,
+        );
+        assertCanonicalLivingCostPlans(event, template);
+      } catch {
+        violations.push(violation(
+          `gameplay.eventLifecycle.history.${index}.livingCostPlans`,
+          "event_living_cost_plan_mismatch",
+          "living-cost plans must use exact Financial Engine rounding and match the resolved response",
         ));
       }
     }

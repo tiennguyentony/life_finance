@@ -182,6 +182,94 @@ describe("risk and resilience analyzer v1", () => {
     expect(snapshot.metrics.interest_burden.band).toBe("severe");
   });
 
+  it("uses Financial Engine per-debt rounding for monthly interest burden", () => {
+    const base = state();
+    const termDebts: GameStateV2["gameplay"]["debts"]["termDebts"] = [
+      {
+        id: "debt.rounding-a",
+        kind: "personal_loan",
+        principalCents: moneyCents(3),
+        annualInterestRatePpm: ratePpm(1_000_000),
+        minimumPaymentCents: moneyCents(1),
+        remainingTermMonths: 12,
+      },
+      {
+        id: "debt.rounding-b",
+        kind: "personal_loan",
+        principalCents: moneyCents(3),
+        annualInterestRatePpm: ratePpm(1_000_000),
+        minimumPaymentCents: moneyCents(1),
+        remainingTermMonths: 12,
+      },
+    ];
+    const input: GameStateV2 = {
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        debts: { ...base.gameplay.debts, termDebts },
+      },
+    };
+
+    expect(analyzeRiskV1(input).metrics.interest_burden.rawValue).toBe(0);
+  });
+
+  it("uses the Financial Engine payoff cap for minimum debt service", () => {
+    const base = state();
+    const input: GameStateV2 = {
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        debts: {
+          ...base.gameplay.debts,
+          termDebts: [
+            {
+              id: "debt.final-payment",
+              kind: "personal_loan",
+              principalCents: moneyCents(3),
+              annualInterestRatePpm: ratePpm(0),
+              minimumPaymentCents: moneyCents(100),
+              remainingTermMonths: 1,
+            },
+          ],
+        },
+      },
+    };
+
+    expect(analyzeRiskV1(input).metrics.debt_service_ratio.rawValue).toBe(3);
+  });
+
+  it("uses the Financial Goal owner ceiling for retirement readiness", () => {
+    const base = state();
+    const input = withPortfolio(
+      {
+        ...base,
+        gameplay: {
+          ...base.gameplay,
+          financialGoal: {
+            version: "financial-goal-v1",
+            desiredAnnualSpendingCents: moneyCents(2),
+            safeWithdrawalRatePpm: ratePpm(60_000),
+            targetAgeYears: 65,
+            source: "player_selected",
+          },
+        },
+      },
+      {
+        taxableBroadIndexCents: moneyCents(0),
+        taxableSectorCents: moneyCents(0),
+        taxableSpeculativeCents: moneyCents(0),
+        retirement401kCents: moneyCents(33),
+        retirementIraCents: moneyCents(0),
+        retirementLegacyUnclassifiedCents: moneyCents(0),
+        hsaCents: moneyCents(0),
+      },
+    );
+
+    expect(analyzeRiskV1(input).metrics.retirement_readiness.rawValue).toBe(
+      970_588,
+    );
+  });
+
   it("handles zero essential expenses as full coverage without division errors", () => {
     const snapshot = analyzeRiskV1(
       withFinances(state(), {

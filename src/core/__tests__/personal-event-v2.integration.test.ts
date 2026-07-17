@@ -202,6 +202,82 @@ describe("declarative personal-event v2 integration", () => {
     expect(afterSecondMonth.record.resolvedExpenseCents).toBe(0);
   });
 
+  it("bills a resolved lifestyle plan once per production month without a duplicate event charge", () => {
+    const opening = state("personal-event-v2.lifestyle-plan");
+    const template = getPersonalEventTemplateV2("personal.lifestyle_upgrade");
+    const queued = queueScheduledDeclarativePersonalEventV2(opening, {
+      proposal: {
+        eventId: "evt.2026-07.personal.lifestyle_upgrade.v2",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { annual_cost_increase_cents: 120_006 },
+      },
+      template,
+      targetedWeakness: "unrelated_hazard",
+    });
+    const resolved = resolveEventChoiceV2(queued, {
+      schemaVersion: 2,
+      id: "cmd.personal-event-v2.lifestyle.resolve",
+      type: "resolve_event_choice",
+      expectedRevision: queued.revision,
+      effectiveMonth: queued.currentMonth,
+      payload: {
+        eventId: queued.gameplay.eventLifecycle.pending!.eventId,
+        choiceId: "accept_upgrade",
+      },
+    });
+
+    expect(resolved.finances.requiredObligationsCents).toBe(
+      opening.finances.requiredObligationsCents + 10_000,
+    );
+    expect(resolved.gameplay.eventLifecycle.history.at(-1)?.livingCostPlans)
+      .toEqual([expect.objectContaining({
+        annualLivingCostDeltaCents: 120_006,
+        monthlyRequiredObligationDeltaCents: 10_000,
+      })]);
+    expect(resolved.gameplay.eventLifecycle.activeCashFlows).toEqual([]);
+    expect(sha256Canonical(decodePersistedGameState(
+      JSON.parse(JSON.stringify(resolved)) as unknown,
+    ))).toBe(sha256Canonical(resolved));
+
+    const noEvents = {
+      version: "fairness-v1" as const,
+      minimumChancePpm: 0,
+      maximumChancePpm: 0,
+    };
+    const first = processMonthlyTurnV2(
+      resolved,
+      monthCommand(resolved, "lifestyle.one"),
+      { eventSchedulingPolicy: noEvents },
+    );
+    expect(first.record.nonDebtObligationsPaidCents).toBe(
+      resolved.finances.requiredObligationsCents +
+        first.record.monthlyObligationInflationIncreaseCents!,
+    );
+    expect(first.record.resolvedExpenseCents).toBe(0);
+    expect(first.state.ledger.transactions.filter(
+      ({ commandId, reasonCode }) =>
+        commandId === first.record.commandId &&
+        reasonCode === "monthly_non_debt_obligations_v2",
+    )).toHaveLength(1);
+
+    const second = processMonthlyTurnV2(
+      first.state,
+      monthCommand(first.state as ReturnType<typeof state>, "lifestyle.two"),
+      { eventSchedulingPolicy: noEvents },
+    );
+    expect(second.record.nonDebtObligationsPaidCents).toBe(
+      first.state.finances.requiredObligationsCents +
+        second.record.monthlyObligationInflationIncreaseCents!,
+    );
+    expect(second.record.resolvedExpenseCents).toBe(0);
+    expect(second.state.ledger.transactions.filter(
+      ({ commandId, reasonCode }) =>
+        commandId === second.record.commandId &&
+        reasonCode === "monthly_non_debt_obligations_v2",
+    )).toHaveLength(1);
+  });
+
   it("integrates process-month scheduling directly into a persisted declarative pending event", () => {
     let scheduled: ReturnType<typeof processMonthlyTurnV2> | null = null;
     for (let index = 0; index < 100; index += 1) {

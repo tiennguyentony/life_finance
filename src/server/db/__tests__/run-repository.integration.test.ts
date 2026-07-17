@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
 import { ACTION_POLICY_V1_VERSION } from "../../../core/action-policy-v2";
+import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../../../core/event-scheduler-v2";
+import { FINANCIAL_KERNEL_V2_VERSION } from "../../../core/financial-kernel-v2";
 import { allocateMoney, moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { DetailedFinanceCommand } from "../../../core/detailed-actions-v2";
@@ -15,8 +17,13 @@ import {
 } from "../../../core/game-state-v2";
 import { sha256Canonical } from "../../../core/canonical";
 import type { ProcessMonthV2Command } from "../../../core/monthly-turn-v2";
+import { MACRO_MARKET_MODEL_V2_VERSION } from "../../../core/market";
+import { OUTCOME_POLICY_V1_VERSION } from "../../../core/outcome-policy-v2";
+import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../../core/runtime-balance-policy-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "../../../core/scenario-director-policy-v2";
 import { advanceTimeV2 } from "../../../core/time-controller-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
+import { WORLD_RANDOM_VERSION_V1 } from "../../../core/world-random-v1";
 import {
   planRecurringAllocations,
   type SetRecurringStrategyCommand,
@@ -39,6 +46,7 @@ import {
 } from "../client";
 import { migrateDatabase } from "../migrate";
 import { RunRepository } from "../run-repository";
+import { reduceGameCommandV2 } from "../run-repository-support";
 import {
   handleCreateRunV2,
   handleGetCheckpointV2,
@@ -504,6 +512,7 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000029",
     "10000000-0000-4000-8000-000000000030",
     "10000000-0000-4000-8000-000000000031",
+    "10000000-0000-4000-8000-000000000032",
   ];
   let runIndex = 0;
 
@@ -2138,11 +2147,202 @@ databaseDescribe("Postgres run repository", () => {
       reviewChecksum: review.reviewChecksum,
       initialRandomSeed: "postgres-onboarding-seed",
     });
-    expect(loaded.gameplay.exposure.current?.month).toBe("2026-07");
+    expect(loaded.gameplay.exposure).toEqual({ current: null, history: [] });
     const [openingRows] = await connection.db
       .select({ value: count() })
       .from(ledgerTransactions)
       .where(eq(ledgerTransactions.runId, created.runId));
     expect(openingRows.value).toBeGreaterThan(0);
+  });
+
+  it("continues a confirmed modern onboarding run identically after a PostgreSQL reload", async () => {
+    const onboarding = new OnboardingApiServiceV1(
+      repository,
+      () => "player.onboarding.postgres-continuation",
+    );
+    const draft = onboardingDraftForPersonaV1(
+      "software",
+      "postgres-modern-continuation-seed",
+    );
+    const review = onboarding.review(draft);
+    const created = await onboarding.confirm({
+      draft,
+      reviewChecksum: review.reviewChecksum,
+    });
+    const tax = successfulTaxCalculator();
+    const initialApi = new RunApiServiceV2(
+      repository,
+      tax.calculator,
+      () => "player.onboarding.postgres-continuation",
+    );
+
+    const first = await initialApi.submitCommand(
+      created.runId,
+      created.accessSecret,
+      {
+        schemaVersion: 2,
+        id: "cmd.postgres-continuation.month.1",
+        type: "process_month",
+        expectedRevision: created.state.revision,
+        effectiveMonth: created.state.currentMonth,
+        payload: {},
+      },
+    );
+    let midstream = first.state;
+    const pending = midstream.gameplay.eventLifecycle.pending;
+    if (pending) {
+      const resolved = await initialApi.submitCommand(
+        created.runId,
+        created.accessSecret,
+        {
+          schemaVersion: 2,
+          id: "cmd.postgres-continuation.event.1",
+          type: "resolve_event_choice",
+          expectedRevision: midstream.revision,
+          effectiveMonth: midstream.currentMonth,
+          payload: {
+            eventId: pending.eventId,
+            choiceId: pending.choiceIds[0]!,
+          },
+        },
+      );
+      midstream = resolved.state;
+    }
+
+    expect(midstream.gameplay.initialization).toMatchObject({
+      version: "onboarding-v1",
+      reviewChecksum: review.reviewChecksum,
+    });
+    expect(midstream.gameplay.runtimeBalance).toMatchObject({ version: 2 });
+    expect(midstream.worldRandom).toMatchObject({
+      version: "named-world-rng-v1",
+    });
+
+    const reloadedRepository = new RunRepository(
+      connection.db,
+      new RunSecretCodec(Buffer.alloc(32, 0x77)),
+    );
+    const reloadedMidstream = await reloadedRepository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    expect(reloadedMidstream).toEqual(midstream);
+    expect(sha256Canonical(reloadedMidstream)).toBe(
+      sha256Canonical(midstream),
+    );
+
+    const reloadedApi = new RunApiServiceV2(
+      reloadedRepository,
+      tax.calculator,
+      () => "player.onboarding.postgres-continuation",
+    );
+    const nextPublicCommand = {
+      schemaVersion: 2 as const,
+      id: "cmd.postgres-continuation.month.2",
+      type: "process_month" as const,
+      expectedRevision: reloadedMidstream.revision,
+      effectiveMonth: reloadedMidstream.currentMonth,
+      payload: {},
+    };
+    const continued = await reloadedApi.submitCommand(
+      created.runId,
+      created.accessSecret,
+      nextPublicCommand,
+    );
+    const accepted = await reloadedRepository.loadAcceptedMonthlyCommandV2(
+      created.runId,
+      created.accessSecret,
+      nextPublicCommand.id,
+    );
+    expect(accepted).not.toBeNull();
+    if (!accepted) throw new Error("expected persisted monthly command");
+
+    expect(accepted.payload).toMatchObject({
+      financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+      worldRandomVersion: WORLD_RANDOM_VERSION_V1,
+      marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+      macroDifficulty: reloadedMidstream.gameplay.runtimeBalance?.version === 2
+        ? reloadedMidstream.gameplay.runtimeBalance.difficulty
+        : "normal",
+    });
+    const expectedContinuation = reduceGameCommandV2(
+      midstream,
+      accepted,
+    );
+    const persistedFinal = await reloadedRepository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const persistedReplay = await reloadedRepository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      accepted,
+    );
+
+    expect(persistedFinal).toEqual(expectedContinuation.state);
+    expect(persistedFinal.worldRandom).toEqual(
+      expectedContinuation.state.worldRandom,
+    );
+    expect(persistedFinal.ledger).toEqual(expectedContinuation.state.ledger);
+    expect(persistedReplay.monthlyRecord).toEqual(
+      expectedContinuation.monthlyRecord,
+    );
+    expect(persistedReplay).toMatchObject({
+      idempotentReplay: true,
+      state: expectedContinuation.state,
+      stateChecksum: continued.stateChecksum,
+    });
+    expect(sha256Canonical(persistedFinal)).toBe(continued.stateChecksum);
+
+    const expectedCommandLedger = expectedContinuation.state.ledger.transactions
+      .filter(
+        (transaction) =>
+          transaction.causalReference?.kind === "command" &&
+          transaction.causalReference.id === nextPublicCommand.id,
+      )
+      .map((transaction) => ({
+        transactionId: transaction.id,
+        sourceSystem: transaction.sourceSystem,
+        category: transaction.category,
+        causalReferenceKind: transaction.causalReference?.kind,
+        causalReferenceId: transaction.causalReference?.id,
+      }));
+    const persistedCommandLedger = await connection.db
+      .select({
+        transactionId: ledgerTransactions.transactionId,
+        sourceSystem: ledgerTransactions.sourceSystem,
+        category: ledgerTransactions.category,
+        causalReferenceKind: ledgerTransactions.causalReferenceKind,
+        causalReferenceId: ledgerTransactions.causalReferenceId,
+      })
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.runId, created.runId),
+          eq(ledgerTransactions.commandId, nextPublicCommand.id),
+        ),
+      )
+      .orderBy(asc(ledgerTransactions.transactionIndex));
+    expect(persistedCommandLedger).toEqual(expectedCommandLedger);
+
+    const expectedHistory = await repository.loadCausalHistoryV1(
+      created.runId,
+      created.accessSecret,
+    );
+    const persistedHistory = await new RunRepository(
+      connection.db,
+      new RunSecretCodec(Buffer.alloc(32, 0x77)),
+    ).loadCausalHistoryV1(created.runId, created.accessSecret);
+    expect(persistedHistory).toEqual(expectedHistory);
+    expect(persistedHistory).toMatchObject({
+      runId: created.runId,
+      toRevision: persistedFinal.revision,
+      sourceStateChecksum: continued.stateChecksum,
+    });
+    expect(tax.calculate).toHaveBeenCalledTimes(1);
   });
 });

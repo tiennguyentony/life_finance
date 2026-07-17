@@ -8,7 +8,6 @@ import {
 import type { GameState } from "../../core/game-state";
 import type { GameStateV2 } from "../../core/game-state-v2";
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
-import { computeExposureSnapshotV2 } from "../../core/exposure-v2";
 import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
 import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
 import { analyzeRiskV1 } from "../../core/risk-v1";
@@ -208,7 +207,6 @@ export async function loadTeachingCheckpointOwnerBundleV2(
       endingState.finances,
       endingState.gameplay.financialGoal,
     ),
-    endExposure: computeExposureSnapshotV2(endingState),
   });
 }
 

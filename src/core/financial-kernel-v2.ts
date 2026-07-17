@@ -24,6 +24,7 @@ import {
   type GameStateV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import {
   advanceCumulativePriceIndexV2,
   calculateMonthlyLivingCostInflationV2,
@@ -89,6 +90,7 @@ export type FinancialMonthInputV2 = Readonly<{
   taxableLiquidationCostRatePpm: RatePpm;
   insuranceClaim?: MonthlyInsuranceClaimV2;
   resolvedCashFlows?: readonly ResolvedCashFlowV2[];
+  validationOptions?: GameStateV2ValidationOptions;
 }>;
 
 export type FinancialShortfallV2 = Readonly<{
@@ -230,7 +232,7 @@ function assertInput(input: FinancialMonthInputV2): void {
       "invalid financial kernel version, command id, or liquidation rate",
     );
   }
-  const stateViolations = validateGameStateV2(input.state);
+  const stateViolations = validateGameStateV2(input.state, input.validationOptions);
   if (stateViolations.length > 0) {
     throw new FinancialKernelV2Error(
       "INVALID_INPUT",
@@ -362,6 +364,7 @@ function applySuppliedMarketMonth(
   state: GameStateV2,
   commandId: string,
   simulation: SupportedMarketSimulationResult,
+  validationOptions: GameStateV2ValidationOptions,
 ): Readonly<{
   state: GameStateV2;
   month: SupportedMarketMonth;
@@ -540,7 +543,7 @@ function applySuppliedMarketMonth(
                 cumulativePriceIndexPpm,
               },
       },
-    }),
+    }, validationOptions),
     month,
     marketValueChangeCents,
     cumulativePriceIndexPpm,
@@ -550,6 +553,7 @@ function applySuppliedMarketMonth(
 function applyInsuranceClaim(
   state: GameStateV2,
   claim: MonthlyInsuranceClaimV2 | undefined,
+  validationOptions: GameStateV2ValidationOptions,
 ): Readonly<{ state: GameStateV2; playerCostCents: MoneyCents }> {
   if (!claim) return Object.freeze({ state, playerCostCents: ZERO });
   const settlement =
@@ -565,7 +569,7 @@ function applyInsuranceClaim(
     state: finalizeGameStateV2({
       ...state,
       gameplay: { ...state.gameplay, insurance: settlement.nextInsurance },
-    }),
+    }, validationOptions),
     playerCostCents: settlement.playerResponsibilityCents,
   });
 }
@@ -578,6 +582,7 @@ function applyResolvedIncome(
   state: GameStateV2,
   commandId: string,
   flows: readonly ResolvedCashFlowV2[],
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   let working = state;
   for (const flow of flows) {
@@ -600,7 +605,7 @@ function applyResolvedIncome(
       ...working,
       ledger,
       finances: reconcileFinancesWithLedger(working.finances, ledger),
-    });
+    }, validationOptions);
   }
   return working;
 }
@@ -609,6 +614,7 @@ function payResolvedExpenses(
   state: GameStateV2,
   commandId: string,
   flows: readonly ResolvedCashFlowV2[],
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   let working = state;
   for (const flow of flows) {
@@ -637,7 +643,7 @@ function payResolvedExpenses(
       ...working,
       ledger,
       finances: reconcileFinancesWithLedger(working.finances, ledger),
-    });
+    }, validationOptions);
   }
   return working;
 }
@@ -646,6 +652,7 @@ function payNonDebtObligations(
   state: GameStateV2,
   commandId: string,
   amountCents: MoneyCents,
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   if (amountCents === 0) return state;
   if (amountCents > state.finances.cashCents) {
@@ -672,13 +679,14 @@ function payNonDebtObligations(
     ...state,
     ledger,
     finances: reconcileFinancesWithLedger(state.finances, ledger),
-  });
+  }, validationOptions);
 }
 
 function applyAfterTaxPlan(
   state: GameStateV2,
   commandId: string,
   plan: RecurringAllocationPlan,
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   const taxable = sumMoney(
     [
@@ -776,7 +784,7 @@ function applyAfterTaxPlan(
         ),
       },
     },
-  });
+  }, validationOptions);
 }
 
 function closeFinancialMonthState(
@@ -808,6 +816,7 @@ export function simulateFinancialMonthV2(
   input: FinancialMonthInputV2,
 ): FinancialMonthResultV2 {
   assertInput(input);
+  const validationOptions = input.validationOptions ?? {};
   const flows = input.resolvedCashFlows ?? [];
   const processedMonth = input.state.currentMonth;
   const nextMonth = addMonths(processedMonth, 1);
@@ -821,13 +830,19 @@ export function simulateFinancialMonthV2(
   const ownedOpeningState = ownForDeepFreeze(input.state);
   let working = finalizeGameStateV2(
     resetAnnualFinancialAccumulatorsV2(ownedOpeningState),
+    validationOptions,
   );
-  const claim = applyInsuranceClaim(working, input.insuranceClaim);
+  const claim = applyInsuranceClaim(
+    working,
+    input.insuranceClaim,
+    validationOptions,
+  );
   working = claim.state;
   const market = applySuppliedMarketMonth(
     working,
     input.commandId,
     input.marketStep,
+    validationOptions,
   );
   working = market.state;
   const inflation = calculateMonthlyLivingCostInflationV2(
@@ -847,9 +862,19 @@ export function simulateFinancialMonthV2(
         inflation.monthlyObligationIncreaseCents,
       ),
     },
-  });
-  const payroll = applyMonthlyPayroll(working, input.commandId, input.taxEvidence);
-  working = applyResolvedIncome(payroll.state, input.commandId, flows);
+  }, validationOptions);
+  const payroll = applyMonthlyPayroll(
+    working,
+    input.commandId,
+    input.taxEvidence,
+    validationOptions,
+  );
+  working = applyResolvedIncome(
+    payroll.state,
+    input.commandId,
+    flows,
+    validationOptions,
+  );
   const resolvedIncomeCents = sumMoney(
     flows.filter(isIncome).map(({ amountCents }) => amountCents),
     "financial kernel resolved income",
@@ -944,14 +969,25 @@ export function simulateFinancialMonthV2(
     working,
     input.commandId,
     fundingPlan,
+    validationOptions,
   );
-  working = payResolvedExpenses(funding.state, input.commandId, flows);
+  working = payResolvedExpenses(
+    funding.state,
+    input.commandId,
+    flows,
+    validationOptions,
+  );
   working = payNonDebtObligations(
     working,
     input.commandId,
     nonDebtObligations,
+    validationOptions,
   );
-  working = settleMonthlyDebtService(working, input.commandId).state;
+  working = settleMonthlyDebtService(
+    working,
+    input.commandId,
+    validationOptions,
+  ).state;
   const postObligationIncomeCents = moneyCents(
     Math.max(
       0,
@@ -969,7 +1005,12 @@ export function simulateFinancialMonthV2(
     ...afterTaxPlan,
     preTax: payroll.allocationPlan.preTax,
   });
-  working = applyAfterTaxPlan(working, input.commandId, recurringAllocations);
+  working = applyAfterTaxPlan(
+    working,
+    input.commandId,
+    recurringAllocations,
+    validationOptions,
+  );
   const closingAutomaticLiquidityCents = assessV2Liquidity(
     working,
     ZERO,

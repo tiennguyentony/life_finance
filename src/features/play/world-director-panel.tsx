@@ -14,7 +14,6 @@ export function WorldDirectorPanel({
   onCreateEvent: () => void;
 }>) {
   if (state.outcome || state.gameplay.eventLifecycle.pending) return null;
-  const ready = state.gameplay.exposure.current !== null;
   return (
     <section className="play-panel play-form">
       <div className="section-heading">
@@ -34,8 +33,8 @@ export function WorldDirectorPanel({
         <input checked={consented} onChange={(event) => onConsentChange(event.target.checked)} type="checkbox" />
         I agree to send minimized ranking metadata and redacted risk bands.
       </label>
-      <button disabled={busy || !consented || !ready} onClick={onCreateEvent} type="button">
-        {ready ? "Preview Hostile Fed ranking" : "Process one month to measure exposure"}
+      <button disabled={busy || !consented} onClick={onCreateEvent} type="button">
+        Preview Hostile Fed ranking
       </button>
     </section>
   );

@@ -643,6 +643,18 @@ function createOpeningLedger(
   });
 }
 
+export function calculateTotalLiabilities(
+  finances: FinancialSnapshot,
+): MoneyCents {
+  return moneyCents(
+    safeBigIntToNumber(
+      BigInt(finances.nonCreditLiabilitiesCents) +
+        BigInt(finances.creditUsedCents),
+      "total liabilities",
+    ),
+  );
+}
+
 export function calculateNetWorth(finances: FinancialSnapshot): MoneyCents {
   const assets =
     BigInt(finances.cashCents) +
@@ -651,8 +663,12 @@ export function calculateNetWorth(finances: FinancialSnapshot): MoneyCents {
     BigInt(finances.homeValueCents) +
     BigInt(finances.otherInvestableAssetsCents) +
     BigInt(finances.otherAssetsCents);
+  // Keep both sides in bigint until the final net value is known. Assets and
+  // liabilities may each exceed Number.MAX_SAFE_INTEGER while their exact
+  // difference remains a valid MoneyCents value.
   const liabilities =
-    BigInt(finances.nonCreditLiabilitiesCents) + BigInt(finances.creditUsedCents);
+    BigInt(finances.nonCreditLiabilitiesCents) +
+    BigInt(finances.creditUsedCents);
 
   return moneyCents(safeBigIntToNumber(assets - liabilities, "net worth"));
 }

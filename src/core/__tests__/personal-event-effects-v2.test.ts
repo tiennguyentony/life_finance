@@ -135,11 +135,49 @@ describe("declarative personal-event v2 effects", () => {
       "combined",
       "cmd.combined.effects.v2",
     );
-    expect(resolved.finances.requiredObligationsCents).toBe(opening.finances.requiredObligationsCents + 10_000);
+    expect(resolved.finances.requiredObligationsCents).toBe(opening.finances.requiredObligationsCents + 20_000);
     expect(resolved.finances.annualLivingCostCents).toBe(opening.finances.annualLivingCostCents + 120_000);
     expect(resolved.wellbeing.happinessPpm).toBe(opening.wellbeing.happinessPpm + 25_000);
     expect(fetch).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  it("routes annual lifestyle changes through the Financial Engine plan with structured rounding evidence", () => {
+    const opening = state();
+    const template = getPersonalEventTemplateV2("personal.lifestyle_upgrade");
+    const resolved = resolvePersonalEventResponseV2(
+      opening,
+      template,
+      {
+        eventId: "evt.lifestyle.plan.v2",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { annual_cost_increase_cents: 120_006 },
+      },
+      "accept_upgrade",
+      "cmd.lifestyle.plan.v2",
+    );
+
+    expect(resolved.finances.annualLivingCostCents).toBe(
+      opening.finances.annualLivingCostCents + 120_006,
+    );
+    expect(resolved.finances.requiredObligationsCents).toBe(
+      opening.finances.requiredObligationsCents + 10_000,
+    );
+    expect(resolved.livingCostPlans).toEqual([{
+      version: "2.0.0",
+      previousAnnualLivingCostCents: opening.finances.annualLivingCostCents,
+      annualLivingCostDeltaCents: 120_006,
+      resultingAnnualLivingCostCents:
+        opening.finances.annualLivingCostCents + 120_006,
+      previousMonthlyLivingCostCents: 541_667,
+      resultingMonthlyLivingCostCents: 551_667,
+      previousRequiredObligationsCents:
+        opening.finances.requiredObligationsCents,
+      monthlyRequiredObligationDeltaCents: 10_000,
+      resultingRequiredObligationsCents:
+        opening.finances.requiredObligationsCents + 10_000,
+    }]);
   });
 
   it("adjudicates health insurance through the authoritative insurance engine", () => {
