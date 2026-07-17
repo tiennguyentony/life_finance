@@ -1,12 +1,14 @@
-/* The board: a full-screen night scene with a game HUD floating over the
- * 3D canvas. Dark surfaces are local to this screen; shape, type, and
- * shadow language come from the shared toy-cartoon system in globals.css. */
+/* The board: a sunlit scene with a game HUD floating over the 3D canvas.
+ * Colors are pulled from the app's shared --paper/--ink/--gold/--coral/
+ * --blue/--lime tokens (globals.css) so the board reads as the same warm,
+ * cream-and-ink world as the landing page and the sibling game surfaces
+ * (game.css, brightwater.css) -- not a separate palette of its own. */
 
 .board-stage {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: #0a0e28;
+  background: var(--paper);
   font-family: "Avenir Next", "Trebuchet MS", sans-serif;
 }
 
@@ -19,7 +21,7 @@
   display: grid;
   place-items: center;
   height: 100%;
-  color: #9fb0e8;
+  color: var(--muted);
   font-size: 1.05rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
 }
@@ -30,7 +32,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  color: #eef2ff;
+  color: var(--ink);
 }
 
 .board-hud button {
@@ -42,11 +44,12 @@
 
 .board-hud button:focus-visible,
 .board-chip:focus-visible {
-  outline: 3px solid #7dd3fc;
+  outline: 3px solid var(--ink);
   outline-offset: 2px;
 }
 
-/* Shared panel surface for every HUD element. */
+/* Shared panel surface for every HUD element: the same flat cream card,
+ * ink border, and hard offset shadow used across game.css/brightwater.css. */
 .board-player-card,
 .board-stat,
 .board-top-right > *,
@@ -54,11 +57,10 @@
 .board-calendar,
 .board-goal,
 .board-toast {
-  background: rgba(13, 18, 48, 0.85);
-  border: 3px solid rgba(125, 145, 220, 0.35);
-  border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 6px 0 rgba(4, 6, 20, 0.55);
-  backdrop-filter: blur(6px);
+  background: rgb(255 253 246 / 92%);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm, 16px);
+  box-shadow: 4px 5px 0 var(--ink);
 }
 
 /* --------------------------------- top --------------------------------- */
@@ -89,8 +91,8 @@
   height: 52px;
   border-radius: 50%;
   overflow: hidden;
-  border: 3px solid #7dd3fc;
-  background: #101838;
+  border: 3px solid var(--lime-dark);
+  background: var(--paper-deep);
   flex-shrink: 0;
 }
 
@@ -111,7 +113,7 @@
 
 .board-player-meta span {
   font-size: 0.72rem;
-  color: #9fb0e8;
+  color: var(--muted);
 }
 
 .board-xp {
@@ -119,15 +121,16 @@
   width: 120px;
   height: 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--paper-deep);
   overflow: hidden;
+  border: 1px solid rgb(23 35 28 / 18%);
 }
 
 .board-xp i {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #65a82f, #a3e635);
+  background: linear-gradient(90deg, var(--lime-dark), var(--lime));
 }
 
 .board-stat-row {
@@ -148,7 +151,7 @@
   font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #9fb0e8;
+  color: var(--muted);
 }
 
 .board-stat dd {
@@ -159,27 +162,29 @@
 }
 
 .board-stat-lime {
-  border-color: rgba(163, 230, 53, 0.5);
+  border-color: var(--lime-dark);
 }
 
 .board-stat-lime dd {
-  color: #c8f57d;
+  color: var(--lime-dark);
 }
 
 .board-stat-blue {
-  border-color: rgba(96, 165, 250, 0.5);
+  border-color: var(--blue);
 }
 
 .board-stat-blue dd {
-  color: #a9cdfc;
+  /* Darker than the --blue token: --blue is too light for AA text
+   * contrast on a cream card, so the fill and the text tone diverge. */
+  color: #1f6d78;
 }
 
 .board-stat-coral {
-  border-color: rgba(251, 113, 133, 0.5);
+  border-color: var(--coral);
 }
 
 .board-stat-coral dd {
-  color: #ffa2b3;
+  color: var(--coral);
 }
 
 .board-top-right {
@@ -193,8 +198,9 @@
   padding: 0.62rem 1rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
   font-size: 0.86rem;
-  color: #ffd76b;
-  border-color: rgba(250, 204, 21, 0.5);
+  /* Darker than --gold, which is too light for text on a cream card. */
+  color: #a9791b;
+  border-color: var(--gold);
 }
 
 .board-icon-button {
@@ -247,9 +253,9 @@
   width: 1.45rem;
   height: 1.45rem;
   border-radius: 50%;
-  background: var(--coral, #fb7185);
-  border: 2px solid #0a0e28;
-  color: #fff;
+  background: var(--coral);
+  border: 2px solid var(--ink);
+  color: var(--white);
   font-size: 0.72rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
 }
@@ -283,7 +289,7 @@
 
 .board-calendar span {
   font-size: 0.72rem;
-  color: #9fb0e8;
+  color: var(--muted);
 }
 
 .board-goal {
@@ -304,20 +310,21 @@
   width: 200px;
   height: 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--paper-deep);
   overflow: hidden;
+  border: 1px solid rgb(23 35 28 / 18%);
 }
 
 .board-goal-bar i {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #65a82f, #a3e635);
+  background: linear-gradient(90deg, var(--lime-dark), var(--lime));
 }
 
 .board-goal-amount {
   font-size: 0.78rem;
-  color: #9fb0e8;
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -325,31 +332,32 @@
   display: grid;
   gap: 0.1rem;
   padding: 0.85rem 2rem;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-radius: var(--radius-lg, 16px);
-  background: linear-gradient(180deg, #4f8ef7, #2f6ae0);
-  color: #fff;
+  border: 3px solid rgb(221 163 34 / 50%);
+  border-radius: var(--radius-lg, 40px);
+  background: var(--gold);
+  color: var(--ink);
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
   font-size: 1.12rem;
-  box-shadow: 0 6px 0 rgba(19, 42, 96, 0.9);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  box-shadow: 0 12px 0 #e3a91f, 0 20px 34px rgb(152 98 15 / 24%);
+  transition: box-shadow 150ms ease, filter 150ms ease, transform 150ms ease;
 }
 
 .board-take-action small {
   font-size: 0.68rem;
   font-family: "Avenir Next", "Trebuchet MS", sans-serif;
   font-weight: 500;
-  opacity: 0.85;
+  opacity: 0.75;
 }
 
 .board-take-action:hover {
+  filter: brightness(1.06);
   transform: translateY(-2px);
-  box-shadow: 0 8px 0 rgba(19, 42, 96, 0.9);
+  box-shadow: 0 15px 0 #e3a91f, 0 25px 42px rgb(152 98 15 / 32%);
 }
 
 .board-take-action:active {
   transform: translateY(2px);
-  box-shadow: 0 3px 0 rgba(19, 42, 96, 0.9);
+  box-shadow: 0 6px 0 #e3a91f, 0 12px 20px rgb(152 98 15 / 24%);
 }
 
 /* ---------------------------- island labels ---------------------------- */
@@ -360,11 +368,12 @@
   padding: 0.4rem 0.9rem;
   border: 2.5px solid;
   border-radius: 12px;
-  background: rgba(10, 14, 40, 0.88);
-  color: #eef2ff;
+  background: rgb(255 253 246 / 94%);
+  color: var(--ink);
   text-align: center;
   cursor: pointer;
   font: inherit;
+  box-shadow: 3px 4px 0 var(--ink);
   transition: transform 120ms ease;
   white-space: nowrap;
 }
@@ -381,15 +390,11 @@
 
 .board-chip span {
   font-size: 0.66rem;
-  color: #9fb0e8;
+  color: var(--muted);
 }
 
 .board-chip-current {
-  background: rgba(125, 211, 252, 0.16);
-}
-
-.board-chip-current span {
-  color: #bfe6ff;
+  background: var(--paper-deep);
 }
 
 /* -------------------------------- toast -------------------------------- */
