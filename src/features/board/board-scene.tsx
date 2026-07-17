@@ -76,12 +76,13 @@ useGLTF.preload(DIE_URL);
 /* Placeholder low-poly silhouettes, one composition per island. Real asset
  * pack models drop in here later without touching layout or interaction. */
 
+/** Sunlit window glass: a warm highlight, not a night-time glow. */
 function GlowWindow(props: Readonly<{ position: [number, number, number]; size?: [number, number, number]; color?: string }>) {
   const { position, size = [0.1, 0.32, 0.04], color = "#ffd27d" } = props;
   return (
     <mesh position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2.2} toneMapped={false} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} />
     </mesh>
   );
 }
@@ -91,7 +92,7 @@ function HomeBuildings() {
     <group>
       <mesh position={[0, 0.5, 0]}>
         <boxGeometry args={[1.25, 1, 1.1]} />
-        <meshStandardMaterial color="#57649c" flatShading />
+        <meshStandardMaterial color="#8ea3d9" flatShading />
       </mesh>
       <mesh position={[0, 1.25, 0]} rotation={[0, Math.PI / 4, 0]}>
         <coneGeometry args={[1.05, 0.7, 4]} />
@@ -131,7 +132,7 @@ function FinancialBuildings() {
         <group key={index} position={[x, 0, z]}>
           <mesh position={[0, height / 2, 0]}>
             <boxGeometry args={[0.78, height, 0.78]} />
-            <meshStandardMaterial color={index === 1 ? "#4b5a94" : "#3c4a80"} flatShading />
+            <meshStandardMaterial color={index === 1 ? "#8aa3dc" : "#6f89c9"} flatShading />
           </mesh>
           <GlowWindow position={[0, height * 0.55, 0.41]} size={[0.14, height * 0.62, 0.04]} color="#9fd8ff" />
           <GlowWindow position={[0.41, height * 0.45, 0]} size={[0.04, height * 0.5, 0.14]} color="#9fd8ff" />
@@ -160,7 +161,7 @@ function BankBuildings() {
       </mesh>
       <mesh position={[0, 0.72, 0.78]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.24, 0.24, 0.05, 24]} />
-        <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={2.4} toneMapped={false} />
+        <meshStandardMaterial color="#f3c74f" emissive="#f3c74f" emissiveIntensity={0.4} />
       </mesh>
     </group>
   );
@@ -190,7 +191,7 @@ function StartupBuildings() {
     <group>
       <mesh position={[-0.35, 0.8, 0]}>
         <boxGeometry args={[1.35, 1.6, 1.2]} />
-        <meshStandardMaterial color="#5b4a8f" flatShading />
+        <meshStandardMaterial color="#8f7ac9" flatShading />
       </mesh>
       <GlowWindow position={[-0.35, 1.05, 0.62]} size={[0.9, 0.2, 0.04]} color="#e0aaff" />
       <GlowWindow position={[-0.35, 0.6, 0.62]} size={[0.9, 0.2, 0.04]} color="#e0aaff" />
@@ -205,7 +206,7 @@ function StartupBuildings() {
         </mesh>
         <mesh position={[0, 0.16, 0]}>
           <coneGeometry args={[0.2, 0.35, 8]} />
-          <meshStandardMaterial color="#ffb35c" emissive="#ff8c42" emissiveIntensity={1.8} toneMapped={false} flatShading />
+          <meshStandardMaterial color="#ffb35c" emissive="#ff8c42" emissiveIntensity={0.4} flatShading />
         </mesh>
       </group>
     </group>
@@ -258,8 +259,9 @@ function Island({
     const ring = ringRef.current;
     if (ring) {
       const material = ring.material as MeshStandardMaterial;
-      const base = isCurrent ? 2.6 : hovered ? 2.1 : 1;
-      material.emissiveIntensity = base;
+      // A painted trim ring in daylight: a soft lift on hover, a brighter
+      // one for the current stop, never the night version's neon glow.
+      material.emissiveIntensity = isCurrent ? 0.55 : hovered ? 0.4 : 0.12;
     }
   });
 
@@ -279,14 +281,14 @@ function Island({
             setHovered(true);
           }}
         >
-          {/* platform: grassy top over a rocky base */}
+          {/* platform: grassy top over a sun-warmed stone base */}
           <mesh position={[0, 0.41, 0]}>
             <cylinderGeometry args={[radius, radius * 0.96, 0.28, 7]} />
-            <meshStandardMaterial color="#2e6b4f" flatShading />
+            <meshStandardMaterial color="#7fb86a" flatShading />
           </mesh>
           <mesh position={[0, 0, 0]}>
             <cylinderGeometry args={[radius * 0.96, radius * 0.62, 0.62, 7]} />
-            <meshStandardMaterial color="#232c55" flatShading />
+            <meshStandardMaterial color="#c3a877" flatShading />
           </mesh>
           {/* Buildings are proportioned for the large free-mode platforms;
               shrink them onto the smaller track corners. */}
@@ -303,14 +305,14 @@ function Island({
               </group>
             </Suspense>
           ) : null}
-          {/* neon rim, the reference's glow ring */}
+          {/* painted trim ring: a candy-colored rim, not a night glow */}
           <mesh position={[0, 0.42, 0]} ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
             <torusGeometry args={[radius + 0.09, 0.045, 10, 48]} />
             <meshStandardMaterial
               color={island.accent}
               emissive={island.accent}
-              emissiveIntensity={1}
-              toneMapped={false}
+              emissiveIntensity={0.12}
+              roughness={0.35}
             />
           </mesh>
         </group>
@@ -380,8 +382,9 @@ function PathDots({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
     const elapsed = clock.getElapsedTime();
     dotsRef.current.forEach((dot, index) => {
       if (!dot) return;
+      // A gentle sunlit sparkle, not a pulsing night beacon.
       const material = dot.material as MeshStandardMaterial;
-      material.emissiveIntensity = 1.1 + Math.sin(elapsed * 2.4 - dots[index]!.phase) * 0.7;
+      material.emissiveIntensity = 0.35 + Math.sin(elapsed * 2.4 - dots[index]!.phase) * 0.2;
     });
   });
 
@@ -396,7 +399,7 @@ function PathDots({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
           }}
         >
           <sphereGeometry args={[0.09, 10, 10]} />
-          <meshStandardMaterial color="#7dd3fc" emissive="#7dd3fc" emissiveIntensity={1.4} toneMapped={false} />
+          <meshStandardMaterial color="#f3c74f" emissive="#f3c74f" emissiveIntensity={0.4} />
         </mesh>
       ))}
     </group>
@@ -491,7 +494,7 @@ function Water() {
   return (
     <mesh position={[0, -0.95, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <circleGeometry args={[46, 48]} />
-      <meshStandardMaterial color="#0c1233" metalness={0.35} roughness={0.75} />
+      <meshStandardMaterial color="#78cbd1" metalness={0.15} roughness={0.35} />
     </mesh>
   );
 }
@@ -528,14 +531,15 @@ export default function BoardScene({
         camera.lookAt(0, -0.6, 0.2);
       }}
     >
-      <color args={["#0a0e28"]} attach="background" />
-      <fog args={["#0a0e28", 26, 60]} attach="fog" />
+      {/* Sky and fog match the landing page's warm cream (--paper) so the
+          board reads as the same sunlit world, not a separate night scene. */}
+      <color args={["#f6f1da"]} attach="background" />
+      <fog args={["#f6f1da", 30, 64]} attach="fog" />
 
-      <hemisphereLight args={["#5d6cab", "#0a0e24", 0.95]} />
-      <directionalLight color="#d8dfff" intensity={1.35} position={[7, 14, 9]} />
-      <directionalLight color="#5a4a9e" intensity={0.4} position={[-9, 6, -7]} />
-      {/* Warm fill so the board pieces read as toys, not silhouettes. */}
-      <pointLight color="#ffd9a0" intensity={18} position={[0, 6, 3]} />
+      <hemisphereLight args={["#fffdf1", "#e7dfc1", 1.1]} />
+      <directionalLight color="#fff6df" intensity={1.7} position={[6, 15, 8]} />
+      {/* Soft sky-blue fill for shape, replacing the night version's purple. */}
+      <directionalLight color="#dff2ef" intensity={0.35} position={[-8, 7, -6]} />
 
       <Water />
       {mode === "loop" ? (
@@ -575,8 +579,10 @@ export default function BoardScene({
         />
       </Suspense>
 
+      {/* Daylight bloom is subtle: only genuinely bright spots (coins, the
+          gold roof) should catch it, not every mid-tone surface. */}
       <EffectComposer>
-        <Bloom intensity={0.8} luminanceSmoothing={0.25} luminanceThreshold={1} mipmapBlur />
+        <Bloom intensity={0.35} luminanceSmoothing={0.3} luminanceThreshold={1.3} mipmapBlur />
       </EffectComposer>
     </Canvas>
   );
