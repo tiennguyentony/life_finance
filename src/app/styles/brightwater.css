@@ -1,0 +1,417 @@
+/* Brightwater City. Deliberately thin: almost everything reuses the
+ * existing .button / .modal-* / .decision-card / .stat-tile / .persona-card
+ * vocabulary from globals.css. Only the 3D board overlay, the tick ledger,
+ * and the allocation sliders have no existing equivalent to build on. */
+
+.bw-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  background: #c9e7f4;
+}
+
+.bw-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.bw-loading {
+  display: grid;
+  height: 100%;
+  place-content: center;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+/* Labels rendered inside the 3D scene via drei's <Html>. */
+
+.bw-city-label {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.4rem 0.75rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--white);
+  box-shadow: 3px 4px 0 var(--ink);
+  pointer-events: none;
+  text-align: center;
+  white-space: nowrap;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.bw-city-label strong {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.bw-city-label span {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.bw-city-label.is-active {
+  border-color: var(--lime-dark);
+  box-shadow: 3px 4px 0 var(--lime-dark);
+}
+
+.bw-city-label.is-visited {
+  opacity: 0.82;
+}
+
+/* HUD: floating over the full-screen 3D board. */
+
+.bw-topbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.bw-player {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.35rem 1rem 0.35rem 0.4rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: rgb(255 253 246 / 92%);
+  box-shadow: 4px 5px 0 var(--ink);
+  backdrop-filter: blur(10px);
+}
+
+.bw-player strong {
+  display: block;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
+.bw-portrait {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.bw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.bw-objective {
+  position: absolute;
+  top: 5.4rem;
+  left: 50%;
+  z-index: 2;
+  margin: 0;
+  padding: 0.5rem 1.1rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 4px 5px 0 var(--ink);
+  font-weight: 900;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
+.bw-wallet {
+  position: absolute;
+  bottom: 1.1rem;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  min-width: 260px;
+  padding: 0.8rem 1.6rem 0.9rem;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius-lg);
+  background: rgb(255 253 246 / 94%);
+  backdrop-filter: blur(12px);
+  box-shadow: 8px 9px 0 var(--ink);
+  translate: -50% 0;
+}
+
+.bw-wallet-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.bw-wallet-cash {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: clamp(1.9rem, 4vw, 2.5rem);
+  letter-spacing: -0.05em;
+  line-height: 1;
+  animation: number-pop 350ms ease both;
+}
+
+.bw-wallet-cash.is-danger {
+  color: var(--danger);
+}
+
+.bw-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.bw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.65rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--white);
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.bw-chip.is-positive {
+  background: var(--lime);
+}
+
+.bw-chip.is-negative {
+  background: var(--coral);
+}
+
+.bw-guide {
+  position: absolute;
+  bottom: 1.1rem;
+  left: 1rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: 300px;
+  margin: 0;
+  padding: 0.4rem 0.95rem 0.4rem 0.4rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: rgb(255 253 246 / 90%);
+  backdrop-filter: blur(10px);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.bw-guide-portrait {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Intro card */
+
+.bw-intro-portrait {
+  width: 96px;
+  height: 96px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  box-shadow: 5px 6px 0 var(--ink);
+  object-fit: cover;
+}
+
+.bw-rules {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-weight: 650;
+}
+
+.bw-rules li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+
+.bw-rules li::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime-dark);
+  translate: 0 -1px;
+}
+
+/* Tick/ledger reveal */
+
+.bw-tick-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bw-tick-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  visibility: hidden;
+}
+
+.bw-tick-row.is-choice,
+.bw-tick-row.is-shown {
+  visibility: visible;
+  animation: field-enter 220ms ease both;
+}
+
+.bw-tick-row.is-choice {
+  border-color: var(--ink);
+  background: var(--gold);
+  font-weight: 850;
+}
+
+.bw-tick-row.is-broke {
+  border-color: var(--danger);
+  background: rgb(223 78 61 / 14%);
+}
+
+.bw-tick-row em {
+  display: block;
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.bw-tick-figures {
+  display: flex;
+  flex: none;
+  gap: 0.9rem;
+  align-items: baseline;
+  font-weight: 800;
+}
+
+.bw-money-positive {
+  color: var(--lime-dark);
+}
+
+.bw-money-negative {
+  color: var(--danger);
+}
+
+/* Allocation sliders */
+
+.bw-sliders {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.bw-slider {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.bw-slider-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 800;
+}
+
+.bw-slider-head output {
+  margin-left: auto;
+  font-weight: 950;
+}
+
+.bw-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--lime-dark);
+}
+
+.bw-slider small {
+  color: var(--muted);
+}
+
+/* Ending */
+
+.bw-ending-portrait {
+  width: 108px;
+  height: 108px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  box-shadow: 6px 7px 0 var(--ink);
+  object-fit: cover;
+}
+
+.bw-ending-stats {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.bw-ending-stats > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+}
+
+.bw-ending-stats span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.bw-ending-stats strong {
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+@media (max-width: 700px) {
+  .bw-city-label span {
+    display: none;
+  }
+
+  .bw-guide {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .bw-wallet {
+    min-width: 0;
+    width: calc(100% - 2rem);
+  }
+
+  .bw-ending-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bw-wallet-cash {
+    animation: none;
+  }
+}
