@@ -1,5 +1,7 @@
-import type { GameStateV2 } from "@/core/game-state-v2";
-import { getEventTemplate } from "@/data/event-templates";
+import type { GameStateV2 } from "../../core/game-state-v2";
+import { calculateTotalLiabilities } from "../../core/game-state";
+import { analyzeRiskV1 } from "../../core/risk-v1";
+import { getEventTemplate } from "../../data/event-templates";
 
 import {
   calculateFinancialIndependence,
@@ -24,7 +26,7 @@ export function OverviewPanel({
   onSelectConcept: (conceptId: string) => void;
 }>) {
   const fi = calculateFinancialIndependence(state);
-  const exposure = state.gameplay.exposure.current;
+  const risk = analyzeRiskV1(state);
   const snapshot = state.gameplay.catalogSnapshot?.selected;
   const latestEvent = state.gameplay.eventLifecycle.history.at(-1) ?? null;
 
@@ -74,7 +76,7 @@ export function OverviewPanel({
         <div><span>Taxable investments</span><strong>{formatMoney(state.finances.taxableInvestmentsCents)}</strong></div>
         <div><span>Retirement</span><strong>{formatMoney(state.finances.retirementCents)}</strong></div>
         <div><span>Home value</span><strong>{formatMoney(state.finances.homeValueCents)}</strong></div>
-        <div><span>Total liabilities</span><strong>{formatMoney(state.finances.nonCreditLiabilitiesCents + state.finances.creditUsedCents)}</strong></div>
+        <div><span>Total liabilities</span><strong>{formatMoney(calculateTotalLiabilities(state.finances))}</strong></div>
         <div><span>Required each month</span><strong>{formatMoney(state.finances.requiredObligationsCents)}</strong></div>
       </div>
 
@@ -123,21 +125,19 @@ export function OverviewPanel({
       <div className="play-grid">
         <section className="play-panel">
           <div className="section-heading">
-            <h2>Exposure</h2>
+            <h2>Risk v1</h2>
             <ConceptButton conceptId="exposure" onSelect={onSelectConcept} />
           </div>
-          {exposure ? (
-            <dl className="metric-list">
-              <div><dt>Emergency runway</dt><dd>{formatRunway(exposure.emergencyFundMonthsPpm)}</dd></div>
-              <div><dt>Debt to income</dt><dd>{formatRate(exposure.debtToIncomePpm)}</dd></div>
-              <div><dt>Credit utilization</dt><dd>{formatRate(exposure.revolvingDebtPpm)}</dd></div>
-              <div><dt>Insurance gap</dt><dd>{formatRate(exposure.insuranceGapPpm)}</dd></div>
-              <div><dt>Portfolio concentration</dt><dd>{formatRate(exposure.portfolioConcentrationPpm)}</dd></div>
-              <div><dt>Job/investment correlation</dt><dd>{formatRate(exposure.jobInvestmentCorrelationPpm)}</dd></div>
-            </dl>
-          ) : (
-            <p className="play-note">Exposure is measured after the first processed month.</p>
-          )}
+          <dl className="metric-list">
+            <div><dt>Overall severity</dt><dd>{formatRate(risk.aggregateSeverityPpm)}</dd></div>
+            <div><dt>Emergency runway</dt><dd>{risk.metrics.emergency_fund_months.rawValue === null ? "Unknown" : formatRunway(risk.metrics.emergency_fund_months.rawValue)}</dd></div>
+            <div><dt>Debt service ratio</dt><dd>{formatRate(risk.metrics.debt_service_ratio.rawValue)}</dd></div>
+            <div><dt>Fixed-cost ratio</dt><dd>{formatRate(risk.metrics.fixed_cost_ratio.rawValue)}</dd></div>
+            <div><dt>Insurance protection gap</dt><dd>{formatRate(risk.metrics.insurance_protection_gap.rawValue)}</dd></div>
+            <div><dt>Portfolio concentration</dt><dd>{formatRate(risk.metrics.portfolio_concentration.rawValue)}</dd></div>
+            <div><dt>Job/investment correlation</dt><dd>{formatRate(risk.metrics.job_investment_sector_correlation.rawValue)}</dd></div>
+          </dl>
+          <p className="play-note">Fresh at revision {state.revision} · {risk.version}</p>
         </section>
 
         <section className="play-panel">

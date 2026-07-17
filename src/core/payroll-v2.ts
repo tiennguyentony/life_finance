@@ -7,6 +7,7 @@ import {
 } from "./domain/money";
 import { reconcileFinancesWithLedger } from "./game-state";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { appendTransaction, type JournalPosting } from "./ledger";
 import {
   planRecurringAllocations,
@@ -109,6 +110,7 @@ export function applyMonthlyPayroll(
   state: GameStateV2,
   commandId: string,
   evidence: MonthlyTaxEvidence,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): MonthlyPayrollResult {
   if (!SAFE_ID.test(commandId)) {
     throw new PayrollV2Error(
@@ -233,6 +235,6 @@ export function applyMonthlyPayroll(
         ),
       },
     },
-  });
+  }, validationOptions);
   return Object.freeze({ state: nextState, allocationPlan, evidence });
 }

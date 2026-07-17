@@ -10,7 +10,7 @@ describe("versioned educational content", () => {
   it("provides unique, complete concepts for the core learning loop", () => {
     const ids = EDUCATION_CONCEPTS.map(({ id }) => id);
 
-    expect(EDUCATION_CONTENT_VERSION).toBe("education.en-US.2026.1");
+    expect(EDUCATION_CONTENT_VERSION).toBe("education.en-US.2026.2");
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(
       expect.arrayContaining([
@@ -20,6 +20,9 @@ describe("versioned educational content", () => {
         "tax_estimate",
         "exposure",
         "compounding",
+        "diversification",
+        "restricted_retirement_assets",
+        "job_investment_correlation",
       ]),
     );
     for (const concept of EDUCATION_CONCEPTS) {
@@ -36,4 +39,3 @@ describe("versioned educational content", () => {
     expect(getEducationConcept("not-a-concept")).toBeUndefined();
   });
 });
-

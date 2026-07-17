@@ -4,6 +4,7 @@ import { moneyCents, ratePpm } from "../domain/money";
 import {
   calculateAutomaticLiquidity,
   calculateNetWorth,
+  calculateTotalLiabilities,
   createInitialGameState,
   hasReachedFinancialIndependence,
   InvalidGameStateError,
@@ -129,8 +130,39 @@ describe("GameState", () => {
 });
 
 describe("financial invariants", () => {
+  it("owns total-liability aggregation with safe integer arithmetic", () => {
+    expect(calculateTotalLiabilities(finances())).toBe(170_00);
+    expect(() =>
+      calculateTotalLiabilities(
+        finances({
+          nonCreditLiabilitiesCents: moneyCents(Number.MAX_SAFE_INTEGER),
+          creditUsedCents: moneyCents(1),
+          creditLimitCents: moneyCents(1),
+        }),
+      ),
+    ).toThrow(/total liabilities/i);
+  });
+
   it("includes all assets and liabilities in displayed net worth", () => {
     expect(calculateNetWorth(finances())).toBe(905_00);
+  });
+
+  it("keeps cancelling high assets and liabilities exact until net worth", () => {
+    expect(
+      calculateNetWorth(
+        finances({
+          cashCents: moneyCents(Number.MAX_SAFE_INTEGER),
+          taxableInvestmentsCents: moneyCents(0),
+          retirementCents: moneyCents(0),
+          homeValueCents: moneyCents(0),
+          otherInvestableAssetsCents: moneyCents(0),
+          otherAssetsCents: moneyCents(10),
+          nonCreditLiabilitiesCents: moneyCents(Number.MAX_SAFE_INTEGER),
+          creditUsedCents: moneyCents(5),
+          creditLimitCents: moneyCents(5),
+        }),
+      ),
+    ).toBe(5);
   });
 
   it("limits automatic liquidity to cash, taxable investments, and credit", () => {

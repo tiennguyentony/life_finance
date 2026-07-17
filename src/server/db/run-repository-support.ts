@@ -304,7 +304,10 @@ function acceptedGameCommandV2(
     ...reduced,
     gameplay: {
       ...reduced.gameplay,
-      runtimeBalance: runtimeBalanceStateV1(reduced),
+      runtimeBalance:
+        reduced.gameplay.runtimeBalance?.version === 2
+          ? reduced.gameplay.runtimeBalance
+          : runtimeBalanceStateV1(reduced),
     },
   });
   assertValidGameStateTransitionV2(previous, state, commandId);

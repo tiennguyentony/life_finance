@@ -1,10 +1,8 @@
 import {
   addMoney,
-  allocateMoney,
   moneyCents,
   multiplyMoneyByRate,
   subtractMoney,
-  type RatePpm,
 } from "./domain/money";
 import { safeBigIntToNumber } from "./domain/integer";
 import {
@@ -18,8 +16,10 @@ import {
   type GameStateV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import type { JournalPosting } from "./ledger";
 import { getUpskillProgram } from "../data/upskill-programs";
+import type { ResolvedDetailedActionPolicyV2 } from "./action-policy-v2";
 
 import {
   DetailedFinanceError,
@@ -40,6 +40,7 @@ import {
   applyHomeRefinance,
   applyHomeSale,
 } from "./detailed-actions-v2-housing";
+import { applyLivingCostPlanChangeV2 } from "./financial-living-cost-plan-v2";
 
 export {
   DETAILED_FINANCE_COMMAND_SCHEMA_VERSION,
@@ -84,6 +85,7 @@ function applyLiquidateTaxable(
   state: GameStateV2,
   command: DetailedFinanceCommand,
   action: Extract<DetailedFinancialAction, { type: "liquidate_taxable" }>,
+  policy: ResolvedDetailedActionPolicyV2,
 ): GameStateV2 {
   assertPositive(action.amountCents);
   if (
@@ -101,7 +103,7 @@ function applyLiquidateTaxable(
   }
   const cost = multiplyMoneyByRate(
     action.amountCents,
-    action.liquidationCostRatePpm,
+    policy.taxableLiquidationCostRatePpm,
   );
   const proceeds = subtractMoney(action.amountCents, cost);
   const postings: JournalPosting[] = [
@@ -312,6 +314,7 @@ function applyRetirementWithdrawal(
   state: GameStateV2,
   command: DetailedFinanceCommand,
   action: Extract<DetailedFinancialAction, { type: "withdraw_retirement" }>,
+  policy: ResolvedDetailedActionPolicyV2,
 ): GameStateV2 {
   assertPositive(action.amountCents);
   const balance = state.gameplay.portfolio[action.bucket];
@@ -323,12 +326,15 @@ function applyRetirementWithdrawal(
   }
   const withholding = multiplyMoneyByRate(
     action.amountCents,
-    200_000 as RatePpm,
+    policy.retirementWithholdingRatePpm,
   );
   const ageMonths = monthsBetween(state.player.birthMonth, state.currentMonth);
   const penalty =
-    ageMonths < 714
-      ? multiplyMoneyByRate(action.amountCents, 100_000 as RatePpm)
+    ageMonths < policy.earlyRetirementAgeMonths
+      ? multiplyMoneyByRate(
+          action.amountCents,
+          policy.earlyRetirementPenaltyRatePpm,
+        )
       : moneyCents(0);
   const proceeds = subtractMoney(
     subtractMoney(action.amountCents, withholding),
@@ -371,22 +377,17 @@ function applyLifestyleChange(
       "lifestyle delta must be a non-zero safe integer number of cents",
     );
   }
-  const annual = state.finances.annualLivingCostCents + delta;
-  const monthlyDelta = allocateMoney(delta, 1, 12);
-  const required = state.finances.requiredObligationsCents + monthlyDelta;
-  if (!Number.isSafeInteger(annual) || annual < 0 || required < 0) {
+  try {
+    const application = applyLivingCostPlanChangeV2(state.finances, delta);
+    return accept(state, command, {
+      finances: application.finances,
+    });
+  } catch {
     throw new DetailedFinanceError(
       "LIFESTYLE_OUT_OF_RANGE",
       "lifestyle change cannot make living cost or obligations negative",
     );
   }
-  return accept(state, command, {
-    finances: {
-      ...state.finances,
-      annualLivingCostCents: moneyCents(annual),
-      requiredObligationsCents: moneyCents(required),
-    },
-  });
 }
 
 function applyStartUpskill(
@@ -444,7 +445,10 @@ function applyStartUpskill(
   });
 }
 
-export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
+export function completeCareerDevelopmentV2(
+  state: GameStateV2,
+  validationOptions: GameStateV2ValidationOptions = {},
+): GameStateV2 {
   const retainedStories = state.gameplay.eventLifecycle.macroStories.filter(
     ({ expiresMonth }) => compareMonths(expiresMonth, state.currentMonth) >= 0,
   );
@@ -462,7 +466,9 @@ export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
   const completed = working.gameplay.careerDevelopment.pending.filter(
     ({ completesMonth }) => completesMonth === working.currentMonth,
   );
-  if (completed.length === 0) return finalizeGameStateV2(working);
+  if (completed.length === 0) {
+    return finalizeGameStateV2(working, validationOptions);
+  }
   if (working.gameplay.employment.status !== "employed") {
     throw new DetailedFinanceError(
       "EMPLOYMENT_REQUIRED",
@@ -506,19 +512,24 @@ export function completeCareerDevelopmentV2(state: GameStateV2): GameStateV2 {
         ],
       },
     },
-  });
+  }, validationOptions);
 }
 
 export function reduceDetailedFinanceCommand(
   state: GameStateV2,
   command: DetailedFinanceCommand,
 ): GameStateV2 {
-  validateEnvelope(state, command);
+  const policy = validateEnvelope(state, command);
   switch (command.payload.action.type) {
     case "invest_taxable":
       return applyInvestTaxable(state, command, command.payload.action);
     case "liquidate_taxable":
-      return applyLiquidateTaxable(state, command, command.payload.action);
+      return applyLiquidateTaxable(
+        state,
+        command,
+        command.payload.action,
+        policy,
+      );
     case "contribute_ira":
     case "contribute_hsa":
       return applyContribution(state, command, command.payload.action);
@@ -528,13 +539,18 @@ export function reduceDetailedFinanceCommand(
     case "draw_revolving_credit":
       return applyRevolvingCredit(state, command, command.payload.action);
     case "withdraw_retirement":
-      return applyRetirementWithdrawal(state, command, command.payload.action);
+      return applyRetirementWithdrawal(
+        state,
+        command,
+        command.payload.action,
+        policy,
+      );
     case "purchase_home":
-      return applyHomePurchase(state, command, command.payload.action);
+      return applyHomePurchase(state, command, command.payload.action, policy);
     case "sell_home":
-      return applyHomeSale(state, command);
+      return applyHomeSale(state, command, policy);
     case "refinance_home":
-      return applyHomeRefinance(state, command, command.payload.action);
+      return applyHomeRefinance(state, command, command.payload.action, policy);
     case "change_lifestyle":
       return applyLifestyleChange(state, command, command.payload.action);
     case "start_upskill":

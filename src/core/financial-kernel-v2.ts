@@ -24,6 +24,7 @@ import {
   type GameStateV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import {
   advanceCumulativePriceIndexV2,
   calculateMonthlyLivingCostInflationV2,
@@ -33,9 +34,12 @@ import { adjudicateCoverageClaim, adjudicateHealthClaim } from "./insurance-v2";
 import { ownForDeepFreeze } from "./immutable-ownership";
 import { appendTransaction, type JournalPosting } from "./ledger";
 import {
+  MACRO_MARKET_CALIBRATION_V2_VERSION,
+  MACRO_MARKET_MODEL_V2_VERSION,
   MARKET_MODEL_VERSION,
-  type MarketMonth,
-  type MarketSimulationResult,
+  validateMacroMarketMonthV2,
+  type SupportedMarketMonth,
+  type SupportedMarketSimulationResult,
 } from "./market";
 import {
   assessV2Liquidity,
@@ -82,10 +86,11 @@ export type FinancialMonthInputV2 = Readonly<{
   commandId: string;
   state: GameStateV2;
   taxEvidence: MonthlyTaxEvidence;
-  marketStep: MarketSimulationResult;
+  marketStep: SupportedMarketSimulationResult;
   taxableLiquidationCostRatePpm: RatePpm;
   insuranceClaim?: MonthlyInsuranceClaimV2;
   resolvedCashFlows?: readonly ResolvedCashFlowV2[];
+  validationOptions?: GameStateV2ValidationOptions;
 }>;
 
 export type FinancialShortfallV2 = Readonly<{
@@ -111,7 +116,7 @@ export type FinancialMonthRecordV2 = Readonly<{
   afterTaxCashIncomeCents: MoneyCents;
   resolvedIncomeCents: MoneyCents;
   resolvedExpenseCents: MoneyCents;
-  market: MarketMonth;
+  market: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   annualInflationIncreaseCents: MoneyCents;
   monthlyObligationInflationIncreaseCents: MoneyCents;
@@ -126,6 +131,22 @@ export type FinancialMonthRecordV2 = Readonly<{
   recurringAllocations: RecurringAllocationPlan | null;
   shortfall: FinancialShortfallV2 | null;
 }>;
+
+export function calculateMonthlyCashFlowDeficitV2(
+  record: Pick<
+    FinancialMonthRecordV2,
+    "afterTaxCashIncomeCents" | "resolvedIncomeCents" | "requiredCashCents"
+  >,
+): MoneyCents | null {
+  const availableIncome =
+    BigInt(record.afterTaxCashIncomeCents) + BigInt(record.resolvedIncomeCents);
+  const deficit = BigInt(record.requiredCashCents) - availableIncome;
+  return deficit > BigInt(0)
+    ? moneyCents(
+        safeBigIntToNumber(deficit, "monthly cash-flow deficit"),
+      )
+    : null;
+}
 
 export type FinancialClosingStateV2 = Readonly<
   Omit<GameStateV2, "revision" | "acceptedCommandIds" | "outcome"> & {
@@ -211,7 +232,7 @@ function assertInput(input: FinancialMonthInputV2): void {
       "invalid financial kernel version, command id, or liquidation rate",
     );
   }
-  const stateViolations = validateGameStateV2(input.state);
+  const stateViolations = validateGameStateV2(input.state, input.validationOptions);
   if (stateViolations.length > 0) {
     throw new FinancialKernelV2Error(
       "INVALID_INPUT",
@@ -224,19 +245,29 @@ function assertInput(input: FinancialMonthInputV2): void {
 
 function assertMarketStep(
   state: GameStateV2,
-  marketStep: MarketSimulationResult,
+  marketStep: SupportedMarketSimulationResult,
 ): void {
-  const rates = [
+  const commonRates = [
     marketStep.month.equityReturnPpm,
     marketStep.month.bondReturnPpm,
     marketStep.month.cashReturnPpm,
     marketStep.month.housingReturnPpm,
     marketStep.month.inflationPpm,
   ];
+  const rates =
+    marketStep.month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? [
+          ...commonRates,
+          marketStep.month.broadIndexReturnPpm,
+          marketStep.month.sectorReturnPpm,
+          marketStep.month.speculativeReturnPpm,
+          marketStep.month.borrowingRatePpm,
+          marketStep.month.laborDemandChangePpm,
+          marketStep.month.volatilityPpm,
+        ]
+      : commonRates;
   if (
-    state.gameplay.market.modelVersion !== MARKET_MODEL_VERSION ||
-    marketStep.nextState.modelVersion !== MARKET_MODEL_VERSION ||
-    marketStep.month.modelVersion !== MARKET_MODEL_VERSION ||
+    marketStep.nextState.modelVersion !== marketStep.month.modelVersion ||
     marketStep.month.regime !== state.marketRegime ||
     marketStep.month.nextRegime !== marketStep.nextState.regime ||
     marketStep.nextState.monthsInRegime !==
@@ -251,6 +282,45 @@ function assertMarketStep(
     throw new FinancialKernelV2Error(
       "INVALID_MARKET_STEP",
       "market step is inconsistent with the opening model, regime, or next state",
+    );
+  }
+  if (marketStep.month.modelVersion === MARKET_MODEL_VERSION) {
+    if (state.gameplay.market.modelVersion !== MARKET_MODEL_VERSION) {
+      throw new FinancialKernelV2Error(
+        "INVALID_MARKET_STEP",
+        "regime-v1 cannot replace an accepted regime-v2 lifecycle",
+      );
+    }
+    return;
+  }
+  try {
+    validateMacroMarketMonthV2(marketStep.month);
+  } catch {
+    throw new FinancialKernelV2Error(
+      "INVALID_MARKET_STEP",
+      "regime-v2 market evidence is outside its accepted calibration",
+    );
+  }
+  if (
+    marketStep.month.modelVersion !== MACRO_MARKET_MODEL_V2_VERSION ||
+    marketStep.nextState.modelVersion !== MACRO_MARKET_MODEL_V2_VERSION ||
+    marketStep.month.calibrationVersion !==
+      MACRO_MARKET_CALIBRATION_V2_VERSION ||
+    marketStep.nextState.calibrationVersion !==
+      marketStep.month.calibrationVersion ||
+    marketStep.nextState.difficulty !== marketStep.month.difficulty ||
+    marketStep.month.equityReturnPpm !==
+      marketStep.month.broadIndexReturnPpm ||
+    marketStep.month.borrowingRatePpm < 0 ||
+    marketStep.month.volatilityPpm < 0 ||
+    (state.gameplay.market.modelVersion === MACRO_MARKET_MODEL_V2_VERSION &&
+      (state.gameplay.market.calibrationVersion !==
+        marketStep.month.calibrationVersion ||
+        state.gameplay.market.macroDifficulty !== marketStep.month.difficulty))
+  ) {
+    throw new FinancialKernelV2Error(
+      "INVALID_MARKET_STEP",
+      "regime-v2 market evidence does not match the accepted lifecycle",
     );
   }
 }
@@ -293,49 +363,68 @@ function addSigned(balance: MoneyCents, change: MoneyCents): MoneyCents {
 function applySuppliedMarketMonth(
   state: GameStateV2,
   commandId: string,
-  simulation: MarketSimulationResult,
+  simulation: SupportedMarketSimulationResult,
+  validationOptions: GameStateV2ValidationOptions,
 ): Readonly<{
   state: GameStateV2;
-  month: MarketMonth;
+  month: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   cumulativePriceIndexPpm: number;
 }> {
-  const month = Object.freeze({
-    ...simulation.month,
-    appliedReturnModifiersPpm: Object.freeze({
-      ...simulation.month.appliedReturnModifiersPpm,
-    }),
-    shocks: Object.freeze({ ...simulation.month.shocks }),
-  });
+  const month: SupportedMarketMonth =
+    simulation.month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? Object.freeze({
+          ...simulation.month,
+          appliedReturnModifiersPpm: Object.freeze({
+            ...simulation.month.appliedReturnModifiersPpm,
+          }),
+          shocks: Object.freeze({ ...simulation.month.shocks }),
+        })
+      : Object.freeze({
+          ...simulation.month,
+          appliedReturnModifiersPpm: Object.freeze({
+            ...simulation.month.appliedReturnModifiersPpm,
+          }),
+          shocks: Object.freeze({ ...simulation.month.shocks }),
+        });
   const portfolio = state.gameplay.portfolio;
+  const broadReturnPpm = month.equityReturnPpm;
+  const sectorReturnPpm =
+    month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? month.sectorReturnPpm
+      : broadReturnPpm;
+  const speculativeReturnPpm =
+    month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+      ? month.speculativeReturnPpm
+      : broadReturnPpm;
   const portfolioChanges: Record<keyof PortfolioBreakdown, MoneyCents> = {
     taxableBroadIndexCents: signedChange(
       portfolio.taxableBroadIndexCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     taxableSectorCents: signedChange(
       portfolio.taxableSectorCents,
-      month.equityReturnPpm,
+      sectorReturnPpm,
     ),
     taxableSpeculativeCents: signedChange(
       portfolio.taxableSpeculativeCents,
-      month.equityReturnPpm,
+      speculativeReturnPpm,
     ),
     taxableLegacyUnclassifiedCents: signedChange(
       portfolio.taxableLegacyUnclassifiedCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     retirement401kCents: signedChange(
       portfolio.retirement401kCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     retirementIraCents: signedChange(
       portfolio.retirementIraCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     retirementLegacyUnclassifiedCents: signedChange(
       portfolio.retirementLegacyUnclassifiedCents,
-      month.equityReturnPpm,
+      broadReturnPpm,
     ),
     hsaCents: signedChange(portfolio.hsaCents, month.bondReturnPpm),
     otherInvestableLegacyUnclassifiedCents: signedChange(
@@ -428,13 +517,33 @@ function applySuppliedMarketMonth(
       gameplay: {
         ...state.gameplay,
         portfolio: nextPortfolio,
-        market: {
-          modelVersion: MARKET_MODEL_VERSION,
-          monthsInRegime: simulation.nextState.monthsInRegime,
-          cumulativePriceIndexPpm,
-        },
+        market:
+          month.modelVersion === MACRO_MARKET_MODEL_V2_VERSION
+            ? {
+                modelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+                monthsInRegime: simulation.nextState.monthsInRegime,
+                cumulativePriceIndexPpm,
+                calibrationVersion: month.calibrationVersion,
+                macroDifficulty: month.difficulty,
+                observedRegime: month.regime,
+                observedMonth: state.currentMonth,
+                borrowingRatePpm: month.borrowingRatePpm,
+                laborDemandChangePpm: month.laborDemandChangePpm,
+                volatilityPpm: month.volatilityPpm,
+                lastInflationPpm: month.inflationPpm,
+                broadMarketReturnPpm: month.broadIndexReturnPpm,
+                sectorMarketReturnPpm: month.sectorReturnPpm,
+                speculativeMarketReturnPpm: month.speculativeReturnPpm,
+                housingReturnPpm: month.housingReturnPpm,
+                cashYieldPpm: month.cashReturnPpm,
+              }
+            : {
+                modelVersion: MARKET_MODEL_VERSION,
+                monthsInRegime: simulation.nextState.monthsInRegime,
+                cumulativePriceIndexPpm,
+              },
       },
-    }),
+    }, validationOptions),
     month,
     marketValueChangeCents,
     cumulativePriceIndexPpm,
@@ -444,6 +553,7 @@ function applySuppliedMarketMonth(
 function applyInsuranceClaim(
   state: GameStateV2,
   claim: MonthlyInsuranceClaimV2 | undefined,
+  validationOptions: GameStateV2ValidationOptions,
 ): Readonly<{ state: GameStateV2; playerCostCents: MoneyCents }> {
   if (!claim) return Object.freeze({ state, playerCostCents: ZERO });
   const settlement =
@@ -459,7 +569,7 @@ function applyInsuranceClaim(
     state: finalizeGameStateV2({
       ...state,
       gameplay: { ...state.gameplay, insurance: settlement.nextInsurance },
-    }),
+    }, validationOptions),
     playerCostCents: settlement.playerResponsibilityCents,
   });
 }
@@ -472,6 +582,7 @@ function applyResolvedIncome(
   state: GameStateV2,
   commandId: string,
   flows: readonly ResolvedCashFlowV2[],
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   let working = state;
   for (const flow of flows) {
@@ -494,7 +605,7 @@ function applyResolvedIncome(
       ...working,
       ledger,
       finances: reconcileFinancesWithLedger(working.finances, ledger),
-    });
+    }, validationOptions);
   }
   return working;
 }
@@ -503,6 +614,7 @@ function payResolvedExpenses(
   state: GameStateV2,
   commandId: string,
   flows: readonly ResolvedCashFlowV2[],
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   let working = state;
   for (const flow of flows) {
@@ -531,7 +643,7 @@ function payResolvedExpenses(
       ...working,
       ledger,
       finances: reconcileFinancesWithLedger(working.finances, ledger),
-    });
+    }, validationOptions);
   }
   return working;
 }
@@ -540,6 +652,7 @@ function payNonDebtObligations(
   state: GameStateV2,
   commandId: string,
   amountCents: MoneyCents,
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   if (amountCents === 0) return state;
   if (amountCents > state.finances.cashCents) {
@@ -566,13 +679,14 @@ function payNonDebtObligations(
     ...state,
     ledger,
     finances: reconcileFinancesWithLedger(state.finances, ledger),
-  });
+  }, validationOptions);
 }
 
 function applyAfterTaxPlan(
   state: GameStateV2,
   commandId: string,
   plan: RecurringAllocationPlan,
+  validationOptions: GameStateV2ValidationOptions,
 ): GameStateV2 {
   const taxable = sumMoney(
     [
@@ -670,7 +784,7 @@ function applyAfterTaxPlan(
         ),
       },
     },
-  });
+  }, validationOptions);
 }
 
 function closeFinancialMonthState(
@@ -702,6 +816,7 @@ export function simulateFinancialMonthV2(
   input: FinancialMonthInputV2,
 ): FinancialMonthResultV2 {
   assertInput(input);
+  const validationOptions = input.validationOptions ?? {};
   const flows = input.resolvedCashFlows ?? [];
   const processedMonth = input.state.currentMonth;
   const nextMonth = addMonths(processedMonth, 1);
@@ -715,13 +830,19 @@ export function simulateFinancialMonthV2(
   const ownedOpeningState = ownForDeepFreeze(input.state);
   let working = finalizeGameStateV2(
     resetAnnualFinancialAccumulatorsV2(ownedOpeningState),
+    validationOptions,
   );
-  const claim = applyInsuranceClaim(working, input.insuranceClaim);
+  const claim = applyInsuranceClaim(
+    working,
+    input.insuranceClaim,
+    validationOptions,
+  );
   working = claim.state;
   const market = applySuppliedMarketMonth(
     working,
     input.commandId,
     input.marketStep,
+    validationOptions,
   );
   working = market.state;
   const inflation = calculateMonthlyLivingCostInflationV2(
@@ -741,9 +862,19 @@ export function simulateFinancialMonthV2(
         inflation.monthlyObligationIncreaseCents,
       ),
     },
-  });
-  const payroll = applyMonthlyPayroll(working, input.commandId, input.taxEvidence);
-  working = applyResolvedIncome(payroll.state, input.commandId, flows);
+  }, validationOptions);
+  const payroll = applyMonthlyPayroll(
+    working,
+    input.commandId,
+    input.taxEvidence,
+    validationOptions,
+  );
+  working = applyResolvedIncome(
+    payroll.state,
+    input.commandId,
+    flows,
+    validationOptions,
+  );
   const resolvedIncomeCents = sumMoney(
     flows.filter(isIncome).map(({ amountCents }) => amountCents),
     "financial kernel resolved income",
@@ -838,14 +969,25 @@ export function simulateFinancialMonthV2(
     working,
     input.commandId,
     fundingPlan,
+    validationOptions,
   );
-  working = payResolvedExpenses(funding.state, input.commandId, flows);
+  working = payResolvedExpenses(
+    funding.state,
+    input.commandId,
+    flows,
+    validationOptions,
+  );
   working = payNonDebtObligations(
     working,
     input.commandId,
     nonDebtObligations,
+    validationOptions,
   );
-  working = settleMonthlyDebtService(working, input.commandId).state;
+  working = settleMonthlyDebtService(
+    working,
+    input.commandId,
+    validationOptions,
+  ).state;
   const postObligationIncomeCents = moneyCents(
     Math.max(
       0,
@@ -863,7 +1005,12 @@ export function simulateFinancialMonthV2(
     ...afterTaxPlan,
     preTax: payroll.allocationPlan.preTax,
   });
-  working = applyAfterTaxPlan(working, input.commandId, recurringAllocations);
+  working = applyAfterTaxPlan(
+    working,
+    input.commandId,
+    recurringAllocations,
+    validationOptions,
+  );
   const closingAutomaticLiquidityCents = assessV2Liquidity(
     working,
     ZERO,

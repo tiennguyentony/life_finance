@@ -8,6 +8,7 @@ import {
   adjudicateHealthClaim,
 } from "../insurance-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
+import { setRecurringStrategy } from "../recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
 import {
   US_2026_SCENARIO_CATALOG,
@@ -59,6 +60,32 @@ function state(healthPlanId: string | null = "health.ppo_balanced"): GameStateV2
 }
 
 describe("deterministic v2 insurance adjudication", () => {
+  it("makes a deactivated recurring insurance policy ineligible for claims", () => {
+    const initial = state();
+    const withoutRenters = setRecurringStrategy(initial, {
+      schemaVersion: 2,
+      id: "cmd.insurance.opt-out",
+      type: "set_recurring_strategy",
+      expectedRevision: initial.revision,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        strategy: {
+          ...initial.gameplay.recurringStrategy,
+          insuranceCoverageIds: [],
+        },
+      },
+    });
+
+    expect(() =>
+      adjudicateCoverageClaim(
+        withoutRenters,
+        "insurance.renters",
+        moneyCents(100_000),
+        true,
+      ),
+    ).toThrowError(expect.objectContaining({ code: "UNKNOWN_COVERAGE" }));
+  });
+
   it("applies health deductible, then coinsurance, then carries accumulators", () => {
     const initial = state();
     const first = adjudicateHealthClaim(initial, moneyCents(200_000), true);

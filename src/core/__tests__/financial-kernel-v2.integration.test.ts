@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
-import { moneyCents, ratePpm } from "../domain/money";
+import { ACTION_POLICY_V1_VERSION } from "../action-policy-v2";
+import { reduceDetailedFinanceCommand } from "../detailed-actions-v2";
+import { moneyCents, multiplyMoneyByRate, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import { validateLedger } from "../ledger";
+import { MACRO_MARKET_MODEL_V2_VERSION } from "../market";
+import { finalizeGameStateV2 } from "../game-state-v2";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
   processMonthlyTurnV2,
@@ -114,6 +118,26 @@ const resolvedCashFlows = [
     sourceSystem: "event.integration",
   },
 ] as const;
+
+function taxEvidence(traceId: string) {
+  return {
+    schemaVersion: 1 as const,
+    traceId,
+    economicYear: 2026,
+    policyYear: 2026,
+    stateCode: "WA",
+    filingStatus: "single" as const,
+    provider: "PolicyEngine US",
+    bundleVersion: "4.21.0",
+    rulesVersion: "1.764.6",
+    projectedFromFrozenPolicy: false,
+    grossIncomeCents: 1_000_000,
+    employee401kContributionCents: 50_000,
+    employeeHsaContributionCents: 20_000,
+    totalTaxCents: 200_000,
+    afterTaxCashIncomeCents: 730_000,
+  };
+}
 
 describe("Prompt 02 real core integration", () => {
   it("composes persisted inputs through the wrapper, kernel, ledger, outcome, exposure, macro, and event systems", () => {
@@ -256,5 +280,240 @@ describe("Prompt 02 real core integration", () => {
       ]);
     }
     expect(validateLedger(result.state.ledger)).toEqual([]);
+  });
+
+  it("integrates regime-v2 through persistence, monthly orchestration, differentiated assets, inflation, debt, and ledger evidence", () => {
+    const base = integratedState();
+    const initial = finalizeGameStateV2({
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        market: { ...base.gameplay.market, monthsInRegime: 59 },
+      },
+    });
+    const openingDebtRate =
+      initial.gameplay.debts.termDebts[0]!.annualInterestRatePpm;
+    const decoded = decodePersistedGameCommandV2({
+      schemaVersion: 2,
+      id: "cmd.macro-v2.integration.month",
+      type: "process_month_v2",
+      expectedRevision: initial.revision,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+        marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+        macroDifficulty: "normal",
+        taxEvidence: {
+          schemaVersion: 1,
+          traceId: "tax.macro-v2.integration",
+          economicYear: 2026,
+          policyYear: 2026,
+          stateCode: "WA",
+          filingStatus: "single",
+          provider: "PolicyEngine US",
+          bundleVersion: "4.21.0",
+          rulesVersion: "1.764.6",
+          projectedFromFrozenPolicy: false,
+          grossIncomeCents: 1_000_000,
+          employee401kContributionCents: 50_000,
+          employeeHsaContributionCents: 20_000,
+          totalTaxCents: 200_000,
+          afterTaxCashIncomeCents: 730_000,
+        },
+        taxableLiquidationCostRatePpm: 10_000,
+        resolvedCashFlows: [],
+      },
+    });
+    if (decoded.type !== "process_month_v2") {
+      throw new Error("macro integration fixture did not decode as a month");
+    }
+
+    const result = processMonthlyTurnV2(initial, decoded, {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+      macroStoryPolicy: {
+        version: "macro-story-v1",
+        monthlyChancePpm: 0,
+        minimumDurationMonths: 1,
+        maximumDurationMonths: 1,
+      },
+    });
+    const month = result.record.market;
+    expect(month.modelVersion).toBe(MACRO_MARKET_MODEL_V2_VERSION);
+    if (month.modelVersion !== MACRO_MARKET_MODEL_V2_VERSION) {
+      throw new Error("expected regime-v2 market evidence");
+    }
+    expect(result.state.gameplay.market).toMatchObject({
+      modelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+      calibrationVersion: month.calibrationVersion,
+      macroDifficulty: "normal",
+      observedRegime: month.regime,
+      observedMonth: initial.currentMonth,
+      borrowingRatePpm: month.borrowingRatePpm,
+      laborDemandChangePpm: month.laborDemandChangePpm,
+      volatilityPpm: month.volatilityPpm,
+      lastInflationPpm: month.inflationPpm,
+    });
+    expect(month.nextRegime).not.toBe(month.regime);
+    expect(result.state.marketRegime).toBe(month.nextRegime);
+    expect(result.state.gameplay.market.observedRegime).toBe(month.regime);
+    expect(result.record.monthlyObligationInflationIncreaseCents).not.toBe(0);
+    expect(result.state.gameplay.debts.termDebts[0]!.annualInterestRatePpm).toBe(
+      openingDebtRate,
+    );
+
+    const marketTransaction = result.state.ledger.transactions.find(
+      ({ id }) => id === `txn.${decoded.id}.market`,
+    );
+    expect(marketTransaction).toBeDefined();
+    const cashPosting = marketTransaction!.postings.find(
+      ({ accountId }) => accountId === "asset.cash",
+    );
+    const expectedCashChange = multiplyMoneyByRate(
+      initial.finances.cashCents,
+      month.cashReturnPpm,
+    );
+    expect(
+      (cashPosting?.debitCents ?? 0) - (cashPosting?.creditCents ?? 0),
+    ).toBe(expectedCashChange);
+
+    const expectedTaxableChange =
+      multiplyMoneyByRate(
+        initial.gameplay.portfolio.taxableBroadIndexCents,
+        month.broadIndexReturnPpm,
+      ) +
+      multiplyMoneyByRate(
+        initial.gameplay.portfolio.taxableSectorCents,
+        month.sectorReturnPpm,
+      ) +
+      multiplyMoneyByRate(
+        initial.gameplay.portfolio.taxableSpeculativeCents,
+        month.speculativeReturnPpm,
+      );
+    const taxablePosting = marketTransaction!.postings.find(
+      ({ accountId }) => accountId === "asset.taxable_investments",
+    );
+    expect(
+      (taxablePosting?.debitCents ?? 0) -
+        (taxablePosting?.creditCents ?? 0),
+    ).toBe(expectedTaxableChange);
+    expect(validateLedger(result.state.ledger)).toEqual([]);
+
+    const purchased = reduceDetailedFinanceCommand(result.state, {
+      schemaVersion: 2,
+      id: "cmd.macro-v2.integration.mortgage",
+      type: "take_detailed_action",
+      expectedRevision: result.state.revision,
+      effectiveMonth: result.state.currentMonth,
+      payload: {
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+        action: {
+          type: "purchase_home",
+          purchasePriceCents: moneyCents(100_000),
+          downPaymentCents: moneyCents(50_000),
+          mortgageAnnualInterestRatePpm: ratePpm(1_000),
+          mortgageTermMonths: 360,
+        },
+      },
+    });
+    expect(
+      purchased.gameplay.debts.termDebts.find(
+        ({ kind }) => kind === "mortgage",
+      )?.annualInterestRatePpm,
+    ).toBe(Math.min(500_000, month.borrowingRatePpm + 20_000));
+  });
+
+  it("replays an accepted regime-v1 month followed by an explicit regime-v2 upgrade", () => {
+    const runSequence = () => {
+      const initial = integratedState();
+      const historical = decodePersistedGameCommandV2({
+        schemaVersion: 2,
+        id: "cmd.market-upgrade.historical",
+        type: "process_month_v2",
+        expectedRevision: initial.revision,
+        effectiveMonth: initial.currentMonth,
+        payload: {
+          financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+          taxEvidence: taxEvidence("tax.market-upgrade.historical"),
+          taxableLiquidationCostRatePpm: 10_000,
+          resolvedCashFlows: [],
+        },
+      });
+      if (historical.type !== "process_month_v2") {
+        throw new Error("expected historical monthly command");
+      }
+      const dependencies = {
+        eventSchedulingPolicy: {
+          version: "fairness-v1" as const,
+          minimumChancePpm: 0,
+          maximumChancePpm: 0,
+        },
+        macroStoryPolicy: {
+          version: "macro-story-v1" as const,
+          monthlyChancePpm: 0,
+          minimumDurationMonths: 1,
+          maximumDurationMonths: 1,
+        },
+      };
+      const first = processMonthlyTurnV2(initial, historical, dependencies);
+      const upgraded = decodePersistedGameCommandV2({
+        schemaVersion: 2,
+        id: "cmd.market-upgrade.v2",
+        type: "process_month_v2",
+        expectedRevision: first.state.revision,
+        effectiveMonth: first.state.currentMonth,
+        payload: {
+          financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "normal",
+          taxEvidence: taxEvidence("tax.market-upgrade.v2"),
+          taxableLiquidationCostRatePpm: 10_000,
+          resolvedCashFlows: [],
+        },
+      });
+      if (upgraded.type !== "process_month_v2") {
+        throw new Error("expected upgraded monthly command");
+      }
+      const second = processMonthlyTurnV2(
+        first.state,
+        upgraded,
+        dependencies,
+      );
+      return { historical, first, upgraded, second };
+    };
+
+    const left = runSequence();
+    const right = runSequence();
+    expect(left).toEqual(right);
+    expect(left.historical.payload.marketModelVersion).toBeUndefined();
+    expect(left.first.record.market.modelVersion).toBe("regime-v1");
+    expect(left.second.record.market.modelVersion).toBe("regime-v2");
+    expect(sha256Canonical(left.second.state)).toBe(
+      sha256Canonical(right.second.state),
+    );
+  });
+
+  it("strictly decodes the declarative-events-v2 scheduler discriminator", () => {
+    const initial = integratedState();
+    const decoded = decodePersistedGameCommandV2({
+      schemaVersion: 2,
+      id: "cmd.declarative-events-v2",
+      type: "process_month_v2",
+      expectedRevision: initial.revision,
+      effectiveMonth: initial.currentMonth,
+      payload: {
+        financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+        eventSchedulerVersion: "declarative-events-v2",
+        taxEvidence: taxEvidence("tax.declarative-events-v2"),
+        taxableLiquidationCostRatePpm: 10_000,
+        resolvedCashFlows: [],
+      },
+    });
+    expect(decoded.type).toBe("process_month_v2");
+    if (decoded.type !== "process_month_v2") throw new Error("expected month command");
+    expect(decoded.payload.eventSchedulerVersion).toBe("declarative-events-v2");
   });
 });

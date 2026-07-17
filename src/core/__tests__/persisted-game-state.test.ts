@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";
 import { createInitialGameState } from "../game-state";
 import { migrateGameStateV1ToV2 } from "../game-state-v2";
+import { assessTerminalOutcomeV2 } from "../outcomes";
 import {
   decodePersistedGameState,
   PersistedGameStateDecodeError,
@@ -40,6 +42,42 @@ function v1Fixture() {
   });
 }
 
+function richTerminalFixture() {
+  const v2 = migrateGameStateV1ToV2(v1Fixture());
+  const requiredCashCents = moneyCents(601_00);
+  const automaticLiquidityCents = moneyCents(600_00);
+  const residualShortfallCents = moneyCents(1_00);
+  const fundingPlan = Object.freeze({
+    requiredCashCents,
+    cashAvailableCents: automaticLiquidityCents,
+    cashUsedCents: automaticLiquidityCents,
+    taxableLiquidations: Object.freeze([]),
+    grossLiquidationCents: moneyCents(0),
+    liquidationCostCents: moneyCents(0),
+    netLiquidationProceedsCents: moneyCents(0),
+    remainingCreditCents: moneyCents(0),
+    creditUsedCents: moneyCents(0),
+    residualShortfallCents,
+    fullyFunded: false,
+  });
+  const outcome = assessTerminalOutcomeV2(v2, {
+    requiredCashCents,
+    closingAutomaticLiquidityCents: automaticLiquidityCents,
+    fundingPlan,
+    shortfall: Object.freeze({
+      requiredCashCents,
+      residualShortfallCents,
+      fundingPlan,
+      netWorthCents: moneyCents(600_00),
+      automaticLiquidityCents,
+    }),
+  }, "1.0.0");
+  if (outcome === null || !("outcomePolicyVersion" in outcome)) {
+    throw new Error("fixture must produce a rich deterministic outcome");
+  }
+  return { ...v2, outcome };
+}
+
 describe("persisted game-state decoder", () => {
   it("decodes and deeply freezes every supported schema", () => {
     const v1 = JSON.parse(JSON.stringify(v1Fixture())) as unknown;
@@ -72,5 +110,89 @@ describe("persisted game-state decoder", () => {
         finances: { ...v1Fixture().finances, cashCents: -1 },
       }),
     ).toThrow("violates its versioned invariants");
+  });
+
+  it("round-trips rich deterministic outcome evidence without checksum drift", () => {
+    const terminal = richTerminalFixture();
+    const persisted = JSON.parse(JSON.stringify(terminal)) as unknown;
+    const decoded = decodePersistedGameState(persisted);
+
+    expect(decoded.outcome).toEqual(terminal.outcome);
+    expect(sha256Canonical(decoded)).toBe(sha256Canonical(terminal));
+    expect(Object.isFrozen(decoded.outcome)).toBe(true);
+  });
+
+  it.each([
+    [
+      "projection arithmetic",
+      (terminal: ReturnType<typeof richTerminalFixture>) => ({
+        ...terminal,
+        outcome: {
+          ...terminal.outcome,
+          financialIndependence: {
+            ...terminal.outcome.financialIndependence,
+            progressPpm: ratePpm(
+              terminal.outcome.financialIndependence.progressPpm + 1,
+            ),
+          },
+        },
+      }),
+    ],
+    [
+      "gradeIfRetiredNow",
+      (terminal: ReturnType<typeof richTerminalFixture>) => ({
+        ...terminal,
+        outcome: {
+          ...terminal.outcome,
+          retirementReadiness: {
+            ...terminal.outcome.retirementReadiness,
+            gradeIfRetiredNow: "D",
+          },
+        },
+      }),
+    ],
+    [
+      "displayed net worth",
+      (terminal: ReturnType<typeof richTerminalFixture>) => ({
+        ...terminal,
+        outcome: {
+          ...terminal.outcome,
+          displayedNetWorthCents: moneyCents(
+            terminal.outcome.displayedNetWorthCents + 1,
+          ),
+        },
+      }),
+    ],
+    [
+      "current age",
+      (terminal: ReturnType<typeof richTerminalFixture>) => ({
+        ...terminal,
+        outcome: {
+          ...terminal.outcome,
+          retirementReadiness: {
+            ...terminal.outcome.retirementReadiness,
+            currentAgeYears:
+              terminal.outcome.retirementReadiness.currentAgeYears + 1,
+          },
+        },
+      }),
+    ],
+    [
+      "outcome kind and grade consistency",
+      (terminal: ReturnType<typeof richTerminalFixture>) => ({
+        ...terminal,
+        outcome: {
+          ...terminal.outcome,
+          kind: "financial_independence",
+          grade: "S",
+          reasonCode: "financial_independence_target_reached",
+          reasonCodes: ["financial_independence_target_reached"],
+        },
+      }),
+    ],
+  ] as const)("rejects rich outcome with mismatched %s", (_label, corrupt) => {
+    expect(() => decodePersistedGameState(corrupt(richTerminalFixture()))).toThrow(
+      "violates its versioned invariants",
+    );
   });
 });

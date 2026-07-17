@@ -13,6 +13,7 @@ import {
   type GameStateV2,
   type PortfolioBreakdown,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { appendTransaction, type JournalPosting } from "./ledger";
 
 export type V2LiquidityAssessment = Readonly<{
@@ -464,6 +465,7 @@ export function executeV2ObligationFunding(
   state: GameStateV2,
   commandId: string,
   plan: V2ObligationFundingPlan,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): Readonly<{ state: GameStateV2; record: V2FundingRecord }> {
   assertCommandId(commandId);
   if (!plan.fullyFunded) {
@@ -538,7 +540,7 @@ export function executeV2ObligationFunding(
         ),
       },
     },
-  });
+  }, validationOptions);
   assertExecutionMatchesPlan(state, nextState, plan);
   return Object.freeze({
     state: nextState,
