@@ -1390,13 +1390,14 @@ describe("atomic v2 monthly turn", () => {
 
   it("builds reconciled checkpoint evidence from exact monthly records", () => {
     const initial = configuredState();
-    const result = processMonthlyTurnV2(initial, command(initial), {
-      eventSchedulingPolicy: {
-        version: "fairness-v1",
-        minimumChancePpm: 0,
-        maximumChancePpm: 0,
-      },
-    });
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
     const checkpoint = buildCheckpointEvidenceV2(initial, result.state, [result.record]);
 
     expect(checkpoint).toMatchObject({
