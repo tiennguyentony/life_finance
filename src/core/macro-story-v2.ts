@@ -2,6 +2,7 @@ import { addMonths, compareMonths } from "./domain/month";
 import { nextInt } from "./domain/rng";
 import { applyEvent, eventApplicabilityReasons, type MarketAssetClass } from "./events";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { ratePpm } from "./domain/money";
 import type { MarketReturnModifiers } from "./market";
 import { EVENT_TEMPLATES } from "../data/event-templates";
@@ -60,6 +61,7 @@ export function activeMacroReturnModifiersV2(
 export function advanceMacroStoriesV2(
   state: GameStateV2,
   policy: MacroStoryPolicyV2 = DEFAULT_MACRO_STORY_POLICY_V2,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
   if (
     policy.version !== "macro-story-v1" ||
@@ -87,7 +89,7 @@ export function advanceMacroStoriesV2(
         activeStoryIds: retained.map(({ storyId }) => storyId),
       },
     },
-  });
+  }, validationOptions);
   if (working.outcome || retained.length > 0) return working;
 
   const candidates = EVENT_TEMPLATES.filter(
@@ -96,7 +98,10 @@ export function advanceMacroStoriesV2(
       eventApplicabilityReasons(template, projection(working)).length === 0,
   ).toSorted((left, right) => left.id.localeCompare(right.id));
   const frequency = nextInt(working.random, 1, 1_000_000);
-  working = finalizeGameStateV2({ ...working, random: frequency.nextState });
+  working = finalizeGameStateV2(
+    { ...working, random: frequency.nextState },
+    validationOptions,
+  );
   if (candidates.length === 0 || frequency.value > policy.monthlyChancePpm) {
     return working;
   }
@@ -146,5 +151,5 @@ export function advanceMacroStoriesV2(
         activeStoryIds: [storyId],
       },
     },
-  });
+  }, validationOptions);
 }

@@ -10,6 +10,7 @@ import {
   resolvePersonalEventResponseV2,
 } from "./personal-event-effects-v2";
 import type { PersonalEventTemplateV2 } from "./personal-event-v2";
+import { monthlyLivingCostFromAnnualV2 } from "./financial-living-cost-plan-v2";
 
 export type PersonalEventResponseImpactV2 = Readonly<{
   responseId: string;
@@ -166,35 +167,41 @@ function responseImpact(
       );
     }
   }
-  const annualLivingCostIncrease = Math.max(
-    0,
+  const annualLivingCostIncrease =
     resolution.finances.annualLivingCostCents -
-      state.finances.annualLivingCostCents,
-  );
-  const monthlyObligationIncrease = Math.max(
-    0,
+      state.finances.annualLivingCostCents;
+  const monthlyObligationIncrease =
     resolution.finances.requiredObligationsCents -
-      state.finances.requiredObligationsCents,
+      state.finances.requiredObligationsCents;
+  const livingCostMonthlyObligationDelta = resolution.livingCostPlans.reduce(
+    (total, plan) =>
+      safeAdd(
+        total,
+        plan.monthlyRequiredObligationDeltaCents,
+        "runtime balance living-cost monthly delta",
+      ),
+    0,
   );
-  const projectedPlanCost = safeAdd(
-    annualLivingCostIncrease,
-    safeMultiply(
-      monthlyObligationIncrease,
-      11,
-      "runtime balance eleven additional obligation months",
+  const independentMonthlyObligationDelta =
+    monthlyObligationIncrease - livingCostMonthlyObligationDelta;
+  const projectedPlanCost = Math.max(
+    0,
+    safeAdd(
+      annualLivingCostIncrease,
+      safeMultiply(
+        independentMonthlyObligationDelta,
+        11,
+        "runtime balance eleven additional obligation months",
+      ),
+      "runtime balance annual plan cost",
     ),
-    "runtime balance annual plan cost",
   );
   const directPlayerCost = safeAdd(
     resolution.playerCostCents,
     projectedPlanCost,
     "runtime balance projected direct cost",
   );
-  const firstMonthPlanCost = safeAdd(
-    Math.ceil(annualLivingCostIncrease / 12),
-    monthlyObligationIncrease,
-    "runtime balance first-month plan cost",
-  );
+  const firstMonthPlanCost = Math.max(0, monthlyObligationIncrease);
   const firstMonthRequiredCash = moneyCents(
     Math.max(
       0,
@@ -369,7 +376,7 @@ export function estimatePersonalEventImpactV2(
     );
   const monthlyLivingCost = Math.max(
     1,
-    Math.ceil(state.finances.annualLivingCostCents / 12),
+    monthlyLivingCostFromAnnualV2(state.finances.annualLivingCostCents),
   );
   const burnMonthsPpm = safeBigIntToNumber(
     divideRoundHalfAwayFromZero(

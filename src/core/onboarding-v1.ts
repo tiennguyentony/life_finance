@@ -10,7 +10,6 @@ import {
   ENGINE_V2_VERSION,
   GAME_STATE_V2_SCHEMA_VERSION,
 } from "./game-state-v2";
-import { recordExposureSnapshotV2 } from "./exposure-v2";
 import {
   createNativeGameStateV2,
   NativeGameStateV2Error,
@@ -970,7 +969,7 @@ export function constructOnboardedGameStateV1(
     derivedOwners: {
       stateAndObligations: "createNativeGameStateV2",
       financialGoal: "projectFinancialGoal",
-      exposure: "recordExposureSnapshotV2",
+      risk: "analyzeRiskV1",
     },
   };
   const native = createNativeGameStateV2({
@@ -998,7 +997,7 @@ export function constructOnboardedGameStateV1(
       ? {}
       : { marketRegime: normalized.marketRegime }),
   });
-  const state = recordExposureSnapshotV2(native, normalized.startMonth);
+  const state = native;
   return Object.freeze({
     state,
     stateChecksum: sha256Canonical(state),

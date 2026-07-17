@@ -3,11 +3,12 @@ import { calculateNetWorth } from "../../core/game-state";
 import type { GameStateV2 } from "../../core/game-state-v2";
 import { lifeMilestoneState } from "../../core/life-milestones-v2";
 import { calculateAgeYears } from "../../core/outcomes";
+import { analyzeRiskV1, type RiskSnapshotV1 } from "../../core/risk-v1";
 import type { AiEvidenceFact } from "./game-context-types";
 
-export const AI_GAME_CONTEXT_VERSION = "ai-game-context-v1" as const;
+export const AI_GAME_CONTEXT_VERSION = "ai-game-context-v2" as const;
 
-export type AiGameContextV1 = Readonly<{
+export type AiGameContextV2 = Readonly<{
   version: typeof AI_GAME_CONTEXT_VERSION;
   revision: number;
   month: string;
@@ -15,13 +16,13 @@ export type AiGameContextV1 = Readonly<{
   goal: Readonly<{ desiredAnnualSpendingCents: number; safeWithdrawalRatePpm: number; targetAgeYears: number; targetCents: number; progressPpm: number }>;
   finances: Readonly<{ cashCents: number; investableAssetsCents: number; netWorthCents: number; annualGrossIncomeCents: number; annualLivingCostCents: number; requiredMonthlyObligationsCents: number; nonCreditLiabilitiesCents: number; creditUsedCents: number }>;
   strategy: GameStateV2["gameplay"]["recurringStrategy"];
-  exposure: GameStateV2["gameplay"]["exposure"]["current"];
+  risk: RiskSnapshotV1;
   upcomingMilestones: readonly Readonly<{ milestoneId: string; kind: string; targetMonth: string; estimatedCostCents: number }>[];
   recentEventDecisions: readonly Readonly<{ eventId: string; choiceId: string; resolvedMonth: string; playerCostCents: number }>[];
   learning: Readonly<{ audienceLevel: "beginner" | "intermediate"; concepts: readonly Readonly<{ conceptId: string; exposureCount: number; confidence: string }>[] }>;
 }>;
 
-export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
+export function buildAiGameContext(state: GameStateV2): AiGameContextV2 {
   const goal = projectFinancialGoal(state.finances, state.gameplay.financialGoal);
   const terminalOutcome =
     state.outcome && "outcomePolicyVersion" in state.outcome
@@ -63,7 +64,7 @@ export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
       creditUsedCents: state.finances.creditUsedCents,
     }),
     strategy: state.gameplay.recurringStrategy,
-    exposure: state.gameplay.exposure.current,
+    risk: analyzeRiskV1(state),
     upcomingMilestones: Object.freeze(lifeMilestoneState(state).scheduled.slice(0, 5).map((milestone) => Object.freeze({
       milestoneId: milestone.milestoneId,
       kind: milestone.kind,
@@ -87,7 +88,7 @@ export function buildAiGameContext(state: GameStateV2): AiGameContextV1 {
   });
 }
 
-export function contextEvidence(context: AiGameContextV1): readonly AiEvidenceFact[] {
+export function contextEvidence(context: AiGameContextV2): readonly AiEvidenceFact[] {
   const facts: AiEvidenceFact[] = [
     { id: "context.cash", label: "Cash", value: `${context.finances.cashCents} cents` },
     { id: "context.investable", label: "Investable assets", value: `${context.finances.investableAssetsCents} cents` },
@@ -98,11 +99,18 @@ export function contextEvidence(context: AiGameContextV1): readonly AiEvidenceFa
     { id: "context.required_cash", label: "Monthly required cash", value: `${context.finances.requiredMonthlyObligationsCents} cents` },
     { id: "context.liabilities", label: "Term liabilities", value: `${context.finances.nonCreditLiabilitiesCents} cents` },
   ];
-  if (context.exposure) {
-    facts.push(
-      { id: "context.emergency_runway", label: "Emergency runway", value: `${context.exposure.emergencyFundMonthsPpm} ppm-months` },
-      { id: "context.exposure_score", label: "Exposure score", value: `${context.exposure.scorePpm} ppm` },
-    );
-  }
+  const emergencyFund = context.risk.metrics.emergency_fund_months;
+  facts.push(
+    {
+      id: "context.risk.emergency_fund_months",
+      label: "Risk v1 emergency fund months",
+      value: `${emergencyFund.rawValue ?? "unknown"} ${emergencyFund.unit}`,
+    },
+    {
+      id: "context.risk.aggregate_severity",
+      label: "Risk v1 aggregate severity",
+      value: `${context.risk.aggregateSeverityPpm} ratio_ppm`,
+    },
+  );
   return Object.freeze(facts.map((fact) => Object.freeze(fact)));
 }

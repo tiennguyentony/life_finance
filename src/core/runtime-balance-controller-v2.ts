@@ -22,6 +22,10 @@ import { PersonalEventEffectV2Error } from "./personal-event-effects-v2";
 import { ObligationFundingV2Error } from "./obligation-funding-v2";
 import { analyzeRiskV1 } from "./risk-v1";
 import {
+  projectScenarioDirectorStateContextV2,
+  scenarioDirectorTagsForCandidateV2,
+} from "./scenario-director-context-v2";
+import {
   RUNTIME_BALANCE_CANDIDATE_LIMIT_V2,
   RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
   RUNTIME_BALANCE_IMPACT_ESTIMATOR_V1_VERSION,
@@ -243,7 +247,11 @@ function directorOrderedCandidatesV2(
   candidates: readonly RuntimeBalanceCandidateV2[],
   input: ScenarioDirectorInputV2,
   decision: ScenarioDirectorDecisionV2,
+  eventCatalog: readonly PersonalEventTemplateV2[],
 ): readonly RuntimeBalanceCandidateV2[] {
+  const projectedContext = projectScenarioDirectorStateContextV2(state, {
+    personalEventCatalog: eventCatalog,
+  });
   if (
     input.month !== state.currentMonth ||
     input.macro.regime !== state.marketRegime ||
@@ -258,23 +266,16 @@ function directorOrderedCandidatesV2(
   if (
     sha256Canonical(input.riskSnapshot) !==
       sha256Canonical(analyzeRiskV1(state)) ||
-    input.macro.tags.length !== 0 ||
-    input.recentDecisions.length !== 0 ||
-    input.storyArc !== undefined ||
+    sha256Canonical(input.macro) !==
+      sha256Canonical(projectedContext.macro) ||
+    sha256Canonical(input.recentDecisions) !==
+      sha256Canonical(projectedContext.recentDecisions) ||
+    sha256Canonical(input.storyArc ?? null) !==
+      sha256Canonical(projectedContext.storyArc ?? null) ||
     sha256Canonical(input.recentEvents) !==
-      sha256Canonical(
-        balance.recentEvents.map((event) => ({
-          templateId: event.templateId,
-          templateVersion: event.templateVersion,
-          category: event.category,
-          tier: event.tier,
-          targetedWeakness: event.targetedWeakness,
-          lessonTags: event.lessonTags,
-          month: event.approvedMonth,
-        })),
-      ) ||
+      sha256Canonical(projectedContext.recentEvents) ||
     sha256Canonical(input.lessonExposureCounts) !==
-      sha256Canonical(balance.lessonExposureCounts)
+      sha256Canonical(projectedContext.lessonExposureCounts)
   ) {
     throw new RangeError(
       "Scenario Director input must use verified production Risk and Runtime Balance evidence",
@@ -311,7 +312,13 @@ function directorOrderedCandidatesV2(
       candidate.targetedWeakness !== expected.targetedWeakness ||
       candidate.lessonTags.primary !== expected.template.lessonTags.primary ||
       sha256Canonical(candidate.lessonTags.secondary) !==
-        sha256Canonical(expected.template.lessonTags.secondary)
+        sha256Canonical(expected.template.lessonTags.secondary) ||
+      sha256Canonical(candidate.directorTags) !== sha256Canonical(
+        scenarioDirectorTagsForCandidateV2(
+          expected.template,
+          expected.targetedWeakness,
+        ),
+      )
     ) {
       throw new RangeError(
         "Scenario Director input must preserve immutable Event System metadata",
@@ -657,6 +664,7 @@ export function chooseBalancedEventV2(
           rankedCandidates,
           options.scenarioDirectorInput,
           options.scenarioDirectorDecision,
+          eventCatalog,
         );
   const scored = scoreRuntimeBalanceCandidatesV2(
     balance,

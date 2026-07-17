@@ -15,6 +15,7 @@ import {
   type DebtBreakdown,
   type GameStateV2,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { appendTransaction, type JournalPosting } from "./ledger";
 
 export type DebtServiceLine = Readonly<{
@@ -198,6 +199,7 @@ function credit(accountId: string, amountCents: MoneyCents): JournalPosting {
 export function settleMonthlyDebtService(
   state: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): Readonly<{ state: GameStateV2; plan: MonthlyDebtServicePlan }> {
   if (!COMMAND_ID.test(commandId)) {
     throw new DebtServiceV2Error(
@@ -286,6 +288,6 @@ export function settleMonthlyDebtService(
       ...state.gameplay,
       debts: { ...state.gameplay.debts, termDebts: nextDebts },
     },
-  });
+  }, validationOptions);
   return Object.freeze({ state: nextState, plan });
 }

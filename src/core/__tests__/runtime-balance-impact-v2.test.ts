@@ -162,6 +162,7 @@ describe("Runtime Balance impact estimator v2", () => {
     expect(acceptedUpgrade).toMatchObject({
       grossCostCents: 2_400_000,
       projectedPlanCostCents: 2_400_000,
+      firstMonthRequiredCashCents: 200_000,
     });
     expect(acceptedUpgrade?.bankruptcyRisk).not.toBe("immediate");
     expect(low.directCostCents).toBe(0);

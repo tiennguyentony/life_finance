@@ -1,7 +1,6 @@
 import { getEducationConcept } from "../data/education-content";
 import { sha256Canonical } from "./canonical";
 import type { GameStateV2 } from "./game-state-v2";
-import { computeExposureSnapshotV2 } from "./exposure-v2";
 import { projectFinancialGoal } from "./financial-goals-v2";
 import type { RiskMetricV1, RiskSnapshotV1 } from "./risk-v1";
 import {
@@ -31,7 +30,6 @@ type RiskRuleV2 = Readonly<{
 type StateRuleV2 = Readonly<{
   owner: "state";
   conceptId:
-    | "dti"
     | "deductible"
     | "employer_match"
     | "compounding"
@@ -42,7 +40,7 @@ type RelevanceRuleV2 = RiskRuleV2 | StateRuleV2;
 
 const AUTOMATIC_RULES_V2: readonly RelevanceRuleV2[] = Object.freeze([
   { owner: "risk", conceptId: "emergency_fund", metricId: "emergency_fund_months", weaknessTag: "risk.low_emergency_fund" },
-  { owner: "state", conceptId: "dti" },
+  { owner: "risk", conceptId: "dti", metricId: "debt_service_ratio" },
   { owner: "state", conceptId: "deductible" },
   { owner: "state", conceptId: "employer_match" },
   { owner: "risk", conceptId: "diversification", metricId: "portfolio_concentration", weaknessTag: "risk.portfolio_concentration" },
@@ -53,6 +51,7 @@ const AUTOMATIC_RULES_V2: readonly RelevanceRuleV2[] = Object.freeze([
 ]);
 
 const REQUESTED_RISK_METRICS: Readonly<Record<string, RiskRuleV2["metricId"]>> = Object.freeze({
+  dti: "debt_service_ratio",
   diversification: "portfolio_concentration",
   emergency_fund: "emergency_fund_months",
   job_investment_correlation: "job_investment_sector_correlation",
@@ -156,16 +155,7 @@ function stateFactPacket(
   let labelId: string;
   let field: string;
   let value: TeachingFactValueV2;
-  if (conceptId === "dti") {
-    const exposure = computeExposureSnapshotV2(state);
-    const dti = exposure.debtToIncomePpm;
-    factId = "state.debt_to_income_ppm";
-    labelId = "debt_to_income";
-    field = "debtToIncomePpm";
-    value = dti === null
-      ? { kind: "enum", value: "unknown" }
-      : { kind: "rate_ppm", value: dti };
-  } else if (conceptId === "deductible") {
+  if (conceptId === "deductible") {
     const snapshot = state.gameplay.catalogSnapshot;
     const plan = snapshot?.selected.healthPlan ?? null;
     const family = (snapshot?.selected.household.dependentCount ?? 0) > 0;
@@ -231,19 +221,13 @@ function stateFactPacket(
       labelId,
       value,
       source: {
-        kind: conceptId === "dti"
-          ? "exposure_snapshot"
-          : conceptId === "financial_independence"
+        kind: conceptId === "financial_independence"
             ? "goal_result"
             : "game_state",
-        sourceId: conceptId === "dti"
-          ? `exposure:${state.currentMonth}:${sha256Canonical(computeExposureSnapshotV2(state))}`
-          : conceptId === "financial_independence"
+        sourceId: conceptId === "financial_independence"
             ? `goal:${state.revision}:${sha256Canonical(projectFinancialGoal(state.finances, state.gameplay.financialGoal))}`
             : sourceId,
-        supportingSourceIds: conceptId === "dti"
-          ? [`exposure:${state.currentMonth}:${sha256Canonical(computeExposureSnapshotV2(state))}`]
-          : conceptId === "financial_independence"
+        supportingSourceIds: conceptId === "financial_independence"
             ? [`goal:${state.revision}:${sha256Canonical(projectFinancialGoal(state.finances, state.gameplay.financialGoal))}`]
             : [sourceId],
         field,
@@ -266,9 +250,6 @@ function automaticApplicable(
     ) return false;
     return rule.weaknessTag === undefined || risk.weaknessTags.includes(rule.weaknessTag);
   }
-  if (rule.conceptId === "dti") {
-    return computeExposureSnapshotV2(state).debtToIncomePpm !== null;
-  }
   if (rule.conceptId === "deductible") {
     return state.gameplay.catalogSnapshot?.selected.healthPlan !== null &&
       state.gameplay.catalogSnapshot?.selected.healthPlan !== undefined;
@@ -285,7 +266,6 @@ function automaticApplicable(
 
 function requestedRule(conceptId: string): RelevanceRuleV2 | null {
   if (
-    conceptId === "dti" ||
     conceptId === "deductible" ||
     conceptId === "employer_match" ||
     conceptId === "compounding" ||

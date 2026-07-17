@@ -255,11 +255,17 @@ export type OnboardingInitializationEvidenceV1 = Readonly<{
   declaredExpenses: NormalizedOnboardingV1["declaredExpenses"];
   assumptions: readonly OnboardingAssumptionV1[];
   provenance: readonly OnboardingFieldProvenanceV1[];
-  derivedOwners: Readonly<{
-    stateAndObligations: "createNativeGameStateV2";
-    financialGoal: "projectFinancialGoal";
-    exposure: "recordExposureSnapshotV2";
-  }>;
+  derivedOwners:
+    | Readonly<{
+        stateAndObligations: "createNativeGameStateV2";
+        financialGoal: "projectFinancialGoal";
+        risk: "analyzeRiskV1";
+      }>
+    | Readonly<{
+        stateAndObligations: "createNativeGameStateV2";
+        financialGoal: "projectFinancialGoal";
+        exposure: "recordExposureSnapshotV2";
+      }>;
 }>;
 
 export type OnboardedGameStateResultV1 = Readonly<{

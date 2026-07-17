@@ -1,3 +1,5 @@
+import { moneyCents, ratePpm } from "../../core/domain/money";
+import { financialGoalTargetCents } from "../../core/financial-goals-v2";
 import { calculateAgeYears, formatMoney } from "./play-model";
 import type { OnboardingDraft } from "./play-types";
 
@@ -8,9 +10,17 @@ type Props = Readonly<{
 
 export function OnboardingGoalFields({ draft, onChange }: Props) {
   const startingAge = calculateAgeYears(draft.selection.birthMonth, "2026-07");
-  const targetDollars = draft.safeWithdrawalRate > 0
-    ? Math.ceil(draft.desiredAnnualFiSpending / (draft.safeWithdrawalRate / 100))
-    : 0;
+  const targetCents = financialGoalTargetCents({
+    version: "financial-goal-v1",
+    desiredAnnualSpendingCents: moneyCents(
+      Math.round(draft.desiredAnnualFiSpending * 100),
+    ),
+    safeWithdrawalRatePpm: ratePpm(
+      Math.round(draft.safeWithdrawalRate * 10_000),
+    ),
+    targetAgeYears: draft.targetAgeYears,
+    source: "player_selected",
+  });
   return (
     <fieldset className="benefit-choices">
       <legend>Define your financial independence goal</legend>
@@ -33,7 +43,7 @@ export function OnboardingGoalFields({ draft, onChange }: Props) {
         </select>
       </label>
       <p className="play-note">
-        Your finish line is {formatMoney(targetDollars * 100)} by age {draft.targetAgeYears}. The engine derives it from desired spending and withdrawal rate; home equity remains excluded.
+        Your finish line is {formatMoney(targetCents)} by age {draft.targetAgeYears}. The engine derives it from desired spending and withdrawal rate; home equity remains excluded.
       </p>
     </fieldset>
   );

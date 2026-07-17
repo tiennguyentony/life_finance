@@ -123,7 +123,10 @@ function validateOnboardingInitializationV1(
     evidence.initialRandomSeed.length <= 256 &&
     evidence.derivedOwners?.stateAndObligations === "createNativeGameStateV2" &&
     evidence.derivedOwners?.financialGoal === "projectFinancialGoal" &&
-    evidence.derivedOwners?.exposure === "recordExposureSnapshotV2";
+    (("risk" in evidence.derivedOwners &&
+      evidence.derivedOwners.risk === "analyzeRiskV1") ||
+      ("exposure" in evidence.derivedOwners &&
+        evidence.derivedOwners.exposure === "recordExposureSnapshotV2"));
   if (!baseValid) {
     violations.push(
       violation(
@@ -246,18 +249,20 @@ function validateOnboardingInitializationV1(
             expenses.totalAnnualCents,
           ]
         : [];
-    if (
+    const evidenceDoesNotReconcile =
       values.length !== 3 ||
       !values.every(isNonNegativeSafeInteger) ||
       BigInt(values[0] ?? -1) + BigInt(values[1] ?? -1) !==
-        BigInt(values[2] ?? -1) ||
-      values[2] !== state.finances.annualLivingCostCents
-    ) {
+        BigInt(values[2] ?? -1);
+    const openingStateDoesNotReconcile =
+      state.revision === 0 &&
+      values[2] !== state.finances.annualLivingCostCents;
+    if (evidenceDoesNotReconcile || openingStateDoesNotReconcile) {
       violations.push(
         violation(
           "gameplay.initialization.declaredExpenses",
           "onboarding_expense_mismatch",
-          "confirmed expense components must reconcile to authoritative annual living cost",
+          "confirmed expense components must reconcile internally and to the authoritative opening annual living cost",
         ),
       );
     }

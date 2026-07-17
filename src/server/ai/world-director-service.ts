@@ -3,6 +3,10 @@ import type { GameStateV2 } from "../../core/game-state-v2";
 import { generateDeclarativePersonalEventCandidatesV2 } from "../../core/personal-event-v2";
 import { analyzeRiskV1 } from "../../core/risk-v1";
 import {
+  projectScenarioDirectorStateContextV2,
+  scenarioDirectorTagsForCandidateV2,
+} from "../../core/scenario-director-context-v2";
+import {
   rankScenarioCandidatesWithOptionalAiV2,
   type ScenarioDirectorAiRequestV2,
 } from "../../core/scenario-director-ai-adapter-v2";
@@ -25,7 +29,7 @@ import {
 } from "./world-director-contracts";
 
 export class AiWorldDirectorError extends Error {
-  readonly code: "STALE_REVISION" | "WORLD_EVENT_NOT_READY";
+  readonly code: "STALE_REVISION";
 
   constructor(code: AiWorldDirectorError["code"], message: string) {
     super(message);
@@ -42,17 +46,12 @@ function directorInputForState(state: GameStateV2): ScenarioDirectorInputV2 {
     state,
     PERSONAL_EVENT_TEMPLATES_V2,
   );
-  const balance = state.gameplay.runtimeBalance?.version === 2
-    ? state.gameplay.runtimeBalance
-    : undefined;
+  const context = projectScenarioDirectorStateContextV2(state);
   return {
     version: SCENARIO_DIRECTOR_V2_VERSION,
     month: state.currentMonth,
     riskSnapshot: analyzeRiskV1(state),
-    macro: {
-      regime: state.marketRegime,
-      tags: [`macro.${state.marketRegime}`],
-    },
+    macro: context.macro,
     candidates: generated.candidates.map(({ template, targetedWeakness }) => ({
       templateId: template.id,
       templateVersion: template.version,
@@ -63,25 +62,16 @@ function directorInputForState(state: GameStateV2): ScenarioDirectorInputV2 {
         primary: template.lessonTags.primary,
         secondary: [...template.lessonTags.secondary],
       },
-      directorTags: [
-        `director.category.${template.category}`,
-        `director.tier.${template.severityTier}`,
-      ],
+      directorTags: scenarioDirectorTagsForCandidateV2(
+        template,
+        targetedWeakness,
+      ),
     })),
-    recentDecisions: [],
-    recentEvents: (balance?.recentEvents ?? []).map((event) => ({
-      templateId: event.templateId,
-      templateVersion: event.templateVersion,
-      category: event.category,
-      tier: event.tier,
-      targetedWeakness: event.targetedWeakness,
-      lessonTags: [...event.lessonTags],
-      month: event.approvedMonth,
-    })),
-    lessonExposureCounts: (balance?.lessonExposureCounts ?? []).map(
-      ({ lessonTag, count }) => ({ lessonTag, count }),
-    ),
-    difficulty: balance?.difficulty ?? "normal",
+    recentDecisions: context.recentDecisions,
+    recentEvents: context.recentEvents,
+    lessonExposureCounts: context.lessonExposureCounts,
+    difficulty: context.difficulty,
+    ...(context.storyArc === undefined ? {} : { storyArc: context.storyArc }),
   };
 }
 
@@ -116,13 +106,6 @@ export class AiWorldDirectorService {
         "run changed before world direction started",
       );
     }
-    if (!state.gameplay.exposure.current) {
-      throw new AiWorldDirectorError(
-        "WORLD_EVENT_NOT_READY",
-        "process at least one month before requesting a scenario ranking",
-      );
-    }
-
     const input = directorInputForState(state);
     let providerSource: AiWorldEventApiResponse["source"] = "openai";
     const decision = await rankScenarioCandidatesWithOptionalAiV2(

@@ -4,7 +4,6 @@ import { sha256Canonical } from "../../../core/canonical";
 import { buildCheckpointEvidenceV2 } from "../../../core/checkpoint-v2";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
-import { computeExposureSnapshotV2 } from "../../../core/exposure-v2";
 import { FINANCIAL_KERNEL_V2_VERSION } from "../../../core/financial-kernel-v2";
 import { projectFinancialGoal } from "../../../core/financial-goals-v2";
 import { MACRO_MARKET_MODEL_V2_VERSION } from "../../../core/market";
@@ -148,7 +147,6 @@ describe("Financial Engine to Teaching checkpoint integration", () => {
         closed.state.finances,
         closed.state.gameplay.financialGoal,
       ),
-      endExposure: computeExposureSnapshotV2(closed.state),
     });
 
     expect(evidence.evidenceVersion).toBe("checkpoint-v2.1");
@@ -170,5 +168,15 @@ describe("Financial Engine to Teaching checkpoint integration", () => {
         value: closed.record.recurringAllocations!.preTax.employer401kMatchCents,
       },
     }));
+    expect(teaching.facts.facts).toContainEqual(expect.objectContaining({
+      factId: "checkpoint.risk.debt_service_ratio.value",
+      source: expect.objectContaining({
+        kind: "risk_snapshot",
+        field: "metrics.debt_service_ratio.rawValue",
+      }),
+    }));
+    expect(
+      teaching.facts.facts.some(({ source }) => source.kind === "exposure_snapshot"),
+    ).toBe(false);
   });
 });
