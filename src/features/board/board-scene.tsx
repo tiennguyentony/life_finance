@@ -476,7 +476,9 @@ function TrackTiles({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   );
 }
 
-/** Loop mode's center piece: a giant die slowly tumbling in the water. */
+/** Loop mode's center piece: a die slowly tumbling above the board. Kept
+ * smaller and pushed back off the Home axis so it hints at the future roll
+ * mechanic without out-competing the player as the board's focal point. */
 function CenterDie({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   const dieRef = useRef<Group>(null);
 
@@ -484,12 +486,12 @@ function CenterDie({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
     const die = dieRef.current;
     if (!die || reducedMotion) return;
     die.rotation.y += delta * 0.25;
-    die.position.y = -0.15 + Math.sin(clock.getElapsedTime() * 0.9) * 0.08;
+    die.position.y = 0.35 + Math.sin(clock.getElapsedTime() * 0.9) * 0.08;
   });
 
   return (
-    <group position={[0.4, -0.15, -0.4]} ref={dieRef} rotation={[0.45, 0.7, 0.15]}>
-      <KayModel scale={2.1} url={DIE_URL} />
+    <group position={[0, 0.35, -1.5]} ref={dieRef} rotation={[0.45, 0.7, 0.15]}>
+      <KayModel scale={1.45} url={DIE_URL} />
     </group>
   );
 }
