@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
 import {
+  calculateMonthlyCashFlowDeficitV2,
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
   type FinancialMonthInputV2,
@@ -14,7 +15,12 @@ import {
 } from "../domain/money";
 import { simulationMonth, type SimulationMonth } from "../domain/month";
 import { finalizeGameStateV2 } from "../game-state-v2";
-import { marketSimulationState, simulateMarketMonth } from "../market";
+import {
+  marketSimulationState,
+  marketSimulationStateV2,
+  simulateMarketMonth,
+  simulateMarketMonthV2,
+} from "../market";
 import {
   createNativeGameStateV2,
   type NativeGameStateV2Input,
@@ -25,6 +31,25 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
+
+describe("financial warning selector", () => {
+  it("returns only the exact funded monthly cash-flow deficit", () => {
+    expect(
+      calculateMonthlyCashFlowDeficitV2({
+        afterTaxCashIncomeCents: moneyCents(730_000),
+        resolvedIncomeCents: moneyCents(25_000),
+        requiredCashCents: moneyCents(800_000),
+      }),
+    ).toBe(45_000);
+    expect(
+      calculateMonthlyCashFlowDeficitV2({
+        afterTaxCashIncomeCents: moneyCents(800_000),
+        resolvedIncomeCents: moneyCents(0),
+        requiredCashCents: moneyCents(800_000),
+      }),
+    ).toBeNull();
+  });
+});
 
 type ConfiguredStateOptions = Readonly<{
   startMonth?: SimulationMonth;
@@ -1888,6 +1913,30 @@ describe("simulateFinancialMonthV2", () => {
           nextState: {
             ...input.marketStep.nextState,
             monthsInRegime: input.marketStep.nextState.monthsInRegime + 1,
+          },
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_MARKET_STEP" }));
+  });
+
+  it("rejects regime-v2 fixed evidence outside the accepted calibration", () => {
+    const input = successfulInput();
+    const sampled = simulateMarketMonthV2(
+      marketSimulationStateV2(
+        input.state.marketRegime,
+        input.state.random,
+        "normal",
+        input.state.gameplay.market.monthsInRegime,
+      ),
+    );
+    expect(() =>
+      simulateFinancialMonthV2({
+        ...input,
+        marketStep: {
+          ...sampled,
+          month: {
+            ...sampled.month,
+            sectorReturnPpm: ratePpm(900_000),
           },
         },
       }),

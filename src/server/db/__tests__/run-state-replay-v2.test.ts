@@ -707,6 +707,153 @@ describe("verified v2 run-state replay", () => {
     },
   );
 
+  it("strictly decodes outcome policy 1.0.0 for the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: "1.0.0",
+          resolvedCashFlows: [],
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        outcomePolicyVersion: "1.0.0",
+      },
+    });
+  });
+
+  it("strictly decodes causal event scheduling and rejects it without the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "causal-hazard-v1",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: "causal-hazard-v1",
+      },
+    });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            eventSchedulerVersion: "causal-hazard-v1",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("strictly decodes declarative event scheduling and rejects it without the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "declarative-events-v2",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: "declarative-events-v2",
+      },
+    });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            eventSchedulerVersion: "declarative-events-v2",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("strictly decodes regime-v2 with explicit difficulty and preserves absent historical market evidence", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: "regime-v2",
+          macroDifficulty: "hard",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        marketModelVersion: "regime-v2",
+        macroDifficulty: "hard",
+      },
+    });
+    for (const invalid of [
+      { financialKernelVersion: "2.0.0", marketModelVersion: "regime-v2" },
+      { financialKernelVersion: "2.0.0", macroDifficulty: "normal" },
+      {
+        financialKernelVersion: "legacy-4.1.0",
+        marketModelVersion: "regime-v2",
+        macroDifficulty: "normal",
+      },
+    ]) {
+      expect(
+        captureError(() =>
+          rebuildGameCommandV2(
+            storedRow("process_month_v2", {
+              ...processMonthPayload,
+              ...invalid,
+            }),
+          ),
+        ),
+      ).toMatchObject({ code: "CORRUPT_STATE" });
+    }
+    const historical = rebuildGameCommandV2(
+      storedRow("process_month_v2", processMonthPayload),
+    );
+    if (historical.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(historical.payload.marketModelVersion).toBeUndefined();
+    expect(historical.payload.macroDifficulty).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "unknown outcome policy",
+      { financialKernelVersion: "2.0.0", outcomePolicyVersion: "invented" },
+    ],
+    [
+      "unversioned financial kernel",
+      { outcomePolicyVersion: "1.0.0" },
+    ],
+    [
+      "legacy financial kernel",
+      {
+        financialKernelVersion: "legacy-4.1.0",
+        outcomePolicyVersion: "1.0.0",
+      },
+    ],
+  ])("rejects persisted monthly evidence with %s", (_label, versionEvidence) => {
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            ...versionEvidence,
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
   it("preserves absent version and resolved flows for historical monthly rows", () => {
     const command = rebuildGameCommandV2(
       storedRow("process_month_v2", processMonthPayload),
@@ -720,6 +867,7 @@ describe("verified v2 run-state replay", () => {
       throw new Error("expected a monthly command");
     }
     expect(command.payload.financialKernelVersion).toBeUndefined();
+    expect(command.payload.outcomePolicyVersion).toBeUndefined();
     expect(command.payload.resolvedCashFlows).toBeUndefined();
   });
 
@@ -755,6 +903,73 @@ describe("verified v2 run-state replay", () => {
         resolvedCashFlows: [],
       },
     });
+  });
+
+  it("freezes a historical 2.0.0 command without outcome-policy evidence", () => {
+    const start = legacyMonthlyReplayState("successful");
+    const stored = storedRow("process_month_v2", {
+      ...legacyMonthlyReplayPayload("successful"),
+      financialKernelVersion: "2.0.0",
+      resolvedCashFlows: [],
+    });
+    const command = rebuildGameCommandV2(stored);
+    const reduction = reduceGameCommandV2(start, command);
+
+    if (command.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(command.payload.outcomePolicyVersion).toBeUndefined();
+    expect(sha256Canonical(reduction.state)).toBe(
+      "a984e2324d8d867dea624ae1eaa81b82d5d91a073a665f50a02f207e1d445e97",
+    );
+    expect(sha256Canonical(reduction.monthlyRecord)).toBe(
+      "5ca95d5118071ad9d1eaba5862b235f29b6d5ac72f76d3cdc2e02bb571284944",
+    );
+  });
+
+  it("replays policy 1.0.0 through the production reducer deterministically", () => {
+    const start = legacyMonthlyReplayState("successful");
+    const stored: AcceptedCommandReplayRowV2 = {
+      runId: start.runId,
+      commandId: "cmd.outcome-policy-replay.current",
+      commandSchemaVersion: 2,
+      commandType: "process_month_v2",
+      expectedRevision: start.revision,
+      resultingRevision: start.revision + 1,
+      effectiveMonth: start.currentMonth,
+      payload: {
+        ...legacyMonthlyReplayPayload("successful"),
+        financialKernelVersion: "2.0.0",
+        outcomePolicyVersion: "1.0.0",
+        resolvedCashFlows: [],
+      },
+      resultingStateChecksum: "0".repeat(64),
+    };
+    const command = rebuildGameCommandV2(stored);
+    const first = reduceGameCommandV2(start, command);
+    const second = reduceGameCommandV2(start, rebuildGameCommandV2(stored));
+    const stateChecksum = sha256Canonical(first.state);
+    const accepted = { ...stored, resultingStateChecksum: stateChecksum };
+
+    expect(first.monthlyRecord).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      outcomePolicyVersion: "1.0.0",
+    });
+    expect(second).toEqual(first);
+    expect(
+      replayAcceptedCommandsV2(
+        {
+          runId: start.runId,
+          revision: start.revision,
+          stateSchemaVersion: start.schemaVersion,
+          engineVersion: start.engineVersion,
+          state: start,
+          stateChecksum: sha256Canonical(start),
+        },
+        [accepted],
+        accepted.resultingRevision,
+      ),
+    ).toEqual({ state: first.state, stateChecksum });
   });
 
   it.each([
@@ -988,6 +1203,76 @@ describe("verified v2 run-state replay", () => {
     },
   );
 
+  it("round-trips a versioned action policy while preserving historical absence", () => {
+    const historical = rebuildGameCommandV2(
+      storedRow("take_detailed_action", {
+        action: { type: "sell_home" },
+      }),
+    );
+    const versioned = rebuildGameCommandV2(
+      storedRow("take_detailed_action", {
+        action: { type: "sell_home" },
+        actionPolicyVersion: "1.0.0",
+      }),
+    );
+
+    expect(historical.payload).toEqual({ action: { type: "sell_home" } });
+    expect(versioned.payload).toEqual({
+      action: { type: "sell_home" },
+      actionPolicyVersion: "1.0.0",
+    });
+    expect(
+      rebuildGameCommandV2(
+        storedRow("take_detailed_action", {
+          action: {
+            type: "liquidate_taxable",
+            bucket: "taxableBroadIndexCents",
+            amountCents: 100_000,
+            liquidationCostRatePpm: 123_456,
+          },
+        }),
+      ).payload,
+    ).not.toHaveProperty("actionPolicyVersion");
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("take_detailed_action", {
+            action: { type: "sell_home" },
+            actionPolicyVersion: "invented",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("take_detailed_action", {
+            action: {
+              type: "liquidate_taxable",
+              bucket: "taxableBroadIndexCents",
+              amountCents: 100_000,
+              liquidationCostRatePpm: 123_456,
+            },
+            actionPolicyVersion: "1.0.0",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+    expect(
+      rebuildGameCommandV2(
+        storedRow("take_detailed_action", {
+          action: {
+            type: "liquidate_taxable",
+            bucket: "taxableBroadIndexCents",
+            amountCents: 100_000,
+            liquidationCostRatePpm: 10_000,
+          },
+          actionPolicyVersion: "1.0.0",
+        }),
+      ).payload,
+    ).toMatchObject({ actionPolicyVersion: "1.0.0" });
+  });
+
   it("rejects an invalid stored learning-interaction kind", () => {
     expect(
       captureError(() =>
@@ -1024,6 +1309,26 @@ describe("verified v2 run-state replay", () => {
         ),
       ),
     ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("strictly restores persisted protection policy fields", () => {
+    const strategy = validPayloads[1][1].strategy;
+    expect(
+      rebuildGameCommandV2(
+        storedRow("set_recurring_strategy", {
+          strategy: {
+            ...strategy,
+            emergencyFundTargetMonthsPpm: 6_000_000,
+            insuranceCoverageIds: ["insurance.renters"],
+          },
+        }),
+      ).payload,
+    ).toMatchObject({
+      strategy: {
+        emergencyFundTargetMonthsPpm: 6_000_000,
+        insuranceCoverageIds: ["insurance.renters"],
+      },
+    });
   });
 
   it("uses the process-month command ID limit from the core contract", () => {

@@ -4,6 +4,7 @@ import {
   validateGameStateV2,
   type GameStateV2,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 
 export type GameStateTransitionV2Violation = Readonly<{
   path: string;
@@ -39,12 +40,13 @@ export function validateGameStateTransitionV2(
   previous: GameStateV2,
   next: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): readonly GameStateTransitionV2Violation[] {
   const violations: GameStateTransitionV2Violation[] = [];
 
   try {
     violations.push(
-      ...validateGameStateV2(next).map((stateViolation) => ({
+      ...validateGameStateV2(next, validationOptions).map((stateViolation) => ({
         ...stateViolation,
         path: `next.${stateViolation.path}`,
       })),
@@ -206,8 +208,14 @@ export function assertValidGameStateTransitionV2(
   previous: GameStateV2,
   next: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): void {
-  const violations = validateGameStateTransitionV2(previous, next, commandId);
+  const violations = validateGameStateTransitionV2(
+    previous,
+    next,
+    commandId,
+    validationOptions,
+  );
   if (violations.length > 0) {
     throw new InvalidGameStateTransitionV2Error(violations);
   }

@@ -2,6 +2,7 @@ import { safeBigIntToNumber } from "./domain/integer";
 import { moneyCents, type MoneyCents, type RatePpm } from "./domain/money";
 import {
   compareMonths,
+  monthsBetween,
   simulationMonth,
   type SimulationMonth,
 } from "./domain/month";
@@ -153,12 +154,49 @@ export type WellbeingSnapshot = Readonly<{
 
 export type FinalGrade = "S" | "A" | "B" | "C" | "D" | "E" | "F";
 
-export type GameOutcome = Readonly<{
+export type LegacyGameOutcome = Readonly<{
   kind: "financial_independence" | "retirement_age" | "bankruptcy";
   grade: FinalGrade;
   reachedMonth: SimulationMonth;
   reasonCode: string;
 }>;
+
+export type OutcomeReasonCodeV1 =
+  | "actual_required_obligation_shortfall"
+  | "automatic_liquidity_exhausted"
+  | "financial_independence_target_reached"
+  | "configured_retirement_age_reached"
+  | "financial_independence_target_not_reached";
+
+export type DeterministicGameOutcomeV1 = Readonly<{
+  outcomePolicyVersion: "1.0.0";
+  kind: LegacyGameOutcome["kind"];
+  grade: FinalGrade;
+  reachedMonth: SimulationMonth;
+  reasonCode: OutcomeReasonCodeV1;
+  reasonCodes: readonly OutcomeReasonCodeV1[];
+  financialIndependence: Readonly<{
+    goalSource: "player_selected" | "current_lifestyle_default";
+    investableAssetsCents: MoneyCents;
+    targetCents: MoneyCents;
+    progressPpm: RatePpm;
+  }>;
+  displayedNetWorthCents: MoneyCents;
+  automaticLiquidSolvency: Readonly<{
+    requiredCashCents: MoneyCents;
+    automaticLiquidityCents: MoneyCents;
+    residualShortfallCents: MoneyCents;
+    isSolvent: boolean;
+  }>;
+  retirementReadiness: Readonly<{
+    retirementAgeYears: number;
+    currentAgeYears: number;
+    reachedRetirementAge: boolean;
+    gradeIfRetiredNow: Exclude<FinalGrade, "S" | "F">;
+  }>;
+}>;
+
+export type GameOutcome = LegacyGameOutcome | DeterministicGameOutcomeV1;
 
 export type GameState = Readonly<{
   schemaVersion: typeof GAME_STATE_SCHEMA_VERSION;
@@ -203,6 +241,89 @@ export class InvalidGameStateError extends Error {
     this.name = "InvalidGameStateError";
     this.violations = violations;
   }
+}
+
+function isValidDeterministicOutcomeV1(
+  outcome: DeterministicGameOutcomeV1,
+): boolean {
+  const fi = outcome.financialIndependence;
+  const solvency = outcome.automaticLiquidSolvency;
+  const retirement = outcome.retirementReadiness;
+  const expectedReasonCodes =
+    outcome.kind === "bankruptcy"
+      ? [
+          "actual_required_obligation_shortfall",
+          "automatic_liquidity_exhausted",
+        ]
+      : outcome.kind === "financial_independence"
+        ? ["financial_independence_target_reached"]
+        : [
+            "configured_retirement_age_reached",
+            "financial_independence_target_not_reached",
+          ];
+  const validReasons =
+    outcome.reasonCode === expectedReasonCodes[0] &&
+    outcome.reasonCodes.length === expectedReasonCodes.length &&
+    outcome.reasonCodes.every(
+      (reasonCode, index) => reasonCode === expectedReasonCodes[index],
+    );
+  const validFinancialIndependence =
+    (fi.goalSource === "player_selected" ||
+      fi.goalSource === "current_lifestyle_default") &&
+    Number.isSafeInteger(fi.investableAssetsCents) &&
+    fi.investableAssetsCents >= 0 &&
+    Number.isSafeInteger(fi.targetCents) &&
+    fi.targetCents > 0 &&
+    Number.isSafeInteger(fi.progressPpm) &&
+    fi.progressPpm >= 0 &&
+    fi.progressPpm <= 1_000_000;
+  const validSolvency =
+    [
+      solvency.requiredCashCents,
+      solvency.automaticLiquidityCents,
+      solvency.residualShortfallCents,
+    ].every((value) => Number.isSafeInteger(value) && value >= 0) &&
+    solvency.isSolvent === (solvency.residualShortfallCents === 0);
+  const validBankruptcyLiquidityArithmetic =
+    outcome.kind !== "bankruptcy" ||
+    (solvency.residualShortfallCents > 0 &&
+      solvency.residualShortfallCents <= solvency.requiredCashCents &&
+      solvency.requiredCashCents - solvency.residualShortfallCents ===
+        solvency.automaticLiquidityCents);
+  const validRetirement =
+    Number.isSafeInteger(retirement.retirementAgeYears) &&
+    retirement.retirementAgeYears >= 18 &&
+    retirement.retirementAgeYears <= 120 &&
+    Number.isSafeInteger(retirement.currentAgeYears) &&
+    retirement.currentAgeYears >= 0 &&
+    retirement.reachedRetirementAge ===
+      (retirement.currentAgeYears >= retirement.retirementAgeYears) &&
+    ["A", "B", "C", "D", "E"].includes(
+      retirement.gradeIfRetiredNow,
+    );
+  const validTerminalKind =
+    (outcome.kind === "bankruptcy" &&
+      outcome.grade === "F" &&
+      !solvency.isSolvent) ||
+    (outcome.kind === "financial_independence" &&
+      outcome.grade === "S" &&
+      solvency.isSolvent &&
+      fi.progressPpm === 1_000_000) ||
+    (outcome.kind === "retirement_age" &&
+      outcome.grade === retirement.gradeIfRetiredNow &&
+      solvency.isSolvent &&
+      retirement.reachedRetirementAge &&
+      fi.progressPpm < 1_000_000);
+  return (
+    outcome.outcomePolicyVersion === "1.0.0" &&
+    validReasons &&
+    validFinancialIndependence &&
+    Number.isSafeInteger(outcome.displayedNetWorthCents) &&
+    validSolvency &&
+    validBankruptcyLiquidityArithmetic &&
+    validRetirement &&
+    validTerminalKind
+  );
 }
 
 function deepFreeze<T>(value: T): Readonly<T> {
@@ -400,6 +521,18 @@ export function validateGameState(
         violation("outcome.grade", "invalid_bankruptcy_grade", "bankruptcy must grade F"),
       );
     }
+    if (
+      "outcomePolicyVersion" in state.outcome &&
+      !isValidDeterministicOutcomeV1(state.outcome)
+    ) {
+      violations.push(
+        violation(
+          "outcome",
+          "invalid_outcome_evidence",
+          "versioned outcome evidence must be bounded and internally consistent",
+        ),
+      );
+    }
   }
 
   return violations;
@@ -510,6 +643,18 @@ function createOpeningLedger(
   });
 }
 
+export function calculateTotalLiabilities(
+  finances: FinancialSnapshot,
+): MoneyCents {
+  return moneyCents(
+    safeBigIntToNumber(
+      BigInt(finances.nonCreditLiabilitiesCents) +
+        BigInt(finances.creditUsedCents),
+      "total liabilities",
+    ),
+  );
+}
+
 export function calculateNetWorth(finances: FinancialSnapshot): MoneyCents {
   const assets =
     BigInt(finances.cashCents) +
@@ -518,10 +663,21 @@ export function calculateNetWorth(finances: FinancialSnapshot): MoneyCents {
     BigInt(finances.homeValueCents) +
     BigInt(finances.otherInvestableAssetsCents) +
     BigInt(finances.otherAssetsCents);
+  // Keep both sides in bigint until the final net value is known. Assets and
+  // liabilities may each exceed Number.MAX_SAFE_INTEGER while their exact
+  // difference remains a valid MoneyCents value.
   const liabilities =
-    BigInt(finances.nonCreditLiabilitiesCents) + BigInt(finances.creditUsedCents);
+    BigInt(finances.nonCreditLiabilitiesCents) +
+    BigInt(finances.creditUsedCents);
 
   return moneyCents(safeBigIntToNumber(assets - liabilities, "net worth"));
+}
+
+export function calculateAgeYearsAtMonth(
+  birthMonth: SimulationMonth,
+  currentMonth: SimulationMonth,
+): number {
+  return Math.floor(monthsBetween(birthMonth, currentMonth) / 12);
 }
 
 export function calculateRemainingCredit(

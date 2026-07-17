@@ -31,9 +31,9 @@ Do not silently choose whichever behavior is easiest to code.
 - The engine shortens checkpoints around scheduled events, insolvency risk,
   choices, or terminal outcomes. A checkpoint must never skip a required player
   decision or a terminal month.
-- Age is derived from birth month and simulation month, never from wall-clock
-  time. The age-65 outcome is evaluated on the first processed month at or after
-  age 65.
+- Age is derived by the canonical calendar selector from birth month and
+  simulation month, never from wall-clock time. Retirement policy `1.0.0` uses
+  age 65 and is evaluated on the first processed month at or after that age.
 
 ### Money, solvency, and outcomes
 
@@ -47,10 +47,11 @@ Do not silently choose whichever behavior is easiest to code.
 - Bankruptcy occurs only when required obligations cannot be covered by all
   automatic liquidity sources. A negative net worth alone is not bankruptcy.
 - Financial independence ends the run immediately with grade S when yielding or
-  investable assets reach the player's versioned target: desired annual
-  spending divided by their selected safe-withdrawal rate. Home equity is
-  excluded. The target is explicit at onboarding rather than inferred from the
-  current lifestyle budget.
+  investable assets reach the versioned target: desired annual spending divided
+  by the safe-withdrawal rate. Home equity is excluded. A player-selected goal
+  is explicit and fixed; when the player does not select one, the default target
+  follows the current lifestyle budget so permanent spending changes move the
+  finish line.
 - At age 65, non-FI progress is graded A at 80%, B at 60%, C at 40%, D at 20%,
   and E below 20% of the current FI target. Bankruptcy is F.
 - Exposure must not change the final grade until a separate product decision
@@ -239,7 +240,7 @@ Status meanings: **implemented** has production code and direct tests;
 | --- | --- | --- | --- |
 | Exact domain primitives, immutable state, seeded RNG | Implemented | `src/core/domain`, schema-v2 state/migration, deterministic replay tests | Preserve compatibility at future engine upgrade boundaries |
 | Balanced ledger and reconciliation | Implemented | `src/core/ledger.ts`, detailed v2 actions, payroll/market/debt/funding journals | Add accounts only when a new economic domain requires them |
-| Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | `src/core/game-state.ts`, `src/core/outcomes.ts`, `src/core/obligation-funding-v2.ts` | Reverify in complete v2 monthly journeys |
+| Net worth, FI, age-65 grading, cash-flow bankruptcy | Implemented | policy-versioned rich outcome, exact grade boundaries, responsive/default and fixed/player goals, canonical selectors, completed-month funding evidence, save/load and monthly integration tests | Add a new immutable policy version before tuning retirement age or thresholds |
 | Monthly market processing | Implemented | `src/core/market.ts`, bounded persisted macro stories, integrated monthly records | Add new macro templates only through versioned catalogs |
 | Event templates and bounded choices | Partial | fair scheduler, persisted pending/choice/cooldown evidence, exact medical insurance | Add employment recovery and homeowner-specific catastrophe coverage |
 | Explicit financial actions | Implemented | detailed REST commands for trades, debt, contributions, retirement withdrawal, home lifecycle, lifestyle, and cataloged upskill | Add future actions only with balanced/evidence-backed transitions |

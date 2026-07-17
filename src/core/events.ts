@@ -29,6 +29,8 @@ export type EventWeakness =
   | "high_fixed_costs"
   | "lifestyle_fragility"
   | "market_timing";
+export const UNRELATED_HAZARD_TARGET = "unrelated_hazard" as const;
+export type EventTargetV2 = EventWeakness | typeof UNRELATED_HAZARD_TARGET;
 export type MarketAssetClass = "equity" | "bonds" | "cash" | "housing";
 
 export type EventParameterDefinition = Readonly<{

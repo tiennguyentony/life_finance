@@ -1,4 +1,4 @@
-import { getEducationConcept } from "@/data/education-content";
+import { getEducationConcept } from "../../data/education-content";
 
 import { formatMoney } from "./play-model";
 

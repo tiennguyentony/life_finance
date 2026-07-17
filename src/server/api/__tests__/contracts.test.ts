@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { sha256Canonical } from "../../../core/canonical";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { createInitialGameState } from "../../../core/game-state";
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
@@ -12,9 +13,13 @@ import {
 } from "../contracts";
 import { generateOpenApiDocument } from "../openapi";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   createRunV2RequestSchema,
   gameCommandV2PublicSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
 } from "../contracts-v2";
 
 const finances = {
@@ -187,6 +192,52 @@ describe("v1 API contracts", () => {
 });
 
 describe("v2 API contracts", () => {
+  it("strictly validates no-write player policy previews", () => {
+    const request = {
+      schemaVersion: 2 as const,
+      id: "action.preview.contract",
+      expectedRevision: 1,
+      effectiveMonth: "2026-08",
+      type: "take_detailed_action" as const,
+      payload: {
+        action: {
+          type: "invest_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+    expect(playerPolicyPreviewV2RequestSchema.parse(request)).toEqual(request);
+    const preview = {
+      schemaVersion: 1 as const,
+      commandType: "take_detailed_action" as const,
+      actionPolicyVersion: "1.0.0" as const,
+      commandChecksum: "1".repeat(64),
+      openingStateChecksum: "2".repeat(64),
+      resultingStateChecksum: "3".repeat(64),
+      openingRevision: 1,
+      resultingRevision: 2,
+      effects: {
+        cashChangeCents: -100_000,
+        automaticLiquidityChangeCents: -100_000,
+        termDebtPrincipalChangeCents: 0,
+        revolvingCreditUsedChangeCents: 0,
+        annualLivingCostChangeCents: 0,
+        requiredObligationsChangeCents: 0,
+      },
+      policyChanges: [],
+      appendedLedgerTransactionIds: [],
+      appendedLedgerTransactions: [],
+    };
+    expect(playerPolicyPreviewV2ResponseSchema.parse(preview)).toEqual(preview);
+    expect(() =>
+      playerPolicyPreviewV2ResponseSchema.parse({
+        ...preview,
+        inventedApproval: true,
+      }),
+    ).toThrow();
+  });
+
   it("validates successful and idempotent migration responses", () => {
     const state = migrateGameStateV1ToV2(v1State());
 
@@ -235,6 +286,7 @@ describe("v2 API contracts", () => {
     ).toBe(2);
     for (const payload of [
       { taxEvidence: { totalTaxCents: 0 } },
+      { outcomePolicyVersion: "1.0.0" },
       {
         resolvedCashFlows: [
           {
@@ -270,6 +322,34 @@ describe("v2 API contracts", () => {
         },
       }).type,
     ).toBe("resolve_event_choice");
+    const liquidation = {
+      schemaVersion: 2 as const,
+      id: "cmd.public-v2.liquidate",
+      expectedRevision: 1,
+      effectiveMonth: "2026-08",
+      type: "take_detailed_action" as const,
+      payload: {
+        action: {
+          type: "liquidate_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+    expect(gameCommandV2PublicSchema.parse(liquidation)).toEqual(liquidation);
+    expect(
+      gameCommandV2PublicSchema.parse({
+        ...liquidation,
+        payload: {
+          action: {
+            ...liquidation.payload.action,
+            liquidationCostRatePpm: 999_999,
+          },
+        },
+      }),
+    ).toMatchObject({
+      payload: { action: { liquidationCostRatePpm: 999_999 } },
+    });
     expect(
       gameCommandV2PublicSchema.parse({
         schemaVersion: 2,
@@ -300,13 +380,20 @@ describe("generated OpenAPI", () => {
       "/api/v1/runs",
       "/api/v1/runs/{runId}",
       "/api/v1/runs/{runId}/commands",
+      "/api/v2/onboarding/parse",
+      "/api/v2/onboarding/review",
       "/api/v2/runs",
+      "/api/v2/runs/from-onboarding",
       "/api/v2/runs/{runId}",
+      "/api/v2/runs/{runId}/advance",
       "/api/v2/runs/{runId}/ai/explanation",
       "/api/v2/runs/{runId}/ai/debrief",
       "/api/v2/runs/{runId}/ai/world-event",
       "/api/v2/runs/{runId}/checkpoint",
       "/api/v2/runs/{runId}/commands",
+      "/api/v2/runs/{runId}/commands/preview",
+      "/api/v2/runs/{runId}/counterfactual",
+      "/api/v2/runs/{runId}/history",
       "/api/v2/runs/{runId}/migrate",
     ].toSorted());
     expect(
@@ -320,7 +407,16 @@ describe("generated OpenAPI", () => {
       document.paths?.["/api/v2/runs/{runId}/commands"]?.post?.security,
     ).toEqual([{ runBearer: [] }]);
     expect(
+      document.paths?.["/api/v2/runs/{runId}/advance"]?.post?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
       document.paths?.["/api/v2/runs/{runId}/checkpoint"]?.get?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/history"]?.get?.security,
+    ).toEqual([{ runBearer: [] }]);
+    expect(
+      document.paths?.["/api/v2/runs/{runId}/counterfactual"]?.post?.security,
     ).toEqual([{ runBearer: [] }]);
     expect(
       document.paths?.["/api/v2/runs/{runId}/migrate"]?.post?.security,
@@ -340,5 +436,246 @@ describe("generated OpenAPI", () => {
         document.paths?.["/api/v1/runs/{runId}/commands"]?.post?.responses ?? {},
       ),
     ).toEqual(["410"]);
+  });
+});
+
+describe("time advance v2 contracts", () => {
+  const request = {
+    schemaVersion: 2 as const,
+    id: "advance.contract.1",
+    expectedRevision: 3,
+    effectiveMonth: "2026-10",
+    maxMonths: 12,
+    mode: { kind: "months" as const, months: 12 },
+  };
+
+  it("accepts every public mode and rejects unknown fields", () => {
+    const modes = [
+      { kind: "one_month" },
+      { kind: "months", months: 12 },
+      { kind: "until_event" },
+      { kind: "until_checkpoint", intervalMonths: 6 },
+      { kind: "until_decision" },
+      { kind: "until_end" },
+      { kind: "resume", resolvedDecisionId: "decision.accepted", months: 3 },
+      { kind: "stop" },
+    ] as const;
+
+    for (const mode of modes) {
+      expect(advanceTimeV2RequestSchema.parse({ ...request, mode }).mode).toEqual(
+        mode,
+      );
+    }
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({ ...request, taxEvidence: {} }),
+    ).toThrow();
+  });
+
+  it("enforces the 1..480 bound and mode-specific duration bounds", () => {
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({ ...request, maxMonths: 0 }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({ ...request, maxMonths: 481 }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({
+        ...request,
+        maxMonths: 6,
+        mode: { kind: "months", months: 7 },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2RequestSchema.parse({
+        ...request,
+        mode: { kind: "until_checkpoint", intervalMonths: 13 },
+      }),
+    ).toThrow();
+  });
+
+  it("strictly validates pending event, pending decision, and end-condition payloads", () => {
+    const state = migrateGameStateV1ToV2(v1State());
+    const base = {
+      state,
+      stateChecksum: sha256Canonical(state),
+      idempotentReplay: false,
+      monthsAdvanced: 0,
+      pauseReason: { kind: "explicit_user_stop" },
+      pendingEvent: null,
+      pendingDecision: null,
+      checkpointInput: null,
+      endCondition: null,
+      uiChanges: {
+        kind: "time_advance_summary_v2",
+        fromMonth: state.currentMonth,
+        toMonth: state.currentMonth,
+        monthsAdvanced: 0,
+        pauseKind: "explicit_user_stop",
+        cashChangeCents: 0,
+        netWorthChangeCents: 0,
+        totalGrossIncomeCents: 0,
+        totalTaxCents: 0,
+        totalAfterTaxCashIncomeCents: 0,
+        totalRequiredCashCents: 0,
+        totalMarketValueChangeCents: 0,
+      },
+    };
+    const pendingEvent = {
+      eventId: "event.contract",
+      templateId: "template.contract",
+      templateVersion: 1,
+      tier: "medium",
+      targetedWeakness: "low_emergency_fund",
+      parameters: { costCents: 20_000 },
+      choiceIds: ["choice.pay"],
+      scheduledMonth: "2026-07",
+      expiresMonth: "2026-08",
+    };
+    const pendingDecision = {
+      kind: "life_milestone",
+      milestones: [
+        {
+          version: "life-milestone-v1",
+          milestoneId: "milestone.contract",
+          kind: "move",
+          label: "Move home",
+          targetMonth: "2026-07",
+          estimatedCostCents: 100_000,
+          postponementCount: 0,
+          createdMonth: "2026-01",
+        },
+      ],
+    };
+    const endCondition = {
+      kind: "retirement_age",
+      grade: "B",
+      reachedMonth: "2026-07",
+      reasonCode: "legacy_retirement",
+    };
+    const richEndCondition = {
+      outcomePolicyVersion: "1.0.0",
+      kind: "retirement_age",
+      grade: "B",
+      reachedMonth: "2026-07",
+      reasonCode: "configured_retirement_age_reached",
+      reasonCodes: [
+        "configured_retirement_age_reached",
+        "financial_independence_target_not_reached",
+      ],
+      financialIndependence: {
+        goalSource: "current_lifestyle_default",
+        investableAssetsCents: 6_000_000,
+        targetCents: 10_000_000,
+        progressPpm: 600_000,
+      },
+      displayedNetWorthCents: 5_000_000,
+      automaticLiquidSolvency: {
+        requiredCashCents: 100_000,
+        automaticLiquidityCents: 500_000,
+        residualShortfallCents: 0,
+        isSolvent: true,
+      },
+      retirementReadiness: {
+        retirementAgeYears: 65,
+        currentAgeYears: 65,
+        reachedRetirementAge: true,
+        gradeIfRetiredNow: "B",
+      },
+    };
+
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingEvent,
+        pendingDecision,
+        endCondition,
+      }),
+    ).toMatchObject({ pendingEvent, pendingDecision, endCondition });
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: richEndCondition,
+      }).endCondition,
+    ).toEqual(richEndCondition);
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          retirementReadiness: {
+            ...richEndCondition.retirementReadiness,
+            currentAgeYears: 121,
+          },
+        },
+      }).endCondition,
+    ).toMatchObject({ retirementReadiness: { currentAgeYears: 121 } });
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingEvent: { ...pendingEvent, inventedSeverity: 99 },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingDecision: {
+          ...pendingDecision,
+          milestones: [
+            { ...pendingDecision.milestones[0], inventedCost: 500_000 },
+          ],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: { ...endCondition, inventedGradeReason: "AI says so" },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          retirementReadiness: {
+            ...richEndCondition.retirementReadiness,
+            inventedProjection: 700_000,
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          kind: "financial_independence",
+          grade: "S",
+          reasonCode: "financial_independence_target_reached",
+          reasonCodes: ["financial_independence_target_reached"],
+          financialIndependence: {
+            ...richEndCondition.financialIndependence,
+            progressPpm: 1_000_000,
+          },
+          automaticLiquidSolvency: {
+            ...richEndCondition.automaticLiquidSolvency,
+            residualShortfallCents: 1,
+            isSolvent: false,
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        endCondition: {
+          ...richEndCondition,
+          financialIndependence: {
+            ...richEndCondition.financialIndependence,
+            progressPpm: 1_000_000,
+          },
+        },
+      }),
+    ).toThrow();
   });
 });

@@ -8,10 +8,13 @@ import {
   type MoneyCents,
   type RatePpm,
 } from "./domain/money";
-import { monthsBetween, type SimulationMonth } from "./domain/month";
+import type { SimulationMonth } from "./domain/month";
 import {
+  calculateAgeYearsAtMonth as calculateStateAgeYearsAtMonth,
+  calculateNetWorth,
   calculateRemainingCredit,
   reconcileFinancesWithLedger,
+  type DeterministicGameOutcomeV1,
   type FinalGrade,
   type FinancialSnapshot,
   type GameOutcome,
@@ -24,10 +27,19 @@ import {
 } from "./ledger";
 import {
   projectFinancialGoal,
+  projectFinancialGoalV1Compatibility,
   type FinancialGoalV1,
 } from "./financial-goals-v2";
-import type { FinancialShortfallV2 } from "./financial-kernel-v2";
+import type {
+  FinancialMonthRecordV2,
+  FinancialShortfallV2,
+} from "./financial-kernel-v2";
 import type { GameStateV2 } from "./game-state-v2";
+import {
+  OUTCOME_POLICY_V1_VERSION,
+  gradeRetirementProgressV1,
+  outcomePolicyForVersionV2,
+} from "./outcome-policy-v2";
 
 export type LiquidityAssessment = Readonly<{
   requiredObligationsCents: MoneyCents;
@@ -112,16 +124,19 @@ export function assessRequiredObligationLiquidity(
 export function calculateAgeYears(
   state: GameState | GameStateV2,
 ): number {
-  return Math.floor(
-    monthsBetween(state.player.birthMonth, state.currentMonth) / 12,
+  return calculateStateAgeYearsAtMonth(
+    state.player.birthMonth,
+    state.currentMonth,
   );
 }
+
+export { calculateAgeYearsAtMonth } from "./game-state";
 
 export function gradeRetirementProgress(
   finances: FinancialSnapshot,
   financialGoal?: FinancialGoalV1,
 ): Exclude<FinalGrade, "S" | "F"> {
-  const projection = projectFinancialGoal(finances, financialGoal);
+  const projection = projectFinancialGoalV1Compatibility(finances, financialGoal);
   const investable = BigInt(projection.investableAssetsCents);
   const goal = BigInt(projection.targetCents);
 
@@ -138,7 +153,10 @@ export function evaluateTerminalOutcome(
   financialGoal?: FinancialGoalV1,
 ): GameOutcome | null {
   if (state.outcome) return state.outcome;
-  const goalProjection = projectFinancialGoal(state.finances, financialGoal);
+  const goalProjection = projectFinancialGoalV1Compatibility(
+    state.finances,
+    financialGoal,
+  );
   if (goalProjection.investableAssetsCents >= goalProjection.targetCents) {
     const isPlayerSelectedGoal = financialGoal?.source === "player_selected";
     return Object.freeze({
@@ -192,7 +210,10 @@ export function evaluateTerminalOutcomeV2(
   }
 
   const financialGoal = state.gameplay.financialGoal;
-  const goalProjection = projectFinancialGoal(state.finances, financialGoal);
+  const goalProjection = projectFinancialGoalV1Compatibility(
+    state.finances,
+    financialGoal,
+  );
   if (goalProjection.investableAssetsCents >= goalProjection.targetCents) {
     return Object.freeze({
       kind: "financial_independence",
@@ -215,6 +236,117 @@ export function evaluateTerminalOutcomeV2(
           ? "reached_player_target_age"
           : "reached_age_65",
     });
+  }
+  return null;
+}
+
+type CompletedMonthOutcomeEvidenceV1 = Pick<
+  FinancialMonthRecordV2,
+  | "requiredCashCents"
+  | "closingAutomaticLiquidityCents"
+  | "fundingPlan"
+  | "shortfall"
+>;
+
+function automaticLiquidityFromEvidence(
+  evidence: CompletedMonthOutcomeEvidenceV1,
+): MoneyCents {
+  const plan = evidence.fundingPlan;
+  if (
+    plan.requiredCashCents !== evidence.requiredCashCents ||
+    (plan.residualShortfallCents > 0) !== (evidence.shortfall !== null) ||
+    (evidence.shortfall !== null &&
+      evidence.shortfall.residualShortfallCents !==
+        plan.residualShortfallCents)
+  ) {
+    throw new OutcomeDomainError(
+      "completed month outcome evidence is internally inconsistent",
+    );
+  }
+  return moneyCents(
+    evidence.shortfall?.automaticLiquidityCents ??
+      evidence.closingAutomaticLiquidityCents,
+  );
+}
+
+export function assessTerminalOutcomeV2(
+  state: GameStateV2,
+  evidence: CompletedMonthOutcomeEvidenceV1,
+  outcomePolicyVersion: typeof OUTCOME_POLICY_V1_VERSION,
+): GameOutcome | null {
+  if (state.outcome) return state.outcome;
+  const policy = outcomePolicyForVersionV2(outcomePolicyVersion);
+  const goalProjection = projectFinancialGoal(
+    state.finances,
+    state.gameplay.financialGoal,
+  );
+  const automaticLiquidityCents = automaticLiquidityFromEvidence(evidence);
+  const residualShortfallCents = evidence.fundingPlan.residualShortfallCents;
+  const currentAgeYears = calculateAgeYears(state);
+  const gradeIfRetiredNow = gradeRetirementProgressV1(
+    goalProjection.progressPpm,
+    outcomePolicyVersion,
+  );
+  const common = {
+    outcomePolicyVersion: policy.version,
+    reachedMonth: state.currentMonth,
+    financialIndependence: Object.freeze({
+      goalSource: goalProjection.goal.source,
+      investableAssetsCents: goalProjection.investableAssetsCents,
+      targetCents: goalProjection.targetCents,
+      progressPpm: goalProjection.progressPpm,
+    }),
+    displayedNetWorthCents: calculateNetWorth(state.finances),
+    automaticLiquidSolvency: Object.freeze({
+      requiredCashCents: evidence.requiredCashCents,
+      automaticLiquidityCents,
+      residualShortfallCents,
+      isSolvent: residualShortfallCents === 0,
+    }),
+    retirementReadiness: Object.freeze({
+      retirementAgeYears: policy.retirementAgeYears,
+      currentAgeYears,
+      reachedRetirementAge: currentAgeYears >= policy.retirementAgeYears,
+      gradeIfRetiredNow,
+    }),
+  } as const;
+
+  if (evidence.shortfall !== null) {
+    return Object.freeze({
+      ...common,
+      kind: "bankruptcy",
+      grade: "F",
+      reasonCode: "actual_required_obligation_shortfall",
+      reasonCodes: Object.freeze([
+        "actual_required_obligation_shortfall",
+        "automatic_liquidity_exhausted",
+      ] as const),
+    }) satisfies DeterministicGameOutcomeV1;
+  }
+  if (
+    goalProjection.investableAssetsCents >= goalProjection.targetCents
+  ) {
+    return Object.freeze({
+      ...common,
+      kind: "financial_independence",
+      grade: "S",
+      reasonCode: "financial_independence_target_reached",
+      reasonCodes: Object.freeze([
+        "financial_independence_target_reached",
+      ] as const),
+    }) satisfies DeterministicGameOutcomeV1;
+  }
+  if (currentAgeYears >= policy.retirementAgeYears) {
+    return Object.freeze({
+      ...common,
+      kind: "retirement_age",
+      grade: gradeIfRetiredNow,
+      reasonCode: "configured_retirement_age_reached",
+      reasonCodes: Object.freeze([
+        "configured_retirement_age_reached",
+        "financial_independence_target_not_reached",
+      ] as const),
+    }) satisfies DeterministicGameOutcomeV1;
   }
   return null;
 }
