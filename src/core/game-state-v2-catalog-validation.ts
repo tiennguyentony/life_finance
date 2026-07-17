@@ -195,8 +195,9 @@ export function validateCatalogAndBenefitsStateV2(
   if (
     catalogSnapshot === null
       ? contributions.policyYear !== null
-      : contributions.policyYear !==
-          catalogSnapshot.selected.benefitPolicy.policyYear ||
+      : contributions.policyYear === null ||
+        !Number.isSafeInteger(contributions.policyYear) ||
+        contributions.policyYear <= 0 ||
         contributions.employee401kCents >
           catalogSnapshot.selected.benefitPolicy
             .employeeRetirementContributionLimitCents ||
@@ -264,7 +265,9 @@ export function validateCatalogAndBenefitsStateV2(
   if (
     catalogSnapshot === null
       ? insurance.policyYear !== null || insurance.coverageUsage.length > 0
-      : insurance.policyYear !== catalogSnapshot.selected.benefitPolicy.policyYear
+      : insurance.policyYear === null ||
+        !Number.isSafeInteger(insurance.policyYear) ||
+        insurance.policyYear <= 0
   ) {
     violations.push(
       violation(

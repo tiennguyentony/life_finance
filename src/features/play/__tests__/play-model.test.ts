@@ -1,14 +1,230 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
+import { moneyCents, ratePpm } from "../../../core/domain/money";
+import { simulationMonth } from "../../../core/domain/month";
+import {
+  calculateInvestableAssets as calculateCanonicalInvestableAssets,
+  calculateNetWorth as calculateCanonicalNetWorth,
+  createInitialGameState,
+} from "../../../core/game-state";
+import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import {
   buildCreateRequest,
+  calculateAgeYears,
   calculateFinancialIndependence,
+  calculateInvestableAssets as calculatePlayInvestableAssets,
+  calculateNetWorth as calculatePlayNetWorth,
+  describeTimePauseV2,
   dollarsToCents,
   percentToPpm,
+  strategyDraftFromState,
 } from "../play-model";
 import { selectionForPreset } from "../onboarding-model";
 
 describe("developer play UI model", () => {
+  it("hydrates every strategy draft field from restored authoritative state", () => {
+    const base = migrateGameStateV1ToV2(createInitialGameState({
+      runId: "run.strategy-restore",
+      startMonth: "2026-07",
+      randomSeed: "strategy-restore",
+      player: {
+        playerId: "player.strategy-restore",
+        birthMonth: "1995-01",
+        locationId: "location.test",
+        careerTrackId: "career.test",
+        filingStatus: "single",
+      },
+      finances: {
+        cashCents: moneyCents(1_000_000),
+        taxableInvestmentsCents: moneyCents(0),
+        retirementCents: moneyCents(0),
+        homeValueCents: moneyCents(0),
+        otherInvestableAssetsCents: moneyCents(0),
+        otherAssetsCents: moneyCents(0),
+        nonCreditLiabilitiesCents: moneyCents(0),
+        creditLimitCents: moneyCents(0),
+        creditUsedCents: moneyCents(0),
+        annualLivingCostCents: moneyCents(600_000),
+        requiredObligationsCents: moneyCents(50_000),
+      },
+      wellbeing: { burnoutPpm: ratePpm(0), happinessPpm: ratePpm(1_000_000) },
+    }));
+    const restored = {
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        benefits: {
+          ...base.gameplay.benefits,
+          insuranceCoverageIds: ["insurance.renters"],
+        },
+        recurringStrategy: {
+          effectiveMonth: base.currentMonth,
+          emergencyFundTargetMonthsPpm: ratePpm(7_500_000),
+          insuranceCoverageIds: [],
+          preTax401kSalaryRatePpm: ratePpm(110_000),
+          preTaxHsaSalaryRatePpm: ratePpm(20_000),
+          afterTaxBroadIndexRatePpm: ratePpm(130_000),
+          afterTaxSectorRatePpm: ratePpm(40_000),
+          afterTaxSpeculativeRatePpm: ratePpm(30_000),
+          afterTaxIraRatePpm: ratePpm(50_000),
+          afterTaxExtraDebtRatePpm: ratePpm(60_000),
+        },
+      },
+    } as const;
+
+    expect(strategyDraftFromState(restored)).toEqual({
+      emergencyFundMonths: 7.5,
+      insuranceCoverageIds: [],
+      retirement: 11,
+      hsa: 2,
+      index: 13,
+      sector: 4,
+      speculative: 3,
+      ira: 5,
+      debt: 6,
+    });
+  });
+
+  it("previews strategy and detailed action commands before applying the exact approved command", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("/commands/preview");
+    expect(source).toContain("approvedPolicyCommand(");
+    expect(source).toContain("submit(approvedCommand, policyPreview.activityMessage)");
+    expect(source).toContain("isCurrentPolicyPreviewGeneration(");
+    expect(source.match(/invalidateCurrentPolicyPreview/g)?.length).toBeGreaterThanOrEqual(5);
+
+    const strategyFlow = source.slice(
+      source.indexOf("const saveStrategy"),
+      source.indexOf("const runMonths"),
+    );
+    const actionFlow = source.slice(
+      source.indexOf("const takeAction"),
+      source.indexOf("const resolveChoice"),
+    );
+    expect(strategyFlow).toContain("previewPolicyCommand(");
+    expect(strategyFlow).not.toContain("submit(");
+    expect(actionFlow).toContain("previewPolicyCommand(");
+    expect(actionFlow).not.toContain("submit(");
+  });
+
+  it("uses one advance request, one authoritative checkpoint read, and one pause activity for hidden months", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+    const runMonths = source.slice(
+      source.indexOf("const runMonths"),
+      source.indexOf("const takeAction"),
+    );
+
+    expect(runMonths).toContain("/advance");
+    expect(runMonths).not.toContain("/commands");
+    expect(runMonths).not.toMatch(/for\s*\(/);
+    expect(runMonths.match(/apiRequest</g)).toHaveLength(2);
+    expect(runMonths).toContain("if (result.checkpointInput)");
+    expect(runMonths).toContain(
+      "expectedRevision=${result.state.revision}&fromRevision=${request.expectedRevision}",
+    );
+    expect(runMonths.indexOf("teaching/checkpoint")).toBeLessThan(
+      runMonths.indexOf("acceptAuthoritativeState(result.state)"),
+    );
+    expect(runMonths.match(/describeTimePauseV2/g)).toHaveLength(1);
+  });
+
+  it("wires local Teaching v2 without recursive learning-command requests or AI consent", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("/teaching/moment");
+    expect(source).toContain("/teaching/checkpoint?expectedRevision=");
+    expect(source).toContain("/teaching/debrief");
+    expect(source).toContain("TeachingMomentPanelV2");
+    expect(source).toContain("TeachingCheckpointPanelV2");
+    expect(source).toContain("TeachingDebriefPanelV2");
+
+    const automaticFlow = source.slice(
+      source.indexOf("automaticTeachingRevision.current === state.revision"),
+      source.indexOf("deterministicDebriefRevision.current === state.revision"),
+    );
+    expect(automaticFlow).toContain(
+      "automaticTeachingRevision.current = result.state.revision",
+    );
+    expect(automaticFlow).toContain("revisionCoordinator.current.run");
+    expect(source).toContain("authoritativeStateRef.current");
+    expect(source).toContain("rebaseStateBoundCommandV2");
+    expect(automaticFlow).not.toContain("aiConsent");
+
+    const deterministicDebriefFlow = source.slice(
+      source.indexOf("deterministicDebriefRevision.current === state.revision"),
+      source.indexOf("const updateOnboardingDraft"),
+    );
+    expect(deterministicDebriefFlow).not.toContain("aiConsent");
+  });
+
+  it("wires onboarding through review and checksum confirmation without the legacy direct-create bypass", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+    const onboardingFlow = source.slice(
+      source.indexOf("const updateOnboardingDraft"),
+      source.indexOf("const submit"),
+    );
+
+    expect(source).toContain("OnboardingFlowPanelV1");
+    expect(onboardingFlow).toContain("requestOnboardingReviewV1");
+    expect(onboardingFlow).toContain("requestOnboardingConfirmationV1");
+    expect(onboardingFlow).toContain("requestOnboardingParseV1");
+    expect(onboardingFlow).toContain("setOnboardingFreeText(\"\")");
+    expect(onboardingFlow).toContain("onboardingRequestCoordinator.current.begin()");
+    expect(onboardingFlow).toContain("onboardingRequestCoordinator.current.isCurrent(");
+    expect(onboardingFlow).toContain("sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved))");
+    expect(onboardingFlow).not.toContain('apiRequest<RunResponse & RunCredential>("/api/v2/runs"');
+    expect(source).not.toContain('onCreate={() => void createGame()}');
+  });
+
+  it("discards old submit, advance, and teaching responses after a session reset", () => {
+    const source = readFileSync(
+      new URL("../play-console.tsx", import.meta.url),
+      "utf8",
+    );
+    const guardedFlows = [
+      source.slice(source.indexOf("const submit"), source.indexOf("const previewPolicyCommand")),
+      source.slice(source.indexOf("const runMonths"), source.indexOf("const takeAction")),
+      source.slice(source.indexOf("const requestVerifiedLesson"), source.indexOf("const requestOptionalTeachingRewrite")),
+    ];
+
+    for (const flow of guardedFlows) {
+      expect(flow).toContain("captureRevisionSession()");
+      expect(flow).toContain("isCurrentRunSession(");
+    }
+    expect(source).toContain("revisionCoordinator.current.reset()");
+    expect(source).toContain('disabled={busy} onClick={forgetGame}');
+  });
+
+  it.each([
+    [{ kind: "requested_duration", requestedMonths: 12 }, "Requested 12-month advance completed."],
+    [{ kind: "periodic_checkpoint", checkpointMonth: simulationMonth("2027-07") }, "Checkpoint reached at 2027-07."],
+    [{ kind: "event_response", eventId: "event.1" }, "Progress paused for a required event response."],
+    [{ kind: "policy_decision", decisionKind: "life_milestone" }, "Progress paused for a required life milestone decision."],
+    [{ kind: "financial_warning", warning: { kind: "monthly_cash_flow_deficit", cashFlowDeficitCents: moneyCents(12_345) } }, "Progress paused for a monthly cash-flow warning."],
+    [{ kind: "financial_independence" }, "Financial independence reached."],
+    [{ kind: "retirement" }, "Configured retirement age reached."],
+    [{ kind: "bankruptcy" }, "Progress stopped after liquidity was exhausted."],
+    [{ kind: "explicit_user_stop" }, "Time advance stopped by the player."],
+    [{ kind: "bounded_limit", maxMonths: 480 }, "Safe 480-month processing limit reached."],
+  ] as const)("describes tagged time pause %#", (pause, expected) => {
+    expect(describeTimePauseV2(pause)).toBe(expected);
+  });
+
   it("builds a catalog-compatible starter request", () => {
     const request = buildCreateRequest("nurse", 85_000, 20_000, "test-seed");
 
@@ -28,6 +244,14 @@ describe("developer play UI model", () => {
     expect(percentToPpm(7.5)).toBe(75_000);
     expect(dollarsToCents(Number.NaN)).toBe(0);
     expect(percentToPpm(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
+  it("delegates age boundaries and validation to the canonical calendar selector", () => {
+    expect(calculateAgeYears("2000-07", "2026-06")).toBe(25);
+    expect(calculateAgeYears("2000-07", "2026-07")).toBe(26);
+    expect(() => calculateAgeYears("2000-7", "2026-07")).toThrow(
+      /YYYY-MM/,
+    );
   });
 
   it("adds optional student debt and established-household choices", () => {
@@ -71,10 +295,103 @@ describe("developer play UI model", () => {
     } as Parameters<typeof calculateFinancialIndependence>[0];
 
     expect(calculateFinancialIndependence(state)).toEqual({
+      goalSource: "current_lifestyle_default",
       investableAssetsCents: 1_000,
       targetCents: 1_000,
       progressPpm: 1_000_000,
     });
+    expect(calculatePlayInvestableAssets(state)).toBe(
+      calculateCanonicalInvestableAssets(state.finances),
+    );
+  });
+
+  it("presents persisted terminal FI evidence instead of recalculating it", () => {
+    const state = {
+      finances: {
+        cashCents: 100,
+        taxableInvestmentsCents: 200,
+        retirementCents: 300,
+        otherInvestableAssetsCents: 400,
+        homeValueCents: 0,
+        annualLivingCostCents: 40,
+      },
+      gameplay: {},
+      outcome: {
+        outcomePolicyVersion: "1.0.0",
+        kind: "retirement_age",
+        grade: "B",
+        reachedMonth: "2065-07",
+        reasonCode: "configured_retirement_age_reached",
+        reasonCodes: [
+          "configured_retirement_age_reached",
+          "financial_independence_target_not_reached",
+        ],
+        financialIndependence: {
+          goalSource: "player_selected",
+          investableAssetsCents: 600,
+          targetCents: 1_000,
+          progressPpm: 600_000,
+        },
+        displayedNetWorthCents: 600,
+        automaticLiquidSolvency: {
+          requiredCashCents: 20,
+          automaticLiquidityCents: 100,
+          residualShortfallCents: 0,
+          isSolvent: true,
+        },
+        retirementReadiness: {
+          retirementAgeYears: 65,
+          currentAgeYears: 65,
+          reachedRetirementAge: true,
+          gradeIfRetiredNow: "B",
+        },
+      },
+    } as unknown as Parameters<typeof calculateFinancialIndependence>[0];
+
+    expect(calculateFinancialIndependence(state)).toEqual({
+      goalSource: "player_selected",
+      investableAssetsCents: 600,
+      targetCents: 1_000,
+      progressPpm: 600_000,
+    });
+  });
+
+  it("uses exact canonical net worth for high restricted wealth", () => {
+    const maximum = Number.MAX_SAFE_INTEGER;
+    const state = migrateGameStateV1ToV2(createInitialGameState({
+      runId: "run.play-authority",
+      startMonth: "2026-07",
+      randomSeed: "play-authority",
+      player: {
+        playerId: "player.play-authority",
+        birthMonth: "1995-01",
+        locationId: "location.test",
+        careerTrackId: "career.test",
+        filingStatus: "single",
+      },
+      finances: {
+        cashCents: moneyCents(0),
+        taxableInvestmentsCents: moneyCents(0),
+        retirementCents: moneyCents(maximum - 1),
+        homeValueCents: moneyCents(maximum),
+        otherInvestableAssetsCents: moneyCents(0),
+        otherAssetsCents: moneyCents(0),
+        nonCreditLiabilitiesCents: moneyCents(maximum),
+        creditLimitCents: moneyCents(maximum),
+        creditUsedCents: moneyCents(maximum),
+        annualLivingCostCents: moneyCents(1),
+        requiredObligationsCents: moneyCents(1),
+      },
+      wellbeing: {
+        burnoutPpm: ratePpm(0),
+        happinessPpm: ratePpm(1_000_000),
+      },
+    }));
+
+    expect(calculateCanonicalNetWorth(state.finances)).toBe(-1);
+    expect(calculatePlayNetWorth(state)).toBe(
+      calculateCanonicalNetWorth(state.finances),
+    );
   });
 
   it("sends a player-owned FI goal in exact engine units", () => {

@@ -24,6 +24,7 @@ export type CheckpointSnapshotV2 = Readonly<{
   annualLivingCostCents: MoneyCents;
   financialIndependenceTargetCents: MoneyCents;
   financialIndependenceProgressPpm: RatePpm;
+  /** Frozen checkpoint-v2.1 compatibility slot. Current facts come from Risk v1. */
   exposure: ExposureSnapshot | null;
 }>;
 

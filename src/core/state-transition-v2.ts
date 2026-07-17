@@ -4,6 +4,7 @@ import {
   validateGameStateV2,
   type GameStateV2,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 
 export type GameStateTransitionV2Violation = Readonly<{
   path: string;
@@ -39,12 +40,13 @@ export function validateGameStateTransitionV2(
   previous: GameStateV2,
   next: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): readonly GameStateTransitionV2Violation[] {
   const violations: GameStateTransitionV2Violation[] = [];
 
   try {
     violations.push(
-      ...validateGameStateV2(next).map((stateViolation) => ({
+      ...validateGameStateV2(next, validationOptions).map((stateViolation) => ({
         ...stateViolation,
         path: `next.${stateViolation.path}`,
       })),
@@ -155,7 +157,10 @@ export function validateGameStateTransitionV2(
     );
   }
 
-  if (!canonicalEqual(previous.ledger.accounts, next.ledger.accounts)) {
+  if (
+    previous.ledger.accounts !== next.ledger.accounts &&
+    !canonicalEqual(previous.ledger.accounts, next.ledger.accounts)
+  ) {
     violations.push(
       violation(
         "ledger.accounts",
@@ -166,9 +171,13 @@ export function validateGameStateTransitionV2(
   }
   const ledgerPrefixPreserved =
     next.ledger.transactions.length >= previous.ledger.transactions.length &&
-    previous.ledger.transactions.every((transaction, index) =>
-      canonicalEqual(transaction, next.ledger.transactions[index]),
-    );
+    previous.ledger.transactions.every((transaction, index) => {
+      const nextTransaction = next.ledger.transactions[index];
+      return (
+        transaction === nextTransaction ||
+        canonicalEqual(transaction, nextTransaction)
+      );
+    });
   if (!ledgerPrefixPreserved) {
     violations.push(
       violation(
@@ -199,8 +208,14 @@ export function assertValidGameStateTransitionV2(
   previous: GameStateV2,
   next: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): void {
-  const violations = validateGameStateTransitionV2(previous, next, commandId);
+  const violations = validateGameStateTransitionV2(
+    previous,
+    next,
+    commandId,
+    validationOptions,
+  );
   if (violations.length > 0) {
     throw new InvalidGameStateTransitionV2Error(violations);
   }

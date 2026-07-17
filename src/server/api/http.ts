@@ -1,4 +1,5 @@
 import { GameCommandError } from "../../core/commands";
+import { CounterfactualV1Error } from "../../core/counterfactual-v1";
 import { DetailedFinanceError } from "../../core/detailed-actions-v2";
 import { EventLifecycleV2Error } from "../../core/event-lifecycle-v2";
 import { InvalidGameStateError } from "../../core/game-state";
@@ -16,7 +17,13 @@ import {
 } from "./contracts";
 import type { RunApiService } from "./service";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
+  causalHistoryV1ResponseSchema,
+  causalHistoryV1QuerySchema,
+  counterfactualV1RequestSchema,
+  counterfactualV1ResponseSchema,
   checkpointV2QuerySchema,
   checkpointV2ResponseSchema,
   createRunV2RequestSchema,
@@ -24,6 +31,8 @@ import {
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
 import type { RunApiServiceV2 } from "./service-v2";
@@ -124,7 +133,10 @@ function errorResponse(error: unknown): Response {
     ) {
       status = 409;
       message = error.message;
-    } else if (error.code === "INVALID_RUN_ID") {
+    } else if (
+      error.code === "INVALID_RUN_ID" ||
+      error.code === "INVALID_RANGE"
+    ) {
       status = 400;
       message = error.message;
     }
@@ -134,6 +146,10 @@ function errorResponse(error: unknown): Response {
       error.code === "DUPLICATE_COMMAND" || error.code === "STALE_REVISION"
         ? 409
         : 400;
+    message = error.message;
+  } else if (error instanceof CounterfactualV1Error) {
+    code = error.code;
+    status = 400;
     message = error.message;
   } else if (
     error instanceof DetailedFinanceError ||
@@ -337,6 +353,52 @@ export async function handleSubmitCommandV2(
   }
 }
 
+export async function handlePreviewPlayerPolicyCommandV2(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const command = playerPolicyPreviewV2RequestSchema.parse(
+      await readJson(request),
+    );
+    return jsonResponse(
+      playerPolicyPreviewV2ResponseSchema.parse(
+        await service.previewPlayerPolicyCommand(
+          path.runId,
+          secret,
+          command,
+        ),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleAdvanceTimeV2(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const input = advanceTimeV2RequestSchema.parse(await readJson(request));
+    return jsonResponse(
+      advanceTimeV2ResponseSchema.parse(
+        await service.advanceTime(path.runId, secret, input),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
 export async function handleMigrateRunV2(
   request: Request,
   runId: string,
@@ -371,6 +433,50 @@ export async function handleGetCheckpointV2(
     return jsonResponse(
       checkpointV2ResponseSchema.parse(
         await service.getCheckpoint(path.runId, secret, query.fromRevision),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleGetCausalHistoryV1(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const url = new URL(request.url);
+    const range = causalHistoryV1QuerySchema.parse({
+      fromRevision: url.searchParams.get("fromRevision"),
+      toRevision: url.searchParams.get("toRevision"),
+    });
+    return jsonResponse(
+      causalHistoryV1ResponseSchema.parse(
+        await service.getCausalHistory(path.runId, secret, range),
+      ),
+      200,
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleRunCounterfactualV1(
+  request: Request,
+  runId: string,
+  service: RunApiServiceV2,
+): Promise<Response> {
+  try {
+    const path = runIdV2PathSchema.parse({ runId });
+    const secret = extractRunSecret(request.headers.get("authorization"));
+    const input = counterfactualV1RequestSchema.parse(await readJson(request));
+    return jsonResponse(
+      counterfactualV1ResponseSchema.parse(
+        await service.runCounterfactual(path.runId, secret, input),
       ),
       200,
     );

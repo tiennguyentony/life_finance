@@ -27,6 +27,24 @@ export class AiEducationError extends Error {
 type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate"> &
   Partial<Pick<AiRoleClient, "responseSource">>;
 
+function groundedExplanation(
+  candidate: AiExplanationApiResponse["explanation"],
+  template: AiExplanationApiResponse["explanation"],
+  evidenceIds: ReadonlySet<string>,
+): AiExplanationApiResponse["explanation"] | null {
+  if (
+    candidate.title !== template.title ||
+    candidate.explanation !== template.explanation ||
+    candidate.whyItMattersNow !== template.whyItMattersNow ||
+    sha256Canonical(candidate.actionTips) !== sha256Canonical(template.actionTips) ||
+    new Set(candidate.citedEvidenceIds).size !== candidate.citedEvidenceIds.length ||
+    candidate.citedEvidenceIds.some((id) => !evidenceIds.has(id))
+  ) {
+    return null;
+  }
+  return candidate;
+}
+
 export class AiEducationService {
   constructor(
     private readonly repository: V2Repository,
@@ -48,16 +66,17 @@ export class AiEducationService {
     const context = buildAiGameContext(initial);
     const evidence = contextEvidence(context);
     let source: AiExplanationApiResponse["source"] = "deterministic_fallback";
-    let explanation: AiExplanationApiResponse["explanation"] = {
+    const deterministicExplanation: AiExplanationApiResponse["explanation"] = {
       title: concept.title,
       explanation: concept.shortDefinition,
       whyItMattersNow: concept.whyItMatters,
       actionTips: [concept.decisionTradeoff],
       citedEvidenceIds: [],
     };
+    let explanation = deterministicExplanation;
     try {
       const client = this.clientFactory(runId);
-      explanation = await client.generate<"explanation">({
+      const candidate = await client.generate<"explanation">({
         contractVersion: AI_CONTRACT_VERSION,
         privacyNoticeVersion: request.privacyNoticeVersion,
         dataUseAccepted: request.dataUseAccepted,
@@ -67,7 +86,15 @@ export class AiEducationService {
         whyNow: `Month ${context.month}; FI progress ${context.goal.progressPpm} ppm; adapt to the supplied evidence.`,
         evidence: [...evidence],
       });
-      source = client.responseSource?.() ?? "openai";
+      const validated = groundedExplanation(
+        candidate,
+        deterministicExplanation,
+        new Set(evidence.map(({ id }) => id)),
+      );
+      if (validated) {
+        explanation = validated;
+        source = client.responseSource?.() ?? "openai";
+      }
     } catch {
       // The deterministic curriculum remains available when model, quota, or audit storage is unavailable.
     }

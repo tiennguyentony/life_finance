@@ -1,7 +1,15 @@
 import type { GameStateV2 } from "@/core/game-state-v2";
+import type { PauseReasonV2 } from "@/core/time-controller-v2";
 import type { CreateRunV2Request } from "@/server/api/contracts-v2";
+import type { StrategyDraft } from "./play-types";
 
 import { projectFinancialGoal } from "../../core/financial-goals-v2";
+import {
+  calculateAgeYearsAtMonth,
+  calculateInvestableAssets as calculateCanonicalInvestableAssets,
+  calculateNetWorth as calculateCanonicalNetWorth,
+} from "../../core/game-state";
+import { simulationMonth } from "../../core/domain/month";
 import {
   selectionForPreset,
   type PlayerPresetId,
@@ -34,6 +42,25 @@ export function percentToPpm(percent: number): number {
   return Math.round(percent * 10_000);
 }
 
+export function strategyDraftFromState(state: GameStateV2): StrategyDraft {
+  const strategy = state.gameplay.recurringStrategy;
+  return {
+    emergencyFundMonths:
+      (strategy.emergencyFundTargetMonthsPpm ?? 0) / 1_000_000,
+    insuranceCoverageIds: [
+      ...(strategy.insuranceCoverageIds ??
+        state.gameplay.benefits.insuranceCoverageIds),
+    ],
+    retirement: strategy.preTax401kSalaryRatePpm / 10_000,
+    hsa: strategy.preTaxHsaSalaryRatePpm / 10_000,
+    index: strategy.afterTaxBroadIndexRatePpm / 10_000,
+    sector: strategy.afterTaxSectorRatePpm / 10_000,
+    speculative: strategy.afterTaxSpeculativeRatePpm / 10_000,
+    ira: strategy.afterTaxIraRatePpm / 10_000,
+    debt: strategy.afterTaxExtraDebtRatePpm / 10_000,
+  };
+}
+
 export function formatMoney(cents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -42,39 +69,60 @@ export function formatMoney(cents: number): string {
   }).format(cents / 100);
 }
 
+export function describeTimePauseV2(pause: PauseReasonV2): string {
+  switch (pause.kind) {
+    case "requested_duration":
+      return `Requested ${pause.requestedMonths}-month advance completed.`;
+    case "periodic_checkpoint":
+      return `Checkpoint reached at ${pause.checkpointMonth}.`;
+    case "event_response":
+      return "Progress paused for a required event response.";
+    case "policy_decision":
+      return "Progress paused for a required life milestone decision.";
+    case "financial_warning":
+      return "Progress paused for a monthly cash-flow warning.";
+    case "financial_independence":
+      return "Financial independence reached.";
+    case "retirement":
+      return "Configured retirement age reached.";
+    case "bankruptcy":
+      return "Progress stopped after liquidity was exhausted.";
+    case "explicit_user_stop":
+      return "Time advance stopped by the player.";
+    case "bounded_limit":
+      return `Safe ${pause.maxMonths}-month processing limit reached.`;
+  }
+}
+
 export function calculateNetWorth(state: GameStateV2): number {
-  const finances = state.finances;
-  return (
-    finances.cashCents +
-    finances.taxableInvestmentsCents +
-    finances.retirementCents +
-    finances.homeValueCents +
-    finances.otherInvestableAssetsCents +
-    finances.otherAssetsCents -
-    finances.nonCreditLiabilitiesCents -
-    finances.creditUsedCents
-  );
+  return calculateCanonicalNetWorth(state.finances);
 }
 
 export function calculateInvestableAssets(state: GameStateV2): number {
-  return (
-    state.finances.cashCents +
-    state.finances.taxableInvestmentsCents +
-    state.finances.retirementCents +
-    state.finances.otherInvestableAssetsCents
-  );
+  return calculateCanonicalInvestableAssets(state.finances);
 }
 
 export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
+  goalSource: "player_selected" | "current_lifestyle_default";
   investableAssetsCents: number;
   targetCents: number;
   progressPpm: number;
 }> {
+  if (state.outcome && "outcomePolicyVersion" in state.outcome) {
+    return {
+      goalSource: state.outcome.financialIndependence.goalSource,
+      investableAssetsCents:
+        state.outcome.financialIndependence.investableAssetsCents,
+      targetCents: state.outcome.financialIndependence.targetCents,
+      progressPpm: state.outcome.financialIndependence.progressPpm,
+    };
+  }
   const projection = projectFinancialGoal(
     state.finances,
     state.gameplay.financialGoal,
   );
   return {
+    goalSource: projection.goal.source,
     investableAssetsCents: projection.investableAssetsCents,
     targetCents: projection.targetCents,
     progressPpm: projection.progressPpm,
@@ -82,12 +130,9 @@ export function calculateFinancialIndependence(state: GameStateV2): Readonly<{
 }
 
 export function calculateAgeYears(birthMonth: string, currentMonth: string): number {
-  const [birthYear, birthMonthNumber] = birthMonth.split("-").map(Number);
-  const [currentYear, currentMonthNumber] = currentMonth.split("-").map(Number);
-  return (
-    currentYear! -
-    birthYear! -
-    (currentMonthNumber! < birthMonthNumber! ? 1 : 0)
+  return calculateAgeYearsAtMonth(
+    simulationMonth(birthMonth),
+    simulationMonth(currentMonth),
   );
 }
 

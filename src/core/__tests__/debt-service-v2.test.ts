@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyDebtPaymentV2,
+  calculateMonthlyDebtInterestV2,
+  calculateTotalMinimumDebtPaymentV2,
   planMonthlyDebtService,
   settleMonthlyDebtService,
 } from "../debt-service-v2";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
-import type { DebtBreakdown, GameStateV2 } from "../game-state-v2";
+import {
+  finalizeGameStateV2,
+  type DebtBreakdown,
+  type GameStateV2,
+} from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
 import {
@@ -89,6 +96,151 @@ const debts = [
 ];
 
 describe("monthly term-debt service", () => {
+  it("calculates positive and exact half-cent monthly interest", () => {
+    expect(
+      calculateMonthlyDebtInterestV2(
+        moneyCents(120_000),
+        ratePpm(120_000),
+      ),
+    ).toBe(1_200);
+    expect(
+      calculateMonthlyDebtInterestV2(moneyCents(6), ratePpm(1_000_000)),
+    ).toBe(1);
+  });
+
+  it.each([
+    [moneyCents(400), moneyCents(400), moneyCents(700), moneyCents(500), 12],
+    [moneyCents(1_100), moneyCents(1_100), moneyCents(0), moneyCents(0), 0],
+    [moneyCents(1_200), moneyCents(1_100), moneyCents(0), moneyCents(0), 0],
+  ])(
+    "caps a requested debt payment at payoff without negative principal",
+    (
+      requestedPaymentCents,
+      appliedPaymentCents,
+      principalCents,
+      minimumPaymentCents,
+      remainingTermMonths,
+    ) => {
+      const result = applyDebtPaymentV2(
+        {
+          id: "debt.payment-boundary",
+          kind: "personal_loan",
+          principalCents: moneyCents(1_000),
+          annualInterestRatePpm: ratePpm(120_000),
+          minimumPaymentCents: moneyCents(500),
+          remainingTermMonths: 12,
+        },
+        moneyCents(100),
+        requestedPaymentCents,
+      );
+
+      expect(result.appliedPaymentCents).toBe(appliedPaymentCents);
+      expect(result.debt).toEqual({
+        id: "debt.payment-boundary",
+        kind: "personal_loan",
+        principalCents,
+        annualInterestRatePpm: 120_000,
+        minimumPaymentCents,
+        remainingTermMonths,
+      });
+    },
+  );
+
+  it("caps each minimum payment at that debt's payoff boundary", () => {
+    expect(
+      calculateTotalMinimumDebtPaymentV2([
+        {
+          id: "debt.small",
+          kind: "auto_loan",
+          principalCents: moneyCents(500),
+          annualInterestRatePpm: ratePpm(0),
+          minimumPaymentCents: moneyCents(600),
+          remainingTermMonths: 1,
+        },
+        {
+          id: "debt.large",
+          kind: "student_loan",
+          principalCents: moneyCents(1_000),
+          annualInterestRatePpm: ratePpm(0),
+          minimumPaymentCents: moneyCents(400),
+          remainingTermMonths: 2,
+        },
+      ]),
+    ).toBe(900);
+  });
+
+  it("caps native opening obligations at each debt payoff boundary", () => {
+    const noDebt = state([]);
+    const withSmallDebt = state([
+      {
+        id: "debt.opening-payoff-boundary",
+        kind: "personal_loan",
+        principalCents: moneyCents(500),
+        annualInterestRatePpm: ratePpm(0),
+        minimumPaymentCents: moneyCents(600),
+        remainingTermMonths: 2,
+      },
+    ]);
+
+    expect(withSmallDebt.finances.requiredObligationsCents).toBe(
+      noDebt.finances.requiredObligationsCents + 500,
+    );
+    expect(
+      withSmallDebt.gameplay.debts.termDebts[0]?.minimumPaymentCents,
+    ).toBe(500);
+
+    const settled = settleMonthlyDebtService(
+      withSmallDebt,
+      "turn.opening-payoff-boundary",
+    ).state;
+    expect(settled.finances.requiredObligationsCents).toBe(
+      withSmallDebt.finances.requiredObligationsCents - 500,
+    );
+  });
+
+  it("preserves raw minimum accounting for a historical persisted debt", () => {
+    const native = state([
+      {
+        id: "debt.historical-minimum",
+        kind: "personal_loan",
+        principalCents: moneyCents(500),
+        annualInterestRatePpm: ratePpm(0),
+        minimumPaymentCents: moneyCents(600),
+        remainingTermMonths: 2,
+      },
+    ]);
+    const historical = finalizeGameStateV2({
+      ...native,
+      finances: {
+        ...native.finances,
+        requiredObligationsCents: moneyCents(
+          native.finances.requiredObligationsCents + 100,
+        ),
+      },
+      gameplay: {
+        ...native.gameplay,
+        debts: {
+          ...native.gameplay.debts,
+          termDebts: [
+            {
+              ...native.gameplay.debts.termDebts[0]!,
+              minimumPaymentCents: moneyCents(600),
+            },
+          ],
+        },
+      },
+    });
+
+    const settled = settleMonthlyDebtService(
+      historical,
+      "turn.historical-minimum",
+    ).state;
+
+    expect(settled.finances.requiredObligationsCents).toBe(
+      historical.finances.requiredObligationsCents - 600,
+    );
+  });
+
   it("rounds monthly interest and handles amortizing, negative, and maturity cases", () => {
     const plan = planMonthlyDebtService(state(debts));
 

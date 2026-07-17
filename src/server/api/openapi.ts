@@ -22,16 +22,31 @@ import {
   runIdPathSchema,
 } from "./contracts";
 import {
+  advanceTimeV2RequestSchema,
+  advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
+  causalHistoryV1ResponseSchema,
+  causalHistoryV1QuerySchema,
   checkpointV2QuerySchema,
   checkpointV2ResponseSchema,
   createRunV2RequestSchema,
   createRunV2ResponseSchema,
+  counterfactualV1RequestSchema,
+  counterfactualV1ResponseSchema,
   gameCommandV2PublicSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2RequestSchema,
+  playerPolicyPreviewV2ResponseSchema,
   runIdV2PathSchema,
 } from "./contracts-v2";
+import {
+  onboardingConfirmRequestV1Schema,
+  onboardingParseRequestV1Schema,
+  onboardingParseResponseV1Schema,
+  onboardingReviewRequestV1Schema,
+  onboardingReviewResponseV1Schema,
+} from "./onboarding-contracts-v1";
 
 const registry = new OpenAPIRegistry();
 registry.registerComponent("securitySchemes", "runBearer", {
@@ -102,6 +117,65 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/v2/onboarding/review",
+  operationId: "reviewOnboardingV1",
+  summary: "Validate and preview onboarding without creating a run",
+  request: {
+    body: {
+      content: { "application/json": { schema: onboardingReviewRequestV1Schema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Deterministic review; only ready reviews may be confirmed",
+      content: { "application/json": { schema: onboardingReviewResponseV1Schema } },
+    },
+    400: errorResponses[400],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/from-onboarding",
+  operationId: "confirmOnboardingV1",
+  summary: "Recompute and confirm a reviewed onboarding draft",
+  request: {
+    body: {
+      content: { "application/json": { schema: onboardingConfirmRequestV1Schema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Authoritative schema-v2 run created from the confirmed review",
+      content: { "application/json": { schema: createRunV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    409: errorResponses[409],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/onboarding/parse",
+  operationId: "parseOnboardingV1",
+  summary: "Optionally extract allow-listed onboarding candidates from transient text",
+  request: {
+    body: {
+      content: { "application/json": { schema: onboardingParseRequestV1Schema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Ready, rejected, or unavailable extraction result",
+      content: { "application/json": { schema: onboardingParseResponseV1Schema } },
+    },
+    400: errorResponses[400],
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/v2/runs/{runId}/checkpoint",
   operationId: "getCheckpointV2",
@@ -115,6 +189,47 @@ registry.registerPath({
     200: {
       description: "Deterministic checkpoint evidence",
       content: { "application/json": { schema: checkpointV2ResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v2/runs/{runId}/history",
+  operationId: "getCausalHistoryV1",
+  summary: "Derive bounded causal history from verified accepted-command replay",
+  security: [{ runBearer: [] }],
+  request: { params: runIdV2PathSchema, query: causalHistoryV1QuerySchema },
+  responses: {
+    200: {
+      description: "Checksummed causal graph, sparse turning points, and coverage",
+      content: { "application/json": { schema: causalHistoryV1ResponseSchema } },
+    },
+    400: errorResponses[400],
+    401: errorResponses[401],
+    500: errorResponses[500],
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/counterfactual",
+  operationId: "runCounterfactualV1",
+  summary: "Compare one bounded alternative through the production reducer",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: {
+      content: { "application/json": { schema: counterfactualV1RequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Read-only verified branch comparison and explicit assumptions",
+      content: { "application/json": { schema: counterfactualV1ResponseSchema } },
     },
     400: errorResponses[400],
     401: errorResponses[401],
@@ -171,6 +286,62 @@ registry.registerPath({
     200: {
       description: "Command accepted or replayed with the original immutable result",
       content: { "application/json": { schema: commandV2ResponseSchema } },
+    },
+    ...errorResponses,
+    502: {
+      description: "Tax service returned unusable authoritative evidence",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+    503: {
+      description: "Tax service is temporarily unavailable; no state was committed",
+      content: { "application/json": { schema: apiErrorSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/commands/preview",
+  operationId: "previewPlayerPolicyCommandV2",
+  summary:
+    "Preview an exact strategy or action command without committing state",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: {
+      content: {
+        "application/json": { schema: playerPolicyPreviewV2RequestSchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Deterministic immediate effects and ledger evidence for caller approval",
+      content: {
+        "application/json": { schema: playerPolicyPreviewV2ResponseSchema },
+      },
+    },
+    ...errorResponses,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v2/runs/{runId}/advance",
+  operationId: "advanceTimeV2",
+  summary: "Advance monthly simulation ticks until the requested pause",
+  security: [{ runBearer: [] }],
+  request: {
+    params: runIdV2PathSchema,
+    body: {
+      content: { "application/json": { schema: advanceTimeV2RequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Atomic time advance result with one aggregate UI summary",
+      content: { "application/json": { schema: advanceTimeV2ResponseSchema } },
     },
     ...errorResponses,
     502: {

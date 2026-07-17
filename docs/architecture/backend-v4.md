@@ -22,18 +22,21 @@ screen.
 UI (out of backend scope)
   -> typed API client
   -> versioned REST command/query handlers
-  -> application services and transaction boundary
-  -> deterministic simulation core
-       |-> tax port -> pinned PolicyEngine US service
-       |-> narrative port -> OpenAI Responses API
-  -> Drizzle repositories -> Supabase Postgres
+  -> application service
+       |-> tax port -> pinned PolicyEngine US service -> persisted evidence
+       |-> optional narrative port -> model service
+       |-> Drizzle transaction/repository -> reducer dispatcher
+              |-> financial kernel 2.0.0 + non-financial wrapper
+              |-> private legacy-4.1.0 replay adapter
+            -> Supabase Postgres
 ```
 
 The deterministic core may depend only on domain modules. It must not import
 React, Next.js, Drizzle, database drivers, OpenAI SDKs, environment variables,
-filesystem APIs, clocks, or network clients. Nondeterministic values such as the
-current time, identifiers, tax results, and model output enter through explicit
-commands or ports and are persisted before they can affect state.
+filesystem APIs, clocks, or network clients. Nondeterministic values such as
+identifiers, tax results, market RNG evidence, and model output enter through
+explicit commands or ports. Tax evidence is resolved and persisted before
+reduction. Model output never enters the financial kernel.
 
 ## Exact domain representation
 
@@ -83,14 +86,23 @@ and a versioned payload. A command is rejected when its identifier was already
 accepted, its expected revision is stale, its month is invalid, or its payload
 violates an invariant. State is never partially mutated.
 
-The schema-v2 monthly reducer uses one stable order: validate the command and
-external tax evidence; adjudicate the optional insurance claim; apply the
-persisted market draw and inflation; apply payroll, withholding, benefits, and
-employer match; calculate debt service and all non-debt obligations; assess and
-prepare automatic liquidity; pay mandatory items; apply the bounded recurring
-strategy; then advance time, accept the command, and evaluate terminal outcomes.
-If total automatic liquidity cannot cover mandatory items, the reducer records
-bankruptcy without making partial obligation or strategy payments.
+New schema-v2 monthly commands run the `2.0.0` financial kernel documented in
+`financial-engine-v2.md`. The exact financial order is validation; annual
+policy reset; claim adjudication; complete supplied market step; CPI and living
+cost inflation; payroll, tax, pre-tax contributions, and match; resolved income;
+debt/mandatory-obligation planning; one cash -> after-cost taxable liquidation
+-> credit funding plan; mandatory settlement; bounded after-tax allocations;
+one month advance; and invariant validation. The product wrapper then owns
+career completion, command acceptance, exposure, outcome, macro-story, and event
+orchestration.
+
+When the one funding plan has a residual shortfall, the kernel records the
+attempt and advances the month without a partial sale, credit draw, obligation
+payment, debt settlement, or optional allocation. The wrapper labels bankruptcy
+only from that actual `FinancialShortfallV2`; it does not predict failure from a
+future obligation after a fully paid month. Unversioned and explicit
+`legacy-4.1.0` commands use a private frozen replay adapter. New Web commands are
+server-stamped `2.0.0`, and public clients cannot select a reducer.
 
 Canonical serialization sorts object keys and preserves array order. A SHA-256
 checksum covers all replay-relevant state. Checksums are evidence of accidental
@@ -112,17 +124,24 @@ entries are never edited or deleted.
 
 - Displayed net worth is all assets minus all liabilities.
 - Required-obligation shortfalls are funded in order: cash, taxable-investment
-  liquidation value, then remaining credit.
-- Bankruptcy occurs only when those three sources together cannot cover required
-  obligations for the period.
-- Home equity and retirement assets do not supply automatic bankruptcy liquidity;
-  they require explicit sale or withdrawal commands.
+  liquidation value after transaction costs, then remaining credit, using one
+  immutable plan for assessment and execution.
+- Bankruptcy occurs only from the completed month's actual residual shortfall;
+  negative net worth alone is not bankruptcy.
+- Home equity, retirement, HSA, and other restricted/illiquid assets do not
+  supply automatic liquidity; they require an explicit validated action.
 - Financial independence is reached when investable/yielding assets meet the
-  player's versioned finish line: desired annual spending divided by the
-  selected safe-withdrawal rate. Home equity is excluded. It ends the run
+  versioned finish line: desired annual spending divided by the safe-withdrawal
+  rate. A player-selected spending goal stays fixed; the default goal follows
+  current annual living cost. Home equity is excluded. FI ends the run
   immediately with grade S.
-- At age 65, non-FI grades use goal progress: A at 0.8, B at 0.6, C at 0.4, D at
-  0.2, and E below 0.2. Bankruptcy is F.
+- Outcome policy `1.0.0` stops a non-FI, solvent run at age 65. Its inclusive
+  FI-progress lower bounds are A at 0.8, B at 0.6, C at 0.4, D at 0.2, and E at
+  zero. An actual required-obligation shortfall takes precedence and is F.
+- The terminal state persists the policy version, bounded reason codes, FI
+  numerator/target/progress, displayed net worth, actual automatic-liquidity
+  evidence, and retirement readiness. Cross-field state validation rejects
+  inconsistent evidence rather than recalculating a replacement grade.
 
 ## Exposure evidence
 
@@ -157,7 +176,11 @@ The request and response schemas include policy year, jurisdiction, filing
 status, household members, income components, deductions, and a trace identifier.
 Future nominal values are deflated into 2026 dollars, evaluated under frozen 2026
 policy, then the computed tax is re-inflated. Results are educational estimates
-until independently validated.
+until independently validated. The Web service resolves or reuses this evidence
+before entering the repository reducer. The monthly core and replay path make no
+network call; replay uses the persisted evidence. Tests mock only this remote
+calculator boundary and run the reducer/kernel integrations with real local
+modules.
 
 ### Narrative and game-master output
 
@@ -195,6 +218,16 @@ generate OpenAPI, and feed a typed TypeScript client. Anonymous players receive 
 high-entropy opaque run secret; only a hash is persisted. Secrets must never
 appear in URLs or logs.
 
+`RunApiServiceV2` converts a public empty `process_month` payload into an
+internal command containing server-owned tax evidence,
+`financialKernelVersion: "2.0.0"`, and resolved cash-flow evidence. Strict
+persisted decoding keeps historical absence/`legacy-4.1.0` compatible while
+preventing resolved flows from being attached to a legacy reducer. Monthly API
+summaries expose a strict legacy-or-2.0.0 evidence union. New commands also carry
+`outcomePolicyVersion: "1.0.0"`; historical absence retains the frozen outcome
+semantics and checksum. The goal/outcome contract is detailed in
+[`goals-and-grading-v2.md`](./goals-and-grading-v2.md).
+
 ## Verification gates
 
 Each stable subsystem must pass lint, type checking, unit/property tests, and a
@@ -202,3 +235,11 @@ production build before it merges to `main`. Deterministic systems additionally
 need golden replay, invariant, boundary, and fixed-seed tests. External adapters
 need schema/contract tests and must prove that failures cannot partially commit a
 turn.
+
+Prompt 02 adds real credential-free integrations for persisted decode through
+the wrapper/kernel, checksum replay through the repository reducer, and
+multi-year projection through the production market and financial paths. Its
+480-month event-free projection has an 8,000 ms assertion; two isolated measured
+runs completed in 4,999.987 ms and 5,088.119 ms. The real PostgreSQL integration
+is conditional and remains unexecuted here because `TEST_DATABASE_URL` is not
+configured; the explicit skip must not be reported as a database pass.

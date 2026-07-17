@@ -1,5 +1,6 @@
 import type { MoneyCents, RatePpm } from "./domain/money";
 import type { SimulationMonth } from "./domain/month";
+import type { ActionPolicyVersionV2 } from "./action-policy-v2";
 
 export const DETAILED_FINANCE_COMMAND_SCHEMA_VERSION = 2 as const;
 
@@ -69,7 +70,10 @@ export type DetailedFinanceCommand = Readonly<{
   type: "take_detailed_action";
   expectedRevision: number;
   effectiveMonth: SimulationMonth;
-  payload: Readonly<{ action: DetailedFinancialAction }>;
+  payload: Readonly<{
+    action: DetailedFinancialAction;
+    actionPolicyVersion?: ActionPolicyVersionV2;
+  }>;
 }>;
 
 export class DetailedFinanceError extends Error {
