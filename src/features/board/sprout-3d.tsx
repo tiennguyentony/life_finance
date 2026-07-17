@@ -59,9 +59,10 @@ export function Sprout3d({ standingAt, hop, onHopEnd, reducedMotion }: SproutPro
       return;
     }
 
-    // Idle: stand at the current stop with a soft breathing bob.
-    const bob = reducedMotion ? 0 : Math.sin(elapsed * 2.1) * 0.05;
-    group.position.set(standingAt.x, PLATFORM_TOP_Y + Math.max(0, bob), standingAt.z);
+    // Idle: a soft breathing bob. Oscillate around a slightly raised center
+    // (no clamp) so it reads as breathing, not a repeated push-up off the floor.
+    const bob = reducedMotion ? 0 : Math.sin(elapsed * 1.6) * 0.04;
+    group.position.set(standingAt.x, PLATFORM_TOP_Y + 0.04 + bob, standingAt.z);
     squash.scale.set(1, 1, 1);
     group.rotation.y = reducedMotion ? 0 : Math.sin(elapsed * 0.9) * 0.08;
   });
