@@ -35,7 +35,7 @@ export function Landing() {
           <strong>Life<br />Finance</strong>
         </div>
         <div className="landing-account-actions">
-          <Link className="landing-start" href="/start">Start</Link>
+          <Link className="landing-start" href="/board">Start</Link>
         </div>
       </header>
 
@@ -66,7 +66,7 @@ export function Landing() {
         ))}
       </section>
 
-      <Link className="landing-play-button" href="/start">
+      <Link className="landing-play-button" href="/board">
         Play
       </Link>
 

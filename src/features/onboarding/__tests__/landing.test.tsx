@@ -16,10 +16,12 @@ describe("Landing", () => {
     expect(markup).toContain('data-action="lucky-finale"');
   });
 
-  it("starts the MVP without presenting a login step", () => {
+  it("starts the game at the board without presenting a login step", () => {
     const markup = renderToStaticMarkup(<Landing />);
 
     expect(markup).not.toContain("Log in");
-    expect(markup).toContain('href="/start"');
+    // Play and Start both lead straight into the board game.
+    expect(markup).toContain('href="/board"');
+    expect(markup).not.toContain('href="/start"');
   });
 });
