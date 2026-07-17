@@ -1,0 +1,429 @@
+/* The board: a full-screen night scene with a game HUD floating over the
+ * 3D canvas. Dark surfaces are local to this screen; shape, type, and
+ * shadow language come from the shared toy-cartoon system in globals.css. */
+
+.board-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #0a0e28;
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+}
+
+.board-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.board-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: #9fb0e8;
+  font-size: 1.05rem;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+}
+
+/* ------------------------------- overlay ------------------------------- */
+
+.board-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: #eef2ff;
+}
+
+.board-hud button {
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.board-hud button:focus-visible,
+.board-chip:focus-visible {
+  outline: 3px solid #7dd3fc;
+  outline-offset: 2px;
+}
+
+/* Shared panel surface for every HUD element. */
+.board-player-card,
+.board-stat,
+.board-top-right > *,
+.board-side-button,
+.board-calendar,
+.board-goal,
+.board-toast {
+  background: rgba(13, 18, 48, 0.85);
+  border: 3px solid rgba(125, 145, 220, 0.35);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 6px 0 rgba(4, 6, 20, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+/* --------------------------------- top --------------------------------- */
+
+.board-hud-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.4rem;
+}
+
+.board-player-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 1rem 0.5rem 0.5rem;
+  pointer-events: auto;
+}
+
+.board-avatar {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid #7dd3fc;
+  background: #101838;
+  flex-shrink: 0;
+}
+
+.board-avatar img {
+  object-fit: cover;
+}
+
+.board-player-meta {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.board-player-meta strong {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.board-player-meta span {
+  font-size: 0.72rem;
+  color: #9fb0e8;
+}
+
+.board-xp {
+  display: block;
+  width: 120px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.board-xp i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #65a82f, #a3e635);
+}
+
+.board-stat-row {
+  display: flex;
+  gap: 0.8rem;
+  margin: 0;
+  pointer-events: auto;
+}
+
+.board-stat {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.5rem 1.1rem;
+  min-width: 122px;
+}
+
+.board-stat dt {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9fb0e8;
+}
+
+.board-stat dd {
+  margin: 0;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 1.06rem;
+  line-height: 1.1;
+}
+
+.board-stat-lime {
+  border-color: rgba(163, 230, 53, 0.5);
+}
+
+.board-stat-lime dd {
+  color: #c8f57d;
+}
+
+.board-stat-blue {
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.board-stat-blue dd {
+  color: #a9cdfc;
+}
+
+.board-stat-coral {
+  border-color: rgba(251, 113, 133, 0.5);
+}
+
+.board-stat-coral dd {
+  color: #ffa2b3;
+}
+
+.board-top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  pointer-events: auto;
+}
+
+.board-trophies {
+  padding: 0.62rem 1rem;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.86rem;
+  color: #ffd76b;
+  border-color: rgba(250, 204, 21, 0.5);
+}
+
+.board-icon-button {
+  padding: 0.62rem 1.1rem;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.86rem;
+  transition: transform 120ms ease;
+}
+
+.board-icon-button:hover {
+  transform: translateY(-2px);
+}
+
+/* -------------------------------- sides -------------------------------- */
+
+.board-side {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 0.9rem;
+}
+
+.board-side-left {
+  left: 1.4rem;
+}
+
+.board-side-right {
+  right: 1.4rem;
+}
+
+.board-side-button {
+  position: relative;
+  padding: 0.85rem 1.2rem;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.9rem;
+  transition: transform 120ms ease;
+}
+
+.board-side-button:hover {
+  transform: translateY(-2px);
+}
+
+.board-badge {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.55rem;
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  background: var(--coral, #fb7185);
+  border: 2px solid #0a0e28;
+  color: #fff;
+  font-size: 0.72rem;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+}
+
+/* ------------------------------- bottom -------------------------------- */
+
+.board-hud-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.4rem;
+}
+
+.board-calendar {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.55rem 1.1rem;
+  pointer-events: auto;
+}
+
+.board-calendar strong {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.98rem;
+  line-height: 1.1;
+}
+
+.board-calendar span {
+  font-size: 0.72rem;
+  color: #9fb0e8;
+}
+
+.board-goal {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.6rem 1.2rem;
+  pointer-events: auto;
+}
+
+.board-goal-label {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.86rem;
+}
+
+.board-goal-bar {
+  display: block;
+  width: 200px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.board-goal-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #65a82f, #a3e635);
+}
+
+.board-goal-amount {
+  font-size: 0.78rem;
+  color: #9fb0e8;
+  white-space: nowrap;
+}
+
+.board-take-action {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.85rem 2rem;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-lg, 16px);
+  background: linear-gradient(180deg, #4f8ef7, #2f6ae0);
+  color: #fff;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 1.12rem;
+  box-shadow: 0 6px 0 rgba(19, 42, 96, 0.9);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.board-take-action small {
+  font-size: 0.68rem;
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.board-take-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 0 rgba(19, 42, 96, 0.9);
+}
+
+.board-take-action:active {
+  transform: translateY(2px);
+  box-shadow: 0 3px 0 rgba(19, 42, 96, 0.9);
+}
+
+/* ---------------------------- island labels ---------------------------- */
+
+.board-chip {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.4rem 0.9rem;
+  border: 2.5px solid;
+  border-radius: 12px;
+  background: rgba(10, 14, 40, 0.88);
+  color: #eef2ff;
+  text-align: center;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 120ms ease;
+  white-space: nowrap;
+}
+
+.board-chip:hover {
+  transform: translateY(-2px);
+}
+
+.board-chip strong {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.1;
+}
+
+.board-chip span {
+  font-size: 0.66rem;
+  color: #9fb0e8;
+}
+
+.board-chip-current {
+  background: rgba(125, 211, 252, 0.16);
+}
+
+.board-chip-current span {
+  color: #bfe6ff;
+}
+
+/* -------------------------------- toast -------------------------------- */
+
+.board-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 7.2rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.7rem 1.3rem;
+  font-size: 0.9rem;
+  animation: board-toast-in 200ms ease-out;
+  white-space: nowrap;
+}
+
+@keyframes board-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-toast,
+  .board-icon-button,
+  .board-side-button,
+  .board-take-action,
+  .board-chip {
+    animation: none;
+    transition: none;
+  }
+}
