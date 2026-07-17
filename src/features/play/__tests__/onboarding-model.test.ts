@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   cashRangeDollars,
+  playerPresetFromPersonaV1,
   salaryRangeDollars,
   selectionForCareer,
   selectionForPreset,
@@ -9,6 +10,18 @@ import {
 } from "../onboarding-model";
 
 describe("onboarding catalog projection", () => {
+  it("projects the UI helper from the authoritative core persona fixture", () => {
+    expect(playerPresetFromPersonaV1("software")).toMatchObject({
+      selection: {
+        birthMonth: "1995-01",
+        locationId: "location.seattle",
+        careerId: "career.software",
+      },
+      salaryDollars: 120_000,
+      defaultCashDollars: 25_000,
+    });
+  });
+
   it("derives the exact localized salary and scenario cash bounds", () => {
     expect(salaryRangeDollars("career.software", "location.seattle")).toEqual({
       minimum: 106_250,

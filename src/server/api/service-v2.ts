@@ -1,49 +1,329 @@
 import { randomUUID } from "node:crypto";
 
-import { sha256Canonical } from "../../core/canonical";
+import { canonicalJson, sha256Canonical } from "../../core/canonical";
+import { buildCheckpointEvidenceV2 } from "../../core/checkpoint-v2";
+import { DetailedFinanceError } from "../../core/detailed-actions-v2";
+import { safeBigIntToNumber } from "../../core/domain/integer";
 import { moneyCents, ratePpm } from "../../core/domain/money";
-import { simulationMonth } from "../../core/domain/month";
-import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
+import { monthsBetween, simulationMonth } from "../../core/domain/month";
+import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../../core/event-scheduler-v2";
+import type { GameStateV2 } from "../../core/game-state-v2";
+import { MACRO_MARKET_MODEL_V2_VERSION } from "../../core/market";
+import {
+  FINANCIAL_KERNEL_V2_VERSION,
+  type ProcessMonthV2Command,
+} from "../../core/monthly-turn-v2";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
+import { OUTCOME_POLICY_V1_VERSION } from "../../core/outcome-policy-v2";
+import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../core/runtime-balance-policy-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "../../core/scenario-director-policy-v2";
+import { WORLD_RANDOM_VERSION_V1 } from "../../core/world-random-v1";
 import { resolveScenarioCatalogSelection } from "../../core/scenario-catalog";
+import {
+  advanceTimeV2,
+  TIME_CONTROLLER_V2_VERSION,
+  type PauseReasonV2,
+  type TimeAdvanceModeV2,
+  type TimeControllerV2Dependencies,
+  type TimeControllerV2Result,
+} from "../../core/time-controller-v2";
 import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 import type { TaxCalculator } from "../tax/client";
 import {
+  advanceTimeV2ResponseSchema,
   commandV2ResponseSchema,
+  causalHistoryV1ResponseSchema,
+  counterfactualV1ResponseSchema,
   createRunV2ResponseSchema,
   getRunV2ResponseSchema,
   migrateRunV2ResponseSchema,
+  playerPolicyPreviewV2ResponseSchema,
+  type AdvanceTimeV2Request,
+  type AdvanceTimeV2Response,
   type CommandV2Response,
+  type CausalHistoryV1Response,
+  type CausalHistoryV1Query,
+  type CounterfactualV1Request,
+  type CounterfactualV1Response,
   type CreateRunV2Request,
   type CreateRunV2Response,
   type GameCommandV2Public,
   type GetRunV2Response,
   type MigrateRunV2Response,
+  type PlayerPolicyPreviewV2Request,
+  type PlayerPolicyPreviewV2Response,
 } from "./contracts-v2";
 import { mapPlayerCommand } from "./v2/command-mapper";
 import { RunApiV2Error } from "./v2/errors";
 import { summarizeMonthlyRecord } from "./v2/monthly-record";
 import type { V2Repository } from "./v2/repository-port";
-import { resolveMonthlyTaxEvidence } from "./v2/tax-orchestrator";
+import { buildTaxRequest, resolveMonthlyTaxEvidence } from "./v2/tax-orchestrator";
+import { fingerprintAnnualTaxContext } from "../tax/context-cache";
 
 const AUTOMATIC_LIQUIDATION_COST_RATE_PPM = ratePpm(10_000);
+
+function runtimeBalanceDifficultyForStateV2(
+  state: Pick<GameStateV2, "gameplay">,
+): "guided" | "normal" | "hard" {
+  return state.gameplay.runtimeBalance?.version === 2
+    ? state.gameplay.runtimeBalance.difficulty
+    : "normal";
+}
 
 export class RunApiServiceV2 {
   readonly #repository: V2Repository;
   readonly #taxCalculator: TaxCalculator;
   readonly #playerIdFactory: () => string;
+  readonly #timeControllerDependencies: TimeControllerV2Dependencies;
 
   constructor(
     repository: V2Repository,
     taxCalculator: TaxCalculator,
     playerIdFactory: () => string = () => `player_${randomUUID()}`,
+    timeControllerDependencies: TimeControllerV2Dependencies = {},
   ) {
     this.#repository = repository;
     this.#taxCalculator = taxCalculator;
     this.#playerIdFactory = playerIdFactory;
+    this.#timeControllerDependencies = timeControllerDependencies;
+  }
+
+  async advanceTime(
+    runId: string,
+    accessSecret: string,
+    request: AdvanceTimeV2Request,
+  ): Promise<AdvanceTimeV2Response> {
+    const current = await this.#repository.loadAuthorizedRunV2(
+      runId,
+      accessSecret,
+    );
+    const requestFingerprint = sha256Canonical(request);
+    const accepted = this.#repository.loadAcceptedTimeAdvanceV2
+      ? await this.#repository.loadAcceptedTimeAdvanceV2(
+          runId,
+          accessSecret,
+          request.id,
+          requestFingerprint,
+        )
+      : null;
+    if (accepted) {
+      return publicTimeAdvanceResponse(accepted);
+    }
+    if (current.revision !== request.expectedRevision) {
+      throw new RunApiV2Error(
+        "STALE_REVISION",
+        "time advance revision is stale",
+      );
+    }
+    if (current.currentMonth !== request.effectiveMonth) {
+      throw new RunApiV2Error(
+        "INVALID_EFFECTIVE_MONTH",
+        "time advance month does not match the run",
+      );
+    }
+    if (!this.#repository.applyTimeAdvanceV2) {
+      throw new Error("time advance persistence is unavailable");
+    }
+
+    const openingChecksum = sha256Canonical(current);
+    const result = await this.#prepareTimeAdvance(
+      runId,
+      accessSecret,
+      request,
+      current,
+    );
+    const finalStateChecksum = sha256Canonical(result.state);
+    const applied = await this.#repository.applyTimeAdvanceV2(
+      runId,
+      accessSecret,
+      Object.freeze({
+        controllerVersion: TIME_CONTROLLER_V2_VERSION,
+        engineVersion: current.engineVersion,
+        request: Object.freeze(structuredClone(request)),
+        batchId: request.id,
+        requestFingerprint,
+        openingRevision: current.revision,
+        openingStateChecksum: openingChecksum,
+        steps: result.steps,
+        controllerResult: result,
+        finalStateChecksum,
+      }),
+    );
+    return publicTimeAdvanceResponse(applied);
+  }
+
+  async #prepareTimeAdvance(
+    runId: string,
+    accessSecret: string,
+    request: AdvanceTimeV2Request,
+    opening: Awaited<ReturnType<V2Repository["loadAuthorizedRunV2"]>>,
+  ): Promise<TimeControllerV2Result> {
+    const probe = advanceTimeV2(
+      opening,
+      {
+        schemaVersion: 2,
+        id: request.id,
+        type: "advance_time_v2",
+        maxMonths: request.maxMonths,
+        mode: { kind: "stop" },
+        monthlyInputs: [],
+      },
+      this.#timeControllerDependencies,
+    );
+    if (
+      request.mode.kind === "stop" ||
+      probe.pauseReason.kind !== "explicit_user_stop"
+    ) {
+      return probe;
+    }
+
+    const requestedMonths =
+      request.mode.kind === "one_month"
+        ? 1
+        : request.mode.kind === "months" || request.mode.kind === "resume"
+          ? request.mode.months
+          : request.maxMonths;
+    const checkpointMonths =
+      request.mode.kind === "until_checkpoint"
+        ? request.mode.intervalMonths
+        : (request.checkpointIntervalMonths ?? null);
+    const processingLimit = Math.min(requestedMonths, checkpointMonths ?? requestedMonths);
+    let state = opening;
+    const steps: TimeControllerV2Result["steps"][number][] = [];
+    const segmentResults: TimeControllerV2Result[] = [];
+    let lastResult = probe;
+    while (steps.length < processingLimit) {
+      const remaining = processingLimit - steps.length;
+      const monthNumber = Number(state.currentMonth.slice(5, 7));
+      const careerTransitionMonths = state.gameplay.careerDevelopment.pending
+        .map(({ completesMonth }) =>
+          monthsBetween(state.currentMonth, completesMonth),
+        )
+        .filter((months) => months > 0)
+        .reduce<number | null>(
+          (earliest, months) =>
+            earliest === null ? months : Math.min(earliest, months),
+          null,
+        );
+      const segmentMonths = Math.min(
+        remaining,
+        13 - monthNumber,
+        careerTransitionMonths ?? remaining,
+      );
+      const firstCommandId = monthlyBatchCommandId(request.id, steps.length + 1);
+      const taxRequest = buildTaxRequest(state, firstCommandId);
+      const fingerprint = fingerprintAnnualTaxContext(taxRequest);
+      const evidence = await resolveMonthlyTaxEvidence({
+        state,
+        runId,
+        accessSecret,
+        commandId: firstCommandId,
+        repository: this.#repository,
+        taxCalculator: this.#taxCalculator,
+      });
+      const runtimeBalanceDifficulty = runtimeBalanceDifficultyForStateV2(state);
+      const monthlyInputs = Array.from({ length: segmentMonths }, (_, offset) => {
+        const commandId = monthlyBatchCommandId(
+          request.id,
+          steps.length + offset + 1,
+        );
+        return Object.freeze({
+          commandId,
+          payload: {
+            financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+            outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+            eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+            runtimeBalanceControllerVersion:
+              RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+            scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+            worldRandomVersion: WORLD_RANDOM_VERSION_V1,
+            marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+            macroDifficulty: runtimeBalanceDifficulty,
+            taxEvidence:
+              offset === 0
+                ? evidence
+                : Object.freeze({
+                    ...evidence,
+                    traceId: `tax.cache.${commandId}`,
+                    contextFingerprint: fingerprint,
+                  }),
+            taxableLiquidationCostRatePpm:
+              AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
+            resolvedCashFlows: [],
+          },
+        });
+      });
+      const segmentIsFinal = segmentMonths === remaining;
+      const segmentMode = timeAdvanceSegmentMode(
+        request,
+        segmentMonths,
+        segmentIsFinal,
+        steps.length === 0,
+      );
+      const checkpointIsFinal =
+        checkpointMonths !== null &&
+        processingLimit === checkpointMonths &&
+        segmentIsFinal;
+      lastResult = advanceTimeV2(
+        state,
+        {
+          schemaVersion: 2,
+          id: request.id,
+          type: "advance_time_v2",
+          maxMonths: segmentMonths,
+          mode: segmentMode,
+          ...(checkpointIsFinal
+            ? { checkpointIntervalMonths: segmentMonths }
+            : {}),
+          monthlyInputs,
+        },
+        this.#timeControllerDependencies,
+      );
+      segmentResults.push(lastResult);
+      steps.push(...lastResult.steps);
+      state = lastResult.state;
+      const transportPause =
+        !segmentIsFinal &&
+        (lastResult.pauseReason.kind === "bounded_limit" ||
+          lastResult.pauseReason.kind === "requested_duration");
+      if (!transportPause) {
+        const pauseReason =
+          lastResult.pauseReason.kind === "requested_duration"
+            ? Object.freeze({
+                kind: "requested_duration" as const,
+                requestedMonths,
+              })
+            : lastResult.pauseReason;
+        const checkpointInput =
+          lastResult.pauseReason.kind === "periodic_checkpoint" &&
+          steps.length !== lastResult.steps.length
+            ? buildCheckpointEvidenceV2(
+                opening,
+                state,
+                steps.map(({ record }) => record),
+              )
+            : lastResult.checkpointInput;
+        return aggregateTimeAdvanceResult(
+          opening,
+          lastResult,
+          steps,
+          pauseReason,
+          checkpointInput,
+          segmentResults,
+        );
+      }
+    }
+    return aggregateTimeAdvanceResult(
+      opening,
+      lastResult,
+      steps,
+      lastResult.pauseReason,
+      lastResult.checkpointInput,
+      segmentResults,
+    );
   }
 
   async createRun(request: CreateRunV2Request): Promise<CreateRunV2Response> {
@@ -72,6 +352,7 @@ export class RunApiServiceV2 {
         startMonth: simulationMonth(request.startMonth),
         randomSeed: String(request.randomSeed),
         resolvedScenario,
+        runtimeBalanceDifficulty: "normal",
         annualGrossSalaryCents: moneyCents(request.annualGrossSalaryCents),
         ...(request.financialGoal
           ? {
@@ -166,16 +447,62 @@ export class RunApiServiceV2 {
     };
   }
 
+  async getCausalHistory(
+    runId: string,
+    accessSecret: string,
+    range: CausalHistoryV1Query,
+  ): Promise<CausalHistoryV1Response> {
+    const load = this.#repository.loadCausalHistoryV1;
+    if (!load) {
+      throw new Error("causal history repository capability is unavailable");
+    }
+    return causalHistoryV1ResponseSchema.parse({
+      history: await load.call(this.#repository, runId, accessSecret, range),
+    });
+  }
+
+  async runCounterfactual(
+    runId: string,
+    accessSecret: string,
+    request: CounterfactualV1Request,
+  ): Promise<CounterfactualV1Response> {
+    const run = this.#repository.runCounterfactualV1;
+    if (!run) {
+      throw new Error("counterfactual repository capability is unavailable");
+    }
+    return counterfactualV1ResponseSchema.parse({
+      result: await run.call(this.#repository, runId, accessSecret, request),
+    });
+  }
+
   async submitCommand(
     runId: string,
     accessSecret: string,
     command: GameCommandV2Public,
   ): Promise<CommandV2Response> {
     if (command.type !== "process_month") {
+      const mapped = mapPlayerCommand(command);
+      const accepted = this.#repository.loadAcceptedCommandV2
+        ? await this.#repository.loadAcceptedCommandV2(
+            runId,
+            accessSecret,
+            command.id,
+          )
+        : null;
+      const replay =
+        accepted && publicCommandMatchesAcceptedV2(command, accepted)
+          ? accepted
+          : null;
+      if (!replay && legacyLiquidationRateV2(command) !== undefined) {
+        throw new DetailedFinanceError(
+          "INVALID_RATE",
+          "taxable liquidation cost is server-owned for new actions",
+        );
+      }
       const result = await this.#repository.applyCommandV2(
         runId,
         accessSecret,
-        mapPlayerCommand(command),
+        replay ?? mapped,
       );
       return commandV2ResponseSchema.parse({ ...result, monthlyRecord: null });
     }
@@ -184,35 +511,50 @@ export class RunApiServiceV2 {
       runId,
       accessSecret,
     );
-    const replayEvidence = current.acceptedCommandIds.includes(command.id)
-      ? await this.#repository.loadMonthlyTaxEvidenceForCommand(
+    const acceptedReplay = current.acceptedCommandIds.includes(command.id)
+      ? await this.#repository.loadAcceptedMonthlyCommandV2(
           runId,
           accessSecret,
           command.id,
         )
       : null;
-    this.#validateMonthlyCommand(current, command, replayEvidence !== null);
-    const evidence =
-      replayEvidence ??
-      (await resolveMonthlyTaxEvidence({
+    this.#validateMonthlyCommand(current, command, acceptedReplay !== null);
+    let internal: ProcessMonthV2Command;
+    if (acceptedReplay) {
+      this.#validateMonthlyReplayEnvelope(command, acceptedReplay);
+      internal = acceptedReplay;
+    } else {
+      const evidence = await resolveMonthlyTaxEvidence({
         state: current,
         runId,
         accessSecret,
         commandId: command.id,
         repository: this.#repository,
         taxCalculator: this.#taxCalculator,
-      }));
-    const internal: ProcessMonthV2Command = {
-      schemaVersion: 2,
-      id: command.id,
-      type: "process_month_v2",
-      expectedRevision: command.expectedRevision,
-      effectiveMonth: simulationMonth(command.effectiveMonth),
-      payload: {
-        taxEvidence: evidence,
-        taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
-      },
-    };
+      });
+      const runtimeBalanceDifficulty = runtimeBalanceDifficultyForStateV2(current);
+      internal = {
+        schemaVersion: 2,
+        id: command.id,
+        type: "process_month_v2",
+        expectedRevision: command.expectedRevision,
+        effectiveMonth: simulationMonth(command.effectiveMonth),
+        payload: {
+          financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          runtimeBalanceControllerVersion:
+            RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+          scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+          worldRandomVersion: WORLD_RANDOM_VERSION_V1,
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: runtimeBalanceDifficulty,
+          taxEvidence: evidence,
+          taxableLiquidationCostRatePpm: AUTOMATIC_LIQUIDATION_COST_RATE_PPM,
+          resolvedCashFlows: [],
+        },
+      };
+    }
     const applied = await this.#repository.applyCommandV2(
       runId,
       accessSecret,
@@ -224,6 +566,33 @@ export class RunApiServiceV2 {
         ? summarizeMonthlyRecord(applied.monthlyRecord)
         : null,
     });
+  }
+
+  async previewPlayerPolicyCommand(
+    runId: string,
+    accessSecret: string,
+    command: PlayerPolicyPreviewV2Request,
+  ): Promise<PlayerPolicyPreviewV2Response> {
+    if (legacyLiquidationRateV2(command) !== undefined) {
+      throw new DetailedFinanceError(
+        "INVALID_RATE",
+        "taxable liquidation cost is server-owned and cannot be previewed",
+      );
+    }
+    const preview = this.#repository.previewPlayerPolicyCommandV2;
+    if (!preview) {
+      throw new Error("player policy preview repository capability is unavailable");
+    }
+    const internal = mapPlayerCommand(command);
+    if (
+      internal.type !== "take_detailed_action" &&
+      internal.type !== "set_recurring_strategy"
+    ) {
+      throw new TypeError("only player action and strategy commands can be previewed");
+    }
+    return playerPolicyPreviewV2ResponseSchema.parse(
+      await preview.call(this.#repository, runId, accessSecret, internal),
+    );
   }
 
   #validateMonthlyCommand(
@@ -257,4 +626,245 @@ export class RunApiServiceV2 {
       );
     }
   }
+
+  #validateMonthlyReplayEnvelope(
+    command: Extract<GameCommandV2Public, { type: "process_month" }>,
+    accepted: ProcessMonthV2Command,
+  ): void {
+    if (command.expectedRevision !== accepted.expectedRevision) {
+      throw new RunApiV2Error(
+        "STALE_REVISION",
+        "replayed monthly command must use its accepted revision",
+      );
+    }
+    if (simulationMonth(command.effectiveMonth) !== accepted.effectiveMonth) {
+      throw new RunApiV2Error(
+        "INVALID_EFFECTIVE_MONTH",
+        "replayed monthly command must use its accepted effective month",
+      );
+    }
+  }
+}
+
+type StoredGameCommandV2 = Parameters<V2Repository["applyCommandV2"]>[2];
+
+function publicCommandProjectionV2(
+  command: StoredGameCommandV2,
+): unknown | null {
+  const envelope = {
+    schemaVersion: command.schemaVersion,
+    id: command.id,
+    expectedRevision: command.expectedRevision,
+    effectiveMonth: command.effectiveMonth,
+  };
+  if (command.type === "set_recurring_strategy") {
+    return { ...envelope, type: command.type, payload: command.payload };
+  }
+  if (command.type === "take_detailed_action") {
+    const storedAction = command.payload.action;
+    const action =
+      storedAction.type === "liquidate_taxable"
+        ? {
+            type: storedAction.type,
+            bucket: storedAction.bucket,
+            amountCents: storedAction.amountCents,
+          }
+        : storedAction;
+    return { ...envelope, type: command.type, payload: { action } };
+  }
+  if (
+    command.type === "resolve_event_choice" ||
+    command.type === "manage_life_milestone"
+  ) {
+    return { ...envelope, type: command.type, payload: command.payload };
+  }
+  return null;
+}
+
+function publicCommandMatchesAcceptedV2(
+  command: Exclude<GameCommandV2Public, { type: "process_month" }>,
+  accepted: StoredGameCommandV2,
+): boolean {
+  const projection = publicCommandProjectionV2(accepted);
+  if (projection === null) return false;
+  const legacyRate = legacyLiquidationRateV2(command);
+  if (legacyRate !== undefined) {
+    if (
+      accepted.type !== "take_detailed_action" ||
+      accepted.payload.actionPolicyVersion !== undefined ||
+      accepted.payload.action.type !== "liquidate_taxable" ||
+      accepted.payload.action.liquidationCostRatePpm !== legacyRate
+    ) {
+      return false;
+    }
+  }
+  const normalizedPublic =
+    command.type === "take_detailed_action" &&
+    command.payload.action.type === "liquidate_taxable"
+      ? {
+          ...command,
+          payload: {
+            action: {
+              type: command.payload.action.type,
+              bucket: command.payload.action.bucket,
+              amountCents: command.payload.action.amountCents,
+            },
+          },
+        }
+      : command;
+  return canonicalJson(projection) === canonicalJson(normalizedPublic);
+}
+
+function legacyLiquidationRateV2(
+  command: Exclude<GameCommandV2Public, { type: "process_month" }>,
+): number | undefined {
+  return command.type === "take_detailed_action" &&
+    command.payload.action.type === "liquidate_taxable"
+    ? command.payload.action.liquidationCostRatePpm
+    : undefined;
+}
+
+function monthlyBatchCommandId(batchId: string, sequence: number): string {
+  const candidate = `${batchId}.month.${sequence}`;
+  return candidate.length <= 96
+    ? candidate
+    : `advance.${sha256Canonical({ batchId, sequence }).slice(0, 64)}`;
+}
+
+function timeAdvanceSegmentMode(
+  request: AdvanceTimeV2Request,
+  segmentMonths: number,
+  segmentIsFinal: boolean,
+  firstSegment: boolean,
+): TimeAdvanceModeV2 {
+  switch (request.mode.kind) {
+    case "one_month":
+      return Object.freeze({ kind: "one_month" });
+    case "months":
+      return segmentIsFinal
+        ? Object.freeze({ kind: "months", months: segmentMonths })
+        : Object.freeze({ kind: "until_end" });
+    case "resume":
+      if (firstSegment) {
+        return Object.freeze({
+          kind: "resume",
+          resolvedDecisionId: request.mode.resolvedDecisionId,
+          months: segmentMonths,
+        });
+      }
+      return segmentIsFinal
+        ? Object.freeze({ kind: "months", months: segmentMonths })
+        : Object.freeze({ kind: "until_end" });
+    case "until_event":
+    case "until_decision":
+    case "until_end":
+      return request.mode;
+    case "until_checkpoint":
+      return segmentIsFinal
+        ? Object.freeze({
+            kind: "until_checkpoint",
+            intervalMonths: segmentMonths,
+          })
+        : Object.freeze({ kind: "until_end" });
+    case "stop":
+      return Object.freeze({ kind: "stop" });
+  }
+}
+
+function sumSegmentMoney(
+  results: readonly TimeControllerV2Result[],
+  select: (result: TimeControllerV2Result) => number,
+  label: string,
+) {
+  return moneyCents(
+    safeBigIntToNumber(
+      results.reduce(
+        (sum, result) => sum + BigInt(select(result)),
+        BigInt(0),
+      ),
+      label,
+    ),
+  );
+}
+
+function aggregateTimeAdvanceResult(
+  opening: Awaited<ReturnType<V2Repository["loadAuthorizedRunV2"]>>,
+  lastResult: TimeControllerV2Result,
+  steps: readonly TimeControllerV2Result["steps"][number][],
+  pauseReason: PauseReasonV2,
+  checkpointInput: TimeControllerV2Result["checkpointInput"],
+  segmentResults: readonly TimeControllerV2Result[],
+): TimeControllerV2Result {
+  const records = Object.freeze(steps.map(({ record }) => record));
+  return Object.freeze({
+    monthsAdvanced: steps.length,
+    state: lastResult.state,
+    pauseReason,
+    pendingEvent: lastResult.pendingEvent,
+    pendingDecision: lastResult.pendingDecision,
+    checkpointInput,
+    endCondition: lastResult.endCondition,
+    steps: Object.freeze([...steps]),
+    records,
+    uiChanges: Object.freeze({
+      kind: "time_advance_summary_v2",
+      fromMonth: opening.currentMonth,
+      toMonth: lastResult.state.currentMonth,
+      monthsAdvanced: steps.length,
+      pauseKind: pauseReason.kind,
+      cashChangeCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.cashChangeCents,
+        "time advance aggregate cash change",
+      ),
+      netWorthChangeCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.netWorthChangeCents,
+        "time advance aggregate net worth change",
+      ),
+      totalGrossIncomeCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.totalGrossIncomeCents,
+        "time advance aggregate gross income",
+      ),
+      totalTaxCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.totalTaxCents,
+        "time advance aggregate tax",
+      ),
+      totalAfterTaxCashIncomeCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.totalAfterTaxCashIncomeCents,
+        "time advance aggregate after-tax income",
+      ),
+      totalRequiredCashCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.totalRequiredCashCents,
+        "time advance aggregate required cash",
+      ),
+      totalMarketValueChangeCents: sumSegmentMoney(
+        segmentResults,
+        (result) => result.uiChanges.totalMarketValueChangeCents,
+        "time advance aggregate market change",
+      ),
+    }),
+  });
+}
+
+function publicTimeAdvanceResponse(
+  result: TimeControllerV2Result &
+    Readonly<{ stateChecksum: string; idempotentReplay: boolean }>,
+): AdvanceTimeV2Response {
+  return advanceTimeV2ResponseSchema.parse({
+    state: result.state,
+    stateChecksum: result.stateChecksum,
+    idempotentReplay: result.idempotentReplay,
+    monthsAdvanced: result.monthsAdvanced,
+    pauseReason: result.pauseReason,
+    pendingEvent: result.pendingEvent,
+    pendingDecision: result.pendingDecision,
+    checkpointInput: result.checkpointInput,
+    endCondition: result.endCondition,
+    uiChanges: result.uiChanges,
+  });
 }

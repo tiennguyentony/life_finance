@@ -1,39 +1,23 @@
-import {
-  divideRoundHalfAwayFromZero,
-  safeBigIntToNumber,
-} from "../../../core/domain/integer";
+import { safeBigIntToNumber } from "../../../core/domain/integer";
 import {
   addMoney,
   allocateMoney,
   moneyCents,
 } from "../../../core/domain/money";
 import { monthsBetween } from "../../../core/domain/month";
+import { resetAnnualFinancialAccumulatorsV2 } from "../../../core/financial-year-v2";
+import { currentCumulativePriceIndexPpmV2 } from "../../../core/inflation-v2";
 import type { MonthlyTaxEvidence } from "../../../core/payroll-v2";
 import { planRecurringAllocations } from "../../../core/recurring-strategy-v2";
 import type { TaxCalculator } from "../../tax/client";
 import {
   FROZEN_POLICY_YEAR,
   taxCalculationRequestSchema,
+  type TaxCalculationResult,
 } from "../../tax/contracts";
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
 import { RunApiV2Error } from "./errors";
 import type { AuthorizedV2State, V2Repository } from "./repository-port";
-
-function annualCpiPpm(state: AuthorizedV2State): number {
-  const initialLivingCost =
-    state.gameplay.catalogSnapshot?.derived.annualLivingCostCents;
-  if (!initialLivingCost || initialLivingCost <= 0) return 1_000_000;
-  return Math.max(
-    1,
-    safeBigIntToNumber(
-      divideRoundHalfAwayFromZero(
-        BigInt(state.finances.annualLivingCostCents) * BigInt(1_000_000),
-        BigInt(initialLivingCost),
-      ),
-      "cumulative price index",
-    ),
-  );
-}
 
 function emptyIncome() {
   return {
@@ -56,23 +40,25 @@ function emptyIncome() {
 }
 
 export function projectAnnualPretaxContributions(state: AuthorizedV2State) {
-  const employment = state.gameplay.employment;
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(state);
+  const employment = annualOpeningState.gameplay.employment;
   if (employment.status !== "employed") {
     throw new RunApiV2Error(
       "TAX_CONTEXT_MISMATCH",
       "annual contribution projection requires native employment",
     );
   }
-  const monthNumber = Number(state.currentMonth.slice(5, 7));
+  const monthNumber = Number(annualOpeningState.currentMonth.slice(5, 7));
   const remainingMonths = 13 - monthNumber;
   const monthlyGross = allocateMoney(
     employment.annualGrossSalaryCents,
     1,
     12,
   );
-  let employee401kCents = state.gameplay.contributions.employee401kCents;
-  let hsaCents = state.gameplay.contributions.hsaCents;
-  let projectionState = state;
+  let employee401kCents =
+    annualOpeningState.gameplay.contributions.employee401kCents;
+  let hsaCents = annualOpeningState.gameplay.contributions.hsaCents;
+  let projectionState = annualOpeningState;
 
   for (let month = 0; month < remainingMonths; month += 1) {
     const plan = planRecurringAllocations(
@@ -102,18 +88,26 @@ export function projectAnnualPretaxContributions(state: AuthorizedV2State) {
 }
 
 export function buildTaxRequest(state: AuthorizedV2State, commandId: string) {
-  const snapshot = state.gameplay.catalogSnapshot;
-  const employment = state.gameplay.employment;
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(state);
+  const snapshot = annualOpeningState.gameplay.catalogSnapshot;
+  const employment = annualOpeningState.gameplay.employment;
   if (!snapshot || employment.status !== "employed") {
     throw new RunApiV2Error(
       "TAX_CONTEXT_MISMATCH",
       "monthly processing requires a native employed v2 run",
     );
   }
-  const projectedContributions = projectAnnualPretaxContributions(state);
+  const projectedContributions = projectAnnualPretaxContributions(
+    annualOpeningState,
+  );
   const ageYears = Math.max(
     0,
-    Math.floor(monthsBetween(state.player.birthMonth, state.currentMonth) / 12),
+    Math.floor(
+      monthsBetween(
+        annualOpeningState.player.birthMonth,
+        annualOpeningState.currentMonth,
+      ) / 12,
+    ),
   );
   const household = snapshot.selected.household;
   const people: unknown[] = [
@@ -160,9 +154,10 @@ export function buildTaxRequest(state: AuthorizedV2State, commandId: string) {
   return taxCalculationRequestSchema.parse({
     schemaVersion: 1,
     traceId: `tax.${commandId}`,
-    economicYear: Number(state.currentMonth.slice(0, 4)),
+    economicYear: Number(annualOpeningState.currentMonth.slice(0, 4)),
     policyYear: FROZEN_POLICY_YEAR,
-    cumulativePriceIndexPpm: annualCpiPpm(state),
+    cumulativePriceIndexPpm:
+      currentCumulativePriceIndexPpmV2(annualOpeningState),
     stateCode: snapshot.derived.stateCode,
     filingStatus: snapshot.derived.filingStatus,
     people,
@@ -205,63 +200,56 @@ function assertCachedContext(
   }
 }
 
-export async function resolveMonthlyTaxEvidence(input: Readonly<{
-  state: AuthorizedV2State;
-  runId: string;
-  accessSecret: string;
-  commandId: string;
-  repository: V2Repository;
-  taxCalculator: TaxCalculator;
-}>): Promise<MonthlyTaxEvidence> {
-  const employment = input.state.gameplay.employment;
+export type MonthlyTaxEvidenceSourceV1 =
+  | Readonly<{ kind: "calculated"; result: TaxCalculationResult }>
+  | Readonly<{ kind: "cached"; evidence: MonthlyTaxEvidence }>;
+
+/** One production-owned conversion shared by the web service and offline lab. */
+export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
+  state: AuthorizedV2State,
+  commandId: string,
+  source: MonthlyTaxEvidenceSourceV1,
+): MonthlyTaxEvidence {
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(state);
+  const employment = annualOpeningState.gameplay.employment;
   if (employment.status !== "employed") {
     throw new RunApiV2Error(
       "TAX_CONTEXT_MISMATCH",
       "monthly processing requires native employment",
     );
   }
-  const request = buildTaxRequest(input.state, input.commandId);
+  const request = buildTaxRequest(annualOpeningState, commandId);
   const contextFingerprint = fingerprintAnnualTaxContext(request);
-  const cached = await input.repository.loadMonthlyTaxEvidenceForContext(
-    input.runId,
-    input.accessSecret,
-    contextFingerprint,
-  );
-  const monthlyGross = allocateMoney(
-    employment.annualGrossSalaryCents,
-    1,
-    12,
-  );
+  const monthlyGross = allocateMoney(employment.annualGrossSalaryCents, 1, 12);
   const monthlyPlan = planRecurringAllocations(
-    input.state,
+    annualOpeningState,
     monthlyGross,
     moneyCents(0),
   );
   let metadata: TaxMetadata;
   let monthlyTax: number;
-
-  if (cached) {
+  if (source.kind === "cached") {
     assertCachedContext(
-      cached,
+      source.evidence,
       request,
       monthlyGross,
       monthlyPlan.preTax.employee401kCents,
       monthlyPlan.preTax.hsaCents,
     );
     metadata = {
-      traceId: `tax.cache.${input.commandId}`,
-      economicYear: cached.economicYear,
-      policyYear: cached.policyYear,
-      stateCode: cached.stateCode,
-      filingStatus: cached.filingStatus,
-      provider: cached.provider,
-      bundleVersion: cached.bundleVersion,
-      rulesVersion: cached.rulesVersion,
-      projectedFromFrozenPolicy: cached.projectedFromFrozenPolicy,
+      traceId: `tax.cache.${commandId}`,
+      economicYear: source.evidence.economicYear,
+      policyYear: source.evidence.policyYear,
+      stateCode: source.evidence.stateCode,
+      filingStatus: source.evidence.filingStatus,
+      provider: source.evidence.provider,
+      bundleVersion: source.evidence.bundleVersion,
+      rulesVersion: source.evidence.rulesVersion,
+      projectedFromFrozenPolicy: source.evidence.projectedFromFrozenPolicy,
     };
-    monthlyTax = cached.totalTaxCents;
+    monthlyTax = source.evidence.totalTaxCents;
   } else {
-    const result = await input.taxCalculator.calculate(request);
+    const result = source.result;
     if (
       result.traceId !== request.traceId ||
       result.economicYear !== request.economicYear ||
@@ -288,7 +276,6 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
     };
     monthlyTax = allocateMoney(moneyCents(result.totalTaxCents), 1, 12);
   }
-
   const afterTaxCash = safeBigIntToNumber(
     BigInt(monthlyGross) -
       BigInt(monthlyPlan.preTax.employee401kCents) -
@@ -302,16 +289,52 @@ export async function resolveMonthlyTaxEvidence(input: Readonly<{
       "tax result leaves negative monthly payroll cash",
     );
   }
-
   return {
     schemaVersion: 1,
     ...metadata,
     contextFingerprint,
     grossIncomeCents: monthlyGross,
-    employee401kContributionCents:
-      monthlyPlan.preTax.employee401kCents,
+    employee401kContributionCents: monthlyPlan.preTax.employee401kCents,
     employeeHsaContributionCents: monthlyPlan.preTax.hsaCents,
     totalTaxCents: monthlyTax,
     afterTaxCashIncomeCents: moneyCents(afterTaxCash),
   };
+}
+
+export async function resolveMonthlyTaxEvidence(input: Readonly<{
+  state: AuthorizedV2State;
+  runId: string;
+  accessSecret: string;
+  commandId: string;
+  repository: V2Repository;
+  taxCalculator: TaxCalculator;
+}>): Promise<MonthlyTaxEvidence> {
+  const annualOpeningState = resetAnnualFinancialAccumulatorsV2(input.state);
+  const employment = annualOpeningState.gameplay.employment;
+  if (employment.status !== "employed") {
+    throw new RunApiV2Error(
+      "TAX_CONTEXT_MISMATCH",
+      "monthly processing requires native employment",
+    );
+  }
+  const request = buildTaxRequest(annualOpeningState, input.commandId);
+  const contextFingerprint = fingerprintAnnualTaxContext(request);
+  const cached = await input.repository.loadMonthlyTaxEvidenceForContext(
+    input.runId,
+    input.accessSecret,
+    contextFingerprint,
+  );
+  if (cached) {
+    return buildMonthlyTaxEvidenceFromPolicyEngineV1(
+      annualOpeningState,
+      input.commandId,
+      { kind: "cached", evidence: cached },
+    );
+  }
+  const result = await input.taxCalculator.calculate(request);
+  return buildMonthlyTaxEvidenceFromPolicyEngineV1(
+    annualOpeningState,
+    input.commandId,
+    { kind: "calculated", result },
+  );
 }

@@ -7,11 +7,21 @@ import {
 } from "../../core/checkpoint-v2";
 import type { GameState } from "../../core/game-state";
 import type { GameStateV2 } from "../../core/game-state-v2";
+import { projectFinancialGoal } from "../../core/financial-goals-v2";
+import type { ProcessMonthV2Command } from "../../core/monthly-turn-v2";
 import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
+import { analyzeRiskV1 } from "../../core/risk-v1";
+import type { TeachingCheckpointOwnerBundleV2 } from "../../core/teaching-checkpoint-owner-v2";
 import { RunSecretCodec } from "../auth/run-secret";
 import type { LifeFinanceDatabase } from "./client";
-import { RunRepositoryError } from "./run-repository-contracts";
-import { loadRunStateAtRevisionV2 } from "./run-state-replay-v2";
+import {
+  RunRepositoryError,
+  type GameCommandV2,
+} from "./run-repository-contracts";
+import {
+  loadRunStateAtRevisionV2,
+  rebuildGameCommandV2,
+} from "./run-state-replay-v2";
 import {
   assertPersistedState,
   assertScenarioSnapshotRecord,
@@ -118,6 +128,24 @@ export async function loadCheckpointEvidenceV2(
   accessSecret: string,
   fromRevision: number,
 ): Promise<CheckpointEvidenceV2> {
+  return (
+    await loadTeachingCheckpointOwnerBundleV2(
+      db,
+      secretCodec,
+      runId,
+      accessSecret,
+      fromRevision,
+    )
+  ).evidence;
+}
+
+export async function loadTeachingCheckpointOwnerBundleV2(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  fromRevision: number,
+): Promise<TeachingCheckpointOwnerBundleV2> {
   if (!Number.isSafeInteger(fromRevision) || fromRevision < 0) {
     throw new RunRepositoryError(
       "PERSISTENCE_INVARIANT",
@@ -148,7 +176,7 @@ export async function loadCheckpointEvidenceV2(
       ),
     )
     .orderBy(asc(monthlyTurnRecords.processedMonth));
-  const records = rows.map((row) => {
+  const monthlyRecords = rows.map((row) => {
     if (
       sha256Canonical(row.record) !== row.recordChecksum ||
       row.record.commandId !== row.commandId ||
@@ -160,19 +188,35 @@ export async function loadCheckpointEvidenceV2(
         "checkpoint monthly evidence failed checksum or identity validation",
       );
     }
-    return row.record;
+    return Object.freeze({
+      resultingRevision: row.resultingRevision,
+      recordChecksum: row.recordChecksum,
+      record: row.record,
+    });
   });
-  return buildCheckpointEvidenceV2(startingState, endingState, records);
+  const records = monthlyRecords.map(({ record }) => record);
+  return Object.freeze({
+    evidence: buildCheckpointEvidenceV2(startingState, endingState, records),
+    fromRevision,
+    toRevision: endingState.revision,
+    endingStateChecksum: sha256Canonical(endingState),
+    monthlyRecords: Object.freeze(monthlyRecords),
+    startRisk: analyzeRiskV1(startingState),
+    endRisk: analyzeRiskV1(endingState),
+    endGoal: projectFinancialGoal(
+      endingState.finances,
+      endingState.gameplay.financialGoal,
+    ),
+  });
 }
 
-export async function loadMonthlyTaxEvidenceForCommand(
+async function findAcceptedMonthlyCommandV2(
   db: LifeFinanceDatabase,
   secretCodec: RunSecretCodec,
-  
   runId: string,
   accessSecret: string,
   commandId: string,
-): Promise<MonthlyTaxEvidence | null> {
+): Promise<ProcessMonthV2Command | null> {
   assertUuid(runId);
   const [run] = await db
     .select()
@@ -210,6 +254,13 @@ export async function loadMonthlyTaxEvidenceForCommand(
       "command id belongs to a different accepted command",
     );
   }
+  const command = rebuildGameCommandV2(accepted);
+  if (command.type !== "process_month_v2") {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "accepted monthly command decoded to the wrong command type",
+    );
+  }
   const [stored] = await db
     .select()
     .from(monthlyTaxEvidence)
@@ -220,18 +271,104 @@ export async function loadMonthlyTaxEvidenceForCommand(
       ),
     )
     .limit(1);
-  const payload = accepted.payload as { taxEvidence?: unknown };
   if (
     !stored ||
     sha256Canonical(stored.evidence) !== stored.evidenceChecksum ||
-    canonicalJson(stored.evidence) !== canonicalJson(payload.taxEvidence)
+    canonicalJson(stored.evidence) !== canonicalJson(command.payload.taxEvidence)
   ) {
     throw new RunRepositoryError(
       "CORRUPT_STATE",
       "accepted monthly command is missing consistent tax evidence",
     );
   }
-  return stored.evidence;
+  return command;
+}
+
+export async function loadAcceptedCommandV2(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  commandId: string,
+): Promise<GameCommandV2 | null> {
+  assertUuid(runId);
+  const [run] = await db
+    .select()
+    .from(gameRuns)
+    .where(eq(gameRuns.id, runId))
+    .limit(1);
+  if (
+    !run ||
+    !isAuthorized(
+      secretCodec,
+      accessSecret,
+      run.accessSecretHash,
+      run.accessSecretHashVersion,
+    )
+  ) {
+    throw new RunRepositoryError(
+      "NOT_FOUND_OR_UNAUTHORIZED",
+      "run was not found or the credential is invalid",
+    );
+  }
+  const [accepted] = await db
+    .select()
+    .from(acceptedCommands)
+    .where(
+      and(
+        eq(acceptedCommands.runId, runId),
+        eq(acceptedCommands.commandId, commandId),
+      ),
+    )
+    .limit(1);
+  if (!accepted) return null;
+  if (accepted.commandSchemaVersion !== 2) {
+    throw new RunRepositoryError(
+      "IDEMPOTENCY_MISMATCH",
+      "command id belongs to a different accepted command schema",
+    );
+  }
+  return rebuildGameCommandV2(accepted);
+}
+
+export async function loadAcceptedMonthlyCommandV2(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  commandId: string,
+): Promise<ProcessMonthV2Command> {
+  const command = await findAcceptedMonthlyCommandV2(
+    db,
+    secretCodec,
+    runId,
+    accessSecret,
+    commandId,
+  );
+  if (!command) {
+    throw new RunRepositoryError(
+      "CORRUPT_STATE",
+      "accepted monthly command is missing from persisted command history",
+    );
+  }
+  return command;
+}
+
+export async function loadMonthlyTaxEvidenceForCommand(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  commandId: string,
+): Promise<MonthlyTaxEvidence | null> {
+  const command = await findAcceptedMonthlyCommandV2(
+    db,
+    secretCodec,
+    runId,
+    accessSecret,
+    commandId,
+  );
+  return command?.payload.taxEvidence ?? null;
 }
 
 export async function loadMonthlyTaxEvidenceForContext(

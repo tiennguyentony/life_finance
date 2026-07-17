@@ -7,6 +7,7 @@ import {
   moneyCents,
   subtractMoney,
   type MoneyCents,
+  type RatePpm,
 } from "./domain/money";
 import { reconcileFinancesWithLedger } from "./game-state";
 import {
@@ -14,6 +15,7 @@ import {
   type DebtBreakdown,
   type GameStateV2,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { appendTransaction, type JournalPosting } from "./ledger";
 
 export type DebtServiceLine = Readonly<{
@@ -54,9 +56,9 @@ function sumMoney(values: readonly MoneyCents[], label: string): MoneyCents {
   );
 }
 
-function monthlyInterest(
+export function calculateMonthlyDebtInterestV2(
   principalCents: MoneyCents,
-  annualInterestRatePpm: number,
+  annualInterestRatePpm: RatePpm,
 ): MoneyCents {
   return moneyCents(
     safeBigIntToNumber(
@@ -67,6 +69,62 @@ function monthlyInterest(
       "monthly debt interest",
     ),
   );
+}
+
+export function calculateTotalMinimumDebtPaymentV2(
+  debts: DebtBreakdown["termDebts"],
+): MoneyCents {
+  return sumMoney(
+    debts.map(({ minimumPaymentCents, principalCents }) =>
+      moneyCents(Math.min(minimumPaymentCents, principalCents)),
+    ),
+    "term debt minimum total",
+  );
+}
+
+export function calculateStoredMinimumDebtObligationV2(
+  debts: DebtBreakdown["termDebts"],
+): MoneyCents {
+  return sumMoney(
+    debts.map(({ minimumPaymentCents }) => minimumPaymentCents),
+    "stored term debt minimum obligation",
+  );
+}
+
+export function applyDebtPaymentV2(
+  debt: DebtBreakdown["termDebts"][number],
+  interestCents: MoneyCents,
+  requestedPaymentCents: MoneyCents,
+): Readonly<{
+  debt: DebtBreakdown["termDebts"][number];
+  appliedPaymentCents: MoneyCents;
+}> {
+  if (
+    debt.principalCents < 0 ||
+    interestCents < 0 ||
+    requestedPaymentCents < 0
+  ) {
+    throw new DebtServiceV2Error(
+      "INVALID_DEBT",
+      "debt principal, interest, and requested payment must be non-negative",
+    );
+  }
+  const payoffCents = addMoney(debt.principalCents, interestCents);
+  const appliedPaymentCents = moneyCents(
+    Math.min(requestedPaymentCents, payoffCents),
+  );
+  const principalCents = subtractMoney(payoffCents, appliedPaymentCents);
+  const nextDebt = Object.freeze({
+    ...debt,
+    principalCents,
+    minimumPaymentCents:
+      principalCents === 0
+        ? moneyCents(0)
+        : moneyCents(Math.min(debt.minimumPaymentCents, principalCents)),
+    remainingTermMonths:
+      principalCents === 0 ? 0 : debt.remainingTermMonths,
+  });
+  return Object.freeze({ debt: nextDebt, appliedPaymentCents });
 }
 
 export function planMonthlyDebtService(
@@ -86,19 +144,22 @@ export function planMonthlyDebtService(
           `active debt ${debt.id} has invalid payment, term, or rate`,
         );
       }
-      const interestCents = monthlyInterest(
+      const interestCents = calculateMonthlyDebtInterestV2(
         debt.principalCents,
         debt.annualInterestRatePpm,
       );
       const balanceAfterInterest = addMoney(debt.principalCents, interestCents);
-      const scheduledPaymentCents =
+      const requestedPaymentCents =
         debt.remainingTermMonths === 1
           ? balanceAfterInterest
           : moneyCents(Math.min(debt.minimumPaymentCents, balanceAfterInterest));
-      const closingPrincipalCents = subtractMoney(
-        balanceAfterInterest,
-        scheduledPaymentCents,
+      const payment = applyDebtPaymentV2(
+        debt,
+        interestCents,
+        requestedPaymentCents,
       );
+      const scheduledPaymentCents = payment.appliedPaymentCents;
+      const closingPrincipalCents = payment.debt.principalCents;
       const principalPaidCents = moneyCents(
         Math.max(0, scheduledPaymentCents - interestCents),
       );
@@ -109,12 +170,7 @@ export function planMonthlyDebtService(
         scheduledPaymentCents,
         principalPaidCents,
         closingPrincipalCents,
-        closingMinimumPaymentCents:
-          closingPrincipalCents === 0
-            ? moneyCents(0)
-            : moneyCents(
-                Math.min(debt.minimumPaymentCents, closingPrincipalCents),
-              ),
+        closingMinimumPaymentCents: payment.debt.minimumPaymentCents,
         closingRemainingTermMonths:
           closingPrincipalCents === 0 ? 0 : debt.remainingTermMonths - 1,
       });
@@ -140,16 +196,10 @@ function credit(accountId: string, amountCents: MoneyCents): JournalPosting {
   return { accountId, debitCents: moneyCents(0), creditCents: amountCents };
 }
 
-function minimumTotal(debts: DebtBreakdown["termDebts"]): MoneyCents {
-  return sumMoney(
-    debts.map(({ minimumPaymentCents }) => minimumPaymentCents),
-    "term debt minimum total",
-  );
-}
-
 export function settleMonthlyDebtService(
   state: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): Readonly<{ state: GameStateV2; plan: MonthlyDebtServicePlan }> {
   if (!COMMAND_ID.test(commandId)) {
     throw new DebtServiceV2Error(
@@ -215,8 +265,10 @@ export function settleMonthlyDebtService(
         }
       : debt;
   });
-  const oldMinimum = minimumTotal(state.gameplay.debts.termDebts);
-  const nextMinimum = minimumTotal(nextDebts);
+  const oldMinimum = calculateStoredMinimumDebtObligationV2(
+    state.gameplay.debts.termDebts,
+  );
+  const nextMinimum = calculateStoredMinimumDebtObligationV2(nextDebts);
   const reconciled = reconcileFinancesWithLedger(state.finances, ledger);
   const requiredWithoutOldMinimum = subtractMoney(
     reconciled.requiredObligationsCents,
@@ -236,6 +288,6 @@ export function settleMonthlyDebtService(
       ...state.gameplay,
       debts: { ...state.gameplay.debts, termDebts: nextDebts },
     },
-  });
+  }, validationOptions);
   return Object.freeze({ state: nextState, plan });
 }

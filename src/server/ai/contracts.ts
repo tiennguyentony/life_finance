@@ -1,11 +1,17 @@
 import { z } from "zod";
 
+import {
+  SCENARIO_DIRECTOR_AI_REQUEST_V1,
+  SCENARIO_DIRECTOR_AI_RESPONSE_V1,
+} from "../../core/scenario-director-ai-adapter-v2";
 import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
 
 export const AI_CONTRACT_VERSION = 1 as const;
+export const AI_SCENARIO_DIRECTOR_CONTRACT_VERSION = 2 as const;
 
 export const AI_ROLE_MODELS = Object.freeze({
   hostile_fed: "gpt-5.6-sol",
+  scenario_director: "gpt-5.6-sol",
   teacher: "gpt-5.6-sol",
   onboarding: "gpt-5.6-terra",
   explanation: "gpt-5.6-terra",
@@ -104,6 +110,137 @@ export const hostileFedResponseSchema = z
   })
   .strict();
 
+const scenarioDirectorCandidateIdentitySchema = z
+  .object({
+    templateId: safeIdentifier,
+    templateVersion: safeInteger.min(1),
+  })
+  .strict();
+
+const scenarioDirectorReasonCodesSchema = z
+  .array(safeIdentifier)
+  .max(16);
+
+export const scenarioDirectorRequestSchema = z
+  .object({
+    contractVersion: z.literal(AI_SCENARIO_DIRECTOR_CONTRACT_VERSION),
+    ...privacyConsentFields,
+    role: z.literal("scenario_director"),
+    director: z
+      .object({
+        version: z.literal(SCENARIO_DIRECTOR_AI_REQUEST_V1),
+        candidateSetChecksum: z.string().regex(/^[0-9a-f]{64}$/),
+        difficulty: z.enum(["guided", "normal", "hard"]),
+        macro: z
+          .object({
+            regime: z.enum(["expansion", "inflation", "recession", "recovery"]),
+            tags: z.array(safeIdentifier).max(16),
+          })
+          .strict(),
+        riskFacts: z
+          .array(
+            z
+              .object({
+                metricId: safeIdentifier,
+                severityBand: z.enum(["none", "low", "medium", "high", "critical"]),
+              })
+              .strict(),
+          )
+          .max(32),
+        candidates: z
+          .array(
+            scenarioDirectorCandidateIdentitySchema.extend({
+              category: z.enum([
+                "maintenance",
+                "health",
+                "housing",
+                "career",
+                "caregiving",
+                "social",
+                "behavioral_trap",
+                "opportunity",
+              ]),
+              tier: z.enum(["micro", "medium", "large", "catastrophe"]),
+              targetedWeakness: safeIdentifier,
+              lessonTags: z
+                .object({
+                  primary: safeIdentifier,
+                  secondary: z.array(safeIdentifier).max(16),
+                })
+                .strict(),
+              directorTags: z.array(safeIdentifier).max(16),
+              narrativeSetupId: safeIdentifier.optional(),
+              intendedLesson: safeIdentifier,
+              reasonCodes: scenarioDirectorReasonCodesSchema,
+            }),
+          )
+          .max(64),
+        recentDecisions: z
+          .array(
+            z
+              .object({
+                reasonCode: safeIdentifier,
+                semanticTags: z.array(safeIdentifier).max(16),
+              })
+              .strict(),
+          )
+          .max(24),
+        recentEvents: z
+          .array(
+            scenarioDirectorCandidateIdentitySchema.extend({
+              category: z.enum([
+                "maintenance",
+                "health",
+                "housing",
+                "career",
+                "caregiving",
+                "social",
+                "behavioral_trap",
+                "opportunity",
+              ]),
+              tier: z.enum(["micro", "medium", "large", "catastrophe"]),
+              targetedWeakness: safeIdentifier,
+              lessonTags: z.array(safeIdentifier).max(16),
+            }),
+          )
+          .max(24),
+        lessonHistory: z
+          .array(
+            z
+              .object({
+                lessonTag: safeIdentifier,
+                exposureBand: z.enum(["unseen", "single", "repeated"]),
+              })
+              .strict(),
+          )
+          .max(64),
+        storyArc: z
+          .object({
+            arcId: safeIdentifier,
+            tags: z.array(safeIdentifier).max(16),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const scenarioDirectorResponseSchema = z
+  .object({
+    version: z.literal(SCENARIO_DIRECTOR_AI_RESPONSE_V1),
+    candidateSetChecksum: z.string().regex(/^[0-9a-f]{64}$/),
+    ranked: z
+      .array(
+        scenarioDirectorCandidateIdentitySchema.extend({
+          intendedLesson: safeIdentifier,
+          reasonCodes: scenarioDirectorReasonCodesSchema,
+        }),
+      )
+      .max(64),
+  })
+  .strict();
+
 export const teacherRequestSchema = z
   .object({
     contractVersion: z.literal(AI_CONTRACT_VERSION),
@@ -185,6 +322,10 @@ export const onboardingResponseSchema = z
         z
           .object({
             field: z.enum([
+              "gross_income",
+              "take_home_income",
+              "essential_expenses",
+              "discretionary_expenses",
               "cash",
               "taxable_investments",
               "retirement",
@@ -197,6 +338,8 @@ export const onboardingResponseSchema = z
             ]),
             valueAsStated: z.string().trim().min(1).max(80),
             sourceExcerpt: z.string().trim().min(1).max(200),
+            period: z.enum(["monthly", "annual"]).nullable(),
+            basis: z.enum(["gross", "take_home"]).nullable(),
           })
           .strict(),
       )
@@ -230,6 +373,7 @@ export const explanationResponseSchema = z
 
 export const aiRequestSchema = z.discriminatedUnion("role", [
   hostileFedRequestSchema,
+  scenarioDirectorRequestSchema,
   teacherRequestSchema,
   onboardingRequestSchema,
   explanationRequestSchema,
@@ -237,6 +381,7 @@ export const aiRequestSchema = z.discriminatedUnion("role", [
 
 export const aiResponseSchemas = Object.freeze({
   hostile_fed: hostileFedResponseSchema,
+  scenario_director: scenarioDirectorResponseSchema,
   teacher: teacherResponseSchema,
   onboarding: onboardingResponseSchema,
   explanation: explanationResponseSchema,
@@ -245,6 +390,8 @@ export const aiResponseSchemas = Object.freeze({
 export type AiRequest = z.infer<typeof aiRequestSchema>;
 export type HostileFedRequest = z.infer<typeof hostileFedRequestSchema>;
 export type HostileFedResponse = z.infer<typeof hostileFedResponseSchema>;
+export type ScenarioDirectorRequest = z.infer<typeof scenarioDirectorRequestSchema>;
+export type ScenarioDirectorResponse = z.infer<typeof scenarioDirectorResponseSchema>;
 export type TeacherRequest = z.infer<typeof teacherRequestSchema>;
 export type TeacherResponse = z.infer<typeof teacherResponseSchema>;
 export type OnboardingRequest = z.infer<typeof onboardingRequestSchema>;
@@ -254,6 +401,7 @@ export type ExplanationResponse = z.infer<typeof explanationResponseSchema>;
 
 export type AiRoleRequestMap = Readonly<{
   hostile_fed: HostileFedRequest;
+  scenario_director: ScenarioDirectorRequest;
   teacher: TeacherRequest;
   onboarding: OnboardingRequest;
   explanation: ExplanationRequest;
@@ -261,6 +409,7 @@ export type AiRoleRequestMap = Readonly<{
 
 export type AiRoleResponseMap = Readonly<{
   hostile_fed: HostileFedResponse;
+  scenario_director: ScenarioDirectorResponse;
   teacher: TeacherResponse;
   onboarding: OnboardingResponse;
   explanation: ExplanationResponse;

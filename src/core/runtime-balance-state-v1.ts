@@ -73,7 +73,14 @@ export function createInitialRuntimeBalanceStateV1(): RuntimeBalanceStateV1 {
 export function runtimeBalanceStateV1(
   state: GameStateV2,
 ): RuntimeBalanceStateV1 {
-  return state.gameplay.runtimeBalance ?? createInitialRuntimeBalanceStateV1();
+  const stored = state.gameplay.runtimeBalance;
+  if (stored === undefined) return createInitialRuntimeBalanceStateV1();
+  if (stored.version !== 1) {
+    throw new InvalidRuntimeBalanceStateV1Error([
+      violation("version", "unsupported_version", "must remain Runtime Balance version 1"),
+    ]);
+  }
+  return stored;
 }
 
 export function validateRuntimeBalanceStateV1(

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";
-import { createInitialGameState } from "../game-state";
+import {
+  createInitialGameState,
+  type DeterministicGameOutcomeV1,
+} from "../game-state";
 import {
   migrateGameStateV1ToV2,
   validateGameStateV2,
@@ -116,6 +119,171 @@ describe("game state v1 to v2 migration", () => {
       expect.arrayContaining([
         expect.objectContaining({ code: "pretax_overallocated" }),
         expect.objectContaining({ code: "aftertax_overallocated" }),
+      ]),
+    );
+  });
+
+  it("allows missing or positive CPI and rejects non-positive or unsafe CPI", () => {
+    const migrated = migrateGameStateV1ToV2(createV1Fixture());
+    expect("cumulativePriceIndexPpm" in migrated.gameplay.market).toBe(false);
+    expect(validateGameStateV2(migrated)).toEqual([]);
+
+    const withIndex = (cumulativePriceIndexPpm: number) =>
+      ({
+        ...migrated,
+        gameplay: {
+          ...migrated.gameplay,
+          market: {
+            ...migrated.gameplay.market,
+            cumulativePriceIndexPpm,
+          },
+        },
+      }) as GameStateV2;
+
+    expect(validateGameStateV2(withIndex(1_234_567))).toEqual([]);
+    for (const value of [0, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(validateGameStateV2(withIndex(value))).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: "gameplay.market.cumulativePriceIndexPpm",
+            code: "invalid_cumulative_price_index",
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("requires a complete structured macro snapshot for regime-v2 states", () => {
+    const migrated = migrateGameStateV1ToV2(createV1Fixture());
+    const valid = {
+      ...migrated,
+      gameplay: {
+        ...migrated.gameplay,
+        market: {
+          modelVersion: "regime-v2",
+          calibrationVersion: "us-balanced-2026-v1",
+          macroDifficulty: "normal",
+          observedRegime: "recession",
+          observedMonth: migrated.currentMonth,
+          monthsInRegime: 3,
+          cumulativePriceIndexPpm: 1_010_000,
+          borrowingRatePpm: 70_000,
+          laborDemandChangePpm: -10_000,
+          volatilityPpm: 400_000,
+          lastInflationPpm: 4_000,
+          broadMarketReturnPpm: -12_000,
+          sectorMarketReturnPpm: -18_000,
+          speculativeMarketReturnPpm: -30_000,
+          housingReturnPpm: 1_000,
+          cashYieldPpm: 3_000,
+        },
+      },
+    } as GameStateV2;
+    expect(validateGameStateV2(valid)).toEqual([]);
+    expect(
+      validateGameStateV2({
+        ...valid,
+        gameplay: {
+          ...valid.gameplay,
+          market: {
+            ...valid.gameplay.market,
+            laborDemandChangePpm: undefined,
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_structured_macro_state" }),
+      ]),
+    );
+    expect(
+      validateGameStateV2({
+        ...valid,
+        gameplay: {
+          ...valid.gameplay,
+          market: {
+            ...valid.gameplay.market,
+            sectorMarketReturnPpm: 900_000,
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_structured_macro_state" }),
+      ]),
+    );
+  });
+
+  it("validates rich outcome evidence while accepting its exact structure", () => {
+    const migrated = migrateGameStateV1ToV2(createV1Fixture());
+    const valid = {
+      ...migrated,
+      outcome: {
+        outcomePolicyVersion: "1.0.0",
+        kind: "bankruptcy",
+        grade: "F",
+        reachedMonth: migrated.currentMonth,
+        reasonCode: "actual_required_obligation_shortfall",
+        reasonCodes: [
+          "actual_required_obligation_shortfall",
+          "automatic_liquidity_exhausted",
+        ],
+        financialIndependence: {
+          goalSource: "current_lifestyle_default",
+          investableAssetsCents: moneyCents(11_000_00),
+          targetCents: moneyCents(1_500_000_00),
+          progressPpm: ratePpm(7_333),
+        },
+        displayedNetWorthCents: moneyCents(13_100_00),
+        automaticLiquidSolvency: {
+          requiredCashCents: moneyCents(101),
+          automaticLiquidityCents: moneyCents(100),
+          residualShortfallCents: moneyCents(1),
+          isSolvent: false,
+        },
+        retirementReadiness: {
+          retirementAgeYears: 65,
+          currentAgeYears: 30,
+          reachedRetirementAge: false,
+          gradeIfRetiredNow: "E",
+        },
+      },
+    } as GameStateV2;
+
+    expect(validateGameStateV2(valid)).toEqual([]);
+    expect(
+      validateGameStateV2({
+        ...valid,
+        outcome: {
+          ...valid.outcome!,
+          reasonCode: "invented_reason",
+          automaticLiquidSolvency: {
+            ...(valid.outcome as DeterministicGameOutcomeV1)
+              .automaticLiquidSolvency,
+            isSolvent: true,
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_outcome_evidence" }),
+      ]),
+    );
+    expect(
+      validateGameStateV2({
+        ...valid,
+        outcome: {
+          ...valid.outcome!,
+          automaticLiquidSolvency: {
+            ...(valid.outcome as DeterministicGameOutcomeV1)
+              .automaticLiquidSolvency,
+            automaticLiquidityCents: moneyCents(99),
+          },
+        },
+      } as GameStateV2),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_outcome_evidence" }),
       ]),
     );
   });

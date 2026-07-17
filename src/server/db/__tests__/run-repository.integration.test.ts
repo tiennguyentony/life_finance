@@ -1,7 +1,10 @@
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
+import { ACTION_POLICY_V1_VERSION } from "../../../core/action-policy-v2";
+import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../../../core/event-scheduler-v2";
+import { FINANCIAL_KERNEL_V2_VERSION } from "../../../core/financial-kernel-v2";
 import { allocateMoney, moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
 import type { DetailedFinanceCommand } from "../../../core/detailed-actions-v2";
@@ -14,7 +17,13 @@ import {
 } from "../../../core/game-state-v2";
 import { sha256Canonical } from "../../../core/canonical";
 import type { ProcessMonthV2Command } from "../../../core/monthly-turn-v2";
+import { MACRO_MARKET_MODEL_V2_VERSION } from "../../../core/market";
+import { OUTCOME_POLICY_V1_VERSION } from "../../../core/outcome-policy-v2";
+import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../../core/runtime-balance-policy-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "../../../core/scenario-director-policy-v2";
+import { advanceTimeV2 } from "../../../core/time-controller-v2";
 import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
+import { WORLD_RANDOM_VERSION_V1 } from "../../../core/world-random-v1";
 import {
   planRecurringAllocations,
   type SetRecurringStrategyCommand,
@@ -37,6 +46,7 @@ import {
 } from "../client";
 import { migrateDatabase } from "../migrate";
 import { RunRepository } from "../run-repository";
+import { reduceGameCommandV2 } from "../run-repository-support";
 import {
   handleCreateRunV2,
   handleGetCheckpointV2,
@@ -46,6 +56,8 @@ import {
 import { RunApiServiceV2 } from "../../api/service-v2";
 import type { CreateRunV2Request } from "../../api/contracts-v2";
 import { TaxServiceError, type TaxCalculator } from "../../tax/client";
+import { onboardingDraftForPersonaV1 } from "../../../core/onboarding-personas-v1";
+import { OnboardingApiServiceV1 } from "../../api/onboarding-service-v1";
 import {
   TransactionalOutboxDispatcher,
   type OutboxPublisher,
@@ -278,6 +290,71 @@ function sparseMonthCommandV2(state: GameStateV2): ProcessMonthV2Command {
   };
 }
 
+function preparedTimeAdvanceV2(
+  state: GameStateV2,
+  batchId: string,
+  months = 2,
+) {
+  const basePayload = sparseMonthCommandV2(state).payload;
+  const monthlyInputs = Array.from({ length: months }, (_, index) => {
+    const commandId = `${batchId}.month.${index + 1}`;
+    return {
+      commandId,
+      payload: {
+        ...basePayload,
+        taxEvidence: {
+          ...basePayload.taxEvidence,
+          traceId: `tax.${commandId}`,
+        },
+      },
+    };
+  });
+  const controllerResult = advanceTimeV2(
+    state,
+    {
+      schemaVersion: 2,
+      id: batchId,
+      type: "advance_time_v2",
+      maxMonths: months,
+      mode: { kind: "months", months },
+      monthlyInputs,
+    },
+    {
+      eventSchedulingPolicy: {
+        version: "fairness-v1",
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+      },
+      macroStoryPolicy: {
+        version: "macro-story-v1",
+        monthlyChancePpm: 0,
+        minimumDurationMonths: 1,
+        maximumDurationMonths: 1,
+      },
+    },
+  );
+  const request = Object.freeze({
+    schemaVersion: 2 as const,
+    id: batchId,
+    expectedRevision: state.revision,
+    effectiveMonth: state.currentMonth,
+    maxMonths: months,
+    mode: Object.freeze({ kind: "months" as const, months }),
+  });
+  return Object.freeze({
+    controllerVersion: "time-controller-v2.0.0" as const,
+    engineVersion: state.engineVersion,
+    request,
+    batchId,
+    requestFingerprint: sha256Canonical(request),
+    openingRevision: state.revision,
+    openingStateChecksum: sha256Canonical(state),
+    steps: controllerResult.steps,
+    controllerResult,
+    finalStateChecksum: sha256Canonical(controllerResult.state),
+  });
+}
+
 function strategyCommandV2(): SetRecurringStrategyCommand {
   return {
     schemaVersion: 2,
@@ -307,6 +384,8 @@ function monthCommandV2(id = "cmd.repository-v2.month"): ProcessMonthV2Command {
     expectedRevision: 1,
     effectiveMonth: simulationMonth("2026-07"),
     payload: {
+      financialKernelVersion: "2.0.0",
+      resolvedCashFlows: [],
       taxEvidence: {
         schemaVersion: 1,
         traceId: `tax.${id}`,
@@ -427,6 +506,13 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000023",
     "10000000-0000-4000-8000-000000000024",
     "10000000-0000-4000-8000-000000000025",
+    "10000000-0000-4000-8000-000000000026",
+    "10000000-0000-4000-8000-000000000027",
+    "10000000-0000-4000-8000-000000000028",
+    "10000000-0000-4000-8000-000000000029",
+    "10000000-0000-4000-8000-000000000030",
+    "10000000-0000-4000-8000-000000000031",
+    "10000000-0000-4000-8000-000000000032",
   ];
   let runIndex = 0;
 
@@ -445,6 +531,272 @@ databaseDescribe("Postgres run repository", () => {
 
   afterAll(async () => {
     await connection?.close();
+  });
+
+  it("previews through the repository and exact reducer without any database write", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    const command: DetailedFinanceCommand = {
+      schemaVersion: 2,
+      id: "action.repository-preview",
+      expectedRevision: created.state.revision,
+      effectiveMonth: created.state.currentMonth,
+      type: "take_detailed_action",
+      payload: {
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+        action: {
+          type: "invest_taxable",
+          bucket: "taxableBroadIndexCents",
+          amountCents: moneyCents(100_000),
+        },
+      },
+    };
+    const [acceptedBefore] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    const [ledgerBefore] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    const [stateSnapshotsBefore] = await connection.db
+      .select({ value: count() })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    const [scenarioSnapshotsBefore] = await connection.db
+      .select({ value: count() })
+      .from(runScenarioSnapshots)
+      .where(eq(runScenarioSnapshots.runId, created.runId));
+    const [monthlyRecordsBefore] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTurnRecords)
+      .where(eq(monthlyTurnRecords.runId, created.runId));
+    const [outboxBefore] = await connection.db
+      .select({ value: count() })
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.runId, created.runId));
+
+    const preview = await repository.previewPlayerPolicyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    const unchanged = await repository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const [acceptedAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(acceptedCommands)
+      .where(eq(acceptedCommands.runId, created.runId));
+    const [ledgerAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    const [stateSnapshotsAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(runStateSnapshots)
+      .where(eq(runStateSnapshots.runId, created.runId));
+    const [scenarioSnapshotsAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(runScenarioSnapshots)
+      .where(eq(runScenarioSnapshots.runId, created.runId));
+    const [monthlyRecordsAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(monthlyTurnRecords)
+      .where(eq(monthlyTurnRecords.runId, created.runId));
+    const [outboxAfterPreview] = await connection.db
+      .select({ value: count() })
+      .from(transactionalOutbox)
+      .where(eq(transactionalOutbox.runId, created.runId));
+
+    expect(sha256Canonical(unchanged)).toBe(preview.openingStateChecksum);
+    expect(acceptedAfterPreview.value).toBe(acceptedBefore.value);
+    expect(ledgerAfterPreview.value).toBe(ledgerBefore.value);
+    expect(stateSnapshotsAfterPreview.value).toBe(stateSnapshotsBefore.value);
+    expect(scenarioSnapshotsAfterPreview.value).toBe(scenarioSnapshotsBefore.value);
+    expect(monthlyRecordsAfterPreview.value).toBe(monthlyRecordsBefore.value);
+    expect(outboxAfterPreview.value).toBe(outboxBefore.value);
+
+    const applied = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      command,
+    );
+    expect(applied.stateChecksum).toBe(preview.resultingStateChecksum);
+    expect(applied.state.revision).toBe(preview.resultingRevision);
+  });
+
+  it("persists and idempotently replays one atomic multi-month advance", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.batch");
+
+    const applied = await repository.applyTimeAdvanceV2(
+      created.runId,
+      created.accessSecret,
+      prepared,
+    );
+    const replayed = await repository.applyTimeAdvanceV2(
+      created.runId,
+      created.accessSecret,
+      prepared,
+    );
+
+    expect(applied.monthsAdvanced).toBe(2);
+    expect(applied.state.revision).toBe(2);
+    expect(applied.idempotentReplay).toBe(false);
+    expect(replayed).toEqual({ ...applied, idempotentReplay: true });
+    const [[commands], [evidence], [records], outbox] = await Promise.all([
+      connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId)),
+      connection.db.select({ value: count() }).from(monthlyTaxEvidence).where(eq(monthlyTaxEvidence.runId, created.runId)),
+      connection.db.select({ value: count() }).from(monthlyTurnRecords).where(eq(monthlyTurnRecords.runId, created.runId)),
+      connection.db.select({ topic: transactionalOutbox.topic }).from(transactionalOutbox).where(eq(transactionalOutbox.runId, created.runId)),
+    ]);
+    expect(commands.value).toBe(2);
+    expect(evidence.value).toBe(2);
+    expect(records.value).toBe(2);
+    expect(outbox.map(({ topic }) => topic).toSorted()).toEqual([
+      "run.v2.created",
+      "run.v2.time_advanced",
+    ]);
+  });
+
+  it("rejects a conflicting aggregate id before writing monthly rows", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.rollback");
+    await connection.db.insert(transactionalOutbox).values({
+      runId: created.runId,
+      topic: "test.collision",
+      idempotencyKey: `${created.runId}:v2:advance:${prepared.batchId}`,
+      payload: { conflicting: true },
+      status: "pending",
+      availableAt: new Date("2026-07-14T12:00:00.000Z"),
+      createdAt: new Date("2026-07-14T12:00:00.000Z"),
+    });
+
+    await expect(
+      repository.applyTimeAdvanceV2(
+        created.runId,
+        created.accessSecret,
+        prepared,
+      ),
+    ).rejects.toThrow();
+
+    const [run] = await connection.db.select().from(gameRuns).where(eq(gameRuns.id, created.runId));
+    const [commands] = await connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId));
+    expect(run?.currentRevision).toBe(0);
+    expect(commands.value).toBe(0);
+  });
+
+  it("rolls back earlier monthly rows when a later prepared record mismatches replay", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.tampered");
+    const [first, second] = prepared.steps;
+    if (!first || !second) throw new Error("expected two prepared monthly steps");
+    const tamperedRecord = {
+      ...second.record,
+      totalTaxCents: moneyCents(second.record.totalTaxCents + 1),
+    };
+    const tamperedSteps = [
+      first,
+      { ...second, record: tamperedRecord },
+    ] as const;
+    const tampered = {
+      ...prepared,
+      steps: tamperedSteps,
+      controllerResult: {
+        ...prepared.controllerResult,
+        steps: tamperedSteps,
+        records: [first.record, tamperedRecord],
+      },
+    };
+
+    await expect(
+      repository.applyTimeAdvanceV2(
+        created.runId,
+        created.accessSecret,
+        tampered,
+      ),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+
+    const [run] = await connection.db.select().from(gameRuns).where(eq(gameRuns.id, created.runId));
+    const [commands] = await connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId));
+    const [records] = await connection.db.select({ value: count() }).from(monthlyTurnRecords).where(eq(monthlyTurnRecords.runId, created.runId));
+    expect(run?.currentRevision).toBe(0);
+    expect(commands.value).toBe(0);
+    expect(records.value).toBe(0);
+  });
+
+  it("rejects an unversioned or non-canonical prepared batch envelope", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.envelope");
+
+    await expect(
+      repository.applyTimeAdvanceV2(created.runId, created.accessSecret, {
+        ...prepared,
+        controllerVersion:
+          "time-controller-v3.0.0" as typeof prepared.controllerVersion,
+      }),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+    await expect(
+      repository.applyTimeAdvanceV2(created.runId, created.accessSecret, {
+        ...prepared,
+        engineVersion: "future-engine",
+      }),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+    await expect(
+      repository.applyTimeAdvanceV2(created.runId, created.accessSecret, {
+        ...prepared,
+        request: {
+          ...prepared.request,
+          inventedModeAuthority: true,
+        } as unknown as typeof prepared.request,
+      }),
+    ).rejects.toMatchObject({ code: "PERSISTENCE_INVARIANT" });
+
+    const [run] = await connection.db.select().from(gameRuns).where(eq(gameRuns.id, created.runId));
+    const [commands] = await connection.db.select({ value: count() }).from(acceptedCommands).where(eq(acceptedCommands.runId, created.runId));
+    expect(run?.currentRevision).toBe(0);
+    expect(commands.value).toBe(0);
+  });
+
+  it("rejects a corrupted stored controller version during idempotent replay", async () => {
+    const created = await repository.createRunV2(sparseStateV2);
+    const prepared = preparedTimeAdvanceV2(created.state, "advance.repository.corrupt-version");
+    await repository.applyTimeAdvanceV2(
+      created.runId,
+      created.accessSecret,
+      prepared,
+    );
+    const [row] = await connection.db
+      .select({ id: transactionalOutbox.id, payload: transactionalOutbox.payload })
+      .from(transactionalOutbox)
+      .where(
+        eq(
+          transactionalOutbox.idempotencyKey,
+          `${created.runId}:v2:advance:${prepared.batchId}`,
+        ),
+      );
+    if (!row || !row.payload || typeof row.payload !== "object") {
+      throw new Error("expected aggregate time-advance outbox payload");
+    }
+    await connection.db
+      .update(transactionalOutbox)
+      .set({
+        payload: {
+          ...row.payload,
+          controllerVersion: "time-controller-v3.0.0",
+        },
+      })
+      .where(eq(transactionalOutbox.id, row.id));
+
+    await expect(
+      repository.loadAcceptedTimeAdvanceV2(
+        created.runId,
+        created.accessSecret,
+        prepared.batchId,
+        prepared.requestFingerprint,
+      ),
+    ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
   });
 
   it("creates, authorizes, applies, and idempotently replays one atomic command", async () => {
@@ -832,6 +1184,7 @@ databaseDescribe("Postgres run repository", () => {
       idempotentReplay: false,
       state: { revision: 2, currentMonth: "2026-08" },
       monthlyRecord: {
+        financialKernelVersion: "2.0.0",
         processedMonth: "2026-07",
         nextMonth: "2026-08",
         taxTraceId: "tax.cmd.repository-v2.month",
@@ -888,6 +1241,58 @@ databaseDescribe("Postgres run repository", () => {
     await expect(
       repository.loadAuthorizedRunV2(created.runId, created.accessSecret),
     ).rejects.toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("replays an exact historical monthly command through the service and repository", async () => {
+    const created = await repository.createRunV2(nativeStateV2);
+    await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      strategyCommandV2(),
+    );
+    const currentCommand = monthCommandV2("cmd.repository-v2.legacy-month");
+    const legacyCommand: ProcessMonthV2Command = {
+      ...currentCommand,
+      payload: {
+        taxEvidence: currentCommand.payload.taxEvidence,
+        taxableLiquidationCostRatePpm:
+          currentCommand.payload.taxableLiquidationCostRatePpm,
+      },
+    };
+    const processed = await repository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      legacyCommand,
+    );
+    const calculate = vi.fn<TaxCalculator["calculate"]>();
+    const service = new RunApiServiceV2(repository, { calculate });
+
+    const replayed = await service.submitCommand(
+      created.runId,
+      created.accessSecret,
+      {
+        schemaVersion: 2,
+        id: legacyCommand.id,
+        type: "process_month",
+        expectedRevision: legacyCommand.expectedRevision,
+        effectiveMonth: legacyCommand.effectiveMonth,
+        payload: {},
+      },
+    );
+
+    expect(replayed).toMatchObject({
+      stateChecksum: processed.stateChecksum,
+      idempotentReplay: true,
+      monthlyRecord: { financialKernelVersion: "legacy-4.1.0" },
+    });
+    expect(calculate).not.toHaveBeenCalled();
+    await expect(
+      repository.loadAcceptedMonthlyCommandV2(
+        created.runId,
+        created.accessSecret,
+        legacyCommand.id,
+      ),
+    ).resolves.toEqual(legacyCommand);
   });
 
   it("rolls back v2 state, evidence, record, and command when the outbox write fails", async () => {
@@ -1470,7 +1875,9 @@ databaseDescribe("Postgres run repository", () => {
     const replayedResponse = await process();
     const processed = (await processedResponse.json()) as {
       state: { revision: number; currentMonth: string };
+      stateChecksum: string;
       monthlyRecord: {
+        financialKernelVersion: string;
         processedMonth: string;
         taxTraceId: string;
         grossIncomeCents: number;
@@ -1536,6 +1943,74 @@ databaseDescribe("Postgres run repository", () => {
         }),
       ],
     });
+
+    const [storedCommand] = await connection.db
+      .select({
+        payload: acceptedCommands.payload,
+        resultingStateChecksum: acceptedCommands.resultingStateChecksum,
+      })
+      .from(acceptedCommands)
+      .where(
+        and(
+          eq(acceptedCommands.runId, created.runId),
+          eq(acceptedCommands.commandId, command.id),
+        ),
+      );
+    const [storedRecord] = await connection.db
+      .select({
+        record: monthlyTurnRecords.record,
+        recordChecksum: monthlyTurnRecords.recordChecksum,
+      })
+      .from(monthlyTurnRecords)
+      .where(
+        and(
+          eq(monthlyTurnRecords.runId, created.runId),
+          eq(monthlyTurnRecords.commandId, command.id),
+        ),
+      );
+    const storedLedger = await connection.db
+      .select({
+        commandId: ledgerTransactions.commandId,
+        category: ledgerTransactions.category,
+      })
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.runId, created.runId),
+          eq(ledgerTransactions.commandId, command.id),
+        ),
+      )
+      .orderBy(asc(ledgerTransactions.transactionIndex));
+
+    expect(storedCommand).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows: [],
+      },
+      resultingStateChecksum: processed.stateChecksum,
+    });
+    expect(storedRecord.record).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      openingNetWorthCents: expect.any(Number),
+      closingNetWorthCents: expect.any(Number),
+      fundingPlan: expect.objectContaining({ fullyFunded: true }),
+      shortfall: null,
+    });
+    expect(storedRecord.recordChecksum).toBe(
+      sha256Canonical(storedRecord.record),
+    );
+    expect(storedLedger.map(({ commandId }) => commandId)).toEqual(
+      Array(storedLedger.length).fill(command.id),
+    );
+    expect(storedLedger.map(({ category }) => category)).toEqual(
+      expect.arrayContaining([
+        "income.payroll",
+        "expense.non_debt_obligations",
+        "expense.debt_interest",
+        "liability.debt_payment",
+        "allocation.after_tax_strategy",
+      ]),
+    );
 
     const checkpointResponse = await handleGetCheckpointV2(
       new Request(
@@ -1645,5 +2120,229 @@ databaseDescribe("Postgres run repository", () => {
       .from(monthlyTaxEvidence)
       .where(eq(monthlyTaxEvidence.runId, created.runId));
     expect(evidenceCount.value).toBe(0);
+  });
+
+  it("persists and reloads a confirmed onboarding state with opening ledger evidence", async () => {
+    const onboarding = new OnboardingApiServiceV1(
+      repository,
+      () => "player.onboarding.postgres",
+    );
+    const draft = onboardingDraftForPersonaV1(
+      "software",
+      "postgres-onboarding-seed",
+    );
+    const review = onboarding.review(draft);
+    const created = await onboarding.confirm({
+      draft,
+      reviewChecksum: review.reviewChecksum,
+    });
+
+    const loaded = await repository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    expect(sha256Canonical(loaded)).toBe(created.stateChecksum);
+    expect(loaded.gameplay.initialization).toMatchObject({
+      version: "onboarding-v1",
+      reviewChecksum: review.reviewChecksum,
+      initialRandomSeed: "postgres-onboarding-seed",
+    });
+    expect(loaded.gameplay.exposure).toEqual({ current: null, history: [] });
+    const [openingRows] = await connection.db
+      .select({ value: count() })
+      .from(ledgerTransactions)
+      .where(eq(ledgerTransactions.runId, created.runId));
+    expect(openingRows.value).toBeGreaterThan(0);
+  });
+
+  it("continues a confirmed modern onboarding run identically after a PostgreSQL reload", async () => {
+    const onboarding = new OnboardingApiServiceV1(
+      repository,
+      () => "player.onboarding.postgres-continuation",
+    );
+    const draft = onboardingDraftForPersonaV1(
+      "software",
+      "postgres-modern-continuation-seed",
+    );
+    const review = onboarding.review(draft);
+    const created = await onboarding.confirm({
+      draft,
+      reviewChecksum: review.reviewChecksum,
+    });
+    const tax = successfulTaxCalculator();
+    const initialApi = new RunApiServiceV2(
+      repository,
+      tax.calculator,
+      () => "player.onboarding.postgres-continuation",
+    );
+
+    const first = await initialApi.submitCommand(
+      created.runId,
+      created.accessSecret,
+      {
+        schemaVersion: 2,
+        id: "cmd.postgres-continuation.month.1",
+        type: "process_month",
+        expectedRevision: created.state.revision,
+        effectiveMonth: created.state.currentMonth,
+        payload: {},
+      },
+    );
+    let midstream = first.state;
+    const pending = midstream.gameplay.eventLifecycle.pending;
+    if (pending) {
+      const resolved = await initialApi.submitCommand(
+        created.runId,
+        created.accessSecret,
+        {
+          schemaVersion: 2,
+          id: "cmd.postgres-continuation.event.1",
+          type: "resolve_event_choice",
+          expectedRevision: midstream.revision,
+          effectiveMonth: midstream.currentMonth,
+          payload: {
+            eventId: pending.eventId,
+            choiceId: pending.choiceIds[0]!,
+          },
+        },
+      );
+      midstream = resolved.state;
+    }
+
+    expect(midstream.gameplay.initialization).toMatchObject({
+      version: "onboarding-v1",
+      reviewChecksum: review.reviewChecksum,
+    });
+    expect(midstream.gameplay.runtimeBalance).toMatchObject({ version: 2 });
+    expect(midstream.worldRandom).toMatchObject({
+      version: "named-world-rng-v1",
+    });
+
+    const reloadedRepository = new RunRepository(
+      connection.db,
+      new RunSecretCodec(Buffer.alloc(32, 0x77)),
+    );
+    const reloadedMidstream = await reloadedRepository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    expect(reloadedMidstream).toEqual(midstream);
+    expect(sha256Canonical(reloadedMidstream)).toBe(
+      sha256Canonical(midstream),
+    );
+
+    const reloadedApi = new RunApiServiceV2(
+      reloadedRepository,
+      tax.calculator,
+      () => "player.onboarding.postgres-continuation",
+    );
+    const nextPublicCommand = {
+      schemaVersion: 2 as const,
+      id: "cmd.postgres-continuation.month.2",
+      type: "process_month" as const,
+      expectedRevision: reloadedMidstream.revision,
+      effectiveMonth: reloadedMidstream.currentMonth,
+      payload: {},
+    };
+    const continued = await reloadedApi.submitCommand(
+      created.runId,
+      created.accessSecret,
+      nextPublicCommand,
+    );
+    const accepted = await reloadedRepository.loadAcceptedMonthlyCommandV2(
+      created.runId,
+      created.accessSecret,
+      nextPublicCommand.id,
+    );
+    expect(accepted).not.toBeNull();
+    if (!accepted) throw new Error("expected persisted monthly command");
+
+    expect(accepted.payload).toMatchObject({
+      financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+      worldRandomVersion: WORLD_RANDOM_VERSION_V1,
+      marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+      macroDifficulty: reloadedMidstream.gameplay.runtimeBalance?.version === 2
+        ? reloadedMidstream.gameplay.runtimeBalance.difficulty
+        : "normal",
+    });
+    const expectedContinuation = reduceGameCommandV2(
+      midstream,
+      accepted,
+    );
+    const persistedFinal = await reloadedRepository.loadAuthorizedRunV2(
+      created.runId,
+      created.accessSecret,
+    );
+    const persistedReplay = await reloadedRepository.applyCommandV2(
+      created.runId,
+      created.accessSecret,
+      accepted,
+    );
+
+    expect(persistedFinal).toEqual(expectedContinuation.state);
+    expect(persistedFinal.worldRandom).toEqual(
+      expectedContinuation.state.worldRandom,
+    );
+    expect(persistedFinal.ledger).toEqual(expectedContinuation.state.ledger);
+    expect(persistedReplay.monthlyRecord).toEqual(
+      expectedContinuation.monthlyRecord,
+    );
+    expect(persistedReplay).toMatchObject({
+      idempotentReplay: true,
+      state: expectedContinuation.state,
+      stateChecksum: continued.stateChecksum,
+    });
+    expect(sha256Canonical(persistedFinal)).toBe(continued.stateChecksum);
+
+    const expectedCommandLedger = expectedContinuation.state.ledger.transactions
+      .filter(
+        (transaction) =>
+          transaction.causalReference?.kind === "command" &&
+          transaction.causalReference.id === nextPublicCommand.id,
+      )
+      .map((transaction) => ({
+        transactionId: transaction.id,
+        sourceSystem: transaction.sourceSystem,
+        category: transaction.category,
+        causalReferenceKind: transaction.causalReference?.kind,
+        causalReferenceId: transaction.causalReference?.id,
+      }));
+    const persistedCommandLedger = await connection.db
+      .select({
+        transactionId: ledgerTransactions.transactionId,
+        sourceSystem: ledgerTransactions.sourceSystem,
+        category: ledgerTransactions.category,
+        causalReferenceKind: ledgerTransactions.causalReferenceKind,
+        causalReferenceId: ledgerTransactions.causalReferenceId,
+      })
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.runId, created.runId),
+          eq(ledgerTransactions.commandId, nextPublicCommand.id),
+        ),
+      )
+      .orderBy(asc(ledgerTransactions.transactionIndex));
+    expect(persistedCommandLedger).toEqual(expectedCommandLedger);
+
+    const expectedHistory = await repository.loadCausalHistoryV1(
+      created.runId,
+      created.accessSecret,
+    );
+    const persistedHistory = await new RunRepository(
+      connection.db,
+      new RunSecretCodec(Buffer.alloc(32, 0x77)),
+    ).loadCausalHistoryV1(created.runId, created.accessSecret);
+    expect(persistedHistory).toEqual(expectedHistory);
+    expect(persistedHistory).toMatchObject({
+      runId: created.runId,
+      toRevision: persistedFinal.revision,
+      sourceStateChecksum: continued.stateChecksum,
+    });
+    expect(tax.calculate).toHaveBeenCalledTimes(1);
   });
 });

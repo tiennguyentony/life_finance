@@ -1,4 +1,5 @@
 import { sha256Canonical } from "./canonical";
+import { calculateTotalMinimumDebtPaymentV2 } from "./debt-service-v2";
 import { safeBigIntToNumber } from "./domain/integer";
 import {
   addMoney,
@@ -25,6 +26,9 @@ import {
   type FinancialGoalV1,
 } from "./financial-goals-v2";
 import { createInitialRuntimeBalanceStateV1 } from "./runtime-balance-state-v1";
+import { createInitialRuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
+import type { RuntimeBalanceDifficultyV2 } from "./runtime-balance-policy-v2";
+import type { OnboardingInitializationEvidenceV1 } from "./onboarding-v1-contracts";
 
 export type NativeGameStateV2Input = Readonly<{
   runId: string;
@@ -34,7 +38,12 @@ export type NativeGameStateV2Input = Readonly<{
   randomSeed: string;
   resolvedScenario: ResolvedScenario;
   annualGrossSalaryCents: MoneyCents;
+  /** Optional confirmed custom annual expense total. Omission preserves catalog behavior. */
+  annualLivingCostCents?: MoneyCents;
+  /** Optional bounded initialization evidence stored in the authoritative state. */
+  initialization?: OnboardingInitializationEvidenceV1;
   financialGoal?: FinancialGoalV1;
+  runtimeBalanceDifficulty?: RuntimeBalanceDifficultyV2;
   finances: Readonly<{
     cashCents: MoneyCents;
     taxableBroadIndexCents: MoneyCents;
@@ -172,17 +181,28 @@ export function createNativeGameStateV2(
 ): GameStateV2 {
   assertNativeInput(input);
   const { snapshot, snapshotChecksum } = input.resolvedScenario;
+  const termDebts = Object.freeze(
+    input.finances.termDebts.map((debt) =>
+      Object.freeze({
+        ...debt,
+        minimumPaymentCents: moneyCents(
+          Math.min(debt.minimumPaymentCents, debt.principalCents),
+        ),
+      }),
+    ),
+  );
   const selectedInsurancePremiums = snapshot.selected.insuranceCoverages.map(
     ({ monthlyPremiumCents }) => monthlyPremiumCents,
   );
+  const annualLivingCostCents =
+    input.annualLivingCostCents ?? snapshot.derived.annualLivingCostCents;
   const monthlyLivingCost = allocateMoney(
-    snapshot.derived.annualLivingCostCents,
+    annualLivingCostCents,
     1,
     12,
   );
-  const minimumDebtPayments = sumMoney(
-    input.finances.termDebts.map(({ minimumPaymentCents }) => minimumPaymentCents),
-    "opening minimum debt payments",
+  const minimumDebtPayments = calculateTotalMinimumDebtPaymentV2(
+    termDebts,
   );
   const monthlyInsurancePremiums = sumMoney(
     selectedInsurancePremiums,
@@ -205,7 +225,7 @@ export function createNativeGameStateV2(
     "opening retirement portfolio",
   );
   const nonCreditLiabilitiesCents = sumMoney(
-    input.finances.termDebts.map(({ principalCents }) => principalCents),
+    termDebts.map(({ principalCents }) => principalCents),
     "opening term debt principal",
   );
 
@@ -230,7 +250,7 @@ export function createNativeGameStateV2(
       nonCreditLiabilitiesCents,
       creditLimitCents: input.finances.revolvingCreditLimitCents,
       creditUsedCents: input.finances.revolvingCreditUsedCents,
-      annualLivingCostCents: snapshot.derived.annualLivingCostCents,
+      annualLivingCostCents,
       requiredObligationsCents,
     },
     wellbeing: input.wellbeing,
@@ -243,12 +263,17 @@ export function createNativeGameStateV2(
     engineVersion: ENGINE_V2_VERSION,
     migration: null,
     gameplay: {
-      runtimeBalance: createInitialRuntimeBalanceStateV1(),
+      ...(input.initialization === undefined
+        ? {}
+        : { initialization: input.initialization }),
+      runtimeBalance: input.runtimeBalanceDifficulty === undefined
+        ? createInitialRuntimeBalanceStateV1()
+        : createInitialRuntimeBalanceStateV2(input.runtimeBalanceDifficulty),
       aiLearningMemory: emptyAiLearningMemory(),
       lifeMilestones: emptyLifeMilestoneState(),
       financialGoal:
         input.financialGoal ??
-        defaultFinancialGoal(snapshot.derived.annualLivingCostCents),
+        defaultFinancialGoal(annualLivingCostCents),
       catalogs: {
         location: {
           id: snapshot.selected.location.id,
@@ -291,7 +316,7 @@ export function createNativeGameStateV2(
         otherInvestableLegacyUnclassifiedCents: moneyCents(0),
       },
       debts: {
-        termDebts: input.finances.termDebts,
+        termDebts,
         legacyUnclassifiedPrincipalCents: moneyCents(0),
         revolvingCreditLimitCents: input.finances.revolvingCreditLimitCents,
         revolvingCreditUsedCents: input.finances.revolvingCreditUsedCents,
@@ -321,7 +346,11 @@ export function createNativeGameStateV2(
           usedCents: moneyCents(0),
         })),
       },
-      market: { modelVersion: "regime-v1", monthsInRegime: 0 },
+      market: {
+        modelVersion: "regime-v1",
+        monthsInRegime: 0,
+        cumulativePriceIndexPpm: 1_000_000,
+      },
       recurringStrategy: {
         effectiveMonth: input.startMonth,
         preTax401kSalaryRatePpm: 0 as RatePpm,

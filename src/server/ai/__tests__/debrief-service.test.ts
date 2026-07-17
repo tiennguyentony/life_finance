@@ -54,4 +54,32 @@ describe("AI final debrief service", () => {
       dataUseAccepted: true,
     })).rejects.toMatchObject({ code: "RUN_NOT_TERMINAL" });
   });
+
+  it("rejects unsupported AI conclusions and preserves the engine-owned debrief", async () => {
+    const repository = { loadAuthorizedRunV2: async () => state(true) } as unknown as V2Repository;
+    const service = new AiDebriefService(repository, () => ({
+      responseSource: () => "openai" as const,
+      generate: async () => ({
+        grade: "B",
+        title: "Perfect retirement",
+        summary: "Every future expense is safely covered.",
+        decisiveMoments: [{
+          decisionId: "decision.run_summary",
+          lesson: "This plan cannot fail.",
+          citedEvidenceIds: ["context.cash"],
+        }],
+        nextSteps: ["Never change anything."],
+      }),
+    }) as never);
+
+    const result = await service.createDebrief("run", "secret", {
+      expectedRevision: 0,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+    });
+
+    expect(result.source).toBe("deterministic_fallback");
+    expect(result.debrief.title).toContain("Final grade B");
+    expect(result.debrief.summary).toContain("deterministic engine");
+  });
 });

@@ -6,6 +6,7 @@ import {
   type MoneyCents,
 } from "./domain/money";
 import type { GameStateV2, GameplayStateV2 } from "./game-state-v2";
+import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
 
 export type HealthClaimSettlement = Readonly<{
   grossBillCents: MoneyCents;
@@ -166,7 +167,7 @@ export function adjudicateCoverageClaim(
       "coverage claim requires resolved native benefits",
     );
   }
-  const coverage = snapshot.selected.insuranceCoverages.find(
+  const coverage = activeInsuranceCoveragesV2(state).find(
     ({ id }) => id === coverageId,
   );
   const usageIndex = state.gameplay.insurance.coverageUsage.findIndex(

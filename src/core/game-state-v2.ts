@@ -4,14 +4,19 @@ import type { AiContentSource } from "./ai-source";
 import {
   assertValidGameState,
   type GameState as GameStateV1,
+  type MarketRegime,
 } from "./game-state";
 import type { ResolvedScenarioSnapshot } from "./scenario-catalog";
 import type { FinancialGoalV1 } from "./financial-goals-v2";
 import type { LifeMilestoneStateV1 } from "./life-milestones-v2";
 import type { AiLearningMemoryV1 } from "./ai-learning-memory-v2";
 import type {
+  MacroMarketDifficultyV2,
+  MarketMonthV2,
+} from "./market";
+import type {
   EventTier,
-  EventWeakness,
+  EventTargetV2,
   MarketAssetClass,
 } from "./events";
 
@@ -20,11 +25,18 @@ import {
   GAME_STATE_V2_SCHEMA_VERSION,
   V1_TO_V2_MIGRATION_VERSION,
 } from "./game-state-v2-constants";
-import { assertValidGameStateV2 } from "./game-state-v2-validation";
+import {
+  assertValidGameStateV2,
+  type GameStateV2ValidationOptions,
+} from "./game-state-v2-validation";
 import {
   createInitialRuntimeBalanceStateV1,
   type RuntimeBalanceStateV1,
 } from "./runtime-balance-state-v1";
+import type { RuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
+import type { OnboardingInitializationEvidenceV1 } from "./onboarding-v1-contracts";
+import type { WorldRandomStateV1 } from "./world-random-v1";
+import type { FinancialLivingCostPlanEvidenceV2 } from "./financial-living-cost-plan-v2";
 
 export {
   ENGINE_V2_VERSION,
@@ -82,6 +94,10 @@ export type BenefitsSelection = Readonly<{
 
 export type RecurringStrategy = Readonly<{
   effectiveMonth: SimulationMonth;
+  /** Optional for historical replay; new commands persist an explicit target. */
+  emergencyFundTargetMonthsPpm?: RatePpm;
+  /** Optional for historical replay; absence uses the onboarding selection. */
+  insuranceCoverageIds?: readonly string[];
   preTax401kSalaryRatePpm: RatePpm;
   preTaxHsaSalaryRatePpm: RatePpm;
   afterTaxBroadIndexRatePpm: RatePpm;
@@ -110,11 +126,19 @@ export type PendingEventV2 = Readonly<{
   templateId: string;
   templateVersion: number;
   tier: Exclude<EventTier, "ambient">;
-  targetedWeakness: EventWeakness;
+  targetedWeakness: EventTargetV2;
   parameters: Readonly<Record<string, number>>;
   choiceIds: readonly string[];
   scheduledMonth: SimulationMonth;
   expiresMonth: SimulationMonth;
+  /** Present only for declarative personal-event schema v2. Absence preserves v1 replay. */
+  eventSchemaVersion?: 2;
+  category?: string;
+  classification?: "positive" | "neutral" | "negative";
+  lessonTags?: Readonly<{ primary: string; secondary: readonly string[] }>;
+  pressureCost?: number;
+  recoveryDurationMonths?: number;
+  fallbackNarrative?: Readonly<{ headline: string; body: string }>;
   aiNarrative?: Readonly<{
     source: AiContentSource;
     headline: string;
@@ -124,6 +148,15 @@ export type PendingEventV2 = Readonly<{
   }>;
 }>;
 
+export type ScheduledPersonalEventCashFlowV2 = Readonly<{
+  id: string;
+  sourceEffectId: string;
+  kind: "temporary_expense" | "recurring_expense" | "temporary_income";
+  amountCents: MoneyCents;
+  startMonth: SimulationMonth;
+  durationMonths: number;
+}>;
+
 export type ResolvedEventEvidenceV2 = Readonly<{
   commandId: string;
   resultingRevision: number;
@@ -131,7 +164,7 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   templateId: string;
   templateVersion: number;
   tier: Exclude<EventTier, "ambient">;
-  targetedWeakness: EventWeakness;
+  targetedWeakness: EventTargetV2;
   parameters: Readonly<Record<string, number>>;
   choiceId: string;
   availableChoiceIds: readonly string[];
@@ -139,11 +172,35 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   resolvedMonth: SimulationMonth;
   playerCostCents: MoneyCents;
   insurerCostCents: MoneyCents;
+  /** Present only for declarative personal-event schema v2. Absence preserves v1 replay. */
+  eventSchemaVersion?: 2;
+  category?: string;
+  classification?: "positive" | "neutral" | "negative";
+  lessonTags?: Readonly<{ primary: string; secondary: readonly string[] }>;
+  pressureCost?: number;
+  recoveryDurationMonths?: number;
+  fallbackNarrative?: Readonly<{ headline: string; body: string }>;
+  /** Immutable canonical evidence for cash flows scheduled by this resolved response. */
+  scheduledCashFlows?: readonly ScheduledPersonalEventCashFlowV2[];
+  /** Optional for replay compatibility with events resolved before the Financial Engine plan owner. */
+  livingCostPlans?: readonly FinancialLivingCostPlanEvidenceV2[];
+}>;
+
+export type ActivePersonalEventCashFlowV2 = Readonly<{
+  id: string;
+  sourceEventId: string;
+  sourceEffectId: string;
+  kind: "temporary_expense" | "recurring_expense" | "temporary_income";
+  amountCents: MoneyCents;
+  startMonth: SimulationMonth;
+  remainingMonths: number;
 }>;
 
 export type GameplayStateV2 = Readonly<{
+  /** Optional for historical/direct states; present only after a confirmed onboarding review. */
+  initialization?: OnboardingInitializationEvidenceV1;
   /** Optional only for backward compatibility with earlier schema-v2 runs. */
-  runtimeBalance?: RuntimeBalanceStateV1;
+  runtimeBalance?: RuntimeBalanceStateV1 | RuntimeBalanceStateV2;
   /** Optional only for backward compatibility with schema-v2 runs created before goals-v1. */
   financialGoal?: FinancialGoalV1;
   /** Optional only for backward compatibility with earlier schema-v2 runs. */
@@ -186,8 +243,24 @@ export type GameplayStateV2 = Readonly<{
     }>[];
   }>;
   market: Readonly<{
-    modelVersion: "regime-v1";
+    modelVersion: "regime-v1" | "regime-v2";
     monthsInRegime: number;
+    /** Optional only for backward compatibility with earlier schema-v2 runs. */
+    cumulativePriceIndexPpm?: number;
+    /** Required structured macro evidence once a run opts into regime-v2. */
+    calibrationVersion?: MarketMonthV2["calibrationVersion"];
+    macroDifficulty?: MacroMarketDifficultyV2;
+    observedRegime?: MarketRegime;
+    observedMonth?: SimulationMonth;
+    borrowingRatePpm?: RatePpm;
+    laborDemandChangePpm?: RatePpm;
+    volatilityPpm?: RatePpm;
+    lastInflationPpm?: RatePpm;
+    broadMarketReturnPpm?: RatePpm;
+    sectorMarketReturnPpm?: RatePpm;
+    speculativeMarketReturnPpm?: RatePpm;
+    housingReturnPpm?: RatePpm;
+    cashYieldPpm?: RatePpm;
   }>;
   recurringStrategy: RecurringStrategy;
   exposure: Readonly<{
@@ -211,6 +284,15 @@ export type GameplayStateV2 = Readonly<{
       templateId: string;
       eligibleAgainMonth: SimulationMonth;
     }>[];
+    /** Present only after a declarative v2 event schedules a follow-up. */
+    scheduledFollowUps?: readonly Readonly<{
+      sourceEventId: string;
+      templateId: string;
+      templateVersion: number;
+      eligibleMonth: SimulationMonth;
+    }>[];
+    /** Optional only for replay compatibility with schema-v2 runs created before declarative events. */
+    activeCashFlows?: readonly ActivePersonalEventCashFlowV2[];
   }>;
   careerDevelopment: Readonly<{
     pending: readonly Readonly<{
@@ -246,6 +328,8 @@ export type GameStateV2 = Readonly<
     engineVersion: typeof ENGINE_V2_VERSION;
     gameplay: GameplayStateV2;
     migration: StateMigrationRecord | null;
+    /** Absent on historical states. Named streams are enabled only by an accepted versioned command. */
+    worldRandom?: WorldRandomStateV1;
   }
 >;
 
@@ -257,9 +341,24 @@ function deepFreeze<T>(value: T): Readonly<T> {
   return value;
 }
 
-export function finalizeGameStateV2(state: GameStateV2): GameStateV2 {
-  assertValidGameStateV2(state);
-  return deepFreeze(state) as GameStateV2;
+const DEFAULT_VALIDATED_GAME_STATES = new WeakSet<object>();
+
+export function finalizeGameStateV2(
+  state: GameStateV2,
+  validationOptions: GameStateV2ValidationOptions = {},
+): GameStateV2 {
+  if (
+    validationOptions.personalEventCatalog === undefined &&
+    DEFAULT_VALIDATED_GAME_STATES.has(state)
+  ) {
+    return state;
+  }
+  assertValidGameStateV2(state, validationOptions);
+  const finalized = deepFreeze(state) as GameStateV2;
+  if (validationOptions.personalEventCatalog === undefined) {
+    DEFAULT_VALIDATED_GAME_STATES.add(finalized);
+  }
+  return finalized;
 }
 
 export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {
