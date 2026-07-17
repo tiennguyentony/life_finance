@@ -5,6 +5,7 @@ import { simulationMonth } from "../domain/month";
 import { finalizeGameStateV2, type GameStateV2 } from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import {
+  calculateEmployerMatchV2,
   planRecurringAllocations,
   setRecurringStrategy,
   type SetRecurringStrategyCommand,
@@ -15,7 +16,9 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function initialState(): GameStateV2 {
+function initialState(
+  insuranceCoverageIds: readonly string[] = [],
+): GameStateV2 {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
     {
@@ -26,7 +29,7 @@ function initialState(): GameStateV2 {
       benefitsPackageId: "benefits.corporate_flex",
       healthPlanId: "health.hdhp_hsa",
       retirementPlanId: "retirement.401k_standard",
-      insuranceCoverageIds: [],
+      insuranceCoverageIds,
       scenarioId: "scenario.fresh_start",
     },
   );
@@ -102,6 +105,180 @@ function strategyCommand(
 }
 
 describe("v2 recurring strategy planning", () => {
+  it("persists emergency and insurance policies and updates premium obligations exactly once", () => {
+    const initial = initialState(["insurance.renters"]);
+    const configured = setRecurringStrategy(
+      initial,
+      strategyCommand(initial, {
+        emergencyFundTargetMonthsPpm: ratePpm(6_000_000),
+        insuranceCoverageIds: [],
+      }),
+    );
+
+    expect(configured.gameplay.recurringStrategy).toMatchObject({
+      emergencyFundTargetMonthsPpm: 6_000_000,
+      insuranceCoverageIds: [],
+    });
+    expect(configured.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents - 1_800,
+    );
+
+    const replacedAllocations = setRecurringStrategy(
+      configured,
+      {
+        ...strategyCommand(configured),
+        id: "cmd.strategy.replacement",
+      },
+    );
+    expect(replacedAllocations.gameplay.recurringStrategy).toMatchObject({
+      emergencyFundTargetMonthsPpm: 6_000_000,
+      insuranceCoverageIds: [],
+    });
+    expect(replacedAllocations.finances.requiredObligationsCents).toBe(
+      configured.finances.requiredObligationsCents,
+    );
+  });
+
+  it("retains after-tax cash until the emergency-fund target is funded", () => {
+    const initial = initialState();
+    const configured = setRecurringStrategy(
+      initial,
+      strategyCommand(initial, {
+        emergencyFundTargetMonthsPpm: ratePpm(6_000_000),
+      }),
+    );
+    const belowTarget = planRecurringAllocations(
+      configured,
+      moneyCents(1_000_000),
+      moneyCents(100_000),
+    );
+
+    expect(belowTarget.unallocatedAfterTaxCents).toBe(100_000);
+    expect(belowTarget.afterTax).toMatchObject({
+      broadIndexCents: 0,
+      sectorCents: 0,
+      speculativeCents: 0,
+      iraCents: 0,
+      extraDebtPayments: [],
+    });
+
+    const funded = {
+      ...configured,
+      finances: {
+        ...configured.finances,
+        cashCents: moneyCents(
+          configured.finances.requiredObligationsCents * 6,
+        ),
+      },
+    } as GameStateV2;
+    const atTarget = planRecurringAllocations(
+      funded,
+      moneyCents(1_000_000),
+      moneyCents(100_000),
+    );
+    expect(atTarget.unallocatedAfterTaxCents).toBeLessThan(100_000);
+    expect(atTarget.afterTax.broadIndexCents).toBe(20_000);
+  });
+
+  it("rejects protection targets and coverage outside the frozen run selection", () => {
+    const initial = initialState(["insurance.renters"]);
+
+    expect(() =>
+      setRecurringStrategy(
+        initial,
+        strategyCommand(initial, {
+          emergencyFundTargetMonthsPpm: ratePpm(24_000_001),
+        }),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "INVALID_PROTECTION_POLICY" }));
+    expect(() =>
+      setRecurringStrategy(
+        initial,
+        strategyCommand(initial, {
+          insuranceCoverageIds: ["insurance.term_life"],
+        }),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "INVALID_PROTECTION_POLICY" }));
+  });
+
+  it.each([
+    [20_000, 20_000],
+    [30_000, 30_000],
+    [40_000, 35_000],
+    [50_000, 40_000],
+    [100_000, 40_000],
+  ])(
+    "applies employer-match tiers to an employee contribution of %i cents",
+    (employeeContributionCents, expectedMatchCents) => {
+      expect(
+        calculateEmployerMatchV2(
+          initialState(),
+          moneyCents(1_000_000),
+          moneyCents(employeeContributionCents),
+        ),
+      ).toBe(expectedMatchCents);
+    },
+  );
+
+  it("caps employee plus employer additions at the defined-contribution limit", () => {
+    const initial = initialState();
+    const nearAdditionLimit = {
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        contributions: {
+          ...initial.gameplay.contributions,
+          employee401kCents: moneyCents(2_400_000),
+          employer401kCents: moneyCents(4_790_000),
+        },
+      },
+    } as GameStateV2;
+
+    expect(
+      calculateEmployerMatchV2(
+        nearAdditionLimit,
+        moneyCents(1_000_000),
+        moneyCents(8_000),
+      ),
+    ).toBe(2_000);
+  });
+
+  it("caps the employee deferral at the remaining combined addition limit", () => {
+    const initial = initialState();
+    const configured = setRecurringStrategy(
+      initial,
+      strategyCommand(initial, {
+        preTax401kSalaryRatePpm: ratePpm(20_000),
+        preTaxHsaSalaryRatePpm: ratePpm(0),
+        afterTaxBroadIndexRatePpm: ratePpm(0),
+        afterTaxSectorRatePpm: ratePpm(0),
+        afterTaxSpeculativeRatePpm: ratePpm(0),
+        afterTaxIraRatePpm: ratePpm(0),
+        afterTaxExtraDebtRatePpm: ratePpm(0),
+      }),
+    );
+    const nearAdditionLimit = {
+      ...configured,
+      gameplay: {
+        ...configured.gameplay,
+        contributions: {
+          ...configured.gameplay.contributions,
+          employee401kCents: moneyCents(2_400_000),
+          employer401kCents: moneyCents(4_790_000),
+        },
+      },
+    } as GameStateV2;
+
+    const plan = planRecurringAllocations(
+      nearAdditionLimit,
+      moneyCents(1_000_000),
+      moneyCents(0),
+    );
+
+    expect(plan.preTax.employee401kCents).toBe(10_000);
+    expect(plan.preTax.employer401kMatchCents).toBe(0);
+  });
+
   it("uses gross and after-obligation bases, tiered match, and debt avalanche", () => {
     const initial = initialState();
     const configured = setRecurringStrategy(initial, strategyCommand(initial));

@@ -1,0 +1,100 @@
+{
+  "version": "balance-lab-config-v1",
+  "seedNamespace": "life-finance-balance-v1",
+  "tiers": {
+    "quick": {
+      "personaIds": ["healthy-v1"],
+      "matchedSeedCount": 3,
+      "horizonMonths": 24,
+      "difficulty": "normal",
+      "runtimeBudgetMs": 30000
+    },
+    "medium": {
+      "personaIds": ["healthy-v1", "low-cash-v1", "debt-burdened-v1"],
+      "matchedSeedCount": 25,
+      "horizonMonths": 120,
+      "difficulty": "normal",
+      "runtimeBudgetMs": 900000
+    },
+    "large": {
+      "personaIds": ["healthy-v1", "low-cash-v1", "debt-burdened-v1"],
+      "matchedSeedCount": 200,
+      "horizonMonths": 480,
+      "difficulty": "normal",
+      "runtimeBudgetMs": 14400000
+    }
+  },
+  "acceptance": [
+    {
+      "id": "bankruptcy-rate",
+      "metric": "bankruptcy_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 250000,
+      "minimumSamples": 25
+    },
+    {
+      "id": "unavoidable-failure-rate",
+      "metric": "unavoidable_failure_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 10000,
+      "minimumSamples": 25
+    },
+    {
+      "id": "repeated-lessons",
+      "metric": "repeated_lesson_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 300000,
+      "minimumSamples": 25
+    },
+    {
+      "id": "prepared-vs-reckless-bankruptcy",
+      "metric": "prepared_vs_reckless_bankruptcy_delta_ppm",
+      "comparator": "at_least",
+      "threshold": 1,
+      "minimumSamples": 6
+    },
+    {
+      "id": "healthy-persona-unavoidable-failure",
+      "metric": "healthy_persona_unavoidable_failure_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 100000,
+      "minimumSamples": 6
+    },
+    {
+      "id": "prepared-impact-reduction",
+      "metric": "impact_reduction_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 100000,
+      "minimumSamples": 6
+    },
+    {
+      "id": "major-event-pacing",
+      "metric": "major_event_pacing_ppm",
+      "comparator": "at_most",
+      "threshold": 0,
+      "minimumSamples": 24
+    },
+    {
+      "id": "matched-strategy-win-rate",
+      "metric": "matched_strategy_win_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 500000,
+      "minimumSamples": 3
+    },
+    {
+      "id": "no-strategy-objective-domination",
+      "metric": "maximum_strategy_objective_lead_share_ppm",
+      "comparator": "at_most",
+      "threshold": 950000,
+      "minimumSamples": 3
+    },
+    {
+      "id": "runtime-budget",
+      "metric": "runtime_ms",
+      "comparator": "at_most",
+      "threshold": 30000,
+      "minimumSamples": 1
+    }
+  ],
+  "maximumReproductionBundles": 25
+}

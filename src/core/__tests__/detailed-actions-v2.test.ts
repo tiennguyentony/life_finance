@@ -6,11 +6,14 @@ import {
   type DetailedFinanceCommand,
   type DetailedFinancialAction,
 } from "../detailed-actions-v2";
+import { ACTION_POLICY_V1_VERSION } from "../action-policy-v2";
+import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import {
   finalizeGameStateV2,
   validateGameStateV2,
+  type DebtBreakdown,
   type GameStateV2,
 } from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
@@ -20,7 +23,18 @@ import {
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
 
-function state(): GameStateV2 {
+function state(
+  termDebts: DebtBreakdown["termDebts"] = [
+    {
+      id: "debt.student.1",
+      kind: "student_loan",
+      principalCents: moneyCents(2_000_000),
+      annualInterestRatePpm: ratePpm(50_000),
+      minimumPaymentCents: moneyCents(25_000),
+      remainingTermMonths: 120,
+    },
+  ],
+): GameStateV2 {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
     {
@@ -53,16 +67,7 @@ function state(): GameStateV2 {
       hsaCents: moneyCents(0),
       homeValueCents: moneyCents(0),
       otherAssetsCents: moneyCents(0),
-      termDebts: [
-        {
-          id: "debt.student.1",
-          kind: "student_loan",
-          principalCents: moneyCents(2_000_000),
-          annualInterestRatePpm: ratePpm(50_000),
-          minimumPaymentCents: moneyCents(25_000),
-          remainingTermMonths: 120,
-        },
-      ],
+      termDebts,
       revolvingCreditLimitCents: moneyCents(1_000_000),
       revolvingCreditUsedCents: moneyCents(200_000),
     },
@@ -89,6 +94,176 @@ function command(
 }
 
 describe("detailed v2 financial commands", () => {
+  it("quotes new fixed-rate mortgages from the accepted macro borrowing environment", () => {
+    const initial = state([]);
+    const macroState = finalizeGameStateV2({
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        market: {
+          modelVersion: "regime-v2",
+          calibrationVersion: "us-balanced-2026-v1",
+          macroDifficulty: "normal",
+          observedRegime: "expansion",
+          observedMonth: initial.currentMonth,
+          monthsInRegime: 4,
+          cumulativePriceIndexPpm: 1_010_000,
+          borrowingRatePpm: ratePpm(60_000),
+          laborDemandChangePpm: ratePpm(5_000),
+          volatilityPpm: ratePpm(250_000),
+          lastInflationPpm: ratePpm(3_000),
+          broadMarketReturnPpm: ratePpm(10_000),
+          sectorMarketReturnPpm: ratePpm(12_000),
+          speculativeMarketReturnPpm: ratePpm(18_000),
+          housingReturnPpm: ratePpm(4_000),
+          cashYieldPpm: ratePpm(2_000),
+        },
+      },
+    });
+    const purchase = command(
+      macroState,
+      "cmd.macro-mortgage",
+      {
+        type: "purchase_home",
+        purchasePriceCents: moneyCents(2_000_000),
+        downPaymentCents: moneyCents(1_000_000),
+        mortgageAnnualInterestRatePpm: ratePpm(900_000),
+        mortgageTermMonths: 360,
+      },
+    );
+    const accepted = reduceDetailedFinanceCommand(macroState, {
+      ...purchase,
+      payload: {
+        ...purchase.payload,
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+      },
+    });
+
+    expect(accepted.gameplay.debts.termDebts).toEqual([
+      expect.objectContaining({
+        kind: "mortgage",
+        annualInterestRatePpm: 80_000,
+      }),
+    ]);
+    expect(
+      sha256Canonical(
+        reduceDetailedFinanceCommand(macroState, {
+          ...purchase,
+          payload: {
+            ...purchase.payload,
+            actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+          },
+        }),
+      ),
+    ).toBe(sha256Canonical(accepted));
+
+    const cappedQuoteState = finalizeGameStateV2({
+      ...accepted,
+      gameplay: {
+        ...accepted.gameplay,
+        market: {
+          ...accepted.gameplay.market,
+          borrowingRatePpm: ratePpm(490_000),
+        },
+      },
+    });
+    const refinance = command(
+      cappedQuoteState,
+      "cmd.macro-mortgage-refinance",
+      {
+        type: "refinance_home",
+        mortgageAnnualInterestRatePpm: ratePpm(1_000),
+        mortgageTermMonths: 360,
+      },
+    );
+    const refinanced = reduceDetailedFinanceCommand(cappedQuoteState, {
+      ...refinance,
+      payload: {
+        ...refinance.payload,
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+      },
+    });
+    expect(
+      refinanced.gameplay.debts.termDebts.find(
+        ({ kind }) => kind === "mortgage",
+      )?.annualInterestRatePpm,
+    ).toBe(500_000);
+
+    const historical = reduceDetailedFinanceCommand(
+      macroState,
+      command(macroState, "cmd.historical-mortgage-rate", {
+        type: "purchase_home",
+        purchasePriceCents: moneyCents(2_000_000),
+        downPaymentCents: moneyCents(1_000_000),
+        mortgageAnnualInterestRatePpm: ratePpm(90_000),
+        mortgageTermMonths: 360,
+      }),
+    );
+    expect(historical.gameplay.debts.termDebts[0]!.annualInterestRatePpm).toBe(
+      90_000,
+    );
+  });
+
+  it("uses a versioned liquidation policy while replaying absent-version rates", () => {
+    const initial = state();
+    const historical = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.historical-rate", {
+        type: "liquidate_taxable",
+        bucket: "taxableSectorCents",
+        amountCents: moneyCents(50_000),
+        liquidationCostRatePpm: ratePpm(100_000),
+      }),
+    );
+    expect(historical.finances.cashCents).toBe(2_545_000);
+
+    const versioned = {
+      ...command(initial, "cmd.policy-rate", {
+        type: "liquidate_taxable" as const,
+        bucket: "taxableSectorCents" as const,
+        amountCents: moneyCents(50_000),
+        liquidationCostRatePpm: ratePpm(10_000),
+      }),
+      payload: {
+        actionPolicyVersion: ACTION_POLICY_V1_VERSION,
+        action: {
+          type: "liquidate_taxable" as const,
+          bucket: "taxableSectorCents" as const,
+          amountCents: moneyCents(50_000),
+          liquidationCostRatePpm: ratePpm(10_000),
+        },
+      },
+    } satisfies DetailedFinanceCommand;
+    const applied = reduceDetailedFinanceCommand(initial, versioned);
+    expect(applied.finances.cashCents).toBe(2_549_500);
+
+    const openingChecksum = sha256Canonical(initial);
+    expect(() =>
+      reduceDetailedFinanceCommand(initial, {
+        ...versioned,
+        id: "cmd.policy-rate.tampered",
+        payload: {
+          ...versioned.payload,
+          action: {
+            ...versioned.payload.action,
+            liquidationCostRatePpm: ratePpm(100_000),
+          },
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_COMMAND" }));
+    expect(() =>
+      reduceDetailedFinanceCommand(initial, {
+        ...versioned,
+        id: "cmd.policy-rate.unknown",
+        payload: {
+          ...versioned.payload,
+          actionPolicyVersion: "invented" as "1.0.0",
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: "INVALID_COMMAND" }));
+    expect(sha256Canonical(initial)).toBe(openingChecksum);
+  });
+
   it("invests and liquidates exact taxable buckets with balanced aggregate journals", () => {
     const initial = state();
     const invested = reduceDetailedFinanceCommand(
@@ -186,6 +361,37 @@ describe("detailed v2 financial commands", () => {
         }),
       ),
     ).toThrow(expect.objectContaining({ code: "PAYMENT_EXCEEDS_DEBT" }));
+  });
+
+  it("does not over-reduce obligations after normalizing an oversized native minimum", () => {
+    const initial = state([
+      {
+        id: "debt.oversized-minimum",
+        kind: "personal_loan",
+        principalCents: moneyCents(500),
+        annualInterestRatePpm: ratePpm(0),
+        minimumPaymentCents: moneyCents(600),
+        remainingTermMonths: 2,
+      },
+    ]);
+
+    const paid = reduceDetailedFinanceCommand(
+      initial,
+      command(initial, "cmd.partial-normalized-debt", {
+        type: "pay_term_debt",
+        debtId: "debt.oversized-minimum",
+        amountCents: moneyCents(100),
+      }),
+    );
+
+    expect(initial.gameplay.debts.termDebts[0]?.minimumPaymentCents).toBe(500);
+    expect(paid.gameplay.debts.termDebts[0]).toMatchObject({
+      principalCents: 400,
+      minimumPaymentCents: 400,
+    });
+    expect(paid.finances.requiredObligationsCents).toBe(
+      initial.finances.requiredObligationsCents - 100,
+    );
   });
 
   it("keeps revolving detail synchronized and rejects stale or duplicate commands", () => {

@@ -1,4 +1,4 @@
-export const EDUCATION_CONTENT_VERSION = "education.en-US.2026.1" as const;
+export const EDUCATION_CONTENT_VERSION = "education.en-US.2026.2" as const;
 
 export type EducationConcept = Readonly<{
   id: string;
@@ -90,6 +90,16 @@ const concepts = [
       "It offers liquid long-term growth potential but has short-term volatility and no guaranteed return.",
   },
   {
+    id: "diversification",
+    title: "Diversification",
+    shortDefinition:
+      "Diversification spreads investments across companies, industries, and asset types so one narrow loss has less control over the whole portfolio.",
+    whyItMatters:
+      "It reduces concentration risk without pretending that broad markets cannot decline or that every loss is preventable.",
+    decisionTradeoff:
+      "A diversified plan may miss the largest gain in one hot investment, but it also avoids depending on that single outcome.",
+  },
+  {
     id: "sector_investing",
     title: "Sector investing",
     shortDefinition:
@@ -98,6 +108,16 @@ const concepts = [
       "If the investment sector matches your job sector, a downturn can hurt both income security and investments together.",
     decisionTradeoff:
       "Focused exposure can outperform during a boom but increases concentration and market-timing risk.",
+  },
+  {
+    id: "job_investment_correlation",
+    title: "Job and investment correlation",
+    shortDefinition:
+      "Job and investment correlation means the same economic change can affect both employment income and investments when they depend on one industry.",
+    whyItMatters:
+      "A sector downturn can reduce a concentrated portfolio while also weakening the household income that would normally support recovery.",
+    decisionTradeoff:
+      "Holding employer or industry investments may offer familiarity or upside, while broader holdings reduce the chance of two related setbacks.",
   },
   {
     id: "speculation",
@@ -131,9 +151,9 @@ const concepts = [
   },
   {
     id: "dti",
-    title: "Debt-to-income ratio (DTI)",
+    title: "Debt-service ratio",
     shortDefinition:
-      "DTI compares total debt with annual gross income in this simulation. It is one signal of how much debt pressure the household carries.",
+      "Debt-service ratio compares required monthly debt payments with gross monthly income. Risk v1 recalculates it from the current state.",
     whyItMatters:
       "Higher debt leaves less room to absorb income loss, rate changes, or new mandatory costs.",
     decisionTradeoff:
@@ -158,6 +178,16 @@ const concepts = [
       "Starting earlier gives each contribution more periods to grow before retirement.",
     decisionTradeoff:
       "Long-term compounding requires tolerating short-term volatility without abandoning the plan after a bad month.",
+  },
+  {
+    id: "restricted_retirement_assets",
+    title: "Restricted retirement assets",
+    shortDefinition:
+      "Restricted retirement assets are long-term savings that count toward net worth but are not ordinary cash for current bills.",
+    whyItMatters:
+      "A household can look wealthy on paper and still face a cash shortfall when most value is locked in retirement accounts.",
+    decisionTradeoff:
+      "Retirement contributions support future security, while current obligations still require enough unrestricted liquid money.",
   },
   {
     id: "lifestyle_creep",

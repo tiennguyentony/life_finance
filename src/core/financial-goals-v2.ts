@@ -1,6 +1,11 @@
 import { safeBigIntToNumber } from "./domain/integer";
 import { moneyCents, type MoneyCents, type RatePpm } from "./domain/money";
-import type { FinancialSnapshot } from "./game-state";
+import {
+  calculateInvestableAssets,
+  type FinancialSnapshot,
+} from "./game-state";
+
+export { calculateInvestableAssets as calculateGoalInvestableAssets } from "./game-state";
 
 export const FINANCIAL_GOAL_VERSION = "financial-goal-v1" as const;
 export const DEFAULT_SAFE_WITHDRAWAL_RATE_PPM = 40_000 as RatePpm;
@@ -24,13 +29,15 @@ export type FinancialGoalProjection = Readonly<{
 export function defaultFinancialGoal(
   annualLivingCostCents: MoneyCents,
 ): FinancialGoalV1 {
-  return Object.freeze({
+  const goal = Object.freeze({
     version: FINANCIAL_GOAL_VERSION,
     desiredAnnualSpendingCents: annualLivingCostCents,
     safeWithdrawalRatePpm: DEFAULT_SAFE_WITHDRAWAL_RATE_PPM,
     targetAgeYears: 65,
     source: "current_lifestyle_default",
   });
+  validateFinancialGoal(goal);
+  return goal;
 }
 
 export function validateFinancialGoal(goal: FinancialGoalV1): void {
@@ -76,27 +83,12 @@ export function financialGoalTargetCents(goal: FinancialGoalV1): MoneyCents {
   );
 }
 
-export function calculateGoalInvestableAssets(
+function projectResolvedFinancialGoal(
   finances: FinancialSnapshot,
-): MoneyCents {
-  return moneyCents(
-    safeBigIntToNumber(
-      BigInt(finances.cashCents) +
-        BigInt(finances.taxableInvestmentsCents) +
-        BigInt(finances.retirementCents) +
-        BigInt(finances.otherInvestableAssetsCents),
-      "financial goal investable assets",
-    ),
-  );
-}
-
-export function projectFinancialGoal(
-  finances: FinancialSnapshot,
-  configuredGoal?: FinancialGoalV1,
+  goal: FinancialGoalV1,
 ): FinancialGoalProjection {
-  const goal = configuredGoal ?? defaultFinancialGoal(finances.annualLivingCostCents);
   const targetCents = financialGoalTargetCents(goal);
-  const investableAssetsCents = calculateGoalInvestableAssets(finances);
+  const investableAssetsCents = calculateInvestableAssets(finances);
   const progressPpm = Math.min(
     1_000_000,
     Number(
@@ -113,4 +105,38 @@ export function projectFinancialGoal(
       Math.max(0, targetCents - investableAssetsCents),
     ),
   });
+}
+
+export function projectFinancialGoal(
+  finances: FinancialSnapshot,
+  configuredGoal?: FinancialGoalV1,
+): FinancialGoalProjection {
+  const configured =
+    configuredGoal ?? defaultFinancialGoal(finances.annualLivingCostCents);
+  if (
+    configured.source === "current_lifestyle_default" &&
+    (!Number.isSafeInteger(finances.annualLivingCostCents) ||
+      finances.annualLivingCostCents <= 0)
+  ) {
+    throw new RangeError("FI projection requires positive annual living cost in cents");
+  }
+  const goal =
+    configured.source === "current_lifestyle_default"
+      ? Object.freeze({
+          ...configured,
+          desiredAnnualSpendingCents: finances.annualLivingCostCents,
+        })
+      : configured;
+  return projectResolvedFinancialGoal(finances, goal);
+}
+
+/** Frozen configured-spending behavior for historical command replay only. */
+export function projectFinancialGoalV1Compatibility(
+  finances: FinancialSnapshot,
+  configuredGoal?: FinancialGoalV1,
+): FinancialGoalProjection {
+  return projectResolvedFinancialGoal(
+    finances,
+    configuredGoal ?? defaultFinancialGoal(finances.annualLivingCostCents),
+  );
 }

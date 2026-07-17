@@ -9,6 +9,8 @@ import {
   type ExposureSnapshot,
   type GameStateV2,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
+import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
 
 const PPM = 1_000_000;
 const MAX_EMERGENCY_MONTHS_PPM = 12_000_000;
@@ -46,7 +48,7 @@ function propertyAndIncomeInsuranceGap(state: GameStateV2): RatePpm | null {
   let propertyCoverage = BigInt(0);
   let incomeCoverage = BigInt(0);
   let lifeCoverage = BigInt(0);
-  for (const coverage of snapshot.selected.insuranceCoverages) {
+  for (const coverage of activeInsuranceCoveragesV2(state)) {
     const amount = BigInt(coverage.coverageLimitCents);
     if (coverage.kind === "renters") propertyCoverage += amount;
     if (
@@ -160,6 +162,7 @@ export function computeExposureSnapshotV2(
 export function recordExposureSnapshotV2(
   state: GameStateV2,
   month: SimulationMonth = state.currentMonth,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
   const snapshot = computeExposureSnapshotV2(state, month);
   const history = state.gameplay.exposure.history.filter(
@@ -171,5 +174,5 @@ export function recordExposureSnapshotV2(
       ...state.gameplay,
       exposure: { current: snapshot, history: [...history, snapshot] },
     },
-  });
+  }, validationOptions);
 }

@@ -38,7 +38,9 @@ export function EventPanel({
       ) : experience ? <p>{experience.situation}</p> : null}
       <p>
         {template?.teachingPrinciple ??
-          `This event targets ${pending.targetedWeakness.replaceAll("_", " ")}.`}
+          (pending.targetedWeakness === "unrelated_hazard"
+            ? "This event occurred independently of your current financial weaknesses."
+            : `This event targets ${pending.targetedWeakness.replaceAll("_", " ")}.`)}
       </p>
       <div className="event-parameters">
         {Object.entries(pending.parameters).map(([key, value]) => (

@@ -6,6 +6,14 @@ import { simulationMonth } from "../../../core/domain/month";
 import { createInitialGameState } from "../../../core/game-state";
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import type { RecordLearningInteractionV2Command } from "../../../core/learning-interaction-v2";
+import type { MonthlyTurnV2Record } from "../../../core/monthly-turn-v2";
+import { createNativeGameStateV2 } from "../../../core/native-game-state-v2";
+import { resolveScenarioCatalogSelection } from "../../../core/scenario-catalog";
+import { assertValidGameStateTransitionV2 } from "../../../core/state-transition-v2";
+import {
+  US_2026_SCENARIO_CATALOG,
+  US_2026_SCENARIO_CATALOG_VERSION,
+} from "../../../data/scenario-catalog";
 import { RunRepositoryError } from "../run-repository-contracts";
 import { reduceGameCommandV2 } from "../run-repository-support";
 import {
@@ -38,6 +46,33 @@ const processMonthPayload = {
   },
   taxableLiquidationCostRatePpm: 10_000,
 } as const;
+
+const resolvedCashFlows = [
+  {
+    id: "flow.replay.other-income",
+    kind: "other_income",
+    amountCents: 11,
+    sourceSystem: "policy.replay",
+  },
+  {
+    id: "flow.replay.recurring-expense",
+    kind: "recurring_expense",
+    amountCents: 7,
+    sourceSystem: "subscription.replay",
+  },
+  {
+    id: "flow.replay.temporary-income",
+    kind: "temporary_income",
+    amountCents: 13,
+    sourceSystem: "event.replay",
+  },
+  {
+    id: "flow.replay.temporary-expense",
+    kind: "temporary_expense",
+    amountCents: 5,
+    sourceSystem: "event.replay",
+  },
+] as const;
 
 const validPayloads = [
   ["take_detailed_action", { action: { type: "sell_home" } }],
@@ -294,7 +329,360 @@ function storedRow(
   };
 }
 
+type LegacyMonthlyReplayKind =
+  | "successful"
+  | "taxable_liquidation_and_credit"
+  | "claim"
+  | "shortfall";
+
+const legacyMonthlyReplayFixtures = [
+  {
+    kind: "successful",
+    expectedStateChecksum:
+      "6e58a551198a4a8033b718bff4f3b334bcff04d34804f2b1c77064792ba204fe",
+    expectedRecord: {
+      commandId: "cmd.legacy-replay.successful",
+      processedMonth: "2026-07",
+      nextMonth: "2026-08",
+      grossIncomeCents: 1_000_000,
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: 800_000,
+      market: {
+        equityReturnPpm: 3_000,
+        bondReturnPpm: 1_000,
+        cashReturnPpm: 300,
+        housingReturnPpm: 2_000,
+        inflationPpm: 1_300,
+      },
+      marketValueChangeCents: 300,
+      annualInflationIncreaseCents: 8_450,
+      insurancePlayerCostCents: 0,
+      requiredCashCents: 555_171,
+      nonDebtObligationsPaidCents: 555_171,
+      debtService: {
+        totalInterestCents: 0,
+        totalScheduledPaymentCents: 0,
+      },
+      funding: {
+        grossLiquidationCents: 0,
+        liquidationCostCents: 0,
+        netLiquidationProceedsCents: 0,
+        creditDrawnCents: 0,
+        liquidatedBuckets: {
+          taxableLegacyUnclassifiedCents: 0,
+          taxableSpeculativeCents: 0,
+          taxableSectorCents: 0,
+          taxableBroadIndexCents: 0,
+        },
+      },
+      scheduledEventId: null,
+      outcome: null,
+    },
+  },
+  {
+    kind: "taxable_liquidation_and_credit",
+    expectedStateChecksum:
+      "b7f38f1ba1fd702e7cf881c248c012d3befd4fd6d3c07d709e36aa11dbb3a86f",
+    expectedRecord: {
+      commandId: "cmd.legacy-replay.taxable_liquidation_and_credit",
+      processedMonth: "2026-07",
+      nextMonth: "2026-08",
+      grossIncomeCents: 1_000_000,
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: 800_000,
+      market: {
+        equityReturnPpm: 30_000,
+        bondReturnPpm: -500,
+        cashReturnPpm: 300,
+        housingReturnPpm: 11_500,
+        inflationPpm: 4_000,
+      },
+      marketValueChangeCents: 15_030,
+      annualInflationIncreaseCents: 26_000,
+      insurancePlayerCostCents: 0,
+      requiredCashCents: 1_756_634,
+      nonDebtObligationsPaidCents: 556_634,
+      debtService: {
+        totalInterestCents: 12_000,
+        totalScheduledPaymentCents: 1_200_000,
+      },
+      funding: {
+        grossLiquidationCents: 515_000,
+        liquidationCostCents: 5_150,
+        netLiquidationProceedsCents: 509_850,
+        creditDrawnCents: 346_754,
+        liquidatedBuckets: {
+          taxableLegacyUnclassifiedCents: 0,
+          taxableSpeculativeCents: 0,
+          taxableSectorCents: 0,
+          taxableBroadIndexCents: 515_000,
+        },
+      },
+      scheduledEventId: null,
+      outcome: null,
+    },
+  },
+  {
+    kind: "claim",
+    expectedStateChecksum:
+      "efc2728aceeaaae22ab4e24c235afe53e42e99cb6893024258ceb5f54cfff0a1",
+    expectedRecord: {
+      commandId: "cmd.legacy-replay.claim",
+      processedMonth: "2026-07",
+      nextMonth: "2026-08",
+      grossIncomeCents: 1_000_000,
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: 800_000,
+      market: {
+        equityReturnPpm: 3_000,
+        bondReturnPpm: 7_000,
+        cashReturnPpm: 300,
+        housingReturnPpm: -500,
+        inflationPpm: 1_300,
+      },
+      marketValueChangeCents: 300,
+      annualInflationIncreaseCents: 8_450,
+      insurancePlayerCostCents: 184_000,
+      requiredCashCents: 739_171,
+      nonDebtObligationsPaidCents: 739_171,
+      debtService: {
+        totalInterestCents: 0,
+        totalScheduledPaymentCents: 0,
+      },
+      funding: {
+        grossLiquidationCents: 0,
+        liquidationCostCents: 0,
+        netLiquidationProceedsCents: 0,
+        creditDrawnCents: 0,
+        liquidatedBuckets: {
+          taxableLegacyUnclassifiedCents: 0,
+          taxableSpeculativeCents: 0,
+          taxableSectorCents: 0,
+          taxableBroadIndexCents: 0,
+        },
+      },
+      scheduledEventId: null,
+      outcome: null,
+    },
+  },
+  {
+    kind: "shortfall",
+    expectedStateChecksum:
+      "1e0421faae700850188cc25ad1e0af1df27b56defcfeeb43f48b89386dfa14ac",
+    expectedRecord: {
+      commandId: "cmd.legacy-replay.shortfall",
+      processedMonth: "2026-07",
+      nextMonth: "2026-08",
+      grossIncomeCents: 1_000_000,
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: 800_000,
+      market: {
+        equityReturnPpm: 2_000,
+        bondReturnPpm: 2_500,
+        cashReturnPpm: 300,
+        housingReturnPpm: -1_500,
+        inflationPpm: 2_200,
+      },
+      marketValueChangeCents: 30,
+      annualInflationIncreaseCents: 14_300,
+      insurancePlayerCostCents: 10_000_000,
+      requiredCashCents: 10_555_659,
+      nonDebtObligationsPaidCents: 0,
+      debtService: {
+        totalInterestCents: 0,
+        totalScheduledPaymentCents: 0,
+      },
+      funding: null,
+      scheduledEventId: null,
+      outcome: {
+        kind: "bankruptcy",
+        grade: "F",
+        reachedMonth: "2026-08",
+        reasonCode: "required_obligations_exceed_automatic_liquidity",
+      },
+    },
+  },
+] as const satisfies readonly Readonly<{
+  kind: LegacyMonthlyReplayKind;
+  expectedStateChecksum: string;
+  expectedRecord: object;
+}>[];
+
+function legacyMonthlyReplayState(kind: LegacyMonthlyReplayKind) {
+  const resolvedScenario = resolveScenarioCatalogSelection(
+    US_2026_SCENARIO_CATALOG,
+    {
+      catalogVersion: US_2026_SCENARIO_CATALOG_VERSION,
+      locationId: "location.seattle",
+      careerId: "career.software",
+      householdId: "household.single",
+      benefitsPackageId: "benefits.corporate_flex",
+      healthPlanId: "health.hdhp_hsa",
+      retirementPlanId: "retirement.401k_standard",
+      insuranceCoverageIds: ["insurance.renters"],
+      scenarioId: "scenario.fresh_start",
+    },
+  );
+  const needsFunding = kind === "taxable_liquidation_and_credit";
+  const isShortfall = kind === "shortfall";
+  return createNativeGameStateV2({
+    runId: `run.legacy-replay.${kind}`,
+    playerId: `player.legacy-replay.${kind}`,
+    birthMonth: simulationMonth("1995-01"),
+    startMonth: simulationMonth("2026-07"),
+    randomSeed: `legacy-monthly-replay-${kind}`,
+    resolvedScenario,
+    annualGrossSalaryCents: moneyCents(12_000_000),
+    finances: {
+      cashCents: moneyCents(needsFunding || isShortfall ? 100_000 : 1_000_000),
+      taxableBroadIndexCents: moneyCents(needsFunding ? 500_000 : 0),
+      taxableSectorCents: moneyCents(0),
+      taxableSpeculativeCents: moneyCents(0),
+      retirement401kCents: moneyCents(0),
+      retirementIraCents: moneyCents(0),
+      hsaCents: moneyCents(0),
+      homeValueCents: moneyCents(0),
+      otherAssetsCents: moneyCents(0),
+      termDebts: needsFunding
+        ? [
+            {
+              id: "debt.legacy-replay",
+              kind: "student_loan" as const,
+              principalCents: moneyCents(1_200_000),
+              annualInterestRatePpm: ratePpm(120_000),
+              minimumPaymentCents: moneyCents(1_200_000),
+              remainingTermMonths: 2,
+            },
+          ]
+        : [],
+      revolvingCreditLimitCents: moneyCents(needsFunding ? 1_000_000 : 100_000),
+      revolvingCreditUsedCents: moneyCents(0),
+    },
+    wellbeing: {
+      burnoutPpm: ratePpm(100_000),
+      happinessPpm: ratePpm(900_000),
+    },
+  });
+}
+
+function legacyMonthlyReplayPayload(kind: LegacyMonthlyReplayKind) {
+  const insuranceClaim =
+    kind === "claim"
+      ? {
+          type: "health" as const,
+          grossAmountCents: 200_000,
+          covered: true,
+        }
+      : kind === "shortfall"
+        ? {
+            type: "health" as const,
+            grossAmountCents: 10_000_000,
+            covered: false,
+          }
+        : undefined;
+  return {
+    taxEvidence: {
+      schemaVersion: 1,
+      traceId: `tax.legacy-replay.${kind}`,
+      economicYear: 2026,
+      policyYear: 2026,
+      stateCode: "WA",
+      filingStatus: "single",
+      provider: "PolicyEngine US",
+      bundleVersion: "4.21.0",
+      rulesVersion: "1.764.6",
+      projectedFromFrozenPolicy: false,
+      grossIncomeCents: 1_000_000,
+      employee401kContributionCents: 0,
+      employeeHsaContributionCents: 0,
+      totalTaxCents: 200_000,
+      afterTaxCashIncomeCents: 800_000,
+    },
+    taxableLiquidationCostRatePpm: 10_000,
+    ...(insuranceClaim ? { insuranceClaim } : {}),
+  };
+}
+
+function compactMonthlyRecord(record: MonthlyTurnV2Record | null) {
+  if (!record) throw new Error("monthly replay did not produce a record");
+  return {
+    commandId: record.commandId,
+    processedMonth: record.processedMonth,
+    nextMonth: record.nextMonth,
+    grossIncomeCents: record.grossIncomeCents,
+    totalTaxCents: record.totalTaxCents,
+    afterTaxCashIncomeCents: record.afterTaxCashIncomeCents,
+    market: {
+      equityReturnPpm: record.market.equityReturnPpm,
+      bondReturnPpm: record.market.bondReturnPpm,
+      cashReturnPpm: record.market.cashReturnPpm,
+      housingReturnPpm: record.market.housingReturnPpm,
+      inflationPpm: record.market.inflationPpm,
+    },
+    marketValueChangeCents: record.marketValueChangeCents,
+    annualInflationIncreaseCents: record.annualInflationIncreaseCents,
+    insurancePlayerCostCents: record.insurancePlayerCostCents,
+    requiredCashCents: record.requiredCashCents,
+    nonDebtObligationsPaidCents: record.nonDebtObligationsPaidCents,
+    debtService: {
+      totalInterestCents: record.debtService.totalInterestCents,
+      totalScheduledPaymentCents:
+        record.debtService.totalScheduledPaymentCents,
+    },
+    funding: record.funding,
+    scheduledEventId: record.scheduledEvent?.eventId ?? null,
+    outcome: record.outcome,
+  };
+}
+
 describe("verified v2 run-state replay", () => {
+  it.each(legacyMonthlyReplayFixtures)(
+    "freezes the unversioned $kind monthly replay",
+    (fixture) => {
+      const start = legacyMonthlyReplayState(fixture.kind);
+      const row: AcceptedCommandReplayRowV2 = {
+        runId: start.runId,
+        commandId: `cmd.legacy-replay.${fixture.kind}`,
+        commandSchemaVersion: 2,
+        commandType: "process_month_v2",
+        expectedRevision: start.revision,
+        resultingRevision: start.revision + 1,
+        effectiveMonth: start.currentMonth,
+        payload: legacyMonthlyReplayPayload(fixture.kind),
+        resultingStateChecksum: fixture.expectedStateChecksum,
+      };
+      const command = rebuildGameCommandV2(row);
+      const reduction = reduceGameCommandV2(start, command);
+
+      expect(compactMonthlyRecord(reduction.monthlyRecord)).toEqual(
+        fixture.expectedRecord,
+      );
+      expect(sha256Canonical(reduction.state)).toBe(
+        fixture.expectedStateChecksum,
+      );
+      expect(() =>
+        assertValidGameStateTransitionV2(start, reduction.state, command.id),
+      ).not.toThrow();
+      expect(
+        replayAcceptedCommandsV2(
+          {
+            runId: start.runId,
+            revision: start.revision,
+            stateSchemaVersion: start.schemaVersion,
+            engineVersion: start.engineVersion,
+            state: start,
+            stateChecksum: sha256Canonical(start),
+          },
+          [row],
+          row.resultingRevision,
+        ),
+      ).toEqual({
+        state: reduction.state,
+        stateChecksum: fixture.expectedStateChecksum,
+      });
+    },
+  );
+
   it.each(validPayloads)(
     "strictly decodes a stored %s payload",
     (commandType, payload) => {
@@ -304,6 +692,440 @@ describe("verified v2 run-state replay", () => {
       });
     },
   );
+
+  it.each(["legacy-4.1.0", "2.0.0"] as const)(
+    "decodes the supported persisted %s financial kernel",
+    (financialKernelVersion) => {
+      expect(
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            financialKernelVersion,
+          }),
+        ),
+      ).toMatchObject({ payload: { financialKernelVersion } });
+    },
+  );
+
+  it("strictly decodes outcome policy 1.0.0 for the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: "1.0.0",
+          resolvedCashFlows: [],
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        outcomePolicyVersion: "1.0.0",
+      },
+    });
+  });
+
+  it("strictly decodes causal event scheduling and rejects it without the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "causal-hazard-v1",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: "causal-hazard-v1",
+      },
+    });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            eventSchedulerVersion: "causal-hazard-v1",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("strictly decodes declarative event scheduling and rejects it without the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "declarative-events-v2",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: "declarative-events-v2",
+      },
+    });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            eventSchedulerVersion: "declarative-events-v2",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("strictly decodes regime-v2 with explicit difficulty and preserves absent historical market evidence", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: "regime-v2",
+          macroDifficulty: "hard",
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        marketModelVersion: "regime-v2",
+        macroDifficulty: "hard",
+      },
+    });
+    for (const invalid of [
+      { financialKernelVersion: "2.0.0", marketModelVersion: "regime-v2" },
+      { financialKernelVersion: "2.0.0", macroDifficulty: "normal" },
+      {
+        financialKernelVersion: "legacy-4.1.0",
+        marketModelVersion: "regime-v2",
+        macroDifficulty: "normal",
+      },
+    ]) {
+      expect(
+        captureError(() =>
+          rebuildGameCommandV2(
+            storedRow("process_month_v2", {
+              ...processMonthPayload,
+              ...invalid,
+            }),
+          ),
+        ),
+      ).toMatchObject({ code: "CORRUPT_STATE" });
+    }
+    const historical = rebuildGameCommandV2(
+      storedRow("process_month_v2", processMonthPayload),
+    );
+    if (historical.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(historical.payload.marketModelVersion).toBeUndefined();
+    expect(historical.payload.macroDifficulty).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "unknown outcome policy",
+      { financialKernelVersion: "2.0.0", outcomePolicyVersion: "invented" },
+    ],
+    [
+      "unversioned financial kernel",
+      { outcomePolicyVersion: "1.0.0" },
+    ],
+    [
+      "legacy financial kernel",
+      {
+        financialKernelVersion: "legacy-4.1.0",
+        outcomePolicyVersion: "1.0.0",
+      },
+    ],
+  ])("rejects persisted monthly evidence with %s", (_label, versionEvidence) => {
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            ...versionEvidence,
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("preserves absent version and resolved flows for historical monthly rows", () => {
+    const command = rebuildGameCommandV2(
+      storedRow("process_month_v2", processMonthPayload),
+    );
+
+    expect(command).toMatchObject({
+      type: "process_month_v2",
+      payload: processMonthPayload,
+    });
+    if (command.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(command.payload.financialKernelVersion).toBeUndefined();
+    expect(command.payload.outcomePolicyVersion).toBeUndefined();
+    expect(command.payload.resolvedCashFlows).toBeUndefined();
+  });
+
+  it("strictly decodes all persisted resolved cash-flow variants", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          resolvedCashFlows,
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows,
+      },
+    });
+  });
+
+  it("strictly decodes an empty resolved cash-flow set for the current kernel", () => {
+    expect(
+      rebuildGameCommandV2(
+        storedRow("process_month_v2", {
+          ...processMonthPayload,
+          financialKernelVersion: "2.0.0",
+          resolvedCashFlows: [],
+        }),
+      ),
+    ).toMatchObject({
+      payload: {
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows: [],
+      },
+    });
+  });
+
+  it("freezes a historical 2.0.0 command without outcome-policy evidence", () => {
+    const start = legacyMonthlyReplayState("successful");
+    const stored = storedRow("process_month_v2", {
+      ...legacyMonthlyReplayPayload("successful"),
+      financialKernelVersion: "2.0.0",
+      resolvedCashFlows: [],
+    });
+    const command = rebuildGameCommandV2(stored);
+    const reduction = reduceGameCommandV2(start, command);
+
+    if (command.type !== "process_month_v2") {
+      throw new Error("expected a monthly command");
+    }
+    expect(command.payload.outcomePolicyVersion).toBeUndefined();
+    expect(sha256Canonical(reduction.state)).toBe(
+      "a984e2324d8d867dea624ae1eaa81b82d5d91a073a665f50a02f207e1d445e97",
+    );
+    expect(sha256Canonical(reduction.monthlyRecord)).toBe(
+      "5ca95d5118071ad9d1eaba5862b235f29b6d5ac72f76d3cdc2e02bb571284944",
+    );
+  });
+
+  it("replays policy 1.0.0 through the production reducer deterministically", () => {
+    const start = legacyMonthlyReplayState("successful");
+    const stored: AcceptedCommandReplayRowV2 = {
+      runId: start.runId,
+      commandId: "cmd.outcome-policy-replay.current",
+      commandSchemaVersion: 2,
+      commandType: "process_month_v2",
+      expectedRevision: start.revision,
+      resultingRevision: start.revision + 1,
+      effectiveMonth: start.currentMonth,
+      payload: {
+        ...legacyMonthlyReplayPayload("successful"),
+        financialKernelVersion: "2.0.0",
+        outcomePolicyVersion: "1.0.0",
+        resolvedCashFlows: [],
+      },
+      resultingStateChecksum: "0".repeat(64),
+    };
+    const command = rebuildGameCommandV2(stored);
+    const first = reduceGameCommandV2(start, command);
+    const second = reduceGameCommandV2(start, rebuildGameCommandV2(stored));
+    const stateChecksum = sha256Canonical(first.state);
+    const accepted = { ...stored, resultingStateChecksum: stateChecksum };
+
+    expect(first.monthlyRecord).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      outcomePolicyVersion: "1.0.0",
+    });
+    expect(second).toEqual(first);
+    expect(
+      replayAcceptedCommandsV2(
+        {
+          runId: start.runId,
+          revision: start.revision,
+          stateSchemaVersion: start.schemaVersion,
+          engineVersion: start.engineVersion,
+          state: start,
+          stateChecksum: sha256Canonical(start),
+        },
+        [accepted],
+        accepted.resultingRevision,
+      ),
+    ).toEqual({ state: first.state, stateChecksum });
+  });
+
+  it.each([
+    ["unversioned", {}],
+    ["legacy-4.1.0", { financialKernelVersion: "legacy-4.1.0" }],
+  ] as const)(
+    "rejects persisted resolved cash flows on %s monthly rows",
+    (_label, versionEvidence) => {
+      expect(
+        captureError(() =>
+          rebuildGameCommandV2(
+            storedRow("process_month_v2", {
+              ...processMonthPayload,
+              ...versionEvidence,
+              resolvedCashFlows,
+            }),
+          ),
+        ),
+      ).toMatchObject({ code: "CORRUPT_STATE" });
+    },
+  );
+
+  it.each([
+    [
+      "unknown kind",
+      [{ ...resolvedCashFlows[0], kind: "invented_income" }],
+    ],
+    ["negative cents", [{ ...resolvedCashFlows[0], amountCents: -1 }]],
+    [
+      "non-safe cents",
+      [{ ...resolvedCashFlows[0], amountCents: Number.MAX_SAFE_INTEGER + 1 }],
+    ],
+    ["unsafe flow id", [{ ...resolvedCashFlows[0], id: "flow/replay" }]],
+    [
+      "overlong flow id",
+      [{ ...resolvedCashFlows[0], id: `f${"x".repeat(64)}` }],
+    ],
+    [
+      "unsafe source identifier",
+      [{ ...resolvedCashFlows[0], sourceSystem: "event/replay" }],
+    ],
+    [
+      "overlong source identifier",
+      [{ ...resolvedCashFlows[0], sourceSystem: `s${"x".repeat(64)}` }],
+    ],
+    ["duplicate flow ids", [resolvedCashFlows[0], resolvedCashFlows[0]]],
+    [
+      "extra flow keys",
+      [{ ...resolvedCashFlows[0], ignoredFlowField: true }],
+    ],
+    [
+      "more than 64 flows",
+      Array.from({ length: 65 }, (_, index) => ({
+        ...resolvedCashFlows[0],
+        id: `flow.${index}`,
+      })),
+    ],
+  ])("rejects persisted resolved cash flows with %s", (_label, flows) => {
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            financialKernelVersion: "2.0.0",
+            resolvedCashFlows: flows,
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("replays all four persisted resolved-flow kinds once with stable causal ledger evidence", () => {
+    const start = legacyMonthlyReplayState("successful");
+    const stored: AcceptedCommandReplayRowV2 = {
+      runId: start.runId,
+      commandId: "cmd.kernel-replay.flows",
+      commandSchemaVersion: 2,
+      commandType: "process_month_v2",
+      expectedRevision: start.revision,
+      resultingRevision: start.revision + 1,
+      effectiveMonth: start.currentMonth,
+      payload: {
+        ...legacyMonthlyReplayPayload("successful"),
+        financialKernelVersion: "2.0.0",
+        resolvedCashFlows,
+      },
+      resultingStateChecksum: "0".repeat(64),
+    };
+    const command = rebuildGameCommandV2(stored);
+    const first = reduceGameCommandV2(start, command);
+    const second = reduceGameCommandV2(start, rebuildGameCommandV2(stored));
+    const stateChecksum = sha256Canonical(first.state);
+    const acceptedRow = { ...stored, resultingStateChecksum: stateChecksum };
+    const replayed = replayAcceptedCommandsV2(
+      {
+        runId: start.runId,
+        revision: start.revision,
+        stateSchemaVersion: start.schemaVersion,
+        engineVersion: start.engineVersion,
+        state: start,
+        stateChecksum: sha256Canonical(start),
+      },
+      [acceptedRow],
+      acceptedRow.resultingRevision,
+    );
+    const flowTransactions = first.state.ledger.transactions.filter(
+      (transaction) =>
+        transaction.causalReference?.kind === "system" &&
+        resolvedCashFlows.some(
+          (flow) => flow.id === transaction.causalReference?.id,
+        ),
+    );
+
+    expect(first.monthlyRecord).toMatchObject({
+      financialKernelVersion: "2.0.0",
+      resolvedIncomeCents: 24,
+      resolvedExpenseCents: 12,
+    });
+    expect(flowTransactions).toHaveLength(4);
+    for (const flow of resolvedCashFlows) {
+      expect(
+        flowTransactions.filter(
+          (transaction) => transaction.causalReference?.id === flow.id,
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          commandId: stored.commandId,
+          sourceSystem: flow.sourceSystem,
+          category: flow.kind.endsWith("income")
+            ? "income.resolved_cash_flow"
+            : "expense.resolved_cash_flow",
+          causalReference: { kind: "system", id: flow.id },
+        }),
+      ]);
+    }
+    expect(second).toEqual(first);
+    expect(replayed).toEqual({ state: first.state, stateChecksum });
+    expect(replayed.state).toMatchObject({
+      revision: start.revision + 1,
+      currentMonth: "2026-08",
+      acceptedCommandIds: [stored.commandId],
+    });
+  });
+
+  it("rejects an unknown persisted financial kernel", () => {
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("process_month_v2", {
+            ...processMonthPayload,
+            financialKernelVersion: "invented-kernel",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
 
   it.each(validDetailedActions)(
     "strictly decodes the stored %s detailed-action variant",
@@ -381,6 +1203,76 @@ describe("verified v2 run-state replay", () => {
     },
   );
 
+  it("round-trips a versioned action policy while preserving historical absence", () => {
+    const historical = rebuildGameCommandV2(
+      storedRow("take_detailed_action", {
+        action: { type: "sell_home" },
+      }),
+    );
+    const versioned = rebuildGameCommandV2(
+      storedRow("take_detailed_action", {
+        action: { type: "sell_home" },
+        actionPolicyVersion: "1.0.0",
+      }),
+    );
+
+    expect(historical.payload).toEqual({ action: { type: "sell_home" } });
+    expect(versioned.payload).toEqual({
+      action: { type: "sell_home" },
+      actionPolicyVersion: "1.0.0",
+    });
+    expect(
+      rebuildGameCommandV2(
+        storedRow("take_detailed_action", {
+          action: {
+            type: "liquidate_taxable",
+            bucket: "taxableBroadIndexCents",
+            amountCents: 100_000,
+            liquidationCostRatePpm: 123_456,
+          },
+        }),
+      ).payload,
+    ).not.toHaveProperty("actionPolicyVersion");
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("take_detailed_action", {
+            action: { type: "sell_home" },
+            actionPolicyVersion: "invented",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+    expect(
+      captureError(() =>
+        rebuildGameCommandV2(
+          storedRow("take_detailed_action", {
+            action: {
+              type: "liquidate_taxable",
+              bucket: "taxableBroadIndexCents",
+              amountCents: 100_000,
+              liquidationCostRatePpm: 123_456,
+            },
+            actionPolicyVersion: "1.0.0",
+          }),
+        ),
+      ),
+    ).toMatchObject({ code: "CORRUPT_STATE" });
+    expect(
+      rebuildGameCommandV2(
+        storedRow("take_detailed_action", {
+          action: {
+            type: "liquidate_taxable",
+            bucket: "taxableBroadIndexCents",
+            amountCents: 100_000,
+            liquidationCostRatePpm: 10_000,
+          },
+          actionPolicyVersion: "1.0.0",
+        }),
+      ).payload,
+    ).toMatchObject({ actionPolicyVersion: "1.0.0" });
+  });
+
   it("rejects an invalid stored learning-interaction kind", () => {
     expect(
       captureError(() =>
@@ -417,6 +1309,26 @@ describe("verified v2 run-state replay", () => {
         ),
       ),
     ).toMatchObject({ code: "CORRUPT_STATE" });
+  });
+
+  it("strictly restores persisted protection policy fields", () => {
+    const strategy = validPayloads[1][1].strategy;
+    expect(
+      rebuildGameCommandV2(
+        storedRow("set_recurring_strategy", {
+          strategy: {
+            ...strategy,
+            emergencyFundTargetMonthsPpm: 6_000_000,
+            insuranceCoverageIds: ["insurance.renters"],
+          },
+        }),
+      ).payload,
+    ).toMatchObject({
+      strategy: {
+        emergencyFundTargetMonthsPpm: 6_000_000,
+        insuranceCoverageIds: ["insurance.renters"],
+      },
+    });
   });
 
   it("uses the process-month command ID limit from the core contract", () => {

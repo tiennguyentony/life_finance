@@ -9,9 +9,11 @@ import { RunRepositoryError, type RunRepository } from "../../db/run-repository"
 import { LifeFinanceApiClient, LifeFinanceApiError } from "../client";
 import type { CreateRunRequest } from "../contracts";
 import {
+  handleAdvanceTimeV2,
   handleCreateRun,
   handleGetRun,
   handleMigrateRunV2,
+  handlePreviewPlayerPolicyCommandV2,
   handleSubmitCommand,
 } from "../http";
 import { RunApiService } from "../service";
@@ -271,6 +273,64 @@ describe("v2 migration HTTP handler", () => {
   });
 });
 
+describe("v2 time advance HTTP handler", () => {
+  it("validates bearer auth and forwards one strict advance request", async () => {
+    const current = migrateGameStateV1ToV2(state());
+    const advanceTime = vi.fn(async () => ({
+      state: current,
+      stateChecksum: sha256Canonical(current),
+      idempotentReplay: false,
+      monthsAdvanced: 0,
+      pauseReason: { kind: "explicit_user_stop" as const },
+      pendingEvent: null,
+      pendingDecision: null,
+      checkpointInput: null,
+      endCondition: null,
+      uiChanges: {
+        kind: "time_advance_summary_v2" as const,
+        fromMonth: current.currentMonth,
+        toMonth: current.currentMonth,
+        monthsAdvanced: 0,
+        pauseKind: "explicit_user_stop" as const,
+        cashChangeCents: 0,
+        netWorthChangeCents: 0,
+        totalGrossIncomeCents: 0,
+        totalTaxCents: 0,
+        totalAfterTaxCashIncomeCents: 0,
+        totalRequiredCashCents: 0,
+        totalMarketValueChangeCents: 0,
+      },
+    }));
+    const body = {
+      schemaVersion: 2,
+      id: "advance.http.stop",
+      expectedRevision: current.revision,
+      effectiveMonth: current.currentMonth,
+      maxMonths: 12,
+      mode: { kind: "stop" },
+    };
+    const response = await handleAdvanceTimeV2(
+      new Request(`https://example.test/api/v2/runs/${runId}/advance`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessSecret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+      runId,
+      { advanceTime } as unknown as RunApiServiceV2,
+    );
+
+    expect(response.status).toBe(200);
+    expect(advanceTime).toHaveBeenCalledWith(runId, accessSecret, body);
+    expect(await response.json()).toMatchObject({
+      monthsAdvanced: 0,
+      pauseReason: { kind: "explicit_user_stop" },
+    });
+  });
+});
+
 describe("typed v1 client", () => {
   it("validates output and keeps the run secret out of URLs and bodies", async () => {
     const current = state();
@@ -324,6 +384,62 @@ describe("typed v1 client", () => {
 });
 
 describe("typed v2 client", () => {
+  it("posts one authenticated time-advance request", async () => {
+    const current = migrateGameStateV1ToV2(state());
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        state: current,
+        stateChecksum: sha256Canonical(current),
+        idempotentReplay: false,
+        monthsAdvanced: 0,
+        pauseReason: { kind: "explicit_user_stop" },
+        pendingEvent: null,
+        pendingDecision: null,
+        checkpointInput: null,
+        endCondition: null,
+        uiChanges: {
+          kind: "time_advance_summary_v2",
+          fromMonth: current.currentMonth,
+          toMonth: current.currentMonth,
+          monthsAdvanced: 0,
+          pauseKind: "explicit_user_stop",
+          cashChangeCents: 0,
+          netWorthChangeCents: 0,
+          totalGrossIncomeCents: 0,
+          totalTaxCents: 0,
+          totalAfterTaxCashIncomeCents: 0,
+          totalRequiredCashCents: 0,
+          totalMarketValueChangeCents: 0,
+        },
+      }),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+    const request = {
+      schemaVersion: 2 as const,
+      id: "advance.client.stop",
+      expectedRevision: current.revision,
+      effectiveMonth: current.currentMonth,
+      maxMonths: 12,
+      mode: { kind: "stop" as const },
+    };
+
+    await expect(
+      client.advanceTimeV2(runId, accessSecret, request),
+    ).resolves.toMatchObject({ pauseReason: { kind: "explicit_user_stop" } });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      `https://example.test/api/v2/runs/${runId}/advance`,
+    );
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessSecret}`,
+        "Content-Type": "application/json",
+      },
+    });
+    expect(JSON.parse(String(init?.body))).toEqual(request);
+  });
+
   it("posts an authenticated migration request without a body", async () => {
     const migratedState = migrateGameStateV1ToV2(state());
     const fetchMock = vi.fn<typeof fetch>(async () =>
@@ -388,6 +504,69 @@ describe("typed v2 client", () => {
         payload: {},
       });
     expect(String(commandInit?.body)).not.toContain("taxEvidence");
+  });
+
+  it("integrates the authenticated preview client, HTTP handler, and service without applying", async () => {
+    const preview = {
+      schemaVersion: 1 as const,
+      commandType: "take_detailed_action" as const,
+      actionPolicyVersion: "1.0.0" as const,
+      commandChecksum: "1".repeat(64),
+      openingStateChecksum: "2".repeat(64),
+      resultingStateChecksum: "3".repeat(64),
+      openingRevision: 0,
+      resultingRevision: 1,
+      effects: {
+        cashChangeCents: -100_000,
+        automaticLiquidityChangeCents: -100_000,
+        termDebtPrincipalChangeCents: 0,
+        revolvingCreditUsedChangeCents: 0,
+        annualLivingCostChangeCents: 0,
+        requiredObligationsChangeCents: 0,
+      },
+      policyChanges: [],
+      appendedLedgerTransactionIds: [],
+      appendedLedgerTransactions: [],
+    };
+    const previewPlayerPolicyCommand = vi.fn(async () => preview);
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) =>
+      handlePreviewPlayerPolicyCommandV2(
+        new Request(input, init),
+        runId,
+        { previewPlayerPolicyCommand } as unknown as RunApiServiceV2,
+      ),
+    );
+    const client = new LifeFinanceApiClient("https://example.test", fetchMock);
+    const command = {
+      schemaVersion: 2 as const,
+      id: "action.http-preview",
+      type: "take_detailed_action" as const,
+      expectedRevision: 0,
+      effectiveMonth: "2026-07",
+      payload: {
+        action: {
+          type: "invest_taxable" as const,
+          bucket: "taxableBroadIndexCents" as const,
+          amountCents: 100_000,
+        },
+      },
+    };
+
+    await expect(
+      client.previewPlayerPolicyCommandV2(runId, accessSecret, command),
+    ).resolves.toEqual(preview);
+    expect(previewPlayerPolicyCommand).toHaveBeenCalledWith(
+      runId,
+      accessSecret,
+      command,
+    );
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe(
+      `https://example.test/api/v2/runs/${runId}/commands/preview`,
+    );
+    expect(init?.headers).toMatchObject({
+      Authorization: `Bearer ${accessSecret}`,
+    });
   });
 
   it("requests checkpoint evidence by validated revision with bearer auth", async () => {
