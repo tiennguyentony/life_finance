@@ -22,6 +22,10 @@ import {
 } from "../personal-event-v2";
 import { analyzeRiskV1 } from "../risk-v1";
 import {
+  projectScenarioDirectorStateContextV2,
+  scenarioDirectorTagsForCandidateV2,
+} from "../scenario-director-context-v2";
+import {
   chooseBalancedEventV2,
   type RuntimeBalanceCandidateV2,
 } from "../runtime-balance-controller-v2";
@@ -127,6 +131,62 @@ function withBalance(
   } as GameStateV2;
 }
 
+function withDirectorContextEvidence(base: GameStateV2): GameStateV2 {
+  return {
+    ...base,
+    gameplay: {
+      ...base.gameplay,
+      eventLifecycle: {
+        ...base.gameplay.eventLifecycle,
+        history: [{
+          commandId: "cmd.director-context.keep-lifestyle",
+          resultingRevision: 1,
+          eventId: "event.director-context.lifestyle",
+          templateId: "personal.lifestyle_upgrade",
+          templateVersion: 2,
+          tier: "medium",
+          targetedWeakness: "unrelated_hazard",
+          parameters: { annual_cost_increase_cents: 120_000 },
+          choiceId: "keep_current_lifestyle",
+          availableChoiceIds: ["accept_upgrade", "keep_current_lifestyle"],
+          scheduledMonth: base.currentMonth,
+          resolvedMonth: base.currentMonth,
+          playerCostCents: moneyCents(0),
+          insurerCostCents: moneyCents(0),
+          eventSchemaVersion: 2,
+          category: "behavioral_trap",
+          classification: "neutral",
+          lessonTags: {
+            primary: "lesson.lifestyle_creep",
+            secondary: ["lesson.goal_tradeoff"],
+          },
+          pressureCost: 2,
+          recoveryDurationMonths: 1,
+          fallbackNarrative: {
+            headline: "A lifestyle upgrade is within reach",
+            body: "The offer is appealing, but accepting it permanently raises annual spending.",
+          },
+        }],
+        activeStoryIds: ["story.2026-07.macro.tech_boom"],
+        macroStories: [{
+          storyId: "story.2026-07.macro.tech_boom",
+          templateId: "macro.tech_boom",
+          templateVersion: 1,
+          parameters: { equity_boost_ppm: 10_000 },
+          startedMonth: base.currentMonth,
+          expiresMonth: simulationMonth("2026-09"),
+          returnModifiersPpm: {
+            equity: ratePpm(10_000),
+            bonds: ratePpm(-2_000),
+            cash: ratePpm(0),
+            housing: ratePpm(0),
+          },
+        }],
+      },
+    },
+  } as GameStateV2;
+}
+
 function alwaysCandidateTemplate(
   id: string,
   primaryLesson: string,
@@ -168,7 +228,10 @@ function directorCandidate(candidate: DeclarativePersonalEventCandidateV2) {
     tier: candidate.template.severityTier,
     targetedWeakness: candidate.targetedWeakness,
     lessonTags: candidate.template.lessonTags,
-    directorTags: [],
+    directorTags: scenarioDirectorTagsForCandidateV2(
+      candidate.template,
+      candidate.targetedWeakness,
+    ),
   } as const;
 }
 
@@ -178,24 +241,18 @@ function directorInput(
 ): ScenarioDirectorInputV2 {
   const balance = current.gameplay.runtimeBalance;
   if (balance?.version !== 2) throw new Error("fixture requires Runtime Balance v2");
+  const context = projectScenarioDirectorStateContextV2(current);
   return {
     version: "scenario-director-v2",
     month: current.currentMonth,
     riskSnapshot: analyzeRiskV1(current),
-    macro: { regime: current.marketRegime, tags: [] },
+    macro: context.macro,
     candidates: candidates.candidates.map(directorCandidate),
-    recentDecisions: [],
-    recentEvents: balance.recentEvents.map((event) => ({
-      templateId: event.templateId,
-      templateVersion: event.templateVersion,
-      category: event.category,
-      tier: event.tier,
-      targetedWeakness: event.targetedWeakness,
-      lessonTags: event.lessonTags,
-      month: event.approvedMonth,
-    })),
-    lessonExposureCounts: balance.lessonExposureCounts,
-    difficulty: balance.difficulty,
+    recentDecisions: context.recentDecisions,
+    recentEvents: context.recentEvents,
+    lessonExposureCounts: context.lessonExposureCounts,
+    difficulty: context.difficulty,
+    ...(context.storyArc === undefined ? {} : { storyArc: context.storyArc }),
   };
 }
 
@@ -267,6 +324,49 @@ function findCanonicalOpportunity(
 }
 
 describe("Scenario Director -> Runtime Balance -> lifecycle integration", () => {
+  it("accepts exact state-projected choice and story context without granting approval authority", () => {
+    const template = alwaysCandidateTemplate(
+      "personal.director-context-candidate",
+      "lesson.other",
+      1,
+    );
+    const current = withDirectorContextEvidence(state());
+    const generated = generateDeclarativePersonalEventCandidatesV2(current, [template]);
+    const baseInput = directorInput(current, generated);
+    const context = projectScenarioDirectorStateContextV2(current);
+    const input: ScenarioDirectorInputV2 = {
+      ...baseInput,
+      macro: context.macro,
+      recentDecisions: context.recentDecisions,
+      recentEvents: context.recentEvents,
+      lessonExposureCounts: context.lessonExposureCounts,
+      difficulty: context.difficulty,
+      ...(context.storyArc === undefined ? {} : { storyArc: context.storyArc }),
+    };
+    const decision = rankScenarioCandidatesV2(input);
+
+    const choice = chooseBalancedEventV2(
+      current,
+      generated.candidates,
+      generated.nextRandom,
+      ratePpm(10_000),
+      {
+        eventCatalog: [template],
+        monthlyCashFlowEvidence: {
+          monthlyCashInflowCents: moneyCents(730_000),
+          requiredCashCents: moneyCents(584_967),
+        },
+        scenarioDirectorInput: input,
+        scenarioDirectorDecision: decision,
+      },
+    );
+
+    expect(choice.decision.scenarioDirector?.rankingInputChecksum).toBe(
+      decision.rankingInputChecksum,
+    );
+    expect(choice.decision.status).toBe("approved");
+  });
+
   it("uses Risk v1 and exact event templates, consumes no ranking RNG, and queues only controller approval", () => {
     const medical = getPersonalEventTemplateV2("personal.medical_bill");
     const opportunity = findCanonicalOpportunity(state(), medical);

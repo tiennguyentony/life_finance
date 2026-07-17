@@ -3,9 +3,14 @@ import {
   safeBigIntToNumber,
 } from "./domain/integer";
 import { ratePpm, type RatePpm } from "./domain/money";
+import {
+  calculateMonthlyDebtInterestV2,
+  calculateTotalMinimumDebtPaymentV2,
+} from "./debt-service-v2";
 import { monthsBetween } from "./domain/month";
 import type { GameStateV2 } from "./game-state-v2";
 import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
+import { projectFinancialGoal } from "./financial-goals-v2";
 import {
   RISK_ANALYZER_V1_VERSION,
   RISK_CALCULATION_CONSTANTS_V1,
@@ -115,11 +120,8 @@ function allInvestableAssets(state: GameStateV2): number {
 }
 
 function totalMinimumDebtPayment(state: GameStateV2): number {
-  const termMinimums = sum(
-    state.gameplay.debts.termDebts.map(({ minimumPaymentCents }) =>
-      Math.max(0, minimumPaymentCents),
-    ),
-    "term debt minimums",
+  const termMinimums = calculateTotalMinimumDebtPaymentV2(
+    state.gameplay.debts.termDebts,
   );
   const revolvingMinimum = safeBigIntToNumber(
     divideRoundHalfAwayFromZero(
@@ -151,25 +153,26 @@ function highInterestPrincipal(state: GameStateV2): number {
 }
 
 function estimatedMonthlyInterest(state: GameStateV2): number {
-  const annualTermInterest = state.gameplay.debts.termDebts.reduce(
-    (total, debt) =>
-      total +
-      BigInt(Math.max(0, debt.principalCents)) *
-        BigInt(Math.max(0, debt.annualInterestRatePpm)),
-    BigInt(0),
+  const termInterest = sum(
+    state.gameplay.debts.termDebts.map((debt) =>
+      calculateMonthlyDebtInterestV2(
+        debt.principalCents,
+        debt.annualInterestRatePpm,
+      ),
+    ),
+    "monthly term debt interest",
   );
-  const annualRevolvingInterest =
-    BigInt(Math.max(0, state.gameplay.debts.revolvingCreditUsedCents)) *
-    BigInt(
-      RISK_CALCULATION_CONSTANTS_V1.assumedRevolvingAnnualInterestRatePpm,
-    );
-  return safeBigIntToNumber(
+  const revolvingInterest = safeBigIntToNumber(
     divideRoundHalfAwayFromZero(
-      annualTermInterest + annualRevolvingInterest,
+      BigInt(Math.max(0, state.gameplay.debts.revolvingCreditUsedCents)) *
+        BigInt(
+          RISK_CALCULATION_CONSTANTS_V1.assumedRevolvingAnnualInterestRatePpm,
+        ),
       BigInt(PPM) * BigInt(12),
     ),
-    "monthly interest burden",
+    "monthly revolving interest burden",
   );
+  return sum([termInterest, revolvingInterest], "monthly interest burden");
 }
 
 function insuranceGap(state: GameStateV2): number | null {
@@ -223,18 +226,10 @@ function retirementReadiness(state: GameStateV2): number {
       ? configuredGoal.desiredAnnualSpendingCents
       : state.finances.annualLivingCostCents,
   );
-  const withdrawalRate = Math.max(
-    1,
-    configuredGoal?.safeWithdrawalRatePpm ??
-      RISK_CALCULATION_CONSTANTS_V1.defaultSafeWithdrawalRatePpm,
+  if (desiredAnnualSpending === 0) return PPM;
+  const target = BigInt(
+    projectFinancialGoal(state.finances, configuredGoal).targetCents,
   );
-  const target = desiredAnnualSpending === 0
-    ? BigInt(0)
-    : divideRoundHalfAwayFromZero(
-        BigInt(desiredAnnualSpending) * BigInt(PPM),
-        BigInt(withdrawalRate),
-      );
-  if (target === BigInt(0)) return PPM;
   const retirementAssets = BigInt(
     sum(
       [

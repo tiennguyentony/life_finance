@@ -75,7 +75,7 @@ function withSelectedBenefits(base: GameStateV2): GameStateV2 {
 }
 
 describe("Teaching v2 owner relevance", () => {
-  it("uses the exact Exposure DTI field instead of relabeling Risk debt service", () => {
+  it("uses fresh Risk v1 debt service evidence instead of Exposure DTI", () => {
     const base = state();
     const withExposure = {
       ...base,
@@ -103,21 +103,22 @@ describe("Teaching v2 owner relevance", () => {
       },
     } as GameStateV2;
 
+    const risk = analyzeRiskV1(withExposure);
     const result = selectTeachingMomentV2(
       withExposure,
-      analyzeRiskV1(withExposure),
+      risk,
       { kind: "requested_help", conceptId: "dti" },
     );
 
     expect(result.facts?.facts).toContainEqual(expect.objectContaining({
-      factId: "state.debt_to_income_ppm",
-      value: { kind: "rate_ppm", value: 275_000 },
+      factId: "risk.debt_service_ratio",
+      value: { kind: "rate_ppm", value: risk.metrics.debt_service_ratio.rawValue },
       source: expect.objectContaining({
-        kind: "exposure_snapshot",
-        field: "debtToIncomePpm",
+        kind: "risk_snapshot",
+        field: "metrics.debt_service_ratio.rawValue",
       }),
     }));
-    expect(result.facts?.facts[0]?.factId).not.toContain("debt_service_ratio");
+    expect(result.facts?.facts[0]?.source.sourceId).toContain(risk.version);
   });
 
   it("automatically reaches employer match and compounding from exact persisted owner fields", () => {

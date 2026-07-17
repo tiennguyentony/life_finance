@@ -2,7 +2,6 @@ import type { CheckpointEvidenceV2 } from "./checkpoint-v2";
 import { sha256Canonical } from "./canonical";
 import { safeBigIntToNumber } from "./domain/integer";
 import type { FinancialGoalProjection } from "./financial-goals-v2";
-import type { ExposureSnapshot } from "./game-state-v2";
 import type { MonthlyTurnV2Record } from "./monthly-turn-v2";
 import type { RiskSnapshotV1 } from "./risk-v1";
 import {
@@ -32,7 +31,6 @@ export type TeachingCheckpointOwnerBundleV2 = Readonly<{
   startRisk: RiskSnapshotV1;
   endRisk: RiskSnapshotV1;
   endGoal: FinancialGoalProjection;
-  endExposure: ExposureSnapshot | null;
 }>;
 
 function deepFreeze<T>(value: T): Readonly<T> {
@@ -113,21 +111,6 @@ function goalSource(
   const sourceId = `goal:${bundle.toRevision}:${sha256Canonical(bundle.endGoal)}`;
   return {
     kind: "goal_result",
-    sourceId,
-    supportingSourceIds: [sourceId],
-    field,
-    revision: bundle.toRevision,
-    month: bundle.evidence.end.month,
-  };
-}
-
-function exposureSource(
-  bundle: TeachingCheckpointOwnerBundleV2,
-  field: string,
-): TeachingFactSourceV2 {
-  const sourceId = `exposure:${bundle.evidence.end.month}:${sha256Canonical(bundle.endExposure)}`;
-  return {
-    kind: "exposure_snapshot",
     sourceId,
     supportingSourceIds: [sourceId],
     field,
@@ -276,9 +259,6 @@ export function buildTeachingCheckpointFromOwnersV2(
   }
   if (bundle.endRisk.metrics.liquid_resource_coverage.rawValue === null) {
     missingDimensions.push({ dimensionId: "liquid_solvency", reasonCode: "source_unknown" });
-  }
-  if (bundle.endExposure?.debtToIncomePpm !== null && bundle.endExposure !== null) {
-    facts.push(fact("checkpoint.current_debt_to_income_ppm", "current_debt_to_income", { kind: "rate_ppm", value: bundle.endExposure.debtToIncomePpm! }, exposureSource(bundle, "debtToIncomePpm")));
   }
   facts.push(fact("checkpoint.current_risk_score_ppm", "current_risk_score", { kind: "rate_ppm", value: bundle.endRisk.aggregateSeverityPpm }, riskSource(bundle, "aggregate", "aggregateSeverityPpm")));
   return deepFreeze({

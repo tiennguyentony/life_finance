@@ -79,7 +79,7 @@ describe("Prompt 13 browser-to-persistence onboarding integration", () => {
     expect(created.state.gameplay.catalogSnapshot?.selected.household.id).toBe(
       "household.married",
     );
-    expect(created.state.gameplay.exposure.current).not.toBeNull();
+    expect(created.state.gameplay.exposure).toEqual({ current: null, history: [] });
     expect(created.state.ledger.transactions.length).toBeGreaterThan(0);
   });
 });

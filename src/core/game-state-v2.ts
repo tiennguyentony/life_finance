@@ -36,6 +36,7 @@ import {
 import type { RuntimeBalanceStateV2 } from "./runtime-balance-state-v2";
 import type { OnboardingInitializationEvidenceV1 } from "./onboarding-v1-contracts";
 import type { WorldRandomStateV1 } from "./world-random-v1";
+import type { FinancialLivingCostPlanEvidenceV2 } from "./financial-living-cost-plan-v2";
 
 export {
   ENGINE_V2_VERSION,
@@ -181,6 +182,8 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   fallbackNarrative?: Readonly<{ headline: string; body: string }>;
   /** Immutable canonical evidence for cash flows scheduled by this resolved response. */
   scheduledCashFlows?: readonly ScheduledPersonalEventCashFlowV2[];
+  /** Optional for replay compatibility with events resolved before the Financial Engine plan owner. */
+  livingCostPlans?: readonly FinancialLivingCostPlanEvidenceV2[];
 }>;
 
 export type ActivePersonalEventCashFlowV2 = Readonly<{

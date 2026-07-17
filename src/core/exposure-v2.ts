@@ -9,6 +9,7 @@ import {
   type ExposureSnapshot,
   type GameStateV2,
 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
 
 const PPM = 1_000_000;
@@ -161,6 +162,7 @@ export function computeExposureSnapshotV2(
 export function recordExposureSnapshotV2(
   state: GameStateV2,
   month: SimulationMonth = state.currentMonth,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
   const snapshot = computeExposureSnapshotV2(state, month);
   const history = state.gameplay.exposure.history.filter(
@@ -172,5 +174,5 @@ export function recordExposureSnapshotV2(
       ...state.gameplay,
       exposure: { current: snapshot, history: [...history, snapshot] },
     },
-  });
+  }, validationOptions);
 }

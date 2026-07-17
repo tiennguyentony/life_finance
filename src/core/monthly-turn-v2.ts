@@ -79,6 +79,10 @@ import {
   type ScenarioDirectorDecisionV2,
   type ScenarioDirectorInputV2,
 } from "./scenario-director-v2";
+import {
+  projectScenarioDirectorStateContextV2,
+  scenarioDirectorTagsForCandidateV2,
+} from "./scenario-director-context-v2";
 import { SCENARIO_DIRECTOR_V2_VERSION } from "./scenario-director-policy-v2";
 import {
   adjudicateCoverageClaim,
@@ -973,19 +977,20 @@ function scenarioDirectorInputForMonthlyTurnV2(
   candidates: ReturnType<
     typeof generateDeclarativePersonalEventCandidatesV2
   >["candidates"],
+  eventCatalog: readonly PersonalEventTemplateV2[],
 ): ScenarioDirectorInputV2 {
   const balance = state.gameplay.runtimeBalance;
   if (balance?.version !== 2) {
     throw new RangeError("Scenario Director v2 requires Runtime Balance state v2");
   }
+  const context = projectScenarioDirectorStateContextV2(state, {
+    personalEventCatalog: eventCatalog,
+  });
   return Object.freeze({
     version: SCENARIO_DIRECTOR_V2_VERSION,
     month: state.currentMonth,
     riskSnapshot: analyzeRiskV1(state),
-    macro: Object.freeze({
-      regime: state.marketRegime,
-      tags: Object.freeze([]),
-    }),
+    macro: context.macro,
     candidates: Object.freeze(
       candidates.map(({ template, targetedWeakness }) =>
         Object.freeze({
@@ -995,26 +1000,18 @@ function scenarioDirectorInputForMonthlyTurnV2(
           tier: template.severityTier,
           targetedWeakness,
           lessonTags: template.lessonTags,
-          directorTags: Object.freeze([]),
+          directorTags: scenarioDirectorTagsForCandidateV2(
+            template,
+            targetedWeakness,
+          ),
         }),
       ),
     ),
-    recentDecisions: Object.freeze([]),
-    recentEvents: Object.freeze(
-      balance.recentEvents.map((event) =>
-        Object.freeze({
-          templateId: event.templateId,
-          templateVersion: event.templateVersion,
-          category: event.category,
-          tier: event.tier,
-          targetedWeakness: event.targetedWeakness,
-          lessonTags: event.lessonTags,
-          month: event.approvedMonth,
-        }),
-      ),
-    ),
-    lessonExposureCounts: balance.lessonExposureCounts,
-    difficulty: balance.difficulty,
+    recentDecisions: context.recentDecisions,
+    recentEvents: context.recentEvents,
+    lessonExposureCounts: context.lessonExposureCounts,
+    difficulty: context.difficulty,
+    ...(context.storyArc === undefined ? {} : { storyArc: context.storyArc }),
   });
 }
 
@@ -1033,6 +1030,7 @@ function processMonthlyTurnV2Kernel200(
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   const eventCatalog = dependencies.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
+  const validationOptions = { personalEventCatalog: eventCatalog };
   if (worldRandomVersion === WORLD_RANDOM_VERSION_V1) {
     const violations = validatePersonalEventCatalogV2(eventCatalog);
     if (violations.length > 0) {
@@ -1077,6 +1075,7 @@ function processMonthlyTurnV2Kernel200(
         ...(command.payload.resolvedCashFlows ?? []),
         ...eventCashFlows,
       ],
+      validationOptions,
     });
     const consumedCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
       .map((flow) => compareMonths(flow.startMonth, state.currentMonth) <= 0
@@ -1143,13 +1142,17 @@ function processMonthlyTurnV2Kernel200(
           },
         },
       },
+      validationOptions,
     );
     const accepted = acceptFinancialMonthCommandV2(
       state,
       careerCompleted,
       command.id,
+      validationOptions,
     );
-    const exposed = recordExposureSnapshotV2(accepted, financial.nextMonth);
+    const exposed = eventSchedulerVersion === LEGACY_EXPOSURE_EVENT_SCHEDULER
+      ? recordExposureSnapshotV2(accepted, financial.nextMonth, validationOptions)
+      : accepted;
     const outcome =
       outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION
         ? assessTerminalOutcomeV2(
@@ -1172,7 +1175,10 @@ function processMonthlyTurnV2Kernel200(
             ),
           },
         };
-    let nextState = finalizeGameStateV2({ ...exposedWithRuntimeBalance, outcome });
+    let nextState = finalizeGameStateV2(
+      { ...exposedWithRuntimeBalance, outcome },
+      validationOptions,
+    );
     let runtimeBalanceDecision: RuntimeBalanceDecisionV2 | undefined;
     let scenarioDirectorInput: ScenarioDirectorInputV2 | undefined;
     let scenarioDirectorDecision: ScenarioDirectorDecisionV2 | undefined;
@@ -1186,21 +1192,29 @@ function processMonthlyTurnV2Kernel200(
         nextState = advanceMacroStoriesV2(
           nextState,
           dependencies.macroStoryPolicy,
+          validationOptions,
         );
       } else {
         const advancedStories = advanceMacroStoriesV2(
-          finalizeGameStateV2({ ...nextState, random: worldAfterMacro.macro }),
+          finalizeGameStateV2(
+            { ...nextState, random: worldAfterMacro.macro },
+            validationOptions,
+          ),
           dependencies.macroStoryPolicy,
+          validationOptions,
         );
         worldAfterMacro = withNextMacroStateV1(
           worldAfterMacro,
           advancedStories.random,
         );
-        nextState = finalizeGameStateV2({
-          ...advancedStories,
-          random: state.random,
-          worldRandom: worldAfterMacro,
-        });
+        nextState = finalizeGameStateV2(
+          {
+            ...advancedStories,
+            random: state.random,
+            worldRandom: worldAfterMacro,
+          },
+          validationOptions,
+        );
       }
       if (
         runtimeBalanceControllerVersion ===
@@ -1227,6 +1241,7 @@ function processMonthlyTurnV2Kernel200(
           scenarioDirectorInput = scenarioDirectorInputForMonthlyTurnV2(
             nextState,
             candidates.candidates,
+            eventCatalog,
           );
           scenarioDirectorDecision = rankScenarioCandidatesV2(
             scenarioDirectorInput,
@@ -1324,7 +1339,7 @@ function processMonthlyTurnV2Kernel200(
           },
         } as GameStateV2;
         nextState = choice.event === null
-          ? finalizeGameStateV2(chosenState)
+          ? finalizeGameStateV2(chosenState, validationOptions)
           : queueScheduledDeclarativePersonalEventV2(chosenState, choice.event, {
               personalEventCatalog: eventCatalog,
             });
@@ -1334,16 +1349,23 @@ function processMonthlyTurnV2Kernel200(
           dependencies.eventSchedulingPolicy,
           eventSchedulerVersion,
         );
-        nextState = finalizeGameStateV2({
-          ...nextState,
-          random: schedule.nextRandom,
-        });
+        nextState = finalizeGameStateV2(
+          {
+            ...nextState,
+            random: schedule.nextRandom,
+          },
+          validationOptions,
+        );
         if (schedule.event) {
           nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
             ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event, {
                 personalEventCatalog: eventCatalog,
               })
-            : queueScheduledPersonalEventV2(nextState, schedule.event);
+            : queueScheduledPersonalEventV2(
+                nextState,
+                schedule.event,
+                validationOptions,
+              );
         }
       }
       if (worldAfterMacro !== null) {
@@ -1351,7 +1373,7 @@ function processMonthlyTurnV2Kernel200(
           ...nextState,
           random: state.random,
           worldRandom: advanceEventEpochsV1(worldAfterMacro),
-        }, { personalEventCatalog: eventCatalog });
+        }, validationOptions);
       }
     }
     const closingWorld = nextState.worldRandom;

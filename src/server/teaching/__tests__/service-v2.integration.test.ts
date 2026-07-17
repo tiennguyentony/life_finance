@@ -163,7 +163,6 @@ function checkpointOwnerBundle(): TeachingCheckpointOwnerBundleV2 {
         checkpointEvidence.end.investableAssetsCents,
       ),
     },
-    endExposure: checkpointEvidence.end.exposure,
   } as TeachingCheckpointOwnerBundleV2;
 }
 
@@ -176,6 +175,18 @@ function state(revision: number) {
 }
 
 describe("TeachingServiceV2 checkpoint integration", () => {
+  it("publishes current Risk v1 facts without Exposure as a competing teaching owner", () => {
+    const checkpoint = buildTeachingCheckpointFromOwnersV2(checkpointOwnerBundle());
+
+    expect(checkpoint.facts.facts).toContainEqual(expect.objectContaining({
+      factId: "checkpoint.risk.debt_service_ratio.value",
+      source: expect.objectContaining({ kind: "risk_snapshot" }),
+    }));
+    expect(
+      checkpoint.facts.facts.some(({ source }) => source.kind === "exposure_snapshot"),
+    ).toBe(false);
+  });
+
   it("rejects tampered owner checksums, tax identity, and displayed aggregates", () => {
     const bundle = checkpointOwnerBundle();
     expect(() => buildTeachingCheckpointFromOwnersV2({

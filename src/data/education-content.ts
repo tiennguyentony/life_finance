@@ -151,9 +151,9 @@ const concepts = [
   },
   {
     id: "dti",
-    title: "Debt-to-income ratio (DTI)",
+    title: "Debt-service ratio",
     shortDefinition:
-      "DTI compares total debt with annual gross income in this simulation. It is one signal of how much debt pressure the household carries.",
+      "Debt-service ratio compares required monthly debt payments with gross monthly income. Risk v1 recalculates it from the current state.",
     whyItMatters:
       "Higher debt leaves less room to absorb income loss, rate changes, or new mandatory costs.",
     decisionTradeoff:

@@ -6,6 +6,7 @@ import {
   type EventTier,
 } from "./events";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { adjudicateHealthClaim } from "./insurance-v2";
 import type { ScheduledPersonalEventV2 } from "./event-scheduler-v2";
 import { getEventTemplate } from "../data/event-templates";
@@ -67,6 +68,7 @@ function cooldownMonths(tier: Exclude<EventTier, "ambient">): number {
 export function queueScheduledPersonalEventV2(
   state: GameStateV2,
   scheduled: ScheduledPersonalEventV2,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
   if (state.outcome) {
     throw new EventLifecycleV2Error("RUN_TERMINAL", "terminal runs reject new events");
@@ -110,7 +112,7 @@ export function queueScheduledPersonalEventV2(
         },
       },
     },
-  });
+  }, validationOptions);
 }
 
 export function queueScheduledDeclarativePersonalEventV2(
@@ -326,6 +328,9 @@ export function resolveEventChoiceV2(
               recoveryDurationMonths: template.recovery.durationMonths,
               fallbackNarrative: template.fallbackNarrative,
               scheduledCashFlows: application.scheduledCashFlows,
+              ...(application.livingCostPlans.length === 0
+                ? {}
+                : { livingCostPlans: application.livingCostPlans }),
             },
           ],
           cooldowns: [
