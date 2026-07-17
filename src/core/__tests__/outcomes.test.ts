@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../domain/money";
+import { simulationMonth } from "../domain/month";
 import type { FinancialShortfallV2 } from "../financial-kernel-v2";
 import { createInitialGameState, type FinancialSnapshot } from "../game-state";
 import {
@@ -9,12 +10,17 @@ import {
 } from "../game-state-v2";
 import type { FinancialGoalV1 } from "../financial-goals-v2";
 import {
+  assessTerminalOutcomeV2,
   assessRequiredObligationLiquidity,
+  calculateAgeYearsAtMonth,
   evaluateTerminalOutcome,
   evaluateTerminalOutcomeV2,
   fundRequiredObligations,
   gradeRetirementProgress,
 } from "../outcomes";
+import {
+  OUTCOME_POLICY_V1_VERSION,
+} from "../outcome-policy-v2";
 
 function finances(
   overrides: Partial<FinancialSnapshot> = {},
@@ -82,6 +88,37 @@ function financialShortfall(
     fundingPlan,
     netWorthCents: moneyCents(0),
     automaticLiquidityCents: moneyCents(0),
+  });
+}
+
+function completedMonthEvidence(
+  requiredCashCents = moneyCents(220_00),
+  residualShortfallCents = moneyCents(0),
+) {
+  const automaticLiquidityCents = moneyCents(
+    requiredCashCents - residualShortfallCents,
+  );
+  const fundingPlan = Object.freeze({
+    requiredCashCents,
+    cashAvailableCents: automaticLiquidityCents,
+    cashUsedCents: moneyCents(0),
+    taxableLiquidations: [],
+    grossLiquidationCents: moneyCents(0),
+    liquidationCostCents: moneyCents(0),
+    netLiquidationProceedsCents: moneyCents(0),
+    remainingCreditCents: moneyCents(0),
+    creditUsedCents: moneyCents(0),
+    residualShortfallCents,
+    fullyFunded: residualShortfallCents === 0,
+  });
+  return Object.freeze({
+    requiredCashCents,
+    closingAutomaticLiquidityCents: automaticLiquidityCents,
+    fundingPlan,
+    shortfall:
+      residualShortfallCents === 0
+        ? null
+        : financialShortfall(residualShortfallCents),
   });
 }
 
@@ -340,5 +377,209 @@ describe("v2 terminal outcomes from kernel evidence", () => {
     expect(evaluateTerminalOutcomeV2(terminal, financialShortfall())).toBe(
       terminal.outcome,
     );
+  });
+});
+
+describe("outcome policy 1.0.0 assessment", () => {
+  it("ends at the exact FI boundary and stays active one cent below it", () => {
+    const exact = migrateGameStateV1ToV2(
+      state({
+        cashCents: moneyCents(0),
+        taxableInvestmentsCents: moneyCents(25_000_00),
+      }),
+    );
+    const below = migrateGameStateV1ToV2(
+      state({
+        cashCents: moneyCents(0),
+        taxableInvestmentsCents: moneyCents(24_999_99),
+      }),
+    );
+
+    expect(
+      assessTerminalOutcomeV2(
+        exact,
+        completedMonthEvidence(),
+        OUTCOME_POLICY_V1_VERSION,
+      ),
+    ).toMatchObject({
+      kind: "financial_independence",
+      grade: "S",
+      reasonCodes: ["financial_independence_target_reached"],
+      financialIndependence: { progressPpm: 1_000_000 },
+    });
+    expect(
+      assessTerminalOutcomeV2(
+        below,
+        completedMonthEvidence(),
+        OUTCOME_POLICY_V1_VERSION,
+      ),
+    ).toBeNull();
+  });
+
+  it("gives an actual shortfall precedence over simultaneous FI and retirement", () => {
+    const wealthyButIlliquid = migrateGameStateV1ToV2(
+      state(
+        {
+          cashCents: moneyCents(0),
+          taxableInvestmentsCents: moneyCents(0),
+          retirementCents: moneyCents(25_000_00),
+          homeValueCents: moneyCents(100_000_00),
+          creditLimitCents: moneyCents(0),
+          requiredObligationsCents: moneyCents(1),
+        },
+        "1960-01",
+      ),
+    );
+
+    expect(
+      assessTerminalOutcomeV2(
+        wealthyButIlliquid,
+        completedMonthEvidence(moneyCents(1), moneyCents(1)),
+        OUTCOME_POLICY_V1_VERSION,
+      ),
+    ).toMatchObject({
+      outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+      kind: "bankruptcy",
+      grade: "F",
+      reasonCode: "actual_required_obligation_shortfall",
+      reasonCodes: [
+        "actual_required_obligation_shortfall",
+        "automatic_liquidity_exhausted",
+      ],
+      financialIndependence: {
+        targetCents: 25_000_00,
+        progressPpm: 1_000_000,
+      },
+      displayedNetWorthCents: 125_000_00,
+      automaticLiquidSolvency: {
+        requiredCashCents: 1,
+        automaticLiquidityCents: 0,
+        residualShortfallCents: 1,
+        isSolvent: false,
+      },
+      retirementReadiness: {
+        retirementAgeYears: 65,
+        reachedRetirementAge: true,
+        gradeIfRetiredNow: "A",
+      },
+    });
+  });
+
+  it("uses configured retirement age instead of the player FI target age", () => {
+    const playerGoal: FinancialGoalV1 = {
+      version: "financial-goal-v1",
+      desiredAnnualSpendingCents: moneyCents(2_000_00),
+      safeWithdrawalRatePpm: ratePpm(40_000),
+      targetAgeYears: 40,
+      source: "player_selected",
+    };
+    const ageForty = migrateGameStateV1ToV2(
+      state({}, "1986-01", "2026-07"),
+    );
+    const configured = finalizeGameStateV2({
+      ...ageForty,
+      gameplay: { ...ageForty.gameplay, financialGoal: playerGoal },
+    });
+
+    expect(
+      assessTerminalOutcomeV2(
+        configured,
+        completedMonthEvidence(),
+        OUTCOME_POLICY_V1_VERSION,
+      ),
+    ).toBeNull();
+
+  });
+
+  it("reports all eligible automatic liquidity, not only liquidation actually used", () => {
+    const atRetirement = migrateGameStateV1ToV2(
+      state({}, "1961-07", "2026-07"),
+    );
+    const evidence = completedMonthEvidence(moneyCents(1));
+
+    expect(
+      assessTerminalOutcomeV2(atRetirement, {
+        ...evidence,
+        closingAutomaticLiquidityCents: moneyCents(777_00),
+        fundingPlan: {
+          ...evidence.fundingPlan,
+          cashAvailableCents: moneyCents(1),
+          netLiquidationProceedsCents: moneyCents(0),
+          remainingCreditCents: moneyCents(0),
+        },
+      }, OUTCOME_POLICY_V1_VERSION),
+    ).toMatchObject({
+      automaticLiquidSolvency: {
+        automaticLiquidityCents: 777_00,
+        isSolvent: true,
+      },
+    });
+  });
+
+  it("returns a complete deterministic retirement assessment at the exact boundary", () => {
+    const atRetirement = migrateGameStateV1ToV2(
+      state(
+        {
+          cashCents: moneyCents(0),
+          taxableInvestmentsCents: moneyCents(15_000_00),
+          homeValueCents: moneyCents(20_000_00),
+          nonCreditLiabilitiesCents: moneyCents(5_000_00),
+        },
+        "1961-07",
+        "2026-07",
+      ),
+    );
+
+    expect(
+      assessTerminalOutcomeV2(
+        atRetirement,
+        completedMonthEvidence(),
+        OUTCOME_POLICY_V1_VERSION,
+      ),
+    ).toEqual({
+      outcomePolicyVersion: "1.0.0",
+      kind: "retirement_age",
+      grade: "B",
+      reachedMonth: "2026-07",
+      reasonCode: "configured_retirement_age_reached",
+      reasonCodes: [
+        "configured_retirement_age_reached",
+        "financial_independence_target_not_reached",
+      ],
+      financialIndependence: {
+        goalSource: "current_lifestyle_default",
+        investableAssetsCents: 15_000_00,
+        targetCents: 25_000_00,
+        progressPpm: 600_000,
+      },
+      displayedNetWorthCents: 30_000_00,
+      automaticLiquidSolvency: {
+        requiredCashCents: 220_00,
+        automaticLiquidityCents: 220_00,
+        residualShortfallCents: 0,
+        isSolvent: true,
+      },
+      retirementReadiness: {
+        retirementAgeYears: 65,
+        currentAgeYears: 65,
+        reachedRetirementAge: true,
+        gradeIfRetiredNow: "B",
+      },
+    });
+  });
+
+  it("uses one canonical month-based age calculation", () => {
+    expect(
+      calculateAgeYearsAtMonth(
+        simulationMonth("1961-07"),
+        simulationMonth("2026-06"),
+      ),
+    ).toBe(64);
+    expect(
+      calculateAgeYearsAtMonth(
+        simulationMonth("1961-07"),
+        simulationMonth("2026-07"),
+      ),
+    ).toBe(65);
   });
 });

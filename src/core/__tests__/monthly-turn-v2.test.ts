@@ -5,15 +5,26 @@ import { buildCheckpointEvidenceV2 } from "../checkpoint-v2";
 import { reduceDetailedFinanceCommand } from "../detailed-actions-v2";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
+import { randomState } from "../domain/rng";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
   type ResolvedCashFlowV2,
 } from "../financial-kernel-v2";
 import { projectFinancialGoal } from "../financial-goals-v2";
-import { calculateInvestableAssets, calculateNetWorth } from "../game-state";
-import { validateGameStateV2, type GameStateV2 } from "../game-state-v2";
 import {
+  CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+  LEGACY_EXPOSURE_EVENT_SCHEDULER,
+} from "../event-scheduler-v2";
+import { calculateInvestableAssets, calculateNetWorth } from "../game-state";
+import {
+  finalizeGameStateV2,
+  validateGameStateV2,
+  type GameStateV2,
+} from "../game-state-v2";
+import {
+  MACRO_MARKET_MODEL_V2_VERSION,
   marketSimulationState,
   simulateMarketMonth,
 } from "../market";
@@ -21,9 +32,19 @@ import { activeMacroReturnModifiersV2 } from "../macro-story-v2";
 import * as monthlyTurnV2Module from "../monthly-turn-v2";
 import {
   financialKernelVersionForCommandV2,
+  eventSchedulerVersionForCommandV2,
+  marketModelVersionForCommandV2,
+  outcomePolicyVersionForCommandV2,
   processMonthlyTurnV2,
+  runtimeBalanceControllerVersionForCommandV2,
+  scenarioDirectorVersionForCommandV2,
+  worldRandomVersionForCommandV2,
   type ProcessMonthV2Command,
 } from "../monthly-turn-v2";
+import { OUTCOME_POLICY_V1_VERSION } from "../outcome-policy-v2";
+import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../runtime-balance-policy-v2";
+import { createInitialRuntimeBalanceStateV2 } from "../runtime-balance-state-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "../scenario-director-policy-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
 import { setRecurringStrategy } from "../recurring-strategy-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
@@ -31,6 +52,14 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
+import { decodePersistedGameCommandV2 } from "../../server/db/persisted-command-v2";
+import { reduceGameCommandV2 } from "../../server/db/run-repository-support";
+import { decodePersistedGameState } from "../persisted-game-state";
+import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
+import {
+  initializeNamedWorldRandomV1,
+  WORLD_RANDOM_VERSION_V1,
+} from "../world-random-v1";
 
 function configuredState(
   financeOverrides: Partial<
@@ -107,6 +136,104 @@ function configuredState(
     },
   });
 }
+
+describe("named world random monthly routing", () => {
+  const namedCommand = (state: ReturnType<typeof configuredState>) =>
+    command(state, {
+      financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+      worldRandomVersion: WORLD_RANDOM_VERSION_V1,
+      marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+      macroDifficulty: "normal",
+    });
+
+  it("routes macro, opportunity, and parameter draws without advancing the historical root cursor", () => {
+    const opening = configuredState();
+    const expectedWorld = initializeNamedWorldRandomV1(opening.random);
+    const accepted = namedCommand(opening);
+
+    expect(worldRandomVersionForCommandV2(accepted)).toBe(WORLD_RANDOM_VERSION_V1);
+    const first = processMonthlyTurnV2(opening, accepted);
+    const repeated = processMonthlyTurnV2(opening, accepted);
+
+    expect(first).toEqual(repeated);
+    expect(first.state.random).toEqual(opening.random);
+    expect(first.state.worldRandom?.macro).not.toEqual(expectedWorld.macro);
+    expect(first.state.worldRandom?.eventOpportunity).not.toEqual(
+      expectedWorld.eventOpportunity,
+    );
+    expect(first.state.worldRandom?.eventParameters).not.toEqual(
+      expectedWorld.eventParameters,
+    );
+    expect(first.state.worldRandom?.balanceDirector).toEqual(
+      expectedWorld.balanceDirector,
+    );
+    expect(first.record.worldRandomEvidence).toMatchObject({
+      version: WORLD_RANDOM_VERSION_V1,
+      openingMacroStateValue: expectedWorld.macro.value,
+      openingOpportunityEpochValue: expectedWorld.eventOpportunity.value,
+      openingParameterEpochValue: expectedWorld.eventParameters.value,
+    });
+    expect(first.record.worldRandomEvidence?.rawOpportunityFingerprint).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+    expect(first.record.worldRandomEvidence?.grossParameterFingerprint).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+  });
+
+  it("round-trips the discriminator through the accepted command decoder", () => {
+    const accepted = namedCommand(configuredState());
+    expect(decodePersistedGameCommandV2(JSON.parse(JSON.stringify(accepted)))).toEqual(
+      accepted,
+    );
+  });
+
+  it("locks the accepted-command named-world replay checksum", () => {
+    const opening = configuredState();
+    const accepted = decodePersistedGameCommandV2(
+      JSON.parse(JSON.stringify(namedCommand(opening))),
+    );
+    const first = reduceGameCommandV2(opening, accepted);
+    const repeated = reduceGameCommandV2(opening, accepted);
+
+    expect(first).toEqual(repeated);
+    expect(first.monthlyRecord?.worldRandomEvidence?.version).toBe(
+      WORLD_RANDOM_VERSION_V1,
+    );
+    expect(sha256Canonical(first.state)).toBe(
+      "7c8b5ad039c1e5914246919a538f37e04a4b61f3bcb39897d766a81dc9b8e4e9",
+    );
+  });
+
+  it("rejects invalid event configuration before a named world transition", () => {
+    const opening = configuredState();
+    const invalidCatalog = [
+      {
+        ...PERSONAL_EVENT_TEMPLATES_V2[0]!,
+        parameters: [
+          {
+            ...PERSONAL_EVENT_TEMPLATES_V2[0]!.parameters[0]!,
+            minimum: 10,
+            maximum: 1,
+          },
+        ],
+      },
+    ];
+    const checksum = sha256Canonical(opening);
+
+    expect(() =>
+      processMonthlyTurnV2(opening, namedCommand(opening), {
+        personalEventCatalog: invalidCatalog,
+      }),
+    ).toThrowError(/invalid event configuration/);
+    expect(sha256Canonical(opening)).toBe(checksum);
+    expect(opening.worldRandom).toBeUndefined();
+  });
+});
 
 const NO_FOLLOW_UP_EVENTS = Object.freeze({
   eventSchedulingPolicy: Object.freeze({
@@ -252,6 +379,607 @@ describe("atomic v2 monthly turn", () => {
       }),
     );
     expect(initial.revision).toBe(1);
+  });
+
+  it("defaults missing outcome policy to frozen history and accepts policy 1.0.0", () => {
+    const initial = configuredState();
+    expect(outcomePolicyVersionForCommandV2(command(initial))).toBe(
+      "legacy-unversioned",
+    );
+    expect(
+      outcomePolicyVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        }),
+      ),
+    ).toBe("1.0.0");
+  });
+
+  it("rejects invented or legacy-kernel outcome policies", () => {
+    const initial = configuredState();
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: "invented-policy",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_OUTCOME_POLICY_VERSION" }),
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "legacy-4.1.0",
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_OUTCOME_POLICY_VERSION" }),
+    );
+  });
+
+  it("defaults historical commands to exposure scheduling and accepts causal scheduling", () => {
+    const initial = configuredState();
+    expect(eventSchedulerVersionForCommandV2(command(initial))).toBe(
+      LEGACY_EXPOSURE_EVENT_SCHEDULER,
+    );
+    expect(
+      eventSchedulerVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+        }),
+      ),
+    ).toBe(CAUSAL_EVENT_SCHEDULER_V1_VERSION);
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: "invented-scheduler",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_EVENT_SCHEDULER_VERSION" }),
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "legacy-4.1.0",
+          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_EVENT_SCHEDULER_VERSION" }),
+    );
+  });
+
+  it("does not persist Exposure snapshots on the causal scheduler path", () => {
+    const initial = configuredState();
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.state.gameplay.exposure).toEqual(initial.gameplay.exposure);
+  });
+
+  it("requires an explicit compatible Runtime Balance controller selection", () => {
+    const initial = configuredState();
+    expect(runtimeBalanceControllerVersionForCommandV2(command(initial))).toBeNull();
+    expect(
+      runtimeBalanceControllerVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        }),
+      ),
+    ).toBe(RUNTIME_BALANCE_CONTROLLER_V1_VERSION);
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+          runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION" }),
+    );
+    expect(() =>
+      runtimeBalanceControllerVersionForCommandV2(
+        command(initial, {
+          runtimeBalanceControllerVersion: "invented-controller",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION" }),
+    );
+    const persisted = decodePersistedGameCommandV2(
+      JSON.parse(JSON.stringify(command(initial, {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+        runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      }))) as unknown,
+    );
+    expect(persisted.type === "process_month_v2" &&
+      persisted.payload.runtimeBalanceControllerVersion).toBe(
+      RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+    );
+    expect(() => decodePersistedGameCommandV2({
+      ...persisted,
+      payload: {
+        ...persisted.payload,
+        eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+      },
+    })).toThrow();
+  });
+
+  it("requires an explicit compatible Scenario Director selection", () => {
+    const initial = configuredState();
+    expect(scenarioDirectorVersionForCommandV2(command(initial))).toBeNull();
+    const selected = command(initial, {
+      financialKernelVersion: "2.0.0",
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+    });
+    expect(scenarioDirectorVersionForCommandV2(selected)).toBe(
+      SCENARIO_DIRECTOR_V2_VERSION,
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION" }),
+    );
+    expect(() =>
+      scenarioDirectorVersionForCommandV2(
+        command(initial, {
+          scenarioDirectorVersion: "invented-director",
+        } as never),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION" }),
+    );
+
+    const persisted = decodePersistedGameCommandV2(
+      JSON.parse(JSON.stringify(selected)) as unknown,
+    );
+    expect(
+      persisted.type === "process_month_v2" &&
+        persisted.payload.scenarioDirectorVersion,
+    ).toBe(SCENARIO_DIRECTOR_V2_VERSION);
+    expect(() =>
+      decodePersistedGameCommandV2({
+        ...persisted,
+        payload: {
+          ...persisted.payload,
+          runtimeBalanceControllerVersion: undefined,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("persists deterministic Director ranking before Runtime Balance approval", () => {
+    const base = configuredState();
+    const opening: GameStateV2 = {
+      ...base,
+      random: randomState("runtime-balance-monthly.13"),
+    };
+    const selected = command(
+      opening as ReturnType<typeof configuredState>,
+      {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+        runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        scenarioDirectorVersion: SCENARIO_DIRECTOR_V2_VERSION,
+      },
+      "cmd.scenario-director.golden",
+    );
+
+    const first = processMonthlyTurnV2(opening, selected);
+    const second = processMonthlyTurnV2(opening, selected);
+
+    expect(second).toEqual(first);
+    expect(first.record.scenarioDirectorVersion).toBe(
+      SCENARIO_DIRECTOR_V2_VERSION,
+    );
+    expect(first.record.scenarioDirectorDecision).toMatchObject({
+      version: SCENARIO_DIRECTOR_V2_VERSION,
+      rankingSource: "deterministic_fallback",
+      riskAsOfMonth: first.state.currentMonth,
+    });
+    expect(
+      first.record.scenarioDirectorDecision?.ranked
+        .map(({ templateId }) => templateId)
+        .toSorted(),
+    ).toEqual(
+      first.record.runtimeBalanceCandidateSet?.candidateTemplateIds.toSorted(),
+    );
+    expect(
+      first.record.runtimeBalanceDecision?.candidates.map(
+        ({ templateId }) => templateId,
+      ),
+    ).toEqual(
+      first.record.scenarioDirectorDecision?.ranked
+        .slice(0, 5)
+        .map(({ templateId }) => templateId),
+    );
+    expect(first.record.runtimeBalanceDecision?.scenarioDirector).toEqual({
+      version: SCENARIO_DIRECTOR_V2_VERSION,
+      policyVersion:
+        first.record.scenarioDirectorDecision?.policyVersion,
+      rankingSource: "deterministic_fallback",
+      candidateSetChecksum:
+        first.record.scenarioDirectorDecision?.candidateSetChecksum,
+      rankingInputChecksum:
+        first.record.scenarioDirectorDecision?.rankingInputChecksum,
+    });
+    const replayed = reduceGameCommandV2(opening, selected);
+    expect(replayed.state).toEqual(first.state);
+    expect(replayed.monthlyRecord).toEqual(first.record);
+    expect({
+      stateChecksum: sha256Canonical(first.state),
+      randomValue: first.state.random.value,
+      candidateSetChecksum:
+        first.record.scenarioDirectorDecision?.candidateSetChecksum,
+      rankingInputChecksum:
+        first.record.scenarioDirectorDecision?.rankingInputChecksum,
+      topCandidate:
+        first.record.scenarioDirectorDecision?.ranked[0]?.templateId ?? null,
+      approvedCandidate:
+        first.record.runtimeBalanceDecision?.approved?.templateId ?? null,
+    }).toEqual({
+      stateChecksum: "986abcc6cc2ba10e9aa31a6c0652a1d31c8e522b14790463f33ebebad93bc9b7",
+      randomValue: 2_643_935_435,
+      candidateSetChecksum:
+        "3acb64aa2450184824091ffa309af84d07e971b470d1b9937ae36a62e93e4455",
+      rankingInputChecksum:
+        "58a2a8e03833deccf6bab3c658a449e510dad8899ac25a078e5f3b79565243c8",
+      topCandidate: "personal.utility_rebate",
+      approvedCandidate: "personal.utility_rebate",
+    });
+  });
+
+  it("integrates hazard candidates through Runtime Balance and persists approval/null evidence", () => {
+    const base = configuredState();
+    const opening: GameStateV2 = {
+      ...base,
+      random: randomState("runtime-balance-monthly.13"),
+    };
+    const observed = processMonthlyTurnV2(
+      opening,
+      command(
+        opening as ReturnType<typeof configuredState>,
+        {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        },
+        "cmd.runtime-balance.golden",
+      ),
+    );
+
+    expect(observed.record.runtimeBalanceDecision).toMatchObject({
+      controllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      status: "approved",
+    });
+    expect(observed.state.gameplay.runtimeBalance?.version).toBe(2);
+    expect(observed.state.gameplay.eventLifecycle.pending).not.toBeNull();
+    expect(observed.record.runtimeBalanceDecision?.approved).toMatchObject({
+      eventId: observed.record.scheduledEvent?.eventId,
+    });
+    expect(observed.record.runtimeBalanceControllerVersion).toBe(
+      RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+    );
+    expect(observed.record.runtimeBalanceCandidateSet).toEqual({
+      eligibleTemplateIds: expect.any(Array),
+      candidateTemplateIds: expect.arrayContaining([
+        observed.record.scheduledEvent!.templateId,
+      ]),
+    });
+    const storedState = JSON.parse(JSON.stringify(observed.state)) as unknown;
+    const decodedState = decodePersistedGameState(storedState);
+    expect(decodedState.schemaVersion).toBe(2);
+    expect(sha256Canonical(decodedState)).toBe(sha256Canonical(observed.state));
+    const reduced = reduceGameCommandV2(
+      opening,
+      command(
+        opening as ReturnType<typeof configuredState>,
+        {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+        },
+        "cmd.runtime-balance.golden",
+      ),
+    );
+    expect(reduced.monthlyRecord?.runtimeBalanceDecision).toEqual(
+      observed.record.runtimeBalanceDecision,
+    );
+    expect(sha256Canonical(reduced.state)).toBe(
+      sha256Canonical(observed.state),
+    );
+    expect({
+      checksum: sha256Canonical(observed.state),
+      randomValue: observed.state.random.value,
+      approvedEventId:
+        observed.record.runtimeBalanceDecision?.approved?.eventId,
+    }).toEqual({
+      checksum: "9b92b81d2fcb316432c04d11b0e678d2c6860a2cecfedc177943fc04b8a77c15",
+      randomValue: 2_643_935_435,
+      approvedEventId: "evt.2026-08.personal.utility_rebate.v2",
+    });
+  });
+
+  it("updates negative-cash-flow balance evidence from the completed financial month", () => {
+    const opening = configuredState();
+    const selected = command(opening, {
+      financialKernelVersion: "2.0.0",
+      eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+      runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      resolvedCashFlows: [{
+        id: "runtime-balance-negative-cash-flow",
+        kind: "temporary_expense",
+        amountCents: moneyCents(1_000_000),
+        sourceSystem: "runtime_balance_test",
+      }],
+    }, "cmd.runtime-balance.negative-cash-flow");
+    const result = processMonthlyTurnV2(opening, selected);
+
+    expect(result.state.gameplay.runtimeBalance).toMatchObject({
+      version: 2,
+      recentNegativeCashFlowMonths: 1,
+    });
+  });
+
+  it("upgrades v1 timing at the opening month and advances it exactly once", () => {
+    const base = configuredState();
+    const opening = {
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        runtimeBalance: {
+          version: 1 as const,
+          pressurePpm: ratePpm(500_000),
+          recoveryUntilMonth: simulationMonth("2026-09"),
+          catastropheCount: 1,
+          lastApprovedEventMonth: base.currentMonth,
+        },
+      },
+    } as ReturnType<typeof configuredState>;
+    const result = processMonthlyTurnV2(
+      opening,
+      command(opening, {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+        runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+      }, "cmd.runtime-balance.v1-upgrade"),
+      { personalEventCatalog: [] },
+    );
+
+    expect(result.state.gameplay.runtimeBalance).toMatchObject({
+      version: 2,
+      pressureUnits: 6,
+      monthsSinceAnyEvent: 1,
+      recovery: {
+        sourceEventId: "legacy.runtime-balance-v1",
+        remainingMonths: 1,
+      },
+      catastropheCount: 1,
+      legacyCarryover: {
+        lastApprovedEventMonth: base.currentMonth,
+        catastropheCount: 1,
+      },
+    });
+  });
+
+  it("rejects a direct declarative downgrade after Runtime Balance v2 exists", () => {
+    const initial = configuredState();
+    const upgraded: GameStateV2 = {
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        runtimeBalance: createInitialRuntimeBalanceStateV2("normal"),
+      },
+    };
+
+    expect(() =>
+      processMonthlyTurnV2(
+        upgraded,
+        command(upgraded as ReturnType<typeof configuredState>, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION" }),
+    );
+    expect(() =>
+      processMonthlyTurnV2(
+        upgraded,
+        command(upgraded as ReturnType<typeof configuredState>, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION" }),
+    );
+  });
+
+  it("rejects Runtime Balance recovery evidence absent from the event lifecycle", () => {
+    const initial = configuredState();
+    const balance = createInitialRuntimeBalanceStateV2("normal");
+    const impossible = {
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        runtimeBalance: {
+          ...balance,
+          recovery: {
+            sourceEventId: "evt.missing.large",
+            sourceTier: "catastrophe" as const,
+            targetedWeakness: "unrelated_hazard" as const,
+            remainingMonths: 3,
+          },
+          recentEvents: [{
+            eventId: "evt.missing.large",
+            templateId: "personal.missing_large",
+            templateVersion: 1,
+            category: "health" as const,
+            lessonTags: ["lesson.emergency_fund"],
+            tier: "catastrophe" as const,
+            targetedWeakness: "unrelated_hazard" as const,
+            approvedMonth: initial.currentMonth,
+          }],
+        },
+      },
+    } as GameStateV2;
+
+    expect(validateGameStateV2(impossible)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "gameplay.runtimeBalance.recentEvents.0",
+          code: "runtime_balance_lifecycle_mismatch",
+        }),
+        expect.objectContaining({
+          path: "gameplay.runtimeBalance.recovery",
+          code: "runtime_balance_recovery_source_mismatch",
+        }),
+        expect.objectContaining({
+          path: "gameplay.runtimeBalance.monthsSinceCatastrophicEvent",
+          code: "runtime_balance_timer_mismatch",
+        }),
+        expect.objectContaining({
+          path: "gameplay.runtimeBalance.catastropheCount",
+          code: "runtime_balance_catastrophe_count_mismatch",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects explicit macro and Runtime Balance difficulty drift", () => {
+    const initial = configuredState();
+    const guided: GameStateV2 = {
+      ...initial,
+      gameplay: {
+        ...initial.gameplay,
+        runtimeBalance: createInitialRuntimeBalanceStateV2("guided"),
+      },
+    };
+
+    expect(() =>
+      processMonthlyTurnV2(
+        guided,
+        command(guided as ReturnType<typeof configuredState>, {
+          financialKernelVersion: "2.0.0",
+          eventSchedulerVersion: DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+          runtimeBalanceControllerVersion: RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "hard",
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION" }),
+    );
+  });
+
+  it("defaults historical commands to regime-v1 and requires explicit v2 difficulty", () => {
+    const initial = configuredState();
+    expect(marketModelVersionForCommandV2(command(initial))).toEqual({
+      modelVersion: "regime-v1",
+      difficulty: null,
+    });
+    expect(
+      marketModelVersionForCommandV2(
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "normal",
+        }),
+      ),
+    ).toEqual({ modelVersion: "regime-v2", difficulty: "normal" });
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "2.0.0",
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+        } as never),
+      ),
+    ).toThrow(expect.objectContaining({ code: "UNSUPPORTED_MARKET_MODEL_VERSION" }));
+    expect(() =>
+      processMonthlyTurnV2(
+        initial,
+        command(initial, {
+          financialKernelVersion: "legacy-4.1.0",
+          marketModelVersion: MACRO_MARKET_MODEL_V2_VERSION,
+          macroDifficulty: "normal",
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "UNSUPPORTED_MARKET_MODEL_VERSION" }));
+  });
+
+  it("uses player target age only for historical commands, never policy 1.0.0", () => {
+    const initial = configuredState();
+    const ageForty = finalizeGameStateV2({
+      ...initial,
+      player: { ...initial.player, birthMonth: simulationMonth("1986-01") },
+      gameplay: {
+        ...initial.gameplay,
+        financialGoal: {
+          version: "financial-goal-v1",
+          desiredAnnualSpendingCents: moneyCents(100_000_000),
+          safeWithdrawalRatePpm: ratePpm(40_000),
+          targetAgeYears: 40,
+          source: "player_selected",
+        },
+      },
+    });
+    const historical = processMonthlyTurnV2(
+      ageForty,
+      command(ageForty, { financialKernelVersion: "2.0.0" }, "cmd.month.old"),
+      NO_FOLLOW_UP_EVENTS,
+    );
+    const current = processMonthlyTurnV2(
+      ageForty,
+      command(
+        ageForty,
+        {
+          financialKernelVersion: "2.0.0",
+          outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        },
+        "cmd.month.current",
+      ),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(historical.state.outcome).toMatchObject({
+      kind: "retirement_age",
+      reasonCode: "reached_player_target_age",
+    });
+    expect(historical.record).not.toHaveProperty("outcomePolicyVersion");
+    expect(current.state.outcome).toBeNull();
+    expect(current.record.outcomePolicyVersion).toBe("1.0.0");
   });
 
   it("composes market, payroll, obligations, debt, strategy, and outcome once", () => {
@@ -515,6 +1243,42 @@ describe("atomic v2 monthly turn", () => {
     ).toBe(false);
   });
 
+  it("persists rich policy 1.0.0 evidence from the actual kernel shortfall", () => {
+    const initial = configuredState({
+      retirement401kCents: moneyCents(100_000_000),
+    });
+    const exactClaimCents = exactLiquidityClaim(initial, 1);
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        outcomePolicyVersion: OUTCOME_POLICY_V1_VERSION,
+        insuranceClaim: {
+          type: "health",
+          grossAmountCents: exactClaimCents,
+          covered: false,
+        },
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
+
+    expect(result.record.outcomePolicyVersion).toBe("1.0.0");
+    expect(result.state.outcome).toMatchObject({
+      outcomePolicyVersion: "1.0.0",
+      kind: "bankruptcy",
+      grade: "F",
+      displayedNetWorthCents: result.record.closingNetWorthCents,
+      automaticLiquidSolvency: {
+        residualShortfallCents: 1,
+        isSolvent: false,
+      },
+      reasonCodes: [
+        "actual_required_obligation_shortfall",
+        "automatic_liquidity_exhausted",
+      ],
+    });
+  });
+
   it("declares bankruptcy when high positive net worth is restricted", () => {
     const initial = configuredState({
       cashCents: moneyCents(100_000),
@@ -626,13 +1390,14 @@ describe("atomic v2 monthly turn", () => {
 
   it("builds reconciled checkpoint evidence from exact monthly records", () => {
     const initial = configuredState();
-    const result = processMonthlyTurnV2(initial, command(initial), {
-      eventSchedulingPolicy: {
-        version: "fairness-v1",
-        minimumChancePpm: 0,
-        maximumChancePpm: 0,
-      },
-    });
+    const result = processMonthlyTurnV2(
+      initial,
+      command(initial, {
+        financialKernelVersion: "2.0.0",
+        eventSchedulerVersion: CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+      }),
+      NO_FOLLOW_UP_EVENTS,
+    );
     const checkpoint = buildCheckpointEvidenceV2(initial, result.state, [result.record]);
 
     expect(checkpoint).toMatchObject({
@@ -648,7 +1413,7 @@ describe("atomic v2 monthly turn", () => {
     expect(checkpoint.totalDebtInterestCents).toBe(
       result.record.debtService.totalInterestCents,
     );
-    expect(checkpoint.end.exposure).toMatchObject({ month: "2026-08" });
+    expect(checkpoint.end.exposure).toBeNull();
     expect(checkpoint.end.financialIndependenceTargetCents).toBe(
       projectFinancialGoal(
         result.state.finances,

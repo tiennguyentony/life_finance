@@ -4,6 +4,9 @@ Date: 2026-07-16
 
 Scope: current repository behavior, with emphasis on the v2 browser game, server application layer, deterministic core, persistence, tax adapter, and optional AI adapters. The original audit was read-only; this document now includes the verified Prompt 01 authority, ledger, replay, and migration repair.
 It also includes the verified Prompt 02 financial-kernel, replay, projection, integration, and consumer-authority repair.
+It now includes the Prompt 03 pure time controller, segmented tax-evidence boundary, atomic batch persistence, and aggregate play-UI repair.
+It now includes the Prompt 04 goal/outcome policy and Prompt 05 action-policy, no-write preview, and exact-approval repair.
+It now includes the Prompt 06 transparent risk analyzer and Prompt 07 versioned macro/market repair.
 
 ## Status legend
 
@@ -18,14 +21,15 @@ It also includes the verified Prompt 02 financial-kernel, replay, projection, in
 ## Executive findings
 
 1. The `2.0.0` financial kernel is now the sole new-product financial authority: money is integer cents, rates are PPM, market input is complete and seeded, tax enters as persisted evidence, one funding plan owns liquidity, and event-free projection reuses the production kernel. Web, AI, goal, and checkpoint consumers use canonical selectors/evidence.
-2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas are private frozen replay compatibility, not a competing new-product engine. Legacy action interfaces still belong to Prompt 05.
-3. Personal-event causality is wrong for the intended simulation. Exposure weaknesses decide which bad events may occur, the exposure score raises monthly event chance, and the same score unlocks catastrophe-tier templates. A weak emergency fund can therefore make bad luck more available and more frequent, rather than only making an independently caused shock more damaging.
-4. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
-5. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
-6. Time advancement is split. A tested v1 in-process checkpoint loop exists but is not used by production. The v2 UI advances multiple months through sequential network/database commands, so there is no authoritative v2 controller with tagged pause reasons.
-7. Persistence is robust but may not scale linearly. The event-free financial projection now has a measured 480-month gate and immutable-prefix fast path, but real Web progression still validates, checksums, and persists growing current state once per month. Full controller/database/storage long-run budgets remain open.
-8. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
-9. The Offline Balance Lab is missing. A deterministic 480-month financial projection benchmark now exists, but there is no matched-seed strategy runner, difficulty comparison, bot set, or distributional balance report.
+2. GameStateV2 is the sole mutable gameplay authority. Public v1 creation and command submission return HTTP 410 without mutation; authenticated v1 reads and deterministic migration remain for old saves. Unversioned/`legacy-4.1.0` monthly formulas and absent-version action semantics are frozen replay compatibility, not competing new-product authorities.
+3. New automatic personal-event occurrence is now risk-independent: service-created commands persist `causal-hazard-v1`, which uses a fixed base chance and intrinsic applicability. Historical absent-version scheduling remains exposure-driven for exact replay; vulnerability-gated template redesign, consequence amplification, and optional director insertion remain for Prompt 08/10.
+4. New monthly commands now persist macro model `regime-v2` and an explicit difficulty. A seeded, calibrated regime model owns correlated broad/sector/speculative/bond/cash/housing returns plus inflation, borrowing, labor, and volatility facts. Historical absent-version commands remain on `regime-v1`; headlines cannot mutate finance.
+5. There is no Runtime Balance Controller. Cooldowns and recency checks exist inside the scheduler, but there is no independent fairness approval, pressure budget, recovery window, catastrophe limit, difficulty profile, lesson coverage check, or impact estimator.
+6. The Adaptive Scenario Director is not a ranking-only layer. The optional AI path selects a candidate and parameter values within core bounds, and the service queues that event directly after validation. There is no balance-controller approval between selection and insertion.
+7. Time advancement now has one v2 core authority with tagged pauses. The server resolves tax evidence outside pure annual segments, persists every accepted hidden tick in one transaction, and returns one aggregate response to the browser. Runtime Balance pressure remains intentionally deferred to Prompt 09.
+8. Persistence is robust but may not scale linearly. A Web fast-forward now locks and updates the current save once per batch, but it still validates, checksums, and records every growing hidden-month state inside the transaction. Full database/storage long-run budgets remain open for Prompt 14.
+9. Causal evidence is rich enough to build on, but causal analysis is not implemented. Commands, revisions, checksums, ledger entries, monthly records, event history, and milestones are persisted; direct/contributing cause links, turning points, and counterfactual replay are absent.
+10. The Offline Balance Lab is missing. A deterministic 480-month financial projection benchmark now exists, but there is no matched-seed strategy runner, difficulty comparison, bot set, or distributional balance report.
 
 ## Actual architecture
 
@@ -35,8 +39,9 @@ It also includes the verified Prompt 02 financial-kernel, replay, projection, in
 flowchart LR
     UI["Next.js play UI"] --> ROUTE["Versioned API route"]
     ROUTE --> SERVICE["RunApiServiceV2"]
-    SERVICE --> TAX["Resolve or reuse tax evidence"]
-    SERVICE --> REPO["RunRepository transaction"]
+    SERVICE --> TAX["Resolve or reuse tax evidence outside pure segments"]
+    TAX --> TIME["V2 Time Controller with tagged pause reasons"]
+    TIME --> REPO["One atomic RunRepository batch"]
     REPO --> LOCK["Lock run and verify auth, revision, checksum, idempotency"]
     LOCK --> REDUCE["Versioned reducer dispatcher"]
     REDUCE --> KERNEL["2.0.0 financial kernel"]
@@ -52,7 +57,7 @@ The financial reducer does not call the network or database. The application ser
 
 ### Legacy compatibility path
 
-GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 monthly reducer, v1 outcome/checkpoint formulas, and the module-private `legacy-4.1.0` reducer are frozen compatibility paths covered by fixed replay checksums. They are not available as alternate new-product financial entry points. Legacy action interfaces remain for Prompt 05.
+GameState remains a valid persisted input for authenticated inspection and deterministic migration, but public v1 writes are retired. `POST /api/v1/runs` and `POST /api/v1/runs/{runId}/commands` return `STATE_SCHEMA_DEPRECATED`; `POST /api/v2/runs/{runId}/migrate` authenticates and atomically upgrades an old save. The v1 monthly reducer, v1 outcome/checkpoint formulas, the module-private `legacy-4.1.0` reducer, and absent-version internal action commands are frozen compatibility paths covered by replay checksums. They are not available as alternate public new-product entry points.
 
 ### External and optional services
 
@@ -67,13 +72,13 @@ GameState remains a valid persisted input for authenticated inspection and deter
 | --- | --- | --- | --- | --- | --- |
 | 1 | Onboarding and State Initialization | duplicated | Onboarding UI/model, scenario catalog, native v2 state factory, legacy compatibility constructor | v2 is the only public creation path, but legacy construction remains for migration fixtures and the UI repeats salary math. | Prompt 13 |
 | 2 | Authoritative Game State and Ledger | complete | state-authority-v2.ts, game-state-v2.ts, ledger.ts, repository/replay modules | GameStateV2 is the sole mutable gameplay authority; v1 is decode/migrate/read-only; current state is the save authority and sparse verified anchors support historical reconstruction. | Complete in Prompt 01 |
-| 3 | Time and Turn Controller | incorrectly coupled | v2 play-console loop; dormant v1 checkpoints.ts | Multi-month control is in the browser and crosses API/DB once per month; no v2 tagged controller. | Prompt 03 |
+| 3 | Time and Turn Controller | partial | time-controller-v2.ts, RunApiServiceV2 advance path, atomic repository batch | Prompt 03 orchestration is repaired; Runtime Balance pressure/cooldown ordering cannot be complete until Prompt 09 supplies its versioned monthly step. | Finish integration in Prompt 09 |
 | 4 | Deterministic Financial Simulation Engine | complete | financial-kernel-v2.ts, financial-transition-v2.ts, obligation-funding-v2.ts, financial-projection-v2.ts, versioned monthly wrapper | New months, projections, Web/AI/goal/checkpoint consumers, and replay have one documented financial authority; old formulas are frozen compatibility only. | Complete in Prompt 02 |
-| 5 | Player Actions and Persistent Policies | duplicated | actions.ts and detailed/recurring v2 modules | v2 has broad, ledger-backed actions and persistent strategies; legacy v1 action reducers remain reusable compatibility code. | Prompt 05 |
-| 6 | Goals, End Conditions, and Grading | partial | financial-goals-v2.ts and evaluateTerminalOutcomeV2 | v2 goal consumers share canonical selectors and bankruptcy consumes actual shortfall; the full Prompt 04 outcome/grade audit remains pending. Frozen v1 rules are replay compatibility. | Prompt 04 |
-| 7 | Risk and Resilience Analyzer | incorrectly coupled | exposure-v2.ts and event-scheduler-v2.ts | Exposure measures vulnerability but also causes event eligibility, frequency, and catastrophe access. | Prompt 06 |
-| 8 | Macro and Market System | complete | market.ts and macro-story-v2.ts | Seeded, bounded, ordered, and tested; difficulty and balance integration remain future work. | Prompt 07 |
-| 9 | Personal Event and Trap System | incorrectly coupled | event scheduler, lifecycle, templates, and events.ts | Deterministic and bounded, but event cause is vulnerability-driven and financial effects bypass a dedicated financial-effect interface. | Prompt 08 after Prompt 06 |
+| 5 | Player Actions and Persistent Policies | complete | detailed-actions-v2.ts, recurring-strategy-v2.ts, action-policy-v2.ts, action-preview-v2.ts | New public actions use one versioned policy and reducer-backed no-write preview; recurring protection policy includes emergency target and active insurance; the UI applies only an explicitly approved exact command. Historical absent-version behavior is replay compatibility. | Complete in Prompt 05 |
+| 6 | Goals, End Conditions, and Grading | complete | financial-goals-v2.ts, outcome-policy-v2.ts, and assessTerminalOutcomeV2 | Outcome policy `1.0.0` centralizes exact grades, retirement age, terminal precedence, and rich cross-validated evidence. New commands are stamped; missing versions retain frozen replay semantics. | Complete in Prompt 04 |
+| 7 | Risk and Resilience Analyzer | complete | risk-v1.ts, risk-policy-v1.ts, versioned event scheduler boundary | Fourteen transparent pure metrics expose raw units, bands, facts, tags, and separately weighted analytics; new monthly commands use risk-independent causal hazard while absent-version commands retain frozen replay. | Complete in Prompt 06 |
+| 8 | Macro and Market System | complete | market.ts, macro-story-v2.ts, financial-kernel-v2.ts, versioned monthly command | `regime-v2` persists explicit calibration/difficulty and structured macro facts; correlated asset channels, inflation, and new-mortgage quotes are deterministic, bounded, ledger-backed, and replay-versioned. | Complete in Prompt 07 |
+| 9 | Personal Event and Trap System | partial | event scheduler, lifecycle, templates, and events.ts | New automatic scheduling has a causal hazard boundary, but vulnerability-gated legacy templates, effect routing, severity, and optional director insertion still require Prompt 08. | Prompt 08 |
 | 10 | Adaptive Scenario Director | incorrectly coupled | world-director-service.ts and ai-world-event-v2.ts | AI selects an event and parameter values, then the service queues it without an independent fairness gate. | Prompt 10 after Prompt 09 |
 | 11 | Runtime Balance Controller | missing | None; scheduler contains fragments | Cooldown is not a balance controller. No pressure, recovery, catastrophe, difficulty, or impact policy exists. | Prompt 09 |
 | 12 | Causal History and Counterfactuals | partial | commands, snapshots, ledger, monthly records, event/milestone histories | Evidence exists, but no causal graph, turning-point detector, or controlled replay comparison exists. | Prompt 11 |
@@ -100,7 +105,7 @@ Status: duplicated.
 
 ### 2. Authoritative Game State and Ledger
 
-Status: complete.
+Status: complete for Prompt 07.
 
 - Authoritative files and entry points: src/core/state-authority-v2.ts, src/core/game-state-v2.ts, src/core/state-transition-v2.ts, src/core/ledger.ts, canonical serialization/decoder modules, src/server/db/run-repository.ts, run-repository-read.ts, run-state-replay-v2.ts, snapshot-policy-v2.ts, and database schema/migrations.
 - Inputs: initial state or prior persisted revision, validated command, external evidence, and deterministic reducer output.
@@ -116,19 +121,19 @@ Status: complete.
 
 ### 3. Time and Turn Controller
 
-Status: incorrectly coupled.
+Status: Prompt 03 orchestration complete; cross-system Runtime Balance integration pending Prompt 09.
 
-- Authoritative files and entry points: src/features/play/play-console.tsx runMonths, src/core/monthly-turn-v2.ts for a single month, src/core/checkpoints.ts for the unused v1 in-process fast-forward, and v2 month/checkpoint API routes.
-- Inputs: requested month count, current state, stop conditions, command IDs, and per-month tax evidence.
-- Outputs: one or more monthly transitions, or a pause at terminal outcome, pending event choice, or due milestone.
-- State owned: no dedicated v2 controller state. The browser owns loop progress and busy state; the run state owns current month and pending interruptions.
-- Dependencies: UI fetch loop, API client, service, repository, tax adapter, reducer, event lifecycle, milestone lifecycle, and checkpoint query.
-- Tests found: v1 checkpoint planning/fast-forward determinism, monthly-turn v1/v2 tests, API/repository tests, and play model tests. No production v2 controller test exists.
-- Determinism/performance risks: one browser request and database transaction per month; tax resolution is entered per command, even when cacheable; interruption reasons are inferred by UI conditions rather than returned as a tagged result.
-- Missing requirements: AdvanceOneMonth, AdvanceNMonths, and AdvanceUntilEventOrCheckpoint as one application/core boundary; tagged pause reasons; no-network/no-remote-DB hidden loop; parity tests between one-at-a-time and fast-forward.
-- Duplicate formulas or authority: dormant v1 fast-forward and active v2 browser loop.
-- AI boundary: none required.
-- Next action: Prompt 03, after engine authority is settled, should move loop control behind one server application command while keeping tax evidence pre-resolution outside the core.
+- Authoritative files and entry points: `src/core/time-controller-v2.ts`, `RunApiServiceV2.advanceTime`, `RunRepository.applyTimeAdvanceV2`, the v2 advance route/client contract, and the play console's single advance request. `src/core/checkpoints.ts` remains frozen v1 compatibility rather than a second production loop.
+- Inputs: one bounded tagged advance mode, opening revision/month, deterministic command IDs, pre-resolved monthly evidence, seeded reducer policies, and an optional checkpoint interval.
+- Outputs: exact months advanced, final immutable GameStateV2, one tagged pause, pending event/decision, checkpoint input, terminal outcome, ordered persistence steps, records, and one compact UI aggregate.
+- Tick order and ownership: the controller delegates exactly once per accepted hidden tick to `processMonthlyTurnV2`, then applies terminal, event, milestone, financial-warning, checkpoint, and duration pause priority. Macro/event/career work remains in the monthly wrapper; financial warning amounts come from the financial-engine selector. Runtime Balance regeneration remains a Prompt 09 responsibility.
+- External boundary: the service checks authorization before evidence work, resolves or reuses PolicyEngine evidence outside the pure loop, and uses maximal segments that do not cross an annual tax-context boundary. No callback inside `advanceTimeV2` can call AI, HTTP, or persistence.
+- Persistence: one locked transaction replays and verifies every prepared step, inserts accepted commands/tax evidence/monthly records/normalized ledger rows and sparse anchors, updates the current save once, and emits one aggregate outbox notification. Whole-request retry is keyed by the batch request fingerprint.
+- UI: the browser sends one request for a multi-month advance, updates state once, renders the aggregate and exhaustive pause label once, and carries a verified event/milestone resolution ID into resume.
+- Tests found: exact 12-month and one-month counts, early event/end/decision/warning pauses, checkpoint boundaries, verified and stale resume IDs, deep evidence ownership, deterministic pause/checksum sequences, no duplicate reducer calls, forbidden dependencies, 480-month performance, public schemas/service segmentation, atomic PostgreSQL rollback/idempotency/concurrency/replay, and aggregate UI labels.
+- Determinism/performance evidence: the pure real-reducer 480-month path completes all ticks under a 25-second Windows CI gate (approximately 17–18 seconds observed locally). Database/storage distributional budgets remain Prompt 14 work.
+- AI boundary: no AI participates in a hidden tick or pause decision.
+- Remaining concerns: the current engine turns actual funding shortfall into terminal bankruptcy, so nonterminal warning uses the engine-owned monthly cash-flow deficit selector. Runtime Balance pressure/cooldown orchestration is explicitly not claimed until Prompt 09 implements and version-stamps that system; Prompt 15 must verify the final tick order.
 
 ### 4. Deterministic Financial Simulation Engine
 
@@ -149,67 +154,71 @@ Status: complete for Prompt 02.
 
 ### 5. Player Actions and Persistent Policies
 
-Status: duplicated.
+Status: complete for Prompt 05.
 
-- Authoritative files and entry points: src/core/actions.ts, detailed-actions-v2.ts and support modules, recurring-strategy-v2.ts, life-milestones-v2.ts, command contracts/mappers, and play action-builder/decision panels.
-- Inputs: typed one-time action or policy change, current state, command/revision identity, and any selected milestone/event choice.
-- Outputs: ledger-backed transfers and debt/investment changes, updated recurring allocation policy, lifestyle obligations, career state, or milestone lifecycle state.
-- State owned: recurring strategy, career/progression, insurance decisions, detailed debts/assets, lifestyle cost, milestone choices, and action-derived ledger history.
-- Dependencies: state/ledger, finance primitives, debt/payroll/insurance modules, validation contracts, and UI builders.
-- Tests found: actions, detailed actions, recurring strategy, debt service, payroll, insurance, milestones, command mapping, and API service tests.
-- Determinism/performance risks: actions are deterministic after validation. The principal risk is semantic drift between legacy v1 action code retained for compatibility and the v2 detailed command families.
-- Missing requirements: one action taxonomy, one policy interface, explicit affordability/effect previews derived from core formulas, and removal or isolation of alternate legacy action implementations.
-- Duplicate formulas or authority: legacy v1 actions remain callable compatibility code while v2 detailed actions own production mutation; some UI previews reconstruct values rather than call selectors.
-- AI boundary: AI must not create or execute financial actions without typed player confirmation; current authoritative actions remain code-driven.
-- Next action: Prompt 05 after Prompts 01-04.
+- Authoritative files and entry points: `detailed-actions-v2.ts` and support modules, `recurring-strategy-v2.ts`, immutable `action-policy-v2.ts`, reducer-backed `action-preview-v2.ts`, strict public/internal command contracts, mapper/service/repository routes, and the play preview/approval model.
+- Inputs: typed public one-time action or recurring-strategy intent, current state, command/revision/month identity, and server-selected action policy `1.0.0`. Client commands do not own fee, withholding, penalty, or home-transaction rates.
+- Outputs: ledger-backed transfers and debt/investment changes, persistent recurring allocation or lifestyle policy, exact effect preview, updated state checksum, and normalized audit evidence on approval.
+- State owned: recurring allocations, emergency-fund target, active insurance selection, detailed debts/assets, lifestyle cost, career/upskill progression, and action-derived ledger history. Event and milestone commands remain separate bounded decision families.
+- Dependencies: authoritative state/ledger, money/rate primitives, action policy registry, transition finalizer, strict API mapper, transactional repository, and UI intent adapters.
+- Tests found: detailed action taxonomy, recurring strategy, action-policy boundaries, historical compatibility, preview parity/no-write behavior, command mapping/contracts/client/service, repository integration, approval model, rendered effects, UI flow, debt/payroll/insurance, and milestones.
+- Determinism/performance risks: preview and apply deliberately run the same deterministic reducer. Preview is not a reservation, so optimistic revision checking must reject an intervening write and require a fresh preview. Preview cost grows with returned journal evidence but is capped by the strict API schema.
+- Missing requirements: no Prompt 05 behavior is open. The environment lacks `TEST_DATABASE_URL`, so the defined real-PostgreSQL integration suite is skipped; it remains a deployment gate rather than a claimed local pass.
+- Duplicate formulas or authority: active UI preview contains no financial formulas and new public liquidation intent contains no cost rate. The deprecated rate is accepted only for an exact retry of a matching historical command. `actions.ts` and absent-version internal fields remain frozen compatibility inputs for old replay/fixture paths, not public authorities for new commands.
+- AI boundary: AI cannot preview, approve, or execute a financial action. Only an explicit player approval sends the exact previewed public command to the mutation endpoint.
+- Historical boundary: new detailed actions persist policy `1.0.0`; missing policy versions retain frozen replay semantics, including an already-persisted historical liquidation rate. Registered policy values cannot be overridden.
+- Next action: keep action policy `1.0.0` immutable. Future action economics require a new policy version and replay fixtures; Prompt 11 may later consume command/ledger evidence for causal history without changing action authority.
 
 ### 6. Goals, End Conditions, and Grading
 
-Status: partial.
+Status: complete for Prompt 04.
 
-- Authoritative files and entry points: src/core/financial-goals-v2.ts, src/core/outcomes.ts, outcome checks in monthly-turn-v2.ts, legacy hasReachedFinancialIndependence in game-state.ts, onboarding goal fields, and debrief display.
-- Inputs: player-selected FI target/age or legacy living-cost target, canonical investable assets, age/current month, and the completed month's actual `FinancialShortfallV2 | null`.
-- Outputs: progress projection, terminal FI/retirement/bankruptcy outcome, immutable grade, reason code, and reached month.
-- State owned: financialGoal and terminal outcome on the run aggregate.
-- Dependencies: financial snapshot, canonical investable-asset selector, kernel shortfall evidence, calendar, onboarding, checkpoint/debrief.
-- Tests found: financial-goals-v2, outcomes boundary tests, game-state FI tests, monthly-turn bankruptcy/FI tests, and API contract tests.
-- Determinism/performance risks: exact integer comparisons are deterministic. New-product investable assets and net worth now have one selector authority; age display logic still needs the Prompt 04 boundary audit.
-- Missing requirements: the full configured outcome/grade matrix and exact interval audit, one age selector surface, and counterfactual grading evidence for debrief.
-- Duplicate formulas or authority: Web, AI, goal, and checkpoint financial sums now delegate to canonical selectors/evidence. The 25-times-living-cost helper and v1 outcome rules are frozen compatibility paths; UI age calculation remains a later-system duplicate.
-- AI boundary: the final grade is immutable and code-owned, which is correct; AI may explain but not alter it.
-- Next action: Prompt 04 should complete the configured goal/outcome/grade matrix and consolidate age evidence without reintroducing financial formulas.
+- Authoritative files and entry points: `src/core/financial-goals-v2.ts`, `src/core/outcome-policy-v2.ts`, `assessTerminalOutcomeV2` in `src/core/outcomes.ts`, policy dispatch in `monthly-turn-v2.ts`, rich state validation, strict persisted/API contracts, and the play/debrief and AI-context consumers.
+- Inputs: a responsive current-lifestyle default or fixed player-selected goal, canonical investable assets and net worth, canonical age, persisted outcome-policy version, and the completed financial kernel's required-cash/funding/shortfall evidence.
+- Outputs: active FI projection or immutable structured bankruptcy/FI/retirement outcome with grade, bounded reason codes, target/progress, displayed net worth, automatic-liquid-solvency evidence, and retirement readiness.
+- State owned: the versioned financial goal and terminal outcome on the run aggregate. Policy configuration is a frozen registry, not caller-owned state.
+- Dependencies: cents/PPM primitives, canonical selectors, calendar, financial-kernel `2.0.0` record, monthly wrapper, persistence/API schemas, checkpoint, UI, and AI debrief context.
+- Tests found: all exact A/B/C/D/E thresholds, FI equality, invalid/zero expense cases, retirement-age start, net-worth-versus-liquidity cases, restricted assets, home-equity exclusion, responsive and fixed lifestyle behavior, actual shortfall exhaustion, precedence, policy dispatch, rich-state tampering, save/load checksum, API/service round-trip, consumer display, and AI evidence.
+- Determinism/performance risks: calculations use safe integer cents/PPM and policy registry lookup. The persisted rich evidence is cross-validated instead of trusted field-by-field. No stochastic or remote input assigns a grade.
+- Missing requirements: no Prompt 04 goal, end-condition, grading, replay-compatibility, or consumer-authority requirement remains open. Causal turning-point and counterfactual teaching evidence belongs to Prompts 11 and 12, not grade calculation.
+- Duplicate formulas or authority: UI age now delegates to the canonical calendar selector; terminal UI and AI consume persisted rich values. Checkpoints use canonical projection, age, and net-worth selectors. The v1 25-times/configured-target-age outcome path is private frozen history only.
+- AI boundary: AI receives the immutable engine grade and bounded persisted facts, may explain them, and is rejected if it returns a different grade.
+- Historical boundary: new `2.0.0` commands carry outcome policy `1.0.0`; missing version preserves historical configured-spending/target-age semantics and fixed checksums. Unknown combinations reject.
+- Next action: keep policy `1.0.0` immutable; any tuning requires a new registered policy version and replay fixtures.
 
 ### 7. Risk and Resilience Analyzer
 
-Status: incorrectly coupled.
+Status: complete for Prompt 06.
 
-- Authoritative files and entry points: src/core/exposure-v2.ts and its call sites in monthly-turn-v2.ts and event-scheduler-v2.ts.
-- Inputs: emergency fund, debt-to-income, credit utilization, insurance gap, asset concentration, and job/macro correlation.
-- Outputs: component scores, weighted exposure score, demonstrated weakness signals, and stored exposure snapshot/history.
-- State owned: current exposure and exposure history inside v2 gameplay state.
-- Dependencies: financial state, detailed debts/assets, insurance, career, macro regime, and event scheduler.
-- Tests found: exposure-v2 tests and scheduler tests using exposure eligibility.
-- Determinism/performance risks: calculation is deterministic and bounded. The design risk is causal: the score is consumed as an event generator rather than a damage/resilience measure.
-- Missing requirements: measurement-only contract, separately named vulnerability versus incident-probability inputs, impact-estimation API, and evidence that improving resilience reduces loss without suppressing unrelated event incidence.
-- Duplicate formulas or authority: no major duplicate risk formula found; the error is ownership at the scheduler boundary.
-- AI boundary: AI may receive exposure signals for explanation/ranking, but must not reinterpret them as permission to invent incidents.
-- Next action: Prompt 06 must decouple vulnerability from event cause before Prompt 08 changes event behavior.
+- Authoritative files and entry points: `risk-v1.ts` and immutable `risk-policy-v1.ts`; new monthly commands stamp scheduler `causal-hazard-v1` at the event boundary.
+- Inputs: verified current state for cash flow, obligations, debt, active insurance, portfolio, employment, goals, and recent resolved-event costs.
+- Outputs: fourteen named metrics with raw values/units, normalized inputs, explicit inclusive thresholds, severity bands, bounded severity, weakness tags, explanation facts, and an optional separately weighted aggregate.
+- State owned: none. Risk is recalculated as a pure snapshot; old persisted exposure remains replay evidence rather than the new analyzer authority.
+- Dependencies: financial state, detailed debts/assets, active recurring insurance selection, career, event history, and configured FI goal. It does not depend on scheduler output.
+- Tests found: zero/negative income, zero obligations, threshold boundaries, active insured/uninsured cases, cash/debt/concentration/correlation/lifestyle monotonicity, repeatability, immutability, action-to-risk integration, and identical causal hazard across different vulnerability states.
+- Determinism/performance risks: one full calculation is bounded and inexpensive. No dirty flags or stale derived persistence exist. The analytics aggregate must never be treated as event probability.
+- Missing requirements: no Prompt 06 measurement requirement remains open. Prompt 08 must redesign the vulnerability-gated legacy templates that causal-v1 deliberately excludes and must separate incident parameters from consequence amplification.
+- Duplicate formulas or authority: `exposure-v2` remains only for historical command replay and legacy consumers pending their later prompt migrations. It is not read by causal-v1 scheduling.
+- AI boundary: AI may later rank using stable facts/tags, but risk cannot authorize incident creation, numeric effects, or grades.
+- Historical boundary: absent scheduler version uses the frozen exposure-driven path. New service commands persist `causal-hazard-v1`, which uses a fixed base chance and intrinsic applicability without risk score, cash, insurance, concentration, or fixed-cost gating.
+- Next action: Prompt 08 consumes this boundary for cause/consequence separation; Prompt 12 consumes the explanation facts.
 
 ### 8. Macro and Market System
 
 Status: complete.
 
-- Authoritative files and entry points: src/core/market.ts, src/core/macro-story-v2.ts, shared RNG/config types, and monthly-turn-v2.ts.
-- Inputs: prior macro regime, portfolio/assets, active macro story, explicit configuration, current month, and serialized RNG.
-- Outputs: bounded market returns, regime transition, asset repricing, optional time-bounded macro modifiers/story, and updated RNG.
-- State owned: market/macro regime and active story in the run aggregate.
-- Dependencies: shared RNG, rates/money, asset model, event template definitions for macro stories, and monthly engine.
-- Tests found: market fixed-seed/long-path tests, macro-story tests, monthly-turn checksums, and state validation tests.
-- Determinism/performance risks: draw order is explicit and RNG state is persisted. Configuration needs long-horizon statistical tests, not just path correctness.
-- Missing requirements: difficulty-profile inputs, documented calibration targets, matched-seed distributions, and a boundary separating macro-story metadata from the personal-event lifecycle.
-- Duplicate formulas or authority: no duplicate market return engine found.
-- AI boundary: macro generation is code-owned; optional AI does not set market returns.
-- Next action: Prompt 07, followed by Prompt 14 for calibration proof.
+- Authoritative files and entry points: `market.ts`, `macro-story-v2.ts`, `monthly-turn-v2.ts`, `financial-kernel-v2.ts`, and `macro-and-market-v2.md`.
+- Inputs: accepted model/calibration/difficulty evidence, prior regime/duration, active macro-story modifiers, and serialized seeded RNG.
+- Outputs: distinct correlated broad, sector, speculative, bond, cash, and housing returns; inflation, borrowing, labor, volatility, next regime, structured fallback facts, and updated RNG.
+- State owned: current regime/duration, cumulative price index, latest structured macro/asset conditions, and active time-bounded macro modifiers.
+- Dependencies: seeded RNG, integer PPM/money primitives, the financial kernel, action policy for new mortgage quotes, and the monthly command/replay boundary.
+- Tests found: deterministic paths, different-seed bounds, transition/duration configuration, difficulty draw parity, regime tendencies, positive broad-sector covariance, 10,000-month performance, narrative facts, strict persistence, service stamping, inflation/asset/ledger integration, fixed-debt protection, and macro-derived mortgage pricing.
+- Determinism/performance risks: draw order and calibration are replay-critical and must be changed only under a new version. Prompt 14 still owns broad matched-seed distributional calibration proof.
+- Missing requirements: no Prompt 07 requirement remains open. The current product intentionally has one aggregate sector channel and no variable-rate debt product; future additions require explicit versioned mappings/reset rules.
+- Duplicate formulas or authority: `regime-v1` remains frozen historical replay only. The v2 financial kernel consumes accepted market evidence; headlines and AI have no mutation authority.
+- AI boundary: no network or AI call exists in the authoritative monthly path. AI may describe cited structured facts but cannot supply returns, regimes, or rates.
+- Historical boundary: absent/explicit-v1 commands retain `regime-v1`; v2 requires a persisted difficulty and current financial kernel. Existing checksum fixtures remain unchanged.
+- Next action: preserve `us-balanced-2026-v1`; Prompt 14 should run matched-seed balance distributions without changing accepted replay.
 
 ### 9. Personal Event and Trap System
 
@@ -423,9 +432,9 @@ An AI request is not itself deterministic. Once the selected candidate and param
 | Concept | Intended authority | Other implementation found | Risk |
 | --- | --- | --- | --- |
 | Net worth | src/core/game-state.ts `calculateNetWorth` | No active duplicate; Web, AI, checkpoint, and kernel import it. | Resolved in Prompt 02; parity includes large restricted-wealth cancellation. |
-| Age | src/core/outcomes.ts calculateAgeYears | UI calculation | Pause/end/display boundaries can disagree. |
+| Age | game-state.ts calculateAgeYearsAtMonth, exposed through outcomes.ts | No active duplicate; UI, checkpoint, outcome, and AI delegate to it. | Resolved in Prompt 04 with invalid-month and birthday-boundary tests. |
 | Salary bounds | core scenario catalog using money/rate primitives | onboarding-model floating multiplication | Rounding or validation preview mismatch. |
-| FI investable input/target/progress | game-state.ts selector plus financial-goals-v2.ts projection | v1 25x helper is frozen compatibility | New Web/AI/checkpoint/outcome consumers share the versioned projection; Prompt 04 still owns the complete goal/grade audit. |
+| FI investable input/target/progress | game-state.ts selector plus financial-goals-v2.ts projection | v1 25x/configured-age path is frozen compatibility | Prompt 04 completed responsive-default/fixed-selected semantics, policy-versioned grading, and rich terminal consumer parity. |
 | Automatic liquidity and gross liquidation | obligation-funding-v2.ts immutable plan | v1 outcomes.ts functions are frozen compatibility | New assessment, execution, kernel shortfall, record, and outcome evidence cannot drift. |
 | Monthly simulation | financial-kernel-v2.ts through the 2.0.0 wrapper | monthly-turn.ts and private legacy-4.1.0 body are replay-only | New commands cannot select or import the compatibility reducers; fixed checksums protect history. |
 | Multi-month control | future v2 controller | v1 checkpoints.ts and v2 browser loop | Different stop rules and performance behavior. |
@@ -471,10 +480,10 @@ The prompt numbers below refer to the prompt pack in .codex/AGENTS.md.
 2. Prompt 13 — Onboarding and State Initialization. Create only the canonical state and persist normalized assumptions/provenance.
 3. Prompt 02 — Deterministic Financial Simulation Engine. Complete: one 2.0.0 kernel, funding authority, versioned replay boundary, event-free projection, consumer parity, and measured 480-month gate.
 4. Prompt 03 — Time and Turn Controller. Add one in-process v2 controller with tagged stop reasons and sequential-parity tests.
-5. Prompt 04 — Goals, End Conditions, and Grading. Centralize goal, age, net-worth, outcome, and display selectors.
-6. Prompt 05 — Player Actions and Persistent Policies. Route all mutations and previews through the canonical engine/state interfaces.
-7. Prompt 06 — Risk and Resilience Analyzer. Make exposure measurement-only and add an impact-estimation contract.
-8. Prompt 07 — Macro and Market System. Add explicit difficulty/calibration inputs without weakening deterministic draw order.
+5. Prompt 04 — Goals, End Conditions, and Grading. Complete: policy-versioned grades and precedence, responsive/default and fixed/player goals, rich validated terminal evidence, historical replay, and canonical consumers.
+6. Prompt 05 — Player Actions and Persistent Policies. Complete: immutable action policy, strict public intent, reducer-backed no-write preview, exact explicit approval, replay compatibility, and effect/ledger evidence.
+7. Prompt 06 — Risk and Resilience Analyzer. Complete: pure transparent dimensions, versioned thresholds/weights/facts, active-policy insurance gaps, monotonic action integration, and risk-independent causal scheduling for new commands.
+8. Prompt 07 — Macro and Market System. Complete: versioned calibration/difficulty, structured macro state, correlated bounded channels, financial propagation, narrative separation, replay compatibility, and performance proof.
 9. Prompt 08 — Personal Event and Trap System. Separate event cause/hazard from vulnerability and route exact effects through typed financial interfaces.
 10. Prompt 09 — Runtime Balance Controller. Add deterministic approve/reject/defer policy, pressure/recovery state, catastrophe limits, and difficulty.
 11. Prompt 10 — Adaptive Scenario Director / Hostile Fed. Make the director ranking-only and subordinate every proposal to core sampling and balance approval.
@@ -488,7 +497,7 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 ## Recommended immediate next prompts
 
 1. Prompt 03 should now replace the browser/network month loop with one tagged, deterministic in-process controller that calls the 2.0.0 wrapper exactly once per tick.
-2. Prompt 04 should finish the complete goal/end-condition/grade matrix while consuming actual shortfall and canonical selector evidence.
+2. Prompt 04 is complete; keep outcome policy `1.0.0` and its historical compatibility boundary immutable while later systems consume its evidence.
 3. Prompt 13 can later consume the authoritative v2 state and remove remaining onboarding/UI initialization duplication.
 4. Prompts 06 then 08, followed by Prompt 09 before Prompt 10, must repair event causality and add independent fairness approval before changing director authority.
 5. Prompt 14 remains required before tuning or release claims because the financial projection benchmark does not prove distributional fairness or full-run storage performance.
@@ -500,8 +509,9 @@ Prompts 06, 08, 09, and 10 must remain ordered. Changing the director before sep
 - Probability, severity, exposure, and difficulty are analyzed separately.
 - Save/load, external evidence, seeded replay, and command-identity boundaries are documented.
 - Duplicate formulas and remaining legacy compatibility implementations are identified without treating them as mutable state authority.
-- Prompt 01 and Prompt 02 findings are updated from verified implementations;
-  Prompts 03-14 remain incomplete unless their own requirements are proven.
+- Prompt 01, Prompt 02, Prompt 03 orchestration, and Prompt 04 findings are
+  updated from verified implementations; Prompt 03's Runtime Balance step and
+  Prompts 05-14 remain incomplete unless their own requirements are proven.
 - Prompt 02's active formulas, frozen compatibility paths, schemas/fixtures,
   presentation fields, local integration boundaries, mocked remote tax client,
   measured projection, and unavailable conditional PostgreSQL gate are

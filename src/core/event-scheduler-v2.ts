@@ -1,13 +1,31 @@
 import { nextInt, type RandomState } from "./domain/rng";
 import { compareMonths, monthsBetween } from "./domain/month";
 import type { GameState } from "./game-state";
-import type { EventProposal, EventTemplate, EventWeakness } from "./events";
+import {
+  UNRELATED_HAZARD_TARGET,
+  type EventProposal,
+  type EventTargetV2,
+  type EventTemplate,
+  type EventWeakness,
+} from "./events";
 import { eventApplicabilityReasons } from "./events";
 import type { GameStateV2 } from "./game-state-v2";
 import { EVENT_TEMPLATES } from "../data/event-templates";
 import { personalEventFamily } from "../data/event-experience";
+import {
+  scheduleDeclarativePersonalEventV2,
+  type DeclarativePersonalEventScheduleV2,
+} from "./personal-event-v2";
+import { PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
 
 export const EVENT_FAMILY_RECENCY_MONTHS = 9;
+export const CAUSAL_EVENT_SCHEDULER_V1_VERSION = "causal-hazard-v1" as const;
+export const DECLARATIVE_EVENT_SCHEDULER_V2_VERSION = "declarative-events-v2" as const;
+export const LEGACY_EXPOSURE_EVENT_SCHEDULER = "legacy-exposure-v1" as const;
+export type EventSchedulerVersionV2 =
+  | typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION
+  | typeof DECLARATIVE_EVENT_SCHEDULER_V2_VERSION
+  | typeof LEGACY_EXPOSURE_EVENT_SCHEDULER;
 
 export type EventSchedulingPolicyV2 = Readonly<{
   version: "fairness-v1";
@@ -25,7 +43,7 @@ export const DEFAULT_EVENT_SCHEDULING_POLICY_V2: EventSchedulingPolicyV2 =
 export type ScheduledPersonalEventV2 = Readonly<{
   proposal: EventProposal;
   template: EventTemplate;
-  targetedWeakness: EventWeakness;
+  targetedWeakness: EventTargetV2;
 }>;
 
 export type EventScheduleResultV2 = Readonly<{
@@ -33,6 +51,12 @@ export type EventScheduleResultV2 = Readonly<{
   nextRandom: RandomState;
   eligibleTemplateIds: readonly string[];
 }>;
+
+export function isScheduledDeclarativePersonalEventV2(
+  event: ScheduledPersonalEventV2 | import("./personal-event-v2").ScheduledDeclarativePersonalEventV2,
+): event is import("./personal-event-v2").ScheduledDeclarativePersonalEventV2 {
+  return event.template.schemaVersion === 2;
+}
 
 export function demonstratedWeaknessesV2(state: GameStateV2): ReadonlySet<EventWeakness> {
   const exposure = state.gameplay.exposure.current;
@@ -81,17 +105,29 @@ export function demonstratedWeaknessesV2(state: GameStateV2): ReadonlySet<EventW
 
 export function eligiblePersonalEventTemplatesV2(
   state: GameStateV2,
+  schedulerVersion: EventSchedulerVersionV2 = LEGACY_EXPOSURE_EVENT_SCHEDULER,
 ): readonly EventTemplate[] {
-  const weaknesses = demonstratedWeaknessesV2(state);
+  const weaknesses =
+    schedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION
+      ? null
+      : demonstratedWeaknessesV2(state);
   const projection = v1Projection(state);
   return Object.freeze(EVENT_TEMPLATES.filter(
     (template) =>
       template.kind === "personal_shock" &&
-      template.targetsWeaknesses.some((weakness) => weaknesses.has(weakness)) &&
+      (schedulerVersion !== CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+        template.eligibility.every(
+          ({ type }) =>
+            type !== "maximum_emergency_fund_months" &&
+            type !== "minimum_credit_utilization",
+        )) &&
+      (schedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+        template.targetsWeaknesses.some((weakness) => weaknesses!.has(weakness))) &&
       isOffCooldown(state, template.id) &&
       isOutsideFamilyRecencyWindow(state, template.id) &&
       eventApplicabilityReasons(template, projection).length === 0 &&
-      (template.tier !== "catastrophe" ||
+      (schedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+        template.tier !== "catastrophe" ||
         (state.gameplay.exposure.current?.scorePpm ?? 0) >= 2_400_000),
   ).toSorted((left, right) => left.id.localeCompare(right.id)));
 }
@@ -131,8 +167,26 @@ function chancePpm(state: GameStateV2, policy: EventSchedulingPolicyV2): number 
 
 export function schedulePersonalEventV2(
   state: GameStateV2,
+  policy?: EventSchedulingPolicyV2,
+  schedulerVersion?:
+    | typeof LEGACY_EXPOSURE_EVENT_SCHEDULER
+    | typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+): EventScheduleResultV2;
+export function schedulePersonalEventV2(
+  state: GameStateV2,
+  policy: EventSchedulingPolicyV2,
+  schedulerVersion: typeof DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+): DeclarativePersonalEventScheduleV2;
+export function schedulePersonalEventV2(
+  state: GameStateV2,
+  policy: EventSchedulingPolicyV2 | undefined,
+  schedulerVersion: EventSchedulerVersionV2,
+): EventScheduleResultV2 | DeclarativePersonalEventScheduleV2;
+export function schedulePersonalEventV2(
+  state: GameStateV2,
   policy: EventSchedulingPolicyV2 = DEFAULT_EVENT_SCHEDULING_POLICY_V2,
-): EventScheduleResultV2 {
+  schedulerVersion: EventSchedulerVersionV2 = LEGACY_EXPOSURE_EVENT_SCHEDULER,
+): EventScheduleResultV2 | DeclarativePersonalEventScheduleV2 {
   if (
     policy.version !== "fairness-v1" ||
     !Number.isSafeInteger(policy.minimumChancePpm) ||
@@ -143,13 +197,26 @@ export function schedulePersonalEventV2(
   ) {
     throw new RangeError("event scheduling policy must use bounded PPM chance");
   }
+  if (schedulerVersion === DECLARATIVE_EVENT_SCHEDULER_V2_VERSION) {
+    return scheduleDeclarativePersonalEventV2(
+      state,
+      PERSONAL_EVENT_TEMPLATES_V2,
+    );
+  }
   if (state.outcome || state.gameplay.eventLifecycle.pending) {
     return Object.freeze({ event: null, nextRandom: state.random, eligibleTemplateIds: [] });
   }
-  const weaknesses = demonstratedWeaknessesV2(state);
-  const eligible = eligiblePersonalEventTemplatesV2(state);
+  const weaknesses =
+    schedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION
+      ? null
+      : demonstratedWeaknessesV2(state);
+  const eligible = eligiblePersonalEventTemplatesV2(state, schedulerVersion);
   const frequency = nextInt(state.random, 1, 1_000_000);
-  if (eligible.length === 0 || frequency.value > chancePpm(state, policy)) {
+  const occurrenceChance =
+    schedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION
+      ? policy.minimumChancePpm
+      : chancePpm(state, policy);
+  if (eligible.length === 0 || frequency.value > occurrenceChance) {
     return Object.freeze({
       event: null,
       nextRandom: frequency.nextState,
@@ -165,9 +232,12 @@ export function schedulePersonalEventV2(
     parameters[parameter.id] = draw.value;
     random = draw.nextState;
   }
-  const targetedWeakness = template.targetsWeaknesses.find((weakness) =>
-    weaknesses.has(weakness),
-  )!;
+  const targetedWeakness =
+    schedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION
+      ? UNRELATED_HAZARD_TARGET
+      : template.targetsWeaknesses.find((weakness) =>
+          weaknesses!.has(weakness),
+        )!;
   return Object.freeze({
     event: Object.freeze({
       proposal: Object.freeze({

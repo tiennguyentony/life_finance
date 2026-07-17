@@ -9,7 +9,14 @@ import {
   type MoneyCents,
   type RatePpm,
 } from "./domain/money";
-import { addMonths, type SimulationMonth } from "./domain/month";
+import {
+  addMonths,
+  compareMonths,
+  monthsBetween,
+  simulationMonth,
+  type SimulationMonth,
+} from "./domain/month";
+import { sha256Canonical } from "./canonical";
 import {
   applyDebtPaymentV2,
   planMonthlyDebtService,
@@ -34,21 +41,65 @@ import {
   type PortfolioBreakdown,
 } from "./game-state-v2";
 import { calculateMonthlyLivingCostInflationV2 } from "./inflation-v2";
-import { queueScheduledPersonalEventV2 } from "./event-lifecycle-v2";
 import {
+  queueScheduledDeclarativePersonalEventV2,
+  queueScheduledPersonalEventV2,
+} from "./event-lifecycle-v2";
+import {
+  CAUSAL_EVENT_SCHEDULER_V1_VERSION,
+  DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
+  isScheduledDeclarativePersonalEventV2,
+  LEGACY_EXPOSURE_EVENT_SCHEDULER,
   schedulePersonalEventV2,
+  type EventSchedulerVersionV2,
   type EventSchedulingPolicyV2,
 } from "./event-scheduler-v2";
+import { PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
+import {
+  generateDeclarativePersonalEventCandidatesV2,
+  generateNamedDeclarativePersonalEventCandidatesV2,
+  validatePersonalEventCatalogV2,
+  type PersonalEventTemplateV2,
+} from "./personal-event-v2";
+import {
+  chooseBalancedEventV2,
+  type RuntimeBalanceDecisionV2,
+} from "./runtime-balance-controller-v2";
+import {
+  RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
+} from "./runtime-balance-policy-v2";
+import {
+  advanceRuntimeBalanceCalendarMonthV2,
+  recordRuntimeBalanceCashFlowV2,
+  runtimeBalanceStateV2,
+} from "./runtime-balance-state-v2";
+import { analyzeRiskV1 } from "./risk-v1";
+import {
+  rankScenarioCandidatesV2,
+  type ScenarioDirectorDecisionV2,
+  type ScenarioDirectorInputV2,
+} from "./scenario-director-v2";
+import {
+  projectScenarioDirectorStateContextV2,
+  scenarioDirectorTagsForCandidateV2,
+} from "./scenario-director-context-v2";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "./scenario-director-policy-v2";
 import {
   adjudicateCoverageClaim,
   adjudicateHealthClaim,
 } from "./insurance-v2";
 import { appendTransaction, type JournalPosting, type Ledger } from "./ledger";
 import {
+  MACRO_MARKET_MODEL_V2_VERSION,
+  MARKET_MODEL_VERSION,
   marketSimulationState,
+  marketSimulationStateV2,
   simulateMarketMonth,
+  simulateMarketMonthV2,
+  type MacroMarketDifficultyV2,
   type MarketMonth,
-  type MarketSimulationResult,
+  type SupportedMarketMonth,
+  type SupportedMarketSimulationResult,
 } from "./market";
 import {
   activeMacroReturnModifiersV2,
@@ -61,9 +112,14 @@ import {
   type V2FundingRecord,
 } from "./obligation-funding-v2";
 import {
+  assessTerminalOutcomeV2,
   evaluateTerminalOutcome,
   evaluateTerminalOutcomeV2,
 } from "./outcomes";
+import {
+  LEGACY_UNVERSIONED_OUTCOME_POLICY,
+  OUTCOME_POLICY_V1_VERSION,
+} from "./outcome-policy-v2";
 import {
   acceptFinancialMonthCommandV2,
   rehydrateFinancialClosingStateV2,
@@ -74,6 +130,14 @@ import {
   planRecurringAllocations,
   type RecurringAllocationPlan,
 } from "./recurring-strategy-v2";
+import {
+  advanceEventEpochsV1,
+  eventParameterDrawV1,
+  initializeNamedWorldRandomV1,
+  withNextMacroStateV1,
+  WORLD_RANDOM_VERSION_V1,
+  type WorldRandomStateV1,
+} from "./world-random-v1";
 
 export { FINANCIAL_KERNEL_V2_VERSION };
 export type {
@@ -92,6 +156,10 @@ export type FinancialKernelVersionV2 =
   | "legacy-4.1.0"
   | typeof FINANCIAL_KERNEL_V2_VERSION;
 
+export type OutcomePolicyVersionV2 =
+  | typeof LEGACY_UNVERSIONED_OUTCOME_POLICY
+  | typeof OUTCOME_POLICY_V1_VERSION;
+
 export type ProcessMonthV2Command = Readonly<{
   schemaVersion: 2;
   id: string;
@@ -100,6 +168,18 @@ export type ProcessMonthV2Command = Readonly<{
   effectiveMonth: SimulationMonth;
   payload: Readonly<{
     financialKernelVersion?: FinancialKernelVersionV2;
+    outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
+    eventSchedulerVersion?:
+      | typeof CAUSAL_EVENT_SCHEDULER_V1_VERSION
+      | typeof DECLARATIVE_EVENT_SCHEDULER_V2_VERSION;
+    runtimeBalanceControllerVersion?:
+      typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
+    scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
+    worldRandomVersion?: typeof WORLD_RANDOM_VERSION_V1;
+    marketModelVersion?:
+      | typeof MARKET_MODEL_VERSION
+      | typeof MACRO_MARKET_MODEL_V2_VERSION;
+    macroDifficulty?: MacroMarketDifficultyV2;
     taxEvidence: MonthlyTaxEvidence;
     taxableLiquidationCostRatePpm: RatePpm;
     insuranceClaim?: MonthlyInsuranceClaim;
@@ -115,7 +195,7 @@ export type MonthlyTurnV2Record = Readonly<{
   grossIncomeCents: MoneyCents;
   totalTaxCents: MoneyCents;
   afterTaxCashIncomeCents: MoneyCents;
-  market: MarketMonth;
+  market: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   annualInflationIncreaseCents: MoneyCents;
   insurancePlayerCostCents: MoneyCents;
@@ -127,6 +207,28 @@ export type MonthlyTurnV2Record = Readonly<{
   scheduledEvent: PendingEventV2 | null;
   outcome: GameStateV2["outcome"];
   financialKernelVersion?: typeof FINANCIAL_KERNEL_V2_VERSION;
+  outcomePolicyVersion?: typeof OUTCOME_POLICY_V1_VERSION;
+  runtimeBalanceControllerVersion?:
+    typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
+  runtimeBalanceDecision?: RuntimeBalanceDecisionV2;
+  scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
+  scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
+  runtimeBalanceCandidateSet?: Readonly<{
+    eligibleTemplateIds: readonly string[];
+    candidateTemplateIds: readonly string[];
+  }>;
+  worldRandomEvidence?: Readonly<{
+    version: typeof WORLD_RANDOM_VERSION_V1;
+    macroEvidenceHash: string;
+    rawOpportunityFingerprint: string | null;
+    grossParameterFingerprint: string | null;
+    openingMacroStateValue: number;
+    nextMacroStateValue: number;
+    openingOpportunityEpochValue: number;
+    nextOpportunityEpochValue: number;
+    openingParameterEpochValue: number;
+    nextParameterEpochValue: number;
+  }>;
   openingNetWorthCents?: MoneyCents;
   closingNetWorthCents?: MoneyCents;
   openingAutomaticLiquidityCents?: MoneyCents;
@@ -154,6 +256,13 @@ export class MonthlyTurnV2Error extends Error {
     | "PENDING_EVENT"
     | "INVALID_LIQUIDATION_RATE"
     | "UNSUPPORTED_FINANCIAL_KERNEL_VERSION"
+    | "UNSUPPORTED_OUTCOME_POLICY_VERSION"
+    | "UNSUPPORTED_EVENT_SCHEDULER_VERSION"
+    | "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION"
+    | "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION"
+    | "UNSUPPORTED_MARKET_MODEL_VERSION"
+    | "UNSUPPORTED_WORLD_RANDOM_VERSION"
+    | "INVALID_EVENT_CONFIG"
     | "TRANSITION_INVARIANT";
   override readonly cause?: unknown;
 
@@ -180,6 +289,103 @@ export function financialKernelVersionForCommandV2(
   throw new MonthlyTurnV2Error(
     "UNSUPPORTED_FINANCIAL_KERNEL_VERSION",
     `unsupported financial kernel version: ${String(version)}`,
+  );
+}
+
+export function outcomePolicyVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): OutcomePolicyVersionV2 {
+  const version = command.payload.outcomePolicyVersion;
+  if (version === undefined) return LEGACY_UNVERSIONED_OUTCOME_POLICY;
+  if (version === OUTCOME_POLICY_V1_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_OUTCOME_POLICY_VERSION",
+    `unsupported outcome policy version: ${String(version)}`,
+  );
+}
+
+export function eventSchedulerVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): EventSchedulerVersionV2 {
+  const version = command.payload.eventSchedulerVersion;
+  if (version === undefined) return LEGACY_EXPOSURE_EVENT_SCHEDULER;
+  if (
+    version === CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+    version === DECLARATIVE_EVENT_SCHEDULER_V2_VERSION
+  ) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
+    `unsupported event scheduler version: ${String(version)}`,
+  );
+}
+
+export function runtimeBalanceControllerVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION | null {
+  const version = command.payload.runtimeBalanceControllerVersion;
+  if (version === undefined) return null;
+  if (version === RUNTIME_BALANCE_CONTROLLER_V1_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+    `unsupported Runtime Balance controller version: ${String(version)}`,
+  );
+}
+
+export function scenarioDirectorVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): typeof SCENARIO_DIRECTOR_V2_VERSION | null {
+  const version = command.payload.scenarioDirectorVersion;
+  if (version === undefined) return null;
+  if (version === SCENARIO_DIRECTOR_V2_VERSION) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION",
+    `unsupported Scenario Director version: ${String(version)}`,
+  );
+}
+
+export function worldRandomVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): typeof WORLD_RANDOM_VERSION_V1 | null {
+  const version = command.payload.worldRandomVersion;
+  if (version === undefined) return null;
+  if (version === WORLD_RANDOM_VERSION_V1) return version;
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_WORLD_RANDOM_VERSION",
+    `unsupported world random version: ${String(version)}`,
+  );
+}
+
+export type MarketModelSelectionV2 = Readonly<
+  | {
+      modelVersion: typeof MARKET_MODEL_VERSION;
+      difficulty: null;
+    }
+  | {
+      modelVersion: typeof MACRO_MARKET_MODEL_V2_VERSION;
+      difficulty: MacroMarketDifficultyV2;
+    }
+>;
+
+export function marketModelVersionForCommandV2(
+  command: ProcessMonthV2Command,
+): MarketModelSelectionV2 {
+  const version = command.payload.marketModelVersion;
+  const difficulty = command.payload.macroDifficulty;
+  if (version === undefined || version === MARKET_MODEL_VERSION) {
+    if (difficulty === undefined) {
+      return Object.freeze({ modelVersion: MARKET_MODEL_VERSION, difficulty: null });
+    }
+  } else if (
+    version === MACRO_MARKET_MODEL_V2_VERSION &&
+    (["guided", "normal", "hard"] as const).includes(
+      difficulty as MacroMarketDifficultyV2,
+    )
+  ) {
+    return Object.freeze({ modelVersion: version, difficulty: difficulty! });
+  }
+  throw new MonthlyTurnV2Error(
+    "UNSUPPORTED_MARKET_MODEL_VERSION",
+    "market model selection requires regime-v1 without difficulty or regime-v2 with a supported difficulty",
   );
 }
 
@@ -622,6 +828,7 @@ function applyAfterTaxPlan(
 type MonthlyTurnV2Dependencies = Readonly<{
   eventSchedulingPolicy?: EventSchedulingPolicyV2;
   macroStoryPolicy?: MacroStoryPolicyV2;
+  personalEventCatalog?: readonly PersonalEventTemplateV2[];
 }>;
 
 export function processMonthlyTurnV2(
@@ -630,76 +837,586 @@ export function processMonthlyTurnV2(
   dependencies: MonthlyTurnV2Dependencies = {},
 ): MonthlyTurnV2Result {
   const version = financialKernelVersionForCommandV2(command);
+  const outcomePolicyVersion = outcomePolicyVersionForCommandV2(command);
+  const eventSchedulerVersion = eventSchedulerVersionForCommandV2(command);
+  const runtimeBalanceControllerVersion =
+    runtimeBalanceControllerVersionForCommandV2(command);
+  const scenarioDirectorVersion = scenarioDirectorVersionForCommandV2(command);
+  const worldRandomVersion = worldRandomVersionForCommandV2(command);
+  const marketSelection = marketModelVersionForCommandV2(command);
+  if (state.worldRandom !== undefined && worldRandomVersion === null) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_WORLD_RANDOM_VERSION",
+      "states containing named world streams cannot downgrade to shared-root randomness",
+    );
+  }
+  if (
+    worldRandomVersion === WORLD_RANDOM_VERSION_V1 &&
+    (version !== FINANCIAL_KERNEL_V2_VERSION ||
+      eventSchedulerVersion !== DECLARATIVE_EVENT_SCHEDULER_V2_VERSION ||
+      runtimeBalanceControllerVersion !== RUNTIME_BALANCE_CONTROLLER_V1_VERSION ||
+      scenarioDirectorVersion !== SCENARIO_DIRECTOR_V2_VERSION ||
+      marketSelection.modelVersion !== MACRO_MARKET_MODEL_V2_VERSION)
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_WORLD_RANDOM_VERSION",
+      "named-world-rng-v1 requires the production financial, macro, declarative event, Runtime Balance, and Scenario Director versions",
+    );
+  }
+  if (
+    outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION &&
+    version !== FINANCIAL_KERNEL_V2_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_OUTCOME_POLICY_VERSION",
+      "outcome policy 1.0.0 requires financial kernel 2.0.0",
+    );
+  }
+  if (
+    runtimeBalanceControllerVersion === RUNTIME_BALANCE_CONTROLLER_V1_VERSION &&
+    (version !== FINANCIAL_KERNEL_V2_VERSION ||
+      eventSchedulerVersion !== DECLARATIVE_EVENT_SCHEDULER_V2_VERSION)
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+      "runtime-balance-v1 requires financial kernel 2.0.0 and declarative-events-v2",
+    );
+  }
+  if (
+    scenarioDirectorVersion === SCENARIO_DIRECTOR_V2_VERSION &&
+    runtimeBalanceControllerVersion !== RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_SCENARIO_DIRECTOR_VERSION",
+      "scenario-director-v2 requires runtime-balance-v1",
+    );
+  }
+  if (
+    runtimeBalanceControllerVersion === null &&
+    state.gameplay.runtimeBalance?.version === 2
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+      "Runtime Balance state v2 cannot downgrade to direct declarative scheduling",
+    );
+  }
+  if (
+    runtimeBalanceControllerVersion === RUNTIME_BALANCE_CONTROLLER_V1_VERSION &&
+    state.gameplay.runtimeBalance?.version === 2 &&
+    marketSelection.difficulty !== null &&
+    state.gameplay.runtimeBalance.difficulty !== marketSelection.difficulty
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_RUNTIME_BALANCE_CONTROLLER_VERSION",
+      "Runtime Balance difficulty must match the explicit macro difficulty",
+    );
+  }
+  if (
+    (eventSchedulerVersion === CAUSAL_EVENT_SCHEDULER_V1_VERSION ||
+      eventSchedulerVersion === DECLARATIVE_EVENT_SCHEDULER_V2_VERSION) &&
+    version !== FINANCIAL_KERNEL_V2_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_EVENT_SCHEDULER_VERSION",
+      "causal event scheduling requires financial kernel 2.0.0",
+    );
+  }
+  if (
+    marketSelection.modelVersion === MACRO_MARKET_MODEL_V2_VERSION &&
+    version !== FINANCIAL_KERNEL_V2_VERSION
+  ) {
+    throw new MonthlyTurnV2Error(
+      "UNSUPPORTED_MARKET_MODEL_VERSION",
+      "regime-v2 requires financial kernel 2.0.0",
+    );
+  }
   if (version === FINANCIAL_KERNEL_V2_VERSION) {
-    return processMonthlyTurnV2Kernel200(state, command, dependencies);
+    return processMonthlyTurnV2Kernel200(
+      state,
+      command,
+      dependencies,
+      outcomePolicyVersion,
+      eventSchedulerVersion,
+      runtimeBalanceControllerVersion,
+      scenarioDirectorVersion,
+      marketSelection,
+      worldRandomVersion,
+    );
   }
   return processMonthlyTurnV2Legacy410(state, command, dependencies);
 }
 
 function sampleFinancialMarketStepV2(
   state: GameStateV2,
-): MarketSimulationResult {
+  marketSelection: MarketModelSelectionV2,
+  random = state.random,
+): SupportedMarketSimulationResult {
+  if (marketSelection.modelVersion === MACRO_MARKET_MODEL_V2_VERSION) {
+    return simulateMarketMonthV2(
+      marketSimulationStateV2(
+        state.marketRegime,
+        random,
+        marketSelection.difficulty,
+        state.gameplay.market.monthsInRegime,
+      ),
+      activeMacroReturnModifiersV2(state),
+    );
+  }
   return simulateMarketMonth(
     marketSimulationState(
       state.marketRegime,
-      state.random,
+      random,
       state.gameplay.market.monthsInRegime,
     ),
     activeMacroReturnModifiersV2(state),
   );
 }
 
+function scenarioDirectorInputForMonthlyTurnV2(
+  state: GameStateV2,
+  candidates: ReturnType<
+    typeof generateDeclarativePersonalEventCandidatesV2
+  >["candidates"],
+  eventCatalog: readonly PersonalEventTemplateV2[],
+): ScenarioDirectorInputV2 {
+  const balance = state.gameplay.runtimeBalance;
+  if (balance?.version !== 2) {
+    throw new RangeError("Scenario Director v2 requires Runtime Balance state v2");
+  }
+  const context = projectScenarioDirectorStateContextV2(state, {
+    personalEventCatalog: eventCatalog,
+  });
+  return Object.freeze({
+    version: SCENARIO_DIRECTOR_V2_VERSION,
+    month: state.currentMonth,
+    riskSnapshot: analyzeRiskV1(state),
+    macro: context.macro,
+    candidates: Object.freeze(
+      candidates.map(({ template, targetedWeakness }) =>
+        Object.freeze({
+          templateId: template.id,
+          templateVersion: template.version,
+          category: template.category,
+          tier: template.severityTier,
+          targetedWeakness,
+          lessonTags: template.lessonTags,
+          directorTags: scenarioDirectorTagsForCandidateV2(
+            template,
+            targetedWeakness,
+          ),
+        }),
+      ),
+    ),
+    recentDecisions: context.recentDecisions,
+    recentEvents: context.recentEvents,
+    lessonExposureCounts: context.lessonExposureCounts,
+    difficulty: context.difficulty,
+    ...(context.storyArc === undefined ? {} : { storyArc: context.storyArc }),
+  });
+}
+
 function processMonthlyTurnV2Kernel200(
   state: GameStateV2,
   command: ProcessMonthV2Command,
   dependencies: MonthlyTurnV2Dependencies,
+  outcomePolicyVersion: OutcomePolicyVersionV2,
+  eventSchedulerVersion: EventSchedulerVersionV2,
+  runtimeBalanceControllerVersion:
+    | typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+    | null,
+  scenarioDirectorVersion: typeof SCENARIO_DIRECTOR_V2_VERSION | null,
+  marketSelection: MarketModelSelectionV2,
+  worldRandomVersion: typeof WORLD_RANDOM_VERSION_V1 | null,
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
+  const eventCatalog = dependencies.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
+  const validationOptions = { personalEventCatalog: eventCatalog };
+  if (worldRandomVersion === WORLD_RANDOM_VERSION_V1) {
+    const violations = validatePersonalEventCatalogV2(eventCatalog);
+    if (violations.length > 0) {
+      throw new MonthlyTurnV2Error(
+        "INVALID_EVENT_CONFIG",
+        `named world scheduling rejected invalid event configuration: ${violations
+          .map(({ path, code }) => `${path}:${code}`)
+          .join(",")}`,
+      );
+    }
+  }
   try {
-    const marketStep = sampleFinancialMarketStepV2(state);
+    const openingWorld: WorldRandomStateV1 | null = worldRandomVersion === null
+      ? null
+      : state.worldRandom ?? initializeNamedWorldRandomV1(state.random);
+    const stateForMonth: GameStateV2 = openingWorld === null
+      ? state
+      : ({ ...state, worldRandom: openingWorld } as GameStateV2);
+    const marketStep = sampleFinancialMarketStepV2(
+      stateForMonth,
+      marketSelection,
+      openingWorld?.macro,
+    );
+    const eventCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
+      .filter(({ startMonth }) => compareMonths(startMonth, state.currentMonth) <= 0)
+      .map(({ id, kind, amountCents }) => ({
+        id,
+        kind,
+        amountCents,
+        sourceSystem: "personal_event_v2",
+      })) satisfies readonly ResolvedCashFlowV2[];
     const financial = simulateFinancialMonthV2({
       version: FINANCIAL_KERNEL_V2_VERSION,
       commandId: command.id,
-      state,
+      state: stateForMonth,
       taxEvidence: command.payload.taxEvidence,
       marketStep,
       taxableLiquidationCostRatePpm:
         command.payload.taxableLiquidationCostRatePpm,
       insuranceClaim: command.payload.insuranceClaim,
-      resolvedCashFlows: command.payload.resolvedCashFlows,
+      resolvedCashFlows: [
+        ...(command.payload.resolvedCashFlows ?? []),
+        ...eventCashFlows,
+      ],
+      validationOptions,
     });
+    const consumedCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
+      .map((flow) => compareMonths(flow.startMonth, state.currentMonth) <= 0
+        ? { ...flow, remainingMonths: flow.remainingMonths - 1 }
+        : flow)
+      .filter(({ remainingMonths }) => remainingMonths > 0);
+    const persistedCashFlows = state.gameplay.eventLifecycle.activeCashFlows === undefined
+      ? {}
+      : { activeCashFlows: consumedCashFlows };
+    const rehydratedFinancialClosing = rehydrateFinancialClosingStateV2(
+      stateForMonth,
+      financial.state,
+    );
+    const retainedMacroStories = rehydratedFinancialClosing.gameplay.eventLifecycle.macroStories
+      .filter(({ expiresMonth }) => compareMonths(expiresMonth, financial.nextMonth) >= 0);
+    const baseFinancialClosing: GameStateV2 = {
+      ...rehydratedFinancialClosing,
+      gameplay: {
+        ...rehydratedFinancialClosing.gameplay,
+        eventLifecycle: {
+          ...rehydratedFinancialClosing.gameplay.eventLifecycle,
+          macroStories: retainedMacroStories,
+          activeStoryIds: retainedMacroStories.map(({ storyId }) => storyId),
+        },
+      },
+    } as GameStateV2;
+    let worldAfterMacro = openingWorld === null
+      ? null
+      : withNextMacroStateV1(openingWorld, marketStep.nextState.random);
+    const financialClosing: GameStateV2 = worldAfterMacro === null
+      ? baseFinancialClosing
+      : ({
+          ...baseFinancialClosing,
+          random: state.random,
+          worldRandom: worldAfterMacro,
+        } as GameStateV2);
+    const advancedRuntimeBalance =
+      runtimeBalanceControllerVersion === RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+        ? advanceRuntimeBalanceCalendarMonthV2(runtimeBalanceStateV2(
+            state.gameplay.runtimeBalance,
+            state.gameplay.runtimeBalance?.version === 2
+              ? state.gameplay.runtimeBalance.difficulty
+              : marketSelection.difficulty ?? "normal",
+            state.currentMonth,
+          ))
+        : null;
+    const rehydrated = advancedRuntimeBalance === null
+      ? financialClosing
+      : {
+          ...financialClosing,
+          gameplay: {
+            ...financialClosing.gameplay,
+            runtimeBalance: advancedRuntimeBalance,
+          },
+        };
     const careerCompleted = completeCareerDevelopmentV2(
-      rehydrateFinancialClosingStateV2(state, financial.state),
+      {
+        ...rehydrated,
+        gameplay: {
+          ...rehydrated.gameplay,
+          eventLifecycle: {
+            ...rehydrated.gameplay.eventLifecycle,
+            ...persistedCashFlows,
+          },
+        },
+      },
+      validationOptions,
     );
     const accepted = acceptFinancialMonthCommandV2(
       state,
       careerCompleted,
       command.id,
+      validationOptions,
     );
-    const exposed = recordExposureSnapshotV2(accepted, financial.nextMonth);
-    const outcome = evaluateTerminalOutcomeV2(exposed, financial.shortfall);
-    let nextState = finalizeGameStateV2({ ...exposed, outcome });
+    const exposed = eventSchedulerVersion === LEGACY_EXPOSURE_EVENT_SCHEDULER
+      ? recordExposureSnapshotV2(accepted, financial.nextMonth, validationOptions)
+      : accepted;
+    const outcome =
+      outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION
+        ? assessTerminalOutcomeV2(
+            exposed,
+            financial.record,
+            outcomePolicyVersion,
+          )
+        : evaluateTerminalOutcomeV2(exposed, financial.shortfall);
+    const exposedWithRuntimeBalance = advancedRuntimeBalance === null
+      ? exposed
+      : {
+          ...exposed,
+          gameplay: {
+            ...exposed.gameplay,
+            runtimeBalance: recordRuntimeBalanceCashFlowV2(
+              advancedRuntimeBalance,
+              BigInt(financial.record.afterTaxCashIncomeCents) +
+                  BigInt(financial.record.resolvedIncomeCents) <
+                BigInt(financial.record.requiredCashCents),
+            ),
+          },
+        };
+    let nextState = finalizeGameStateV2(
+      { ...exposedWithRuntimeBalance, outcome },
+      validationOptions,
+    );
+    let runtimeBalanceDecision: RuntimeBalanceDecisionV2 | undefined;
+    let scenarioDirectorInput: ScenarioDirectorInputV2 | undefined;
+    let scenarioDirectorDecision: ScenarioDirectorDecisionV2 | undefined;
+    let runtimeBalanceCandidateSet:
+      | MonthlyTurnV2Record["runtimeBalanceCandidateSet"]
+      | undefined;
+    let rawOpportunityFingerprint: string | null = null;
+    let grossParameterFingerprint: string | null = null;
     if (outcome === null) {
-      nextState = advanceMacroStoriesV2(
-        nextState,
-        dependencies.macroStoryPolicy,
-      );
-      const schedule = schedulePersonalEventV2(
-        nextState,
-        dependencies.eventSchedulingPolicy,
-      );
-      nextState = finalizeGameStateV2({
-        ...nextState,
-        random: schedule.nextRandom,
-      });
-      if (schedule.event) {
-        nextState = queueScheduledPersonalEventV2(nextState, schedule.event);
+      if (worldAfterMacro === null) {
+        nextState = advanceMacroStoriesV2(
+          nextState,
+          dependencies.macroStoryPolicy,
+          validationOptions,
+        );
+      } else {
+        const advancedStories = advanceMacroStoriesV2(
+          finalizeGameStateV2(
+            { ...nextState, random: worldAfterMacro.macro },
+            validationOptions,
+          ),
+          dependencies.macroStoryPolicy,
+          validationOptions,
+        );
+        worldAfterMacro = withNextMacroStateV1(
+          worldAfterMacro,
+          advancedStories.random,
+        );
+        nextState = finalizeGameStateV2(
+          {
+            ...advancedStories,
+            random: state.random,
+            worldRandom: worldAfterMacro,
+          },
+          validationOptions,
+        );
+      }
+      if (
+        runtimeBalanceControllerVersion ===
+        RUNTIME_BALANCE_CONTROLLER_V1_VERSION
+      ) {
+        const balance = nextState.gameplay.runtimeBalance;
+        if (balance?.version !== 2) {
+          throw new RangeError("Runtime Balance v2 must be advanced before scheduling");
+        }
+        const candidates = worldAfterMacro === null
+          ? generateDeclarativePersonalEventCandidatesV2(nextState, eventCatalog)
+          : generateNamedDeclarativePersonalEventCandidatesV2(nextState, eventCatalog);
+        if (
+          "rawOpportunityFingerprint" in candidates &&
+          typeof candidates.rawOpportunityFingerprint === "string"
+        ) {
+          rawOpportunityFingerprint = candidates.rawOpportunityFingerprint;
+        }
+        runtimeBalanceCandidateSet = Object.freeze({
+          eligibleTemplateIds: candidates.eligibleTemplateIds,
+          candidateTemplateIds: candidates.candidateTemplateIds,
+        });
+        if (scenarioDirectorVersion === SCENARIO_DIRECTOR_V2_VERSION) {
+          scenarioDirectorInput = scenarioDirectorInputForMonthlyTurnV2(
+            nextState,
+            candidates.candidates,
+            eventCatalog,
+          );
+          scenarioDirectorDecision = rankScenarioCandidatesV2(
+            scenarioDirectorInput,
+          );
+        }
+        const monthIndex = monthsBetween(
+          simulationMonth("0001-01"),
+          nextState.currentMonth,
+        );
+        const eventParameterEpoch = worldAfterMacro?.eventParameters;
+        const grossParameterEvidence = eventParameterEpoch === undefined
+          ? null
+          : Object.freeze(
+              [...eventCatalog]
+                .toSorted(
+                  (left, right) =>
+                    left.id.localeCompare(right.id) || left.version - right.version,
+                )
+                .map((template) =>
+                  Object.freeze({
+                    templateId: template.id,
+                    templateVersion: template.version,
+                    parameters: Object.freeze(
+                      Object.fromEntries(
+                        [...template.parameters]
+                          .toSorted((left, right) => left.id.localeCompare(right.id))
+                          .map((parameter) => [
+                            parameter.id,
+                            eventParameterDrawV1({
+                              epoch: eventParameterEpoch,
+                              simulationMonth: monthIndex,
+                              templateId: template.id,
+                              templateVersion: template.version,
+                              parameterId: parameter.id,
+                              minimumInclusive: parameter.minimum,
+                              maximumInclusive: parameter.maximum,
+                            }).value,
+                          ]),
+                      ),
+                    ),
+                  }),
+                ),
+            );
+        grossParameterFingerprint = grossParameterEvidence === null
+          ? null
+          : sha256Canonical(grossParameterEvidence);
+        const parameterEvidenceByIdentity = grossParameterEvidence === null
+          ? null
+          : new Map(
+              grossParameterEvidence.map((entry) => [
+                `${entry.templateId}@${entry.templateVersion}`,
+                entry.parameters,
+              ]),
+            );
+        const choice = chooseBalancedEventV2(
+          nextState,
+          candidates.candidates,
+          candidates.nextRandom,
+          command.payload.taxableLiquidationCostRatePpm,
+          {
+            eventCatalog,
+            monthlyCashFlowEvidence: {
+              monthlyCashInflowCents: moneyCents(
+                safeBigIntToNumber(
+                  BigInt(financial.record.afterTaxCashIncomeCents) +
+                    BigInt(financial.record.resolvedIncomeCents),
+                  "runtime balance monthly cash inflow",
+                ),
+              ),
+              requiredCashCents: financial.record.requiredCashCents,
+            },
+            ...(scenarioDirectorDecision === undefined
+              ? {}
+              : {
+                  scenarioDirectorInput,
+                  scenarioDirectorDecision,
+                }),
+            ...(parameterEvidenceByIdentity === null
+              ? {}
+              : {
+                  parameterSampler: (template: PersonalEventTemplateV2) =>
+                    parameterEvidenceByIdentity.get(
+                      `${template.id}@${template.version}`,
+                    )!,
+                }),
+          },
+        );
+        runtimeBalanceDecision = choice.decision;
+        const chosenState = {
+          ...nextState,
+          random: choice.nextRandom,
+          gameplay: {
+            ...nextState.gameplay,
+            runtimeBalance: choice.runtimeBalance,
+          },
+        } as GameStateV2;
+        nextState = choice.event === null
+          ? finalizeGameStateV2(chosenState, validationOptions)
+          : queueScheduledDeclarativePersonalEventV2(chosenState, choice.event, {
+              personalEventCatalog: eventCatalog,
+            });
+      } else {
+        const schedule = schedulePersonalEventV2(
+          nextState,
+          dependencies.eventSchedulingPolicy,
+          eventSchedulerVersion,
+        );
+        nextState = finalizeGameStateV2(
+          {
+            ...nextState,
+            random: schedule.nextRandom,
+          },
+          validationOptions,
+        );
+        if (schedule.event) {
+          nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
+            ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event, {
+                personalEventCatalog: eventCatalog,
+              })
+            : queueScheduledPersonalEventV2(
+                nextState,
+                schedule.event,
+                validationOptions,
+              );
+        }
+      }
+      if (worldAfterMacro !== null) {
+        nextState = finalizeGameStateV2({
+          ...nextState,
+          random: state.random,
+          worldRandom: advanceEventEpochsV1(worldAfterMacro),
+        }, validationOptions);
       }
     }
+    const closingWorld = nextState.worldRandom;
+    const worldRandomEvidence = openingWorld === null || closingWorld === undefined
+      ? undefined
+      : Object.freeze({
+          version: WORLD_RANDOM_VERSION_V1,
+          macroEvidenceHash: sha256Canonical({
+            processedMonth: state.currentMonth,
+            market: financial.record.market,
+          }),
+          rawOpportunityFingerprint,
+          grossParameterFingerprint,
+          openingMacroStateValue: openingWorld.macro.value,
+          nextMacroStateValue: closingWorld.macro.value,
+          openingOpportunityEpochValue: openingWorld.eventOpportunity.value,
+          nextOpportunityEpochValue: closingWorld.eventOpportunity.value,
+          openingParameterEpochValue: openingWorld.eventParameters.value,
+          nextParameterEpochValue: closingWorld.eventParameters.value,
+        });
     const record = Object.freeze({
       ...financial.record,
       financialKernelVersion: FINANCIAL_KERNEL_V2_VERSION,
+      ...(outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION
+        ? { outcomePolicyVersion }
+        : {}),
       scheduledEvent: nextState.gameplay.eventLifecycle.pending,
+      ...(runtimeBalanceControllerVersion === null
+        ? {}
+        : { runtimeBalanceControllerVersion }),
+      ...(runtimeBalanceDecision === undefined
+        ? {}
+        : { runtimeBalanceDecision }),
+      ...(scenarioDirectorVersion === null
+        ? {}
+        : { scenarioDirectorVersion }),
+      ...(scenarioDirectorDecision === undefined
+        ? {}
+        : { scenarioDirectorDecision }),
+      ...(runtimeBalanceCandidateSet === undefined
+        ? {}
+        : { runtimeBalanceCandidateSet }),
+      ...(worldRandomEvidence === undefined ? {} : { worldRandomEvidence }),
       outcome,
     }) satisfies MonthlyTurnV2Record;
     return Object.freeze({ state: nextState, record });
@@ -865,13 +1582,16 @@ function processMonthlyTurnV2Legacy410(
       const schedule = schedulePersonalEventV2(
         nextState,
         dependencies.eventSchedulingPolicy,
+        eventSchedulerVersionForCommandV2(command),
       );
       nextState = finalizeGameStateV2({
         ...nextState,
         random: schedule.nextRandom,
       });
       if (schedule.event) {
-        nextState = queueScheduledPersonalEventV2(nextState, schedule.event);
+        nextState = isScheduledDeclarativePersonalEventV2(schedule.event)
+          ? queueScheduledDeclarativePersonalEventV2(nextState, schedule.event)
+          : queueScheduledPersonalEventV2(nextState, schedule.event);
       }
     }
     return Object.freeze({

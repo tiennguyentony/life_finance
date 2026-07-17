@@ -58,10 +58,10 @@ describe("adaptive AI education service", () => {
       () => ({
         responseSource: () => "hosted_oss" as const,
         generate: async () => ({
-          title: "Liquidity under pressure",
-          explanation: "Cash can settle near-term obligations without forced selling.",
-          whyItMattersNow: "The current cash fact is the immediate buffer.",
-          actionTips: ["Compare cash with required monthly obligations."],
+          title: "Liquidity",
+          explanation: "Liquidity is money you can use quickly to pay a bill. Cash is highly liquid; retirement accounts and home equity are not.",
+          whyItMattersNow: "A high net worth does not prevent bankruptcy if the value is locked away when an obligation arrives.",
+          actionTips: ["More cash improves resilience, but too much idle cash can slow long-term growth."],
           citedEvidenceIds: ["context.cash", "context.required_cash"],
         }),
       }) as never,
@@ -79,6 +79,30 @@ describe("adaptive AI education service", () => {
       conceptId: "liquidity",
       exposureCount: 1,
     });
+  });
+
+  it("rejects unsupported nonnumeric AI claims and preserves the deterministic lesson", async () => {
+    const repo = repository();
+    const service = new AiEducationService(
+      repo.value,
+      () => ({
+        responseSource: () => "openai" as const,
+        generate: async () => ({
+          title: "Liquidity",
+          explanation: "Your cash is fully prepared for every emergency.",
+          whyItMattersNow: "Nothing can threaten this plan.",
+          actionTips: ["Keep everything unchanged."],
+          citedEvidenceIds: ["context.cash"],
+        }),
+      }) as never,
+      () => "lesson-rejected",
+    );
+
+    const result = await service.explain("run", "secret", request);
+
+    expect(result.source).toBe("deterministic_fallback");
+    expect(result.explanation.explanation).toContain("Liquidity is money");
+    expect(result.memoryRecorded).toBe(true);
   });
 
   it("falls back to the deterministic curriculum when AI is unavailable", async () => {

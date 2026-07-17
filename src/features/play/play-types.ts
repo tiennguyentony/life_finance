@@ -37,6 +37,8 @@ export type OnboardingDraft = Readonly<{
 }>;
 
 export type StrategyDraft = Readonly<{
+  emergencyFundMonths: number;
+  insuranceCoverageIds: readonly string[] | null;
   retirement: number;
   hsa: number;
   index: number;

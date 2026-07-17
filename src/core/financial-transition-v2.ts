@@ -5,6 +5,7 @@ import {
   type FinancialClosingStateV2,
 } from "./financial-kernel-v2";
 import { finalizeGameStateV2, type GameStateV2 } from "./game-state-v2";
+import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { ownForDeepFreeze } from "./immutable-ownership";
 import { assertValidGameStateTransitionV2 } from "./state-transition-v2";
 
@@ -124,11 +125,13 @@ export function acceptFinancialClosingStateV2(
   previous: GameStateV2,
   financialState: FinancialClosingStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
   return acceptFinancialMonthCommandV2(
     previous,
     rehydrateFinancialClosingStateV2(previous, financialState),
     commandId,
+    validationOptions,
   );
 }
 
@@ -136,6 +139,7 @@ export function acceptFinancialMonthCommandV2(
   previous: GameStateV2,
   financialState: GameStateV2,
   commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
   if (!COMMAND_ID.test(commandId)) {
     throw new FinancialTransitionV2Error(
@@ -182,8 +186,13 @@ export function acceptFinancialMonthCommandV2(
       revision: previous.revision + 1,
       acceptedCommandIds: [...previous.acceptedCommandIds, commandId],
       outcome: ownedOutcome,
-    });
-    assertValidGameStateTransitionV2(previous, accepted, commandId);
+    }, validationOptions);
+    assertValidGameStateTransitionV2(
+      previous,
+      accepted,
+      commandId,
+      validationOptions,
+    );
     return accepted;
   } catch (cause) {
     throw new FinancialTransitionV2Error(

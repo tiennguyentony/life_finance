@@ -1,4 +1,8 @@
 import { US_2026_SCENARIO_CATALOG } from "../../data/scenario-catalog";
+import {
+  ONBOARDING_PERSONAS_V1,
+  type OnboardingPersonaIdV1,
+} from "../../core/onboarding-personas-v1";
 
 export type StartingSelection = Readonly<{
   birthMonth: string;
@@ -11,68 +15,52 @@ export type StartingSelection = Readonly<{
   scenarioId: string;
 }>;
 
-export const PLAYER_PRESETS = {
-  software: {
-    label: "Software developer · Seattle",
-    selection: {
-      birthMonth: "1995-01",
-      locationId: "location.seattle",
-      careerId: "career.software",
-      householdId: "household.single",
-      benefitsPackageId: "benefits.corporate_flex",
-      healthPlanId: "health.hdhp_hsa",
-      retirementPlanId: "retirement.401k_standard",
-      scenarioId: "scenario.fresh_start",
-    },
-    salaryDollars: 120_000,
-    defaultCashDollars: 25_000,
-  },
-  nurse: {
-    label: "Registered nurse · Austin",
-    selection: {
-      birthMonth: "1995-01",
-      locationId: "location.austin",
-      careerId: "career.nurse",
-      householdId: "household.single",
-      benefitsPackageId: "benefits.essential_worker",
-      healthPlanId: "health.hdhp_hsa",
-      retirementPlanId: "retirement.401k_essential",
-      scenarioId: "scenario.fresh_start",
-    },
-    salaryDollars: 85_000,
-    defaultCashDollars: 20_000,
-  },
-  teacher: {
-    label: "Teacher · Chicago",
-    selection: {
-      birthMonth: "1995-01",
-      locationId: "location.chicago",
-      careerId: "career.teacher",
-      householdId: "household.single",
-      benefitsPackageId: "benefits.public_service",
-      healthPlanId: "health.hdhp_hsa",
-      retirementPlanId: "retirement.403b_public",
-      scenarioId: "scenario.fresh_start",
-    },
-    salaryDollars: 70_000,
-    defaultCashDollars: 15_000,
-  },
-  established: {
-    label: "Established software household · Austin",
-    selection: {
-      birthMonth: "1988-01",
-      locationId: "location.austin",
-      careerId: "career.software",
-      householdId: "household.married",
-      benefitsPackageId: "benefits.corporate_flex",
-      healthPlanId: "health.hdhp_hsa",
-      retirementPlanId: "retirement.401k_standard",
-      scenarioId: "scenario.established_household",
-    },
-    salaryDollars: 125_000,
-    defaultCashDollars: 75_000,
-  },
-} as const;
+const PERSONA_LABELS: Readonly<Record<OnboardingPersonaIdV1, string>> =
+  Object.freeze({
+    software: "Software developer · Seattle",
+    nurse: "Registered nurse · Austin",
+    teacher: "Teacher · Chicago",
+    established: "Established software household · Austin",
+  });
+
+export function playerPresetFromPersonaV1(personaId: OnboardingPersonaIdV1) {
+  const fixture = ONBOARDING_PERSONAS_V1[personaId];
+  if (
+    fixture.grossIncome?.period !== "annual" ||
+    fixture.finances?.cashCents === undefined ||
+    fixture.birthMonth === undefined ||
+    fixture.locationId === undefined ||
+    fixture.careerId === undefined ||
+    fixture.householdId === undefined ||
+    fixture.benefitsPackageId === undefined ||
+    fixture.retirementPlanId === undefined ||
+    fixture.scenarioId === undefined
+  ) {
+    throw new Error(`Incomplete onboarding persona fixture: ${personaId}`);
+  }
+  return Object.freeze({
+    label: PERSONA_LABELS[personaId],
+    selection: Object.freeze({
+      birthMonth: fixture.birthMonth,
+      locationId: fixture.locationId,
+      careerId: fixture.careerId,
+      householdId: fixture.householdId,
+      benefitsPackageId: fixture.benefitsPackageId,
+      healthPlanId: fixture.healthPlanId ?? null,
+      retirementPlanId: fixture.retirementPlanId,
+      scenarioId: fixture.scenarioId,
+    }),
+    salaryDollars: fixture.grossIncome.amountCents / 100,
+    defaultCashDollars: fixture.finances.cashCents / 100,
+  });
+}
+
+export const PLAYER_PRESETS = Object.freeze({
+  software: playerPresetFromPersonaV1("software"),
+  nurse: playerPresetFromPersonaV1("nurse"),
+  teacher: playerPresetFromPersonaV1("teacher"),
+  established: playerPresetFromPersonaV1("established"),
+});
 
 export type PlayerPresetId = keyof typeof PLAYER_PRESETS;
 

@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  ACTION_POLICY_V1_VERSION,
+  actionPolicyForVersionV2,
+} from "../../core/action-policy-v2";
 import { simulationMonth } from "../../core/domain/month";
 import type { GameCommandV2 } from "./run-repository-contracts";
 
@@ -138,6 +142,14 @@ const detailedActionSchema = z.discriminatedUnion("type", [
 
 const recurringStrategySchema = z
   .object({
+    emergencyFundTargetMonthsPpm: z.int().min(0).max(24_000_000).optional(),
+    insuranceCoverageIds: z
+      .array(identifierSchema)
+      .max(16)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "insurance coverage IDs must be unique",
+      })
+      .optional(),
     preTax401kSalaryRatePpm: boundedRatePpmSchema,
     preTaxHsaSalaryRatePpm: boundedRatePpmSchema,
     afterTaxBroadIndexRatePpm: boundedRatePpmSchema,
@@ -292,13 +304,36 @@ const textSchema = (maximum: number) =>
     .max(maximum)
     .refine((value) => value.trim().length > 0);
 
+const persistedDetailedActionCommandV2Schema = v2EnvelopeSchema
+  .extend({
+    type: z.literal("take_detailed_action"),
+    payload: z
+      .object({
+        action: detailedActionSchema,
+        actionPolicyVersion: z.literal(ACTION_POLICY_V1_VERSION).optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (
+      command.payload.actionPolicyVersion === ACTION_POLICY_V1_VERSION &&
+      command.payload.action.type === "liquidate_taxable" &&
+      command.payload.action.liquidationCostRatePpm !==
+        actionPolicyForVersionV2(ACTION_POLICY_V1_VERSION)
+          .taxableLiquidationCostRatePpm
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["payload", "action", "liquidationCostRatePpm"],
+        message:
+          "versioned liquidation cost must match the frozen action policy",
+      });
+    }
+  });
+
 const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
-  v2EnvelopeSchema
-    .extend({
-      type: z.literal("take_detailed_action"),
-      payload: z.object({ action: detailedActionSchema }).strict(),
-    })
-    .strict(),
+  persistedDetailedActionCommandV2Schema,
   v2EnvelopeSchema
     .extend({
       type: z.literal("set_recurring_strategy"),
@@ -380,6 +415,19 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           financialKernelVersion: z
             .enum(["legacy-4.1.0", "2.0.0"])
             .optional(),
+          outcomePolicyVersion: z.literal("1.0.0").optional(),
+          eventSchedulerVersion: z
+            .enum(["causal-hazard-v1", "declarative-events-v2"])
+            .optional(),
+          runtimeBalanceControllerVersion: z
+            .literal("runtime-balance-v1")
+            .optional(),
+          scenarioDirectorVersion: z
+            .literal("scenario-director-v2")
+            .optional(),
+          worldRandomVersion: z.literal("named-world-rng-v1").optional(),
+          marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
+          macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
           taxEvidence: taxEvidenceSchema,
           taxableLiquidationCostRatePpm: boundedRatePpmSchema,
           insuranceClaim: insuranceClaimSchema.optional(),
@@ -396,6 +444,87 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               path: ["resolvedCashFlows"],
               message:
                 "resolved cash flows require financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.outcomePolicyVersion !== undefined &&
+            payload.financialKernelVersion !== "2.0.0"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["outcomePolicyVersion"],
+              message:
+                "outcome policy 1.0.0 requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.eventSchedulerVersion !== undefined &&
+            payload.financialKernelVersion !== "2.0.0"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["eventSchedulerVersion"],
+              message:
+                "causal event scheduling requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.runtimeBalanceControllerVersion !== undefined &&
+            (payload.financialKernelVersion !== "2.0.0" ||
+              payload.eventSchedulerVersion !== "declarative-events-v2")
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["runtimeBalanceControllerVersion"],
+              message:
+                "runtime-balance-v1 requires financial kernel 2.0.0 and declarative-events-v2",
+            });
+          }
+          if (
+            payload.scenarioDirectorVersion !== undefined &&
+            payload.runtimeBalanceControllerVersion !== "runtime-balance-v1"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["scenarioDirectorVersion"],
+              message:
+                "scenario-director-v2 requires runtime-balance-v1",
+            });
+          }
+          if (
+            (payload.marketModelVersion === "regime-v2") !==
+            (payload.macroDifficulty !== undefined)
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["marketModelVersion"],
+              message:
+                "regime-v2 requires one explicit macro difficulty and other market versions forbid it",
+            });
+          }
+          if (
+            payload.marketModelVersion === "regime-v2" &&
+            payload.financialKernelVersion !== "2.0.0"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["marketModelVersion"],
+              message: "regime-v2 requires financial kernel version 2.0.0",
+            });
+          }
+          if (
+            payload.worldRandomVersion !== undefined &&
+            (payload.financialKernelVersion !== "2.0.0" ||
+              payload.eventSchedulerVersion !== "declarative-events-v2" ||
+              payload.runtimeBalanceControllerVersion !== "runtime-balance-v1" ||
+              payload.scenarioDirectorVersion !== "scenario-director-v2" ||
+              payload.marketModelVersion !== "regime-v2")
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["worldRandomVersion"],
+              message:
+                "named-world-rng-v1 requires the production financial, macro, event, Runtime Balance, and Scenario Director versions",
             });
           }
         }),
