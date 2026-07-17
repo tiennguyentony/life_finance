@@ -341,12 +341,24 @@ function deepFreeze<T>(value: T): Readonly<T> {
   return value;
 }
 
+const DEFAULT_VALIDATED_GAME_STATES = new WeakSet<object>();
+
 export function finalizeGameStateV2(
   state: GameStateV2,
   validationOptions: GameStateV2ValidationOptions = {},
 ): GameStateV2 {
+  if (
+    validationOptions.personalEventCatalog === undefined &&
+    DEFAULT_VALIDATED_GAME_STATES.has(state)
+  ) {
+    return state;
+  }
   assertValidGameStateV2(state, validationOptions);
-  return deepFreeze(state) as GameStateV2;
+  const finalized = deepFreeze(state) as GameStateV2;
+  if (validationOptions.personalEventCatalog === undefined) {
+    DEFAULT_VALIDATED_GAME_STATES.add(finalized);
+  }
+  return finalized;
 }
 
 export function migrateGameStateV1ToV2(state: GameStateV1): GameStateV2 {

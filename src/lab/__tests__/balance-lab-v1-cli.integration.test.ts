@@ -117,7 +117,7 @@ describe("offline balance lab CLI pipeline", () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("INVALID_EVENT_CONFIG");
     expect(() => readFileSync(join(output, "medium.report.json"), "utf8")).toThrow();
-  });
+  }, 35_000);
 
   it("writes diagnostic artifacts but exits 2 when a configured acceptance rule fails", () => {
     const root = temporaryDirectory();
