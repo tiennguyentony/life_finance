@@ -21,7 +21,8 @@ const BoardScene = dynamic(() => import("./board-scene"), {
 /** Free mode travels by island id; loop mode by track index. */
 type ActiveHop = HopRequest & Readonly<{ toId?: string; toIndex?: number }>;
 
-const TOAST_MS = 2600;
+// Long enough that a screen reader can finish announcing before it hides.
+const TOAST_MS = 4000;
 
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -44,7 +45,13 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
   const [currentIslandId, setCurrentIslandId] = useState<string>(HOME_ISLAND_ID);
   const [trackIndex, setTrackIndex] = useState(0);
   const [hop, setHop] = useState<ActiveHop | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  // The message persists through the exit transition; `visible` drives it.
+  // Kept mounted (not conditionally rendered) so the aria-live region is
+  // already in the DOM when its text changes and reliably announces.
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({
+    message: "",
+    visible: false,
+  });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reducedMotion = useReducedMotion();
 
@@ -55,9 +62,12 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
   }, []);
 
   const showToast = (message: string) => {
-    setToast(message);
+    setToast({ message, visible: true });
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
+    toastTimer.current = setTimeout(
+      () => setToast((prev) => ({ ...prev, visible: false })),
+      TOAST_MS,
+    );
   };
 
   const startFreeHop = (islandId: string) => {
@@ -134,7 +144,8 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
         actionLabel={mode === "loop" ? "Move" : "Take Action"}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
         onTakeAction={handleTakeAction}
-        toast={toast}
+        toastMessage={toast.message}
+        toastVisible={toast.visible}
       />
     </div>
   );
