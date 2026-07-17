@@ -10,7 +10,9 @@ export type BoardIsland = Readonly<{
   id: string;
   name: string;
   tagline: string;
-  /** Hex accent used for the island's glow ring and label chip. */
+  /** Hex accent used for the island's trim ring and label chip. Mirrors the
+   * app's --blue/--gold/--coral design tokens for cohesion with the rest of
+   * the UI; "startup" has no token equivalent so it uses a matched pastel. */
   accent: string;
   position: BoardPoint;
 }>;
@@ -22,35 +24,35 @@ export const BOARD_ISLANDS: readonly BoardIsland[] = [
     id: HOME_ISLAND_ID,
     name: "Home",
     tagline: "Rest and recharge",
-    accent: "#7dd3fc",
+    accent: "#78cbd1", // --blue
     position: { x: 0, z: 0 },
   },
   {
     id: "financial",
     name: "Financial District",
     tagline: "High earnings",
-    accent: "#60a5fa",
+    accent: "#4f8ac9",
     position: { x: -5.2, z: -3.4 },
   },
   {
     id: "bank",
     name: "Bank",
     tagline: "Manage money",
-    accent: "#facc15",
+    accent: "#f3c74f", // --gold
     position: { x: 5.2, z: -3.4 },
   },
   {
     id: "hospital",
     name: "Hospital",
     tagline: "Health is wealth",
-    accent: "#fb7185",
+    accent: "#ff7754", // --coral
     position: { x: -5.4, z: 3.6 },
   },
   {
     id: "startup",
     name: "Startup Hub",
     tagline: "Build your dream",
-    accent: "#c084fc",
+    accent: "#c9a0e0",
     position: { x: 5.4, z: 3.6 },
   },
 ];
