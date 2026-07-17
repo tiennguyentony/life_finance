@@ -1,6 +1,6 @@
 "use client";
 
-import { Clone, Html, useCursor, useGLTF } from "@react-three/drei";
+import { Clone, Html, OrbitControls, useCursor, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { Suspense, useMemo, useRef, useState } from "react";
@@ -525,16 +525,28 @@ export default function BoardScene({
 
   return (
     <Canvas
-      camera={{ position: [0, 13.5, 16.5], fov: 30, near: 0.5, far: 90 }}
+      camera={{ position: [0, 15.5, 19], fov: 30, near: 0.5, far: 110 }}
       dpr={[1, 2]}
-      onCreated={({ camera }) => {
-        camera.lookAt(0, -0.6, 0.2);
-      }}
     >
+      {/* Wheel-zoom only: the view stays locked (no rotate/pan) so the board
+          keeps its fixed 3/4 look, but you can pull back to see every corner
+          building or lean in on a stop. Target matches the old lookAt point. */}
+      <OrbitControls
+        dampingFactor={0.12}
+        enableDamping
+        enablePan={false}
+        enableRotate={false}
+        enableZoom
+        makeDefault
+        maxDistance={42}
+        minDistance={13}
+        target={[0, -0.6, 0.2]}
+      />
+
       {/* Sky and fog match the landing page's warm cream (--paper) so the
           board reads as the same sunlit world, not a separate night scene. */}
       <color args={["#f6f1da"]} attach="background" />
-      <fog args={["#f6f1da", 30, 64]} attach="fog" />
+      <fog args={["#f6f1da", 48, 104]} attach="fog" />
 
       <hemisphereLight args={["#fffdf1", "#e7dfc1", 1.1]} />
       <directionalLight color="#fff6df" intensity={1.7} position={[6, 15, 8]} />
