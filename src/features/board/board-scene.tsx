@@ -1,8 +1,7 @@
 "use client";
 
-import { Clone, Html, useCursor, useGLTF } from "@react-three/drei";
+import { Clone, Html, OrbitControls, useCursor, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { Suspense, useMemo, useRef, useState } from "react";
 import type { Group, Mesh, MeshStandardMaterial } from "three";
 
@@ -493,8 +492,11 @@ function CenterDie({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
 function Water() {
   return (
     <mesh position={[0, -0.95, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      {/* Warm, desaturated seafoam that sits near the cream --paper family,
+          so the board's dominant field reads warm like the landing instead
+          of the old saturated cool teal. */}
       <circleGeometry args={[46, 48]} />
-      <meshStandardMaterial color="#78cbd1" metalness={0.15} roughness={0.35} />
+      <meshStandardMaterial color="#a8ccbb" metalness={0.1} roughness={0.4} />
     </mesh>
   );
 }
@@ -525,16 +527,32 @@ export default function BoardScene({
 
   return (
     <Canvas
-      camera={{ position: [0, 13.5, 16.5], fov: 30, near: 0.5, far: 90 }}
+      camera={{ position: [0, 15.5, 19], fov: 30, near: 0.5, far: 110 }}
       dpr={[1, 2]}
-      onCreated={({ camera }) => {
-        camera.lookAt(0, -0.6, 0.2);
-      }}
+      // With reduced motion every useFrame is static, so render on demand
+      // (invalidated by interaction/state) instead of compositing 60fps forever.
+      frameloop={reducedMotion ? "demand" : "always"}
     >
+      {/* Wheel-zoom only: the view stays locked (no rotate/pan) so the board
+          keeps its fixed 3/4 look, but you can pull back to see every corner
+          building or lean in on a stop. Target matches the old lookAt point. */}
+      <OrbitControls
+        dampingFactor={0.12}
+        // Damping needs a continuous loop; skip it under demand-mode frameloop.
+        enableDamping={!reducedMotion}
+        enablePan={false}
+        enableRotate={false}
+        enableZoom
+        makeDefault
+        maxDistance={42}
+        minDistance={13}
+        target={[0, -0.6, 0.2]}
+      />
+
       {/* Sky and fog match the landing page's warm cream (--paper) so the
           board reads as the same sunlit world, not a separate night scene. */}
       <color args={["#f6f1da"]} attach="background" />
-      <fog args={["#f6f1da", 30, 64]} attach="fog" />
+      <fog args={["#f6f1da", 48, 104]} attach="fog" />
 
       <hemisphereLight args={["#fffdf1", "#e7dfc1", 1.1]} />
       <directionalLight color="#fff6df" intensity={1.7} position={[6, 15, 8]} />
@@ -578,12 +596,6 @@ export default function BoardScene({
           standingAt={standingAt}
         />
       </Suspense>
-
-      {/* Daylight bloom is subtle: only genuinely bright spots (coins, the
-          gold roof) should catch it, not every mid-tone surface. */}
-      <EffectComposer>
-        <Bloom intensity={0.35} luminanceSmoothing={0.3} luminanceThreshold={1.3} mipmapBlur />
-      </EffectComposer>
     </Canvas>
   );
 }
