@@ -4,6 +4,7 @@
 @import "./styles/responsive.css";
 @import "./styles/game.css";
 @import "./styles/brightwater.css";
+@import "./styles/board.css";
 
 :root {
   --paper: #f6f1da;

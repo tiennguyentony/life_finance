@@ -36,5 +36,8 @@ pnpm-debug.log*
 
 # Local implementation-planning scratch
 .superpowers/
+
+# Local 3D asset library; only the models copied into public/ ship
+KayKit_BoardGameBits_1.0_FREE/
 .balance-lab-dist/
 .artifacts/balance-lab/
