@@ -16,7 +16,7 @@ import {
   scheduleDeclarativePersonalEventV2,
   type DeclarativePersonalEventScheduleV2,
 } from "./personal-event-v2";
-import { PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
+import { PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
 
 export const EVENT_FAMILY_RECENCY_MONTHS = 9;
 export const CAUSAL_EVENT_SCHEDULER_V1_VERSION = "causal-hazard-v1" as const;
@@ -200,7 +200,7 @@ export function schedulePersonalEventV2(
   if (schedulerVersion === DECLARATIVE_EVENT_SCHEDULER_V2_VERSION) {
     return scheduleDeclarativePersonalEventV2(
       state,
-      PERSONAL_EVENT_TEMPLATES_V2,
+      PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2,
     );
   }
   if (state.outcome || state.gameplay.eventLifecycle.pending) {

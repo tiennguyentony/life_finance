@@ -5,6 +5,7 @@ import {
 } from "../core/personal-event-v2";
 import { deepFreeze, parameter } from "./personal-event-template-helpers";
 import { PERSONAL_EVENT_FUNNY_TEMPLATES_V2 } from "./personal-event-funny-templates-v2";
+import { createPersonalEventExpandedTemplatesV3 } from "./personal-event-expanded-templates-v3";
 
 const templates: readonly PersonalEventTemplateV2[] = [
   {
@@ -736,9 +737,12 @@ const templates: readonly PersonalEventTemplateV2[] = [
   },
 ];
 
+const expandedTemplatesV3 = createPersonalEventExpandedTemplatesV3(templates);
+
 const completeTemplates = [
   ...templates,
   ...PERSONAL_EVENT_FUNNY_TEMPLATES_V2,
+  ...expandedTemplatesV3,
 ] as const satisfies readonly PersonalEventTemplateV2[];
 
 const violations = validatePersonalEventCatalogV2(completeTemplates);

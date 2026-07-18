@@ -57,6 +57,32 @@ function state() {
 }
 
 describe("declarative personal-event v2 effects", () => {
+  it("resolves expanded V3 payment plans at the disclosed 120% total", () => {
+    const opening = state();
+    const template = getPersonalEventTemplateV2("personal.medical_bill", 3);
+    const resolved = resolvePersonalEventResponseV2(
+      opening,
+      template,
+      {
+        eventId: "evt.medical-plan.v3",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { gross_bill_cents: 100_000 },
+      },
+      "medical_payment_plan",
+      "cmd.medical-plan.v3",
+    );
+
+    expect(resolved.playerCostCents).toBe(120_000);
+    expect(resolved.scheduledCashFlows).toEqual([
+      expect.objectContaining({
+        kind: "recurring_expense",
+        amountCents: 30_000,
+        durationMonths: 4,
+      }),
+    ]);
+  });
+
   it("rejects a mitigation response when the declared coverage is unavailable", () => {
     const opening = state();
     const uninsured = {
