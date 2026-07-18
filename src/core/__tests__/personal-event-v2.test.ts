@@ -146,7 +146,37 @@ describe("declarative personal-event v2 catalog", () => {
       whenResponseIds: ["defer_repair"],
     })]);
     expect(getPersonalEventTemplateV2("personal.transport_repair_followup"))
-      .toMatchObject({ classification: "negative", severityTier: "medium" });
+      .toMatchObject({
+        classification: "negative",
+        severityTier: "large",
+        parameters: [{ minimum: 500_000, maximum: 1_500_000 }],
+        recovery: { durationMonths: 12 },
+      });
+    expect(repair).toMatchObject({
+      hazard: { baseChancePpm: 100_000 },
+      parameters: [{ minimum: 100_000, maximum: 400_000 }],
+      recovery: { durationMonths: 9 },
+    });
+    const reducedHours = getPersonalEventTemplateV2("personal.reduced_work_hours");
+    expect(reducedHours).toMatchObject({
+      hazard: { baseChancePpm: 80_000 },
+      parameters: [{ minimum: 300_000, maximum: 700_000 }],
+      recovery: { durationMonths: 9 },
+    });
+    expect(reducedHours.responses.find(({ id }) => id === "spread_income_gap"))
+      .toMatchObject({
+        effects: [{
+          type: "recurring_expense",
+          magnitude: { source: "parameter", multiplierPpm: 600_000 },
+          durationMonths: 6,
+        }],
+      });
+    for (const id of [
+      "personal.rent_renewal",
+      "personal.family_care_request",
+    ]) {
+      expect(getPersonalEventTemplateV2(id).recovery.durationMonths).toBe(9);
+    }
   });
 
   it("rejects duplicate identities, invalid bounds, missing lessons, and responses without effects", () => {

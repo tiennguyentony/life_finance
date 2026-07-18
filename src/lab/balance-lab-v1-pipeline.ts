@@ -84,7 +84,7 @@ function preflightCatalog(
   }
 }
 
-export function runBalanceLabPipelineV1(input: Readonly<{
+export type BalanceLabPipelineInputV1 = Readonly<{
   unsafeConfig: unknown;
   size: BalanceLabBatchSizeV1;
   experimentId: string;
@@ -92,32 +92,41 @@ export function runBalanceLabPipelineV1(input: Readonly<{
   taxEvidence: BalanceLabTaxEvidenceSourceV1;
   eventCatalog: unknown;
   verifyRepeatability?: boolean;
-}>): BalanceLabPipelineResultV1 {
+  repeatabilityAuditMatchedSeeds?: number;
+}>;
+
+export function buildBalanceLabPipelineFromResultV1(
+  input: BalanceLabPipelineInputV1,
+  rawResult: OfflineBalanceLabResultV1,
+  elapsedMs: number,
+  rawRepeated?: OfflineBalanceLabResultV1,
+): BalanceLabPipelineResultV1 {
+  if (!Number.isSafeInteger(elapsedMs) || elapsedMs < 0) {
+    throw new RangeError("balance lab elapsed time must be a non-negative safe integer");
+  }
   const config: BalanceLabConfigV1 = decodeBalanceLabConfigV1(input.unsafeConfig);
   const catalog = preflightCatalog(input.eventCatalog);
   const eventCatalogFingerprint = sha256Canonical(catalog);
   const batch = resolveBalanceLabBatchV1(config, input.size, input.experimentId);
   input.taxEvidence.preflight?.(batch.spec);
   const taxFingerprint = input.taxEvidence.evidenceFingerprint();
-  const owners = createBalanceLabProductionOwnersV1({
-    createPersonaState: createBalanceLabPersonaStateV1,
-    taxEvidence: input.taxEvidence,
-    personalEventCatalog: catalog,
-  });
-  const started = performance.now();
-  const result = bindEventCatalogFingerprint(
-    runOfflineBalanceLabV1(batch.spec, owners),
-    eventCatalogFingerprint,
-  );
-  const elapsedMs = Math.max(0, Math.round(performance.now() - started));
-  if (input.verifyRepeatability !== false) {
-    const repeated = bindEventCatalogFingerprint(
-      runOfflineBalanceLabV1(batch.spec, owners),
-      eventCatalogFingerprint,
+  if (canonicalJson(rawResult.spec) !== canonicalJson(batch.spec)) {
+    throw new OfflineBalanceLabV1Error(
+      "PRODUCTION_OWNER_VIOLATION",
+      "production cohort does not match the resolved batch",
     );
+  }
+  const result = bindEventCatalogFingerprint(rawResult, eventCatalogFingerprint);
+  if (input.verifyRepeatability !== false) {
+    if (rawRepeated === undefined) {
+      throw new OfflineBalanceLabV1Error(
+        "PRODUCTION_OWNER_VIOLATION",
+        "repeatability verification requires a repeated cohort",
+      );
+    }
+    const repeated = bindEventCatalogFingerprint(rawRepeated, eventCatalogFingerprint);
     if (
-      repeated.deterministicResultFingerprint !==
-        result.deterministicResultFingerprint ||
+      repeated.deterministicResultFingerprint !== result.deterministicResultFingerprint ||
       canonicalJson(repeated.runs) !== canonicalJson(result.runs)
     ) {
       throw new OfflineBalanceLabV1Error(
@@ -155,6 +164,9 @@ export function runBalanceLabPipelineV1(input: Readonly<{
     ]),
     limitations: Object.freeze([
       ...(input.taxEvidence.limitation === null ? [] : [input.taxEvidence.limitation]),
+      ...(input.repeatabilityAuditMatchedSeeds === undefined
+        ? []
+        : [`Exact repeatability was re-executed for ${input.repeatabilityAuditMatchedSeeds} matched seeds; the full cohort was executed once.`]),
       ...(catalog.some(
           ({ severityTier }) => severityTier === "large" || severityTier === "catastrophe",
         )
@@ -194,4 +206,25 @@ export function runBalanceLabPipelineV1(input: Readonly<{
     })}\n`,
   });
   return Object.freeze({ report, files, observedElapsedMs: elapsedMs });
+}
+
+export function runBalanceLabPipelineV1(
+  input: BalanceLabPipelineInputV1,
+): BalanceLabPipelineResultV1 {
+  const config: BalanceLabConfigV1 = decodeBalanceLabConfigV1(input.unsafeConfig);
+  const catalog = preflightCatalog(input.eventCatalog);
+  const batch = resolveBalanceLabBatchV1(config, input.size, input.experimentId);
+  input.taxEvidence.preflight?.(batch.spec);
+  const owners = createBalanceLabProductionOwnersV1({
+    createPersonaState: createBalanceLabPersonaStateV1,
+    taxEvidence: input.taxEvidence,
+    personalEventCatalog: catalog,
+  });
+  const started = performance.now();
+  const result = runOfflineBalanceLabV1(batch.spec, owners);
+  const elapsedMs = Math.max(0, Math.round(performance.now() - started));
+  const repeated = input.verifyRepeatability === false
+    ? undefined
+    : runOfflineBalanceLabV1(batch.spec, owners);
+  return buildBalanceLabPipelineFromResultV1(input, result, elapsedMs, repeated);
 }

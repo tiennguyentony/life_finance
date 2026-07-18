@@ -171,6 +171,23 @@ function medianInteger(values: readonly number[]): number | null {
     : Math.floor((sorted[middle - 1]! + sorted[middle]!) / 2);
 }
 
+function sixMonthRecoveryRate(
+  observations: readonly Readonly<{
+    status: "recovered" | "censored";
+    observedMonths: number;
+  }>[],
+): BalanceLabRateV1 {
+  const observable = observations.filter(
+    ({ status, observedMonths }) => status === "recovered" || observedMonths >= 6,
+  );
+  return rate(
+    observable.filter(
+      ({ status, observedMonths }) => status === "recovered" && observedMonths <= 6,
+    ).length,
+    observable.length,
+  );
+}
+
 function sampleVariance(values: readonly number[]): string {
   if (values.length < 2) return "0";
   const count = BigInt(values.length);
@@ -501,12 +518,7 @@ function summarizeBalanceShadow(
       preparedCohort.filter(({ run }) => run.metrics.endReason === "bankruptcy").length,
       preparedCohort.length,
     ),
-    nonfatalRecoveryWithinSixMonthsRate: rate(
-      nonfatalRecovery.filter(
-        ({ status, observedMonths }) => status === "recovered" && observedMonths <= 6,
-      ).length,
-      nonfatalRecovery.length,
-    ),
+    nonfatalRecoveryWithinSixMonthsRate: sixMonthRecoveryRate(nonfatalRecovery),
   });
 }
 
@@ -569,12 +581,7 @@ function summarizeBeginnerChapter(
         assessment.band === "meaningful" || assessment.band === "crisis").length,
       approvedChallenges.length,
     ),
-    nonfatalRecoveryWithinSixMonthsRate: rate(
-      nonfatalRecovery.filter(
-        ({ status, observedMonths }) => status === "recovered" && observedMonths <= 6,
-      ).length,
-      nonfatalRecovery.length,
-    ),
+    nonfatalRecoveryWithinSixMonthsRate: sixMonthRecoveryRate(nonfatalRecovery),
   });
 }
 
