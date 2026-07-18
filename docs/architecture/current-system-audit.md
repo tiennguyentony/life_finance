@@ -1,6 +1,6 @@
 # Current system audit
 
-This audit describes the code on `main` after the strategy-board merge and production-onboarding deployment fixes. It is the quickest answer to “what exists now?”
+This audit describes the account-save/performance branch based on `f808c44`. It is the quickest answer to “what exists now?”
 
 ## Status at a glance
 
@@ -8,7 +8,8 @@ This audit describes the code on `main` after the strategy-board merge and produ
 | --- | --- | --- | --- |
 | Persona onboarding | Implemented with checksum review | Yes | Yes, typed persona flow |
 | Custom profile fields | Contract supports rich drafts | Review/create routes exist | Form collects four fields, but only age reaches authoritative state |
-| Persistent runs | PostgreSQL/Drizzle, schema 2 | Yes | Yes |
+| Account authentication | Supabase email OTP | Yes | Six-digit code login |
+| Persistent runs | PostgreSQL/Drizzle, one active save per account | Yes | Yes |
 | Instant local demo | In-memory repository/tax adapter | Dev-only `/api/demo` | Dev-only button |
 | Monthly finance/tax/market | Implemented deterministically | `process_month` | Yes |
 | Detailed financial actions | Broad internal/public intent support | Yes | Small fixed board subset |
@@ -23,6 +24,7 @@ This audit describes the code on `main` after the strategy-board merge and produ
 
 ## What the player can do today
 
+- Sign in by email OTP and resume the account’s active save across browsers.
 - Start a persistent persona run or a development-only in-memory demo.
 - See the canonical 3D board and authoritative financial summary.
 - Choose one of five destinations and one frontend-authored plan.
@@ -42,7 +44,9 @@ Events are selected without Groq, OpenAI, or Ollama. Deterministic code generate
 ## Important correctness properties
 
 - Authoritative balances are never held only in React or localStorage.
-- Run access uses an HttpOnly capability cookie and same-origin write checks.
+- Persistent run access derives from verified Supabase user claims and same-origin write checks.
+- Capability cookies remain only for pre-login save claiming and development Instant Demo.
+- Creating a new account save archives the previous active save atomically.
 - Exact revisions and command IDs provide optimistic concurrency and idempotency.
 - Money/rates avoid floating-point arithmetic.
 - Tax, market, RNG, event, and ledger evidence are server-owned.
@@ -63,6 +67,16 @@ Events are selected without Groq, OpenAI, or Ollama. Deterministic code generate
 8. Level/XP are UI derivations; journal/menu surfaces are incomplete.
 9. `/api/health` does not establish dependency readiness.
 10. The OpenAPI object is a route inventory, not a full request/response specification.
+
+## Save and traffic implementation
+
+- `game_runs.owner_user_id` references `auth.users`; a partial unique index enforces one active save per owner.
+- First login claims a valid legacy cookie save. A run already owned by a different account is rejected.
+- Browser commands send their known effective month, removing one redundant full-state read.
+- Public command responses omit the unused monthly-record summary; measured local response size fell from about 5.25 KB to 1.63 KB.
+- Native run creation and ordinary commands no longer write undeliverable outbox rows. Aggregate time advance and legacy workflows retain outbox semantics where replay depends on them.
+- Demo memory is capped at 16 LRU runs with a two-hour idle TTL.
+- Landing WebP assets reduce its eager image payload from about 5.8 MB to about 460 KB.
 
 ## Repository hygiene observations
 

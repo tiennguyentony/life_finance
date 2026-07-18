@@ -2,6 +2,7 @@
 @import "./styles/site.css";
 @import "./styles/responsive.css";
 @import "./styles/teaching.css";
+@import "./styles/board.css";
 
 .auth-screen {
   display: grid;
@@ -43,8 +44,6 @@
 .auth-message {
   margin-top: 1rem;
 }
-@import "./styles/board.css";
-
 :root {
   --paper: #f6f1da;
   --paper-deep: #e7dfc1;

@@ -11,6 +11,7 @@ These files describe the code at the current `main` branch. Executable contracts
 5. [`architecture/data-and-engine.md`](architecture/data-and-engine.md) — state, monthly pipeline, tax, events, replay, and persistence.
 6. [`operations/local-development.md`](operations/local-development.md) — demo, persistent setup, optional integrations, and verification.
 7. [`operations/schema-2-cutover.md`](operations/schema-2-cutover.md) — production migration and schema compatibility.
+8. [`operations/implementation-handoff.md`](operations/implementation-handoff.md) — current branch, invariants, verification, and deployment checklist.
 
 Files in `docs/superpowers/` are historical implementation plans and specifications. They explain past decisions but are not descriptions of the live product.
 

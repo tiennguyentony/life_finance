@@ -4,7 +4,7 @@
 
 - Node.js 22 or newer
 - Corepack/pnpm 11.4.0
-- For the persistent path: PostgreSQL and Python tax-service prerequisites from `services/tax/README.md`
+- For the persistent path: Supabase CLI/Docker, or equivalent Supabase Auth + PostgreSQL, and the Python tax-service prerequisites from `services/tax/README.md`
 
 ## Fastest playable path
 
@@ -20,10 +20,12 @@ This path still exercises the real same-origin API, HttpOnly cookie, use cases, 
 ## Persistent local path
 
 1. Copy `.env.example` to `.env.local`.
-2. Set the four required server variables:
+2. Set the persistent runtime variables:
 
    ```dotenv
    DATABASE_URL=postgresql://...
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
    RUN_SECRET_PEPPER_BASE64URL=...
    TAX_SERVICE_URL=http://127.0.0.1:8000
    TAX_SERVICE_TOKEN=use-the-same-high-entropy-token-as-the-tax-service
@@ -31,12 +33,22 @@ This path still exercises the real same-origin API, HttpOnly cookie, use cases, 
 
 3. Install packages: `pnpm install --frozen-lockfile`.
 4. Run `pnpm db:migrate` against a database you are authorized to modify.
-5. Configure and start the tax service using `services/tax/README.md`.
-6. Run `pnpm dev` and use the normal **Start** onboarding path.
+5. In Supabase Auth, use a six-digit email OTP template containing `{{ .Token }}`. The checked-in local template is `supabase/templates/email-code.html`.
+6. Configure and start the tax service using `services/tax/README.md`.
+7. Run `pnpm dev`, sign in by email code, and use the normal **Start** onboarding path.
+
+For a disposable full local Supabase stack:
+
+```bash
+pnpm dlx supabase@latest start
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres pnpm db:migrate
+```
+
+Use the local API URL and publishable key printed by the CLI. Email is captured by local Mailpit. HTTP Supabase URLs are accepted only for `localhost` and `127.0.0.1`; non-loopback environments require HTTPS.
 
 Generate a local pepper with the command documented in `.env.example`. Never commit `.env.local`.
 
-A Vercel access token is a deployment credential, not application runtime configuration. Supabase/Vercel production resources do not automatically make another developer’s local process work: their `.env.local` still needs the database connection, pepper, tax URL, and matching bearer token. If a teammate is intentionally given shared credentials, no Supabase or Vercel browser login is required at runtime, but they will be operating on shared infrastructure.
+A Vercel access token is a deployment credential, not application runtime configuration. Supabase/Vercel production resources do not automatically make another developer’s local process work: their `.env.local` still needs the Supabase public values, database connection, pepper, tax URL, and matching bearer token. If a teammate is intentionally given shared credentials, they will be operating on shared infrastructure.
 
 Do not run migrations casually against a shared or production Supabase database. Confirm the target, take a backup for production changes, and prefer a disposable/local database for development.
 
@@ -56,7 +68,9 @@ Provider keys are server-only. AI audit encryption/admin variables are needed on
 - Invalid/missing pepper: persistent session-secret hashing fails.
 - Unavailable tax service: a month needing fresh evidence fails without committing a new revision.
 - No AI provider: typed onboarding and board work; optional parse is unavailable.
-- No/invalid run cookie: `/board` redirects to `/start`.
+- No Supabase session in production: protected pages redirect to `/login`.
+- A valid account with no active save: onboarding starts a new save.
+- A pre-auth capability save is claimed at first sign-in; a save owned by another account cannot be claimed.
 - Demo cookie after server restart: the in-memory run is gone; start another demo.
 - Stale `.next` route types after switching branches/architectures: run `pnpm exec next typegen`, then `pnpm typecheck`.
 

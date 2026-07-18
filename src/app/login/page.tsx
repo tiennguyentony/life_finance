@@ -5,6 +5,7 @@ import { LoginForm } from "@/features/auth/login-form";
 import { getAuthenticatedUser } from "@/server/auth/supabase-user";
 
 export const metadata: Metadata = { title: "Sign in" };
+export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   if (await getAuthenticatedUser()) redirect("/start");

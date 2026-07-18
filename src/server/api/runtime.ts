@@ -43,6 +43,10 @@ export function getRunGateway(): CommandRunner {
   return runGateway;
 }
 
+export function isLocalDemoRun(runId: string): boolean {
+  return getLocalDemoRuntime().hasRun(runId);
+}
+
 export function getOnboardingService(): OnboardingService {
   if (!onboardingService) {
     onboardingService = new OnboardingService(getRunRepository());
