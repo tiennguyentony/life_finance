@@ -9,7 +9,11 @@ import {
 } from "@/contracts/api/contracts";
 
 import type { BoardPlan } from "../plan-catalog";
-import { commitBoardTurn } from "../turn-commit";
+import {
+  boardMonthRecoveryMessage,
+  commitBoardTurn,
+  recoverBoardTurnFailure,
+} from "../turn-commit";
 
 const actionPlan: BoardPlan = {
   id: "bank.pay-credit",
@@ -160,5 +164,125 @@ describe("commitBoardTurn", () => {
       planApplied: true,
       error,
     });
+  });
+});
+
+describe("recoverBoardTurnFailure", () => {
+  it("does not claim a no-action plan was saved", () => {
+    expect(boardMonthRecoveryMessage(true)).toBe(
+      "Your plan was saved, but the month did not advance.",
+    );
+    expect(boardMonthRecoveryMessage(false)).toBe("The month did not advance.");
+  });
+
+  it("refreshes a stale plan rejection and returns to planning at the authoritative revision", async () => {
+    const opening = openingRun();
+    const authoritative = { ...opening, revision: opening.revision + 2 };
+    let refreshes = 0;
+
+    const result = await recoverBoardTurnFailure({
+      phase: "plan",
+      error: { code: "STALE_REVISION", message: "Run changed" },
+      opening,
+      failedRun: opening,
+      getSession: async () => {
+        refreshes += 1;
+        return { session: { run: authoritative } };
+      },
+    });
+
+    expect(refreshes).toBe(1);
+    expect(result).toMatchObject({ kind: "planning", run: authoritative });
+  });
+
+  it("continues month-only recovery from the refreshed revision after an accepted plan", async () => {
+    const opening = openingRun();
+    const planApplied = { ...opening, revision: opening.revision + 1 };
+    const authoritative = { ...planApplied, revision: planApplied.revision + 1 };
+
+    const result = await recoverBoardTurnFailure({
+      phase: "month",
+      error: { code: "STALE_REVISION", message: "Run changed" },
+      opening,
+      failedRun: planApplied,
+      getSession: async () => ({ session: { run: authoritative } }),
+    });
+
+    expect(result).toMatchObject({ kind: "finish_month", run: authoritative });
+  });
+
+  it("completes an ambiguously accepted month from the preserved opening when refresh shows advancement", async () => {
+    const opening = openingRun();
+    const planApplied = { ...opening, revision: opening.revision + 1 };
+    const authoritative = {
+      ...planApplied,
+      currentMonth: "2026-08",
+      revision: planApplied.revision + 1,
+    };
+
+    const result = await recoverBoardTurnFailure({
+      phase: "month",
+      error: new TypeError("Failed to fetch"),
+      opening,
+      failedRun: planApplied,
+      getSession: async () => ({ session: { run: authoritative } }),
+    });
+
+    expect(result).toMatchObject({ kind: "completed", opening, run: authoritative });
+  });
+
+  it("returns an unchanged ambiguous plan failure to ordinary planning", async () => {
+    const opening = openingRun();
+    const error = new TypeError("Failed to fetch");
+
+    const result = await recoverBoardTurnFailure({
+      phase: "plan",
+      error,
+      opening,
+      failedRun: opening,
+      getSession: async () => ({ session: { run: opening } }),
+    });
+
+    expect(result).toMatchObject({ kind: "planning", run: opening, error });
+  });
+
+  it("uses month-only recovery when an ambiguous plan failure refreshed to a higher revision", async () => {
+    const opening = openingRun();
+    const authoritative = { ...opening, revision: opening.revision + 1 };
+
+    const result = await recoverBoardTurnFailure({
+      phase: "plan",
+      error: new TypeError("Failed to fetch"),
+      opening,
+      failedRun: opening,
+      getSession: async () => ({ session: { run: authoritative } }),
+    });
+
+    expect(result).toMatchObject({ kind: "finish_month", run: authoritative });
+  });
+
+  it("keeps the failed run intact when session refresh fails or has no session", async () => {
+    const opening = openingRun();
+    const planApplied = { ...opening, revision: opening.revision + 1 };
+
+    const failedRefresh = await recoverBoardTurnFailure({
+      phase: "month",
+      error: { code: "STALE_REVISION", message: "Run changed" },
+      opening,
+      failedRun: planApplied,
+      getSession: async () => {
+        throw new TypeError("Offline");
+      },
+    });
+    const missingSession = await recoverBoardTurnFailure({
+      phase: "month",
+      error: { code: "STALE_REVISION", message: "Run changed" },
+      opening,
+      failedRun: planApplied,
+      getSession: async () => ({ session: null }),
+    });
+
+    expect(failedRefresh).toMatchObject({ kind: "refresh_failed", run: planApplied });
+    expect(missingSession).toMatchObject({ kind: "refresh_failed", run: planApplied });
   });
 });

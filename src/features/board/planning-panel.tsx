@@ -4,6 +4,7 @@ import type { BoardDestinationId, BoardPlan } from "./plan-catalog";
 
 type PlanningPanelProps = Readonly<{
   busy: boolean;
+  commitVariant?: "plan" | "finish_month" | "refresh";
   destinationId: BoardDestinationId;
   errorMessage: string | null;
   onClose: () => void;
@@ -23,6 +24,7 @@ const destinationLabels: Readonly<Record<BoardDestinationId, string>> = {
 
 export function PlanningPanel({
   busy,
+  commitVariant = "plan",
   destinationId,
   errorMessage,
   onClose,
@@ -33,6 +35,17 @@ export function PlanningPanel({
 }: PlanningPanelProps) {
   const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? null;
   const canCommit = selectedPlan !== null && selectedPlan.disabledReason === null && !busy;
+  const recovering = commitVariant !== "plan";
+  const status = commitVariant === "finish_month"
+    ? busy ? "Finishing this month..." : "Ready to finish this month."
+    : commitVariant === "refresh"
+      ? busy ? "Refreshing the board..." : "Refresh the board before trying this plan again."
+      : busy ? "Saving your plan..." : "Ready to live this month.";
+  const commitLabel = commitVariant === "finish_month"
+    ? "Finish this month"
+    : commitVariant === "refresh"
+      ? "Refresh board"
+      : busy ? "Saving..." : "Live this month";
 
   return (
     <section aria-labelledby="board-plan-title" className="board-planning-panel">
@@ -42,12 +55,19 @@ export function PlanningPanel({
           <h2 id="board-plan-title">Choose your plan</h2>
           <p>Preview what changes now and what may change later.</p>
         </div>
-        <button aria-label="Close plan chooser" onClick={onClose} type="button">
-          Close
-        </button>
+        {recovering ? null : (
+          <button aria-label="Close plan chooser" onClick={onClose} type="button">
+            Close
+          </button>
+        )}
       </header>
 
       {errorMessage ? <p role="alert">{errorMessage}</p> : null}
+      {commitVariant === "finish_month" ? (
+        <p>This recovery will not submit a plan again. Finish this month before choosing another focus.</p>
+      ) : commitVariant === "refresh" ? (
+        <p>Refresh the authoritative run before choosing another focus or retrying the plan.</p>
+      ) : null}
 
       <div aria-label="Available plans" className="board-plan-options" role="group">
         {plans.map((plan) => {
@@ -57,7 +77,7 @@ export function PlanningPanel({
               <button
                 aria-pressed={selected}
                 className="board-plan-card"
-                disabled={plan.disabledReason !== null || busy}
+                disabled={plan.disabledReason !== null || busy || recovering}
                 onClick={() => onSelectPlan(plan.id)}
                 type="button"
               >
@@ -80,10 +100,10 @@ export function PlanningPanel({
 
       <footer className="board-planning-actions">
         <p aria-live="polite" className="board-commit-status">
-          {busy ? "Saving your plan..." : "Ready to live this month."}
+          {status}
         </p>
         <button disabled={!canCommit} onClick={onCommit} type="button">
-          {busy ? "Saving..." : "Live this month"}
+          {commitLabel}
         </button>
       </footer>
     </section>
