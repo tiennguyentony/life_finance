@@ -1,4 +1,11 @@
 import type { BalanceLabBotIdV1 } from "./balance-lab-v1-contracts";
+import type { PreparednessBandV1 } from "../core/preparedness-assessment-v1";
+import type {
+  RuntimeBalanceChallengeBandV1,
+  RuntimeBalanceChallengeLimitingDimensionV1,
+} from "../core/runtime-balance-challenge-v1";
+import type { RuntimeBalanceDifficultyV2 } from "../core/runtime-balance-policy-v2";
+import type { BalanceLabObservedEventTierV1 } from "./balance-lab-balance-observation-v1";
 import type {
   BalanceLabAuthoritativeMetricsV1,
   BalanceLabRunResultV1,
@@ -14,6 +21,35 @@ export type BalanceLabRateV1 = Readonly<{
   denominator: number;
   ratePpm: number;
   confidenceInterval95Ppm: Readonly<{ lower: number; upper: number }>;
+}>;
+
+export type BalanceLabBalanceShadowSummaryV1 = Readonly<{
+  observationCount: number;
+  openingPreparednessMeanScorePpm: number | null;
+  terminalPreparednessMeanScorePpm: number | null;
+  openingPreparednessBands: Readonly<Record<PreparednessBandV1, number>>;
+  terminalPreparednessBands: Readonly<Record<PreparednessBandV1, number>>;
+  candidateChallengeBands: Readonly<Record<RuntimeBalanceChallengeBandV1, number>>;
+  approvedChallengeBands: Readonly<Record<RuntimeBalanceChallengeBandV1, number>>;
+  limitingDimensions: Readonly<
+    Record<RuntimeBalanceChallengeLimitingDimensionV1, number>
+  >;
+  challengeByDifficultyAndTier: Readonly<
+    Record<
+      RuntimeBalanceDifficultyV2,
+      Readonly<
+        Record<
+          BalanceLabObservedEventTierV1,
+          Readonly<Record<RuntimeBalanceChallengeBandV1, number>>
+        >
+      >
+    >
+  >;
+  bankruptcyByOpeningPreparednessBand: Readonly<
+    Record<PreparednessBandV1, BalanceLabRateV1>
+  >;
+  stableResilientUnavoidableFailureRate: BalanceLabRateV1;
+  nonfatalRecoveryWithinSixMonthsRate: BalanceLabRateV1;
 }>;
 
 export type BalanceLabMatchedObjectiveResultV1 = Readonly<{
@@ -50,6 +86,7 @@ export type BalanceLabMetricSummaryV1 = Readonly<{
   maximumStrategyObjectiveLeadSharePpm: number;
   impactReductionRatePpm: number;
   majorEventPacingPpm: number;
+  balanceShadow: BalanceLabBalanceShadowSummaryV1;
   matchedObjectiveResults: readonly BalanceLabMatchedObjectiveResultV1[];
   objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot: Readonly<
     Record<
@@ -307,6 +344,144 @@ function matchedImpactReductionEvidence(
   });
 }
 
+const PREPAREDNESS_BANDS = [
+  "critical",
+  "exposed",
+  "stable",
+  "resilient",
+] as const satisfies readonly PreparednessBandV1[];
+const CHALLENGE_BANDS = [
+  "light",
+  "meaningful",
+  "crisis",
+  "extreme",
+  "above_limit",
+] as const satisfies readonly RuntimeBalanceChallengeBandV1[];
+const LIMITING_DIMENSIONS = [
+  "impact_score",
+  "burn_months",
+  "negative_cash_flow",
+  "recovery_time",
+] as const satisfies readonly RuntimeBalanceChallengeLimitingDimensionV1[];
+const DIFFICULTIES = ["guided", "normal", "hard"] as const satisfies readonly RuntimeBalanceDifficultyV2[];
+const EVENT_TIERS = [
+  "micro",
+  "medium",
+  "large",
+  "catastrophe",
+  "unknown",
+] as const satisfies readonly BalanceLabObservedEventTierV1[];
+
+function counts<K extends string>(keys: readonly K[]): Record<K, number> {
+  return Object.fromEntries(keys.map((key) => [key, 0])) as Record<K, number>;
+}
+
+function summarizeBalanceShadow(
+  runs: readonly BalanceLabMetricRunV1[],
+): BalanceLabBalanceShadowSummaryV1 {
+  const observations = runs.flatMap(({ metrics }) => metrics.balanceObservations ?? []);
+  const openingByRun = runs.map((run) => ({
+    run,
+    observation: run.metrics.balanceObservations?.find(({ stage }) => stage === "opening"),
+  })).filter((entry) => entry.observation !== undefined);
+  const terminalByRun = runs.map((run) => ({
+    run,
+    observation: run.metrics.balanceObservations?.findLast(({ stage }) => stage === "monthly") ??
+      run.metrics.balanceObservations?.find(({ stage }) => stage === "opening"),
+  })).filter((entry) => entry.observation !== undefined);
+  const openingBands = counts(PREPAREDNESS_BANDS);
+  const terminalBands = counts(PREPAREDNESS_BANDS);
+  const candidateBands = counts(CHALLENGE_BANDS);
+  const approvedBands = counts(CHALLENGE_BANDS);
+  const limitingDimensions = counts(LIMITING_DIMENSIONS);
+  for (const { observation } of openingByRun) {
+    openingBands[observation!.preparedness.band] += 1;
+  }
+  for (const { observation } of terminalByRun) {
+    terminalBands[observation!.preparedness.band] += 1;
+  }
+  const challengeMatrix = Object.fromEntries(
+    DIFFICULTIES.map((difficulty) => [
+      difficulty,
+      Object.fromEntries(
+        EVENT_TIERS.map((tier) => [tier, counts(CHALLENGE_BANDS)]),
+      ),
+    ]),
+  ) as Record<
+    RuntimeBalanceDifficultyV2,
+    Record<
+      BalanceLabObservedEventTierV1,
+      Record<RuntimeBalanceChallengeBandV1, number>
+    >
+  >;
+  for (const observation of observations) {
+    for (const candidate of observation.candidateChallenges) {
+      candidateBands[candidate.assessment.band] += 1;
+      limitingDimensions[candidate.assessment.limitingDimension] += 1;
+      challengeMatrix[observation.difficulty][candidate.eventTier][candidate.assessment.band] += 1;
+    }
+    if (observation.approvedChallenge !== null) {
+      approvedBands[observation.approvedChallenge.assessment.band] += 1;
+    }
+  }
+  const bankruptcyByBand = Object.freeze(Object.fromEntries(
+    PREPAREDNESS_BANDS.map((band) => {
+      const cohort = openingByRun.filter(
+        ({ observation }) => observation!.preparedness.band === band,
+      );
+      return [band, rate(
+        cohort.filter(({ run }) => run.metrics.endReason === "bankruptcy").length,
+        cohort.length,
+      )];
+    }),
+  ) as Record<PreparednessBandV1, BalanceLabRateV1>);
+  const preparedCohort = openingByRun.filter(({ observation }) =>
+    observation!.preparedness.band === "stable" ||
+    observation!.preparedness.band === "resilient",
+  );
+  const nonfatalRecovery = runs
+    .filter(({ metrics }) => metrics.endReason !== "bankruptcy")
+    .flatMap(({ metrics }) => metrics.recoveryObservations ?? []);
+  const frozenMatrix = Object.freeze(Object.fromEntries(
+    DIFFICULTIES.map((difficulty) => [
+      difficulty,
+      Object.freeze(Object.fromEntries(
+        EVENT_TIERS.map((tier) => [
+          tier,
+          Object.freeze({ ...challengeMatrix[difficulty][tier] }),
+        ]),
+      )),
+    ]),
+  ) as BalanceLabBalanceShadowSummaryV1["challengeByDifficultyAndTier"]);
+  const openingScores = openingByRun.map(({ observation }) => observation!.preparedness.scorePpm);
+  const terminalScores = terminalByRun.map(({ observation }) => observation!.preparedness.scorePpm);
+
+  return Object.freeze({
+    observationCount: observations.length,
+    openingPreparednessMeanScorePpm:
+      openingScores.length === 0 ? null : meanInteger(openingScores),
+    terminalPreparednessMeanScorePpm:
+      terminalScores.length === 0 ? null : meanInteger(terminalScores),
+    openingPreparednessBands: Object.freeze(openingBands),
+    terminalPreparednessBands: Object.freeze(terminalBands),
+    candidateChallengeBands: Object.freeze(candidateBands),
+    approvedChallengeBands: Object.freeze(approvedBands),
+    limitingDimensions: Object.freeze(limitingDimensions),
+    challengeByDifficultyAndTier: frozenMatrix,
+    bankruptcyByOpeningPreparednessBand: bankruptcyByBand,
+    stableResilientUnavoidableFailureRate: rate(
+      preparedCohort.filter(({ run }) => run.metrics.unavoidableFailure).length,
+      preparedCohort.length,
+    ),
+    nonfatalRecoveryWithinSixMonthsRate: rate(
+      nonfatalRecovery.filter(
+        ({ status, observedMonths }) => status === "recovered" && observedMonths <= 6,
+      ).length,
+      nonfatalRecovery.length,
+    ),
+  });
+}
+
 export function summarizeBalanceLabRunsV1(
   runs: readonly BalanceLabMetricRunV1[],
 ): BalanceLabMetricSummaryV1 {
@@ -426,6 +601,7 @@ export function summarizeBalanceLabRunsV1(
     maximumStrategyObjectiveLeadSharePpm: maximumStrategyObjectiveLead.observed,
     impactReductionRatePpm: impactReduction.observed,
     majorEventPacingPpm: majorEventPacing.observed,
+    balanceShadow: summarizeBalanceShadow(runs),
     matchedObjectiveResults: matched,
     objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot:
       objectiveVarianceAcrossSeeds(runs),

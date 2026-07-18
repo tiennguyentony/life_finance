@@ -468,7 +468,7 @@ export function createBalanceLabProductionOwnersV1(
       });
     },
     observeBalance: ({ state, record, monthIndex }) =>
-      observeBalanceLabMonthV1(state, record, monthIndex),
+      observeBalanceLabMonthV1(state, record, monthIndex, personalEventCatalog),
     readAuthoritativeMetrics: ({ state, records, balanceObservations }) => {
       const goal = ports.projectGoal(state.finances);
       const netWorth = ports.calculateNetWorth(state.finances);

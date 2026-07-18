@@ -1,7 +1,61 @@
 import { describe, expect, it } from "vitest";
 
+import { simulationMonth } from "../../core/domain/month";
+import type { PreparednessBandV1 } from "../../core/preparedness-assessment-v1";
+import type { BalanceLabBalanceObservationV1 } from "../balance-lab-balance-observation-v1";
 import type { BalanceLabRunResultV1 } from "../balance-lab-v1-runner";
 import { summarizeBalanceLabRunsV1 } from "../balance-lab-v1-metrics";
+
+function observation(
+  monthIndex: number,
+  scorePpm: number,
+  band: PreparednessBandV1,
+  withChallenge = false,
+): BalanceLabBalanceObservationV1 {
+  const assessment = Object.freeze({
+    version: "runtime-balance-challenge-v1" as const,
+    scorePpm: 500_000,
+    band: "meaningful" as const,
+    limitingDimension: "burn_months" as const,
+    ratios: Object.freeze({
+      impactScorePpm: 300_000,
+      burnMonthsPpm: 500_000,
+      negativeCashFlowPpm: 250_000,
+      recoveryTimePpm: 250_000,
+    }),
+  });
+  const candidate = Object.freeze({
+    templateId: "event.car-repair",
+    templateVersion: 1,
+    eventTier: "medium" as const,
+    rank: 1,
+    rejectionCodes: Object.freeze([]),
+    assessment,
+  });
+  return Object.freeze({
+    version: "balance-lab-balance-observation-v1",
+    monthIndex,
+    stage: monthIndex === -1 ? "opening" : "monthly",
+    month: simulationMonth(monthIndex === -1 ? "2026-01" : "2026-02"),
+    difficulty: "normal",
+    preparedness: Object.freeze({
+      version: "preparedness-assessment-v1",
+      riskVersion: "risk-v1",
+      asOfMonth: simulationMonth(monthIndex === -1 ? "2026-01" : "2026-02"),
+      scorePpm,
+      band,
+      components: Object.freeze({
+        liquidityPpm: scorePpm,
+        cashFlowPpm: scorePpm,
+        debtPpm: scorePpm,
+        insurancePpm: scorePpm,
+        diversificationPpm: scorePpm,
+      }),
+    }),
+    candidateChallenges: withChallenge ? Object.freeze([candidate]) : Object.freeze([]),
+    approvedChallenge: withChallenge ? candidate : null,
+  });
+}
 
 function run(
   botId: BalanceLabRunResultV1["botId"],
@@ -121,6 +175,89 @@ describe("offline balance lab v1 metrics", () => {
     const summary = summarizeBalanceLabRunsV1([run("cash-hoarder-v1", {})]);
 
     expect(summary.noEventRatePpm).toBe(0);
+    expect(summary.balanceShadow.observationCount).toBe(0);
+    expect(summary.balanceShadow.openingPreparednessMeanScorePpm).toBeNull();
+  });
+
+  it("summarizes preparedness, challenge, grouped failure, and recovery shadow evidence", () => {
+    const prepared = run("disciplined-v1", {
+      balanceObservations: [
+        observation(-1, 800_000, "resilient"),
+        observation(0, 700_000, "stable", true),
+      ],
+      recoveryObservations: [
+        { eventMonthIndex: 0, status: "recovered", observedMonths: 5 },
+      ],
+    });
+    const exposed = run("debt-heavy-lifestyle-v1", {
+      endReason: "bankruptcy",
+      unavoidableFailure: true,
+      balanceObservations: [
+        observation(-1, 200_000, "critical"),
+        observation(0, 300_000, "exposed"),
+      ],
+    });
+
+    const shadow = summarizeBalanceLabRunsV1([prepared, exposed]).balanceShadow;
+
+    expect(shadow).toMatchObject({
+      observationCount: 4,
+      openingPreparednessMeanScorePpm: 500_000,
+      terminalPreparednessMeanScorePpm: 500_000,
+      openingPreparednessBands: {
+        critical: 1,
+        exposed: 0,
+        stable: 0,
+        resilient: 1,
+      },
+      terminalPreparednessBands: {
+        critical: 0,
+        exposed: 1,
+        stable: 1,
+        resilient: 0,
+      },
+      candidateChallengeBands: {
+        light: 0,
+        meaningful: 1,
+        crisis: 0,
+        extreme: 0,
+        above_limit: 0,
+      },
+      approvedChallengeBands: {
+        light: 0,
+        meaningful: 1,
+        crisis: 0,
+        extreme: 0,
+        above_limit: 0,
+      },
+      limitingDimensions: {
+        impact_score: 0,
+        burn_months: 1,
+        negative_cash_flow: 0,
+        recovery_time: 0,
+      },
+    });
+    expect(shadow.challengeByDifficultyAndTier.normal.medium.meaningful).toBe(1);
+    expect(shadow.bankruptcyByOpeningPreparednessBand.critical).toMatchObject({
+      numerator: 1,
+      denominator: 1,
+      ratePpm: 1_000_000,
+    });
+    expect(shadow.bankruptcyByOpeningPreparednessBand.resilient).toMatchObject({
+      numerator: 0,
+      denominator: 1,
+      ratePpm: 0,
+    });
+    expect(shadow.stableResilientUnavoidableFailureRate).toMatchObject({
+      numerator: 0,
+      denominator: 1,
+      ratePpm: 0,
+    });
+    expect(shadow.nonfatalRecoveryWithinSixMonthsRate).toMatchObject({
+      numerator: 1,
+      denominator: 1,
+      ratePpm: 1_000_000,
+    });
   });
 
   it("measures prepared impact reduction only from matched relevant event outcomes", () => {

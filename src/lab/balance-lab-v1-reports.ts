@@ -115,9 +115,79 @@ const METRIC_KEYS = [
   "majorEventPacingViolationCount", "majorEventPacingSampleCount", "objectiveValues",
 ] as const;
 
+const PREPAREDNESS_BANDS = ["critical", "exposed", "stable", "resilient"] as const;
+const CHALLENGE_BANDS = ["light", "meaningful", "crisis", "extreme", "above_limit"] as const;
+const LIMITING_DIMENSIONS = [
+  "impact_score", "burn_months", "negative_cash_flow", "recovery_time",
+] as const;
+const DIFFICULTIES = ["guided", "normal", "hard"] as const;
+const EVENT_TIERS = ["micro", "medium", "large", "catastrophe", "unknown"] as const;
+
+function validateIntegerCounts(value: unknown, keys: readonly string[]): void {
+  if (!isRecord(value) || !hasExactKeys(value, keys) ||
+      !Object.values(value).every((count) => isFiniteInteger(count) && count >= 0)) {
+    invalidReport("invalid balance shadow counts");
+  }
+}
+
+function validatePreparedness(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version", "riskVersion", "asOfMonth", "scorePpm", "band", "components",
+  ]) || value.version !== "preparedness-assessment-v1" || value.riskVersion !== "risk-v1" ||
+      typeof value.asOfMonth !== "string" || !isFiniteInteger(value.scorePpm) ||
+      !PREPAREDNESS_BANDS.includes(value.band as never) || !isRecord(value.components)) {
+    invalidReport("invalid preparedness observation");
+  }
+  validateIntegerCounts(value.components, [
+    "liquidityPpm", "cashFlowPpm", "debtPpm", "insurancePpm", "diversificationPpm",
+  ]);
+}
+
+function validateChallenge(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version", "scorePpm", "band", "limitingDimension", "ratios",
+  ]) || value.version !== "runtime-balance-challenge-v1" ||
+      !isFiniteInteger(value.scorePpm) || !CHALLENGE_BANDS.includes(value.band as never) ||
+      !LIMITING_DIMENSIONS.includes(value.limitingDimension as never) ||
+      !isRecord(value.ratios)) {
+    invalidReport("invalid challenge observation");
+  }
+  validateIntegerCounts(value.ratios, [
+    "impactScorePpm", "burnMonthsPpm", "negativeCashFlowPpm", "recoveryTimePpm",
+  ]);
+}
+
+function validateCandidateChallenge(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "templateId", "templateVersion", "eventTier", "rank", "rejectionCodes", "assessment",
+  ]) || typeof value.templateId !== "string" || !isFiniteInteger(value.templateVersion) ||
+      !EVENT_TIERS.includes(value.eventTier as never) || !isFiniteInteger(value.rank) ||
+      !Array.isArray(value.rejectionCodes) ||
+      !value.rejectionCodes.every((code) => typeof code === "string")) {
+    invalidReport("invalid candidate challenge observation");
+  }
+  validateChallenge(value.assessment);
+}
+
+function validateBalanceObservation(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version", "monthIndex", "stage", "month", "difficulty", "preparedness",
+    "candidateChallenges", "approvedChallenge",
+  ]) || value.version !== "balance-lab-balance-observation-v1" ||
+      !isFiniteInteger(value.monthIndex) ||
+      !(value.stage === "opening" || value.stage === "monthly") ||
+      typeof value.month !== "string" || !DIFFICULTIES.includes(value.difficulty as never) ||
+      !Array.isArray(value.candidateChallenges)) {
+    invalidReport("invalid balance shadow observation");
+  }
+  validatePreparedness(value.preparedness);
+  for (const candidate of value.candidateChallenges) validateCandidateChallenge(candidate);
+  if (value.approvedChallenge !== null) validateCandidateChallenge(value.approvedChallenge);
+}
+
 function validateRunMetrics(value: Record<string, unknown>): void {
   if (!hasExactKeys(value, METRIC_KEYS, [
-    "totalEventPlayerCostCents", "totalEventGrossCostCents",
+    "totalEventPlayerCostCents", "totalEventGrossCostCents", "balanceObservations",
   ]) || !["active", "bankruptcy", "financial_independence", "retirement"].includes(
     value.endReason as string,
   ) || !(value.grade === null || typeof value.grade === "string") ||
@@ -163,6 +233,59 @@ function validateRunMetrics(value: Record<string, unknown>): void {
       invalidReport("invalid event impact sample");
     }
   }
+  if (value.balanceObservations !== undefined) {
+    if (!Array.isArray(value.balanceObservations)) {
+      invalidReport("invalid balance shadow observations");
+    }
+    for (const observation of value.balanceObservations) {
+      validateBalanceObservation(observation);
+    }
+  }
+}
+
+function validateBalanceShadow(value: unknown): void {
+  const keys = [
+    "observationCount", "openingPreparednessMeanScorePpm",
+    "terminalPreparednessMeanScorePpm", "openingPreparednessBands",
+    "terminalPreparednessBands", "candidateChallengeBands",
+    "approvedChallengeBands", "limitingDimensions", "challengeByDifficultyAndTier",
+    "bankruptcyByOpeningPreparednessBand", "stableResilientUnavoidableFailureRate",
+    "nonfatalRecoveryWithinSixMonthsRate",
+  ] as const;
+  if (!isRecord(value) || !hasExactKeys(value, keys) ||
+      !isFiniteInteger(value.observationCount) ||
+      !(value.openingPreparednessMeanScorePpm === null ||
+        isFiniteInteger(value.openingPreparednessMeanScorePpm)) ||
+      !(value.terminalPreparednessMeanScorePpm === null ||
+        isFiniteInteger(value.terminalPreparednessMeanScorePpm))) {
+    invalidReport("invalid balance shadow summary");
+  }
+  validateIntegerCounts(value.openingPreparednessBands, PREPAREDNESS_BANDS);
+  validateIntegerCounts(value.terminalPreparednessBands, PREPAREDNESS_BANDS);
+  validateIntegerCounts(value.candidateChallengeBands, CHALLENGE_BANDS);
+  validateIntegerCounts(value.approvedChallengeBands, CHALLENGE_BANDS);
+  validateIntegerCounts(value.limitingDimensions, LIMITING_DIMENSIONS);
+  if (!isRecord(value.challengeByDifficultyAndTier) ||
+      !hasExactKeys(value.challengeByDifficultyAndTier, DIFFICULTIES)) {
+    invalidReport("invalid challenge distribution");
+  }
+  for (const byTier of Object.values(value.challengeByDifficultyAndTier)) {
+    if (!isRecord(byTier) || !hasExactKeys(byTier, EVENT_TIERS)) {
+      invalidReport("invalid challenge tier distribution");
+    }
+    for (const byBand of Object.values(byTier)) {
+      validateIntegerCounts(byBand, CHALLENGE_BANDS);
+    }
+  }
+  if (!isRecord(value.bankruptcyByOpeningPreparednessBand) ||
+      !hasExactKeys(value.bankruptcyByOpeningPreparednessBand, PREPAREDNESS_BANDS)) {
+    invalidReport("invalid preparedness bankruptcy distribution");
+  }
+  for (const groupedRate of Object.values(value.bankruptcyByOpeningPreparednessBand)) {
+    validateRate(groupedRate);
+  }
+  validateRate(value.stableResilientUnavoidableFailureRate);
+  validateRate(value.nonfatalRecoveryWithinSixMonthsRate);
 }
 
 function validateSummary(value: Record<string, unknown>): void {
@@ -178,6 +301,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "matchedStrategyWinRatePpm", "maximumStrategyObjectiveLeadSharePpm",
     "impactReductionRatePpm", "majorEventPacingPpm", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
+    "balanceShadow",
   ] as const;
   if (!hasExactKeys(value, keys)) invalidReport("unsupported summary fields");
   validateRate(value.bankruptcyRate);
@@ -188,6 +312,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "gradeDistribution", "totalHighInterestDebtCreatedCents", "totalInterestPaidCents",
     "eventCountByTier", "meanRecoveryMonths", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
+    "balanceShadow",
   ].includes(key));
   if (!integerKeys.every((key) => isFiniteInteger(value[key])) ||
       !(value.meanRecoveryMonths === null || isFiniteInteger(value.meanRecoveryMonths)) ||
@@ -212,6 +337,7 @@ function validateSummary(value: Record<string, unknown>): void {
       invalidReport("invalid matched objective summary");
     }
   }
+  validateBalanceShadow(value.balanceShadow);
   for (const byObjective of Object.values(
     value.objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot,
   )) {
@@ -375,22 +501,42 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
       "liquid_solvency_cents",
       "interest_paid_cents",
       "forced_sale_count",
+      "opening_preparedness_score_ppm",
+      "opening_preparedness_band",
+      "terminal_preparedness_score_ppm",
+      "terminal_preparedness_band",
+      "approved_challenge_score_ppm",
+      "approved_challenge_band",
       "final_state_checksum",
     ],
-    ...report.result.runs.map((run) => [
-      run.personaId,
-      run.matchedSeed,
-      run.botId,
-      run.processedMonths,
-      run.terminal,
-      run.metrics.endReason,
-      run.metrics.grade ?? "",
-      run.metrics.displayedNetWorthCents,
-      run.metrics.liquidSolvencyCents,
-      run.metrics.interestPaidCents,
-      run.metrics.forcedSaleCount,
-      run.finalStateChecksum,
-    ]),
+    ...report.result.runs.map((run) => {
+      const observations = run.metrics.balanceObservations ?? [];
+      const opening = observations.find(({ stage }) => stage === "opening");
+      const terminal = observations.findLast(({ stage }) => stage === "monthly") ?? opening;
+      const approved = observations.findLast(
+        ({ approvedChallenge }) => approvedChallenge !== null,
+      )?.approvedChallenge ?? null;
+      return [
+        run.personaId,
+        run.matchedSeed,
+        run.botId,
+        run.processedMonths,
+        run.terminal,
+        run.metrics.endReason,
+        run.metrics.grade ?? "",
+        run.metrics.displayedNetWorthCents,
+        run.metrics.liquidSolvencyCents,
+        run.metrics.interestPaidCents,
+        run.metrics.forcedSaleCount,
+        opening?.preparedness.scorePpm ?? "",
+        opening?.preparedness.band ?? "",
+        terminal?.preparedness.scorePpm ?? "",
+        terminal?.preparedness.band ?? "",
+        approved?.assessment.scorePpm ?? "",
+        approved?.assessment.band ?? "",
+        run.finalStateChecksum,
+      ];
+    }),
   ]);
 }
 
@@ -440,6 +586,12 @@ export function renderBalanceLabMarkdownV1(report: BalanceLabReportV1): string {
     "| Runs | Production months | Bankruptcy PPM | FI PPM | Mean net worth | No-event PPM |",
     "| ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${report.summary.runCount} | ${report.summary.processedMonths} | ${report.summary.bankruptcyRate.ratePpm} | ${report.summary.fiAchievementRate.ratePpm} | ${report.summary.meanDisplayedNetWorthCents} | ${report.summary.noEventRatePpm} |`,
+    "",
+    "## Balance equation shadow",
+    "",
+    "| Observations | Mean opening preparedness | Mean terminal preparedness | Candidate challenges | Approved challenges | Stable/resilient unavoidable failure PPM | Six-month nonfatal recovery PPM |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${report.summary.balanceShadow.observationCount} | ${report.summary.balanceShadow.openingPreparednessMeanScorePpm ?? "—"} | ${report.summary.balanceShadow.terminalPreparednessMeanScorePpm ?? "—"} | ${Object.values(report.summary.balanceShadow.candidateChallengeBands).reduce((sum, count) => sum + count, 0)} | ${Object.values(report.summary.balanceShadow.approvedChallengeBands).reduce((sum, count) => sum + count, 0)} | ${report.summary.balanceShadow.stableResilientUnavoidableFailureRate.ratePpm} | ${report.summary.balanceShadow.nonfatalRecoveryWithinSixMonthsRate.ratePpm} |`,
     "",
     "## Acceptance",
     "",

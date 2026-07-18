@@ -124,11 +124,16 @@ describe("Balance Lab balance shadow observation V1", () => {
       state(),
       Object.freeze({ turn: Object.freeze({ runtimeBalanceDecision: decision() }) }),
       0,
+      [
+        { id: "event.car-repair", version: 1, severityTier: "medium" },
+        { id: "event.medical-bill", version: 1, severityTier: "large" },
+      ],
     );
 
     expect(observed.candidateChallenges).toHaveLength(2);
     expect(observed.candidateChallenges[0]).toMatchObject({
       templateId: "event.car-repair",
+      eventTier: "medium",
       assessment: {
         scorePpm: 500_000,
         band: "meaningful",
@@ -137,6 +142,7 @@ describe("Balance Lab balance shadow observation V1", () => {
     });
     expect(observed.candidateChallenges[1]).toMatchObject({
       templateId: "event.medical-bill",
+      eventTier: "large",
       rejectionCodes: ["impact_above_band"],
       assessment: { scorePpm: 1_125_000, band: "above_limit" },
     });
