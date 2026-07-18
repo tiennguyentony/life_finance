@@ -1,4 +1,5 @@
 import { sha256Canonical } from "../core/canonical";
+import { assessBeginnerChapterV1 } from "../core/beginner-chapter-v1";
 import { reduceDetailedFinanceCommand } from "../core/detailed-actions-v2";
 import type { DetailedFinancialAction } from "../core/detailed-actions-v2";
 import { moneyCents, ratePpm } from "../core/domain/money";
@@ -469,7 +470,7 @@ export function createBalanceLabProductionOwnersV1(
     },
     observeBalance: ({ state, record, monthIndex }) =>
       observeBalanceLabMonthV1(state, record, monthIndex, personalEventCatalog),
-    readAuthoritativeMetrics: ({ state, records, balanceObservations }) => {
+    readAuthoritativeMetrics: ({ state, records, processedMonths, balanceObservations }) => {
       const goal = ports.projectGoal(state.finances);
       const netWorth = ports.calculateNetWorth(state.finances);
       const liquidSolvency = ports.calculateAutomaticLiquidity(state.finances);
@@ -493,6 +494,36 @@ export function createBalanceLabProductionOwnersV1(
         : "normal";
       const pacing = measureRuntimeBalancePacingV1(history, difficulty);
       const recoveryObservations = measureRecoveryObservationsV1(records);
+      const openingObservation = balanceObservations.find(({ stage }) => stage === "opening");
+      const terminalObservation = balanceObservations.findLast(({ stage }) => stage === "monthly") ??
+        openingObservation;
+      const chapterAssessment =
+        processedMonths === 12 && openingObservation !== undefined && terminalObservation !== undefined
+          ? assessBeginnerChapterV1({
+              startMonth: openingObservation.month,
+              currentMonth: terminalObservation.month,
+              preparedness: terminalObservation.preparedness,
+              outcome: state.outcome,
+            })
+          : null;
+      const beginnerChapterEvidence = endReason === "bankruptcy" && processedMonths <= 12 &&
+          terminalObservation !== undefined
+        ? Object.freeze({
+            outcome: "bankrupt" as const,
+            completed: false,
+            observedMonths: processedMonths,
+            scorePpm: terminalObservation.preparedness.scorePpm,
+            preparednessBand: terminalObservation.preparedness.band,
+          })
+        : chapterAssessment === null
+          ? undefined
+          : Object.freeze({
+              outcome: chapterAssessment.outcome,
+              completed: chapterAssessment.completed,
+              observedMonths: processedMonths,
+              scorePpm: chapterAssessment.scorePpm,
+              preparednessBand: chapterAssessment.preparednessBand,
+            });
       return Object.freeze({
         endReason,
         grade: state.outcome?.grade ?? null,
@@ -551,6 +582,15 @@ export function createBalanceLabProductionOwnersV1(
         majorEventPacingViolationCount: pacing.violationCount,
         majorEventPacingSampleCount: pacing.sampleCount,
         balanceObservations,
+        ...(beginnerChapterEvidence === undefined ? {} : { beginnerChapterEvidence }),
+        eventDecisionEvidence: Object.freeze(
+          history.map((event) => Object.freeze({
+            eventId: event.eventId,
+            templateId: event.templateId,
+            choiceId: event.choiceId,
+            availableChoiceIds: Object.freeze([...event.availableChoiceIds]),
+          })),
+        ),
         objectiveValues: Object.freeze({
           survival: state.outcome?.kind === "bankruptcy" ? 0 : 1,
           fiProgressPpm: goal.progressPpm,

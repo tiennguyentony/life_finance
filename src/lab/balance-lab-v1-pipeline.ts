@@ -131,6 +131,7 @@ export function runBalanceLabPipelineV1(input: Readonly<{
     summary,
     config.acceptance,
     elapsedMs,
+    input.size,
   );
   const processedProductionMonths = summary.processedMonths;
   const report = buildBalanceLabReportV1({

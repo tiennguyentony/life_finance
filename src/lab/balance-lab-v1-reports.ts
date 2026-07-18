@@ -188,6 +188,7 @@ function validateBalanceObservation(value: unknown): void {
 function validateRunMetrics(value: Record<string, unknown>): void {
   if (!hasExactKeys(value, METRIC_KEYS, [
     "totalEventPlayerCostCents", "totalEventGrossCostCents", "balanceObservations",
+    "beginnerChapterEvidence", "eventDecisionEvidence",
   ]) || !["active", "bankruptcy", "financial_independence", "retirement"].includes(
     value.endReason as string,
   ) || !(value.grade === null || typeof value.grade === "string") ||
@@ -241,6 +242,31 @@ function validateRunMetrics(value: Record<string, unknown>): void {
       validateBalanceObservation(observation);
     }
   }
+  if (value.beginnerChapterEvidence !== undefined) {
+    const chapter = value.beginnerChapterEvidence;
+    if (!isRecord(chapter) || !hasExactKeys(chapter, [
+      "outcome", "completed", "observedMonths", "scorePpm", "preparednessBand",
+    ]) || !["bankrupt", "fragile", "developing", "strong"].includes(chapter.outcome as string) ||
+        typeof chapter.completed !== "boolean" || !isFiniteInteger(chapter.observedMonths) ||
+        !isFiniteInteger(chapter.scorePpm) ||
+        !PREPAREDNESS_BANDS.includes(chapter.preparednessBand as never)) {
+      invalidReport("invalid beginner chapter evidence");
+    }
+  }
+  if (value.eventDecisionEvidence !== undefined) {
+    if (!Array.isArray(value.eventDecisionEvidence)) {
+      invalidReport("invalid event decision evidence");
+    }
+    for (const decision of value.eventDecisionEvidence) {
+      if (!isRecord(decision) || !hasExactKeys(decision, [
+        "eventId", "templateId", "choiceId", "availableChoiceIds",
+      ]) || typeof decision.eventId !== "string" || typeof decision.templateId !== "string" ||
+          typeof decision.choiceId !== "string" || !Array.isArray(decision.availableChoiceIds) ||
+          !decision.availableChoiceIds.every((choiceId) => typeof choiceId === "string")) {
+        invalidReport("invalid event decision evidence");
+      }
+    }
+  }
 }
 
 function validateBalanceShadow(value: unknown): void {
@@ -250,7 +276,7 @@ function validateBalanceShadow(value: unknown): void {
     "terminalPreparednessBands", "candidateChallengeBands",
     "approvedChallengeBands", "limitingDimensions", "challengeByDifficultyAndTier",
     "bankruptcyByOpeningPreparednessBand", "stableResilientUnavoidableFailureRate",
-    "nonfatalRecoveryWithinSixMonthsRate",
+    "stableResilientBankruptcyRate", "nonfatalRecoveryWithinSixMonthsRate",
   ] as const;
   if (!isRecord(value) || !hasExactKeys(value, keys) ||
       !isFiniteInteger(value.observationCount) ||
@@ -285,7 +311,29 @@ function validateBalanceShadow(value: unknown): void {
     validateRate(groupedRate);
   }
   validateRate(value.stableResilientUnavoidableFailureRate);
+  validateRate(value.stableResilientBankruptcyRate);
   validateRate(value.nonfatalRecoveryWithinSixMonthsRate);
+}
+
+function validateBeginnerChapterSummary(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "assessmentCount", "outcomeDistribution", "completionRate", "bankruptcyByBot",
+    "medianDecisionEventCount", "decisionEventsInTargetRangeRate",
+    "uniqueDecisionTemplateCount", "meaningfulOrCrisisApprovedRate",
+    "nonfatalRecoveryWithinSixMonthsRate",
+  ]) || !isFiniteInteger(value.assessmentCount) ||
+      !(value.medianDecisionEventCount === null || isFiniteInteger(value.medianDecisionEventCount)) ||
+      !isFiniteInteger(value.uniqueDecisionTemplateCount) || !isRecord(value.bankruptcyByBot)) {
+    invalidReport("invalid beginner chapter summary");
+  }
+  validateIntegerCounts(value.outcomeDistribution, [
+    "bankrupt", "fragile", "developing", "strong",
+  ]);
+  validateRate(value.completionRate);
+  validateRate(value.decisionEventsInTargetRangeRate);
+  validateRate(value.meaningfulOrCrisisApprovedRate);
+  validateRate(value.nonfatalRecoveryWithinSixMonthsRate);
+  for (const groupedRate of Object.values(value.bankruptcyByBot)) validateRate(groupedRate);
 }
 
 function validateSummary(value: Record<string, unknown>): void {
@@ -301,7 +349,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "matchedStrategyWinRatePpm", "maximumStrategyObjectiveLeadSharePpm",
     "impactReductionRatePpm", "majorEventPacingPpm", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
-    "balanceShadow",
+    "beginnerChapter", "balanceShadow",
   ] as const;
   if (!hasExactKeys(value, keys)) invalidReport("unsupported summary fields");
   validateRate(value.bankruptcyRate);
@@ -312,7 +360,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "gradeDistribution", "totalHighInterestDebtCreatedCents", "totalInterestPaidCents",
     "eventCountByTier", "meanRecoveryMonths", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
-    "balanceShadow",
+    "beginnerChapter", "balanceShadow",
   ].includes(key));
   if (!integerKeys.every((key) => isFiniteInteger(value[key])) ||
       !(value.meanRecoveryMonths === null || isFiniteInteger(value.meanRecoveryMonths)) ||
@@ -337,6 +385,7 @@ function validateSummary(value: Record<string, unknown>): void {
       invalidReport("invalid matched objective summary");
     }
   }
+  validateBeginnerChapterSummary(value.beginnerChapter);
   validateBalanceShadow(value.balanceShadow);
   for (const byObjective of Object.values(
     value.objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot,
@@ -356,6 +405,12 @@ function validateSummary(value: Record<string, unknown>): void {
     "healthy_persona_unavoidable_failure_rate_ppm", "impact_reduction_rate_ppm",
     "major_event_pacing_ppm", "matched_strategy_win_rate_ppm",
     "maximum_strategy_objective_lead_share_ppm",
+    "beginner_chapter_completion_rate_ppm", "beginner_bankruptcy_rate_ppm",
+    "average_beginner_bankruptcy_rate_ppm", "reckless_bankruptcy_rate_ppm",
+    "stable_resilient_bankruptcy_rate_ppm",
+    "beginner_nonfatal_recovery_within_six_months_rate_ppm",
+    "beginner_meaningful_or_crisis_approved_rate_ppm",
+    "beginner_median_decision_event_count",
   ];
   if (!hasExactKeys(value.acceptanceEvidence, acceptanceMetricKeys)) {
     invalidReport("invalid acceptance evidence metrics");
@@ -455,13 +510,18 @@ export function decodeBalanceLabReportV1(value: unknown): BalanceLabReportV1 {
     if (!isRecord(item) || !hasExactKeys(item, [
       "id", "metric", "status", "observed", "comparator", "threshold", "numerator",
       "denominator", "minimumSamples", "evidenceIds",
-    ]) || !Array.isArray(item.evidenceIds) ||
+    ], ["tierIds"]) || !Array.isArray(item.evidenceIds) ||
         typeof item.id !== "string" || typeof item.metric !== "string" ||
         !["pass", "fail", "insufficient_sample"].includes(item.status as string) ||
         !["at_least", "at_most", "equals"].includes(item.comparator as string) ||
         ![item.observed, item.threshold, item.numerator, item.denominator, item.minimumSamples]
           .every(isFiniteInteger) ||
-        !item.evidenceIds.every((entry) => typeof entry === "string")) {
+        !item.evidenceIds.every((entry) => typeof entry === "string") ||
+        (item.tierIds !== undefined && (
+          !Array.isArray(item.tierIds) ||
+          !item.tierIds.every((tierId) =>
+            ["beginner", "quick", "medium", "large"].includes(tierId as string))
+        ))) {
       invalidReport("invalid acceptance evidence");
     }
   }
@@ -507,6 +567,10 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
       "terminal_preparedness_band",
       "approved_challenge_score_ppm",
       "approved_challenge_band",
+      "beginner_chapter_outcome",
+      "beginner_chapter_completed",
+      "decision_event_count",
+      "unique_decision_template_count",
       "final_state_checksum",
     ],
     ...report.result.runs.map((run) => {
@@ -516,6 +580,9 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
       const approved = observations.findLast(
         ({ approvedChallenge }) => approvedChallenge !== null,
       )?.approvedChallenge ?? null;
+      const decisions = (run.metrics.eventDecisionEvidence ?? []).filter(
+        ({ availableChoiceIds }) => availableChoiceIds.length >= 2,
+      );
       return [
         run.personaId,
         run.matchedSeed,
@@ -534,6 +601,10 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
         terminal?.preparedness.band ?? "",
         approved?.assessment.scorePpm ?? "",
         approved?.assessment.band ?? "",
+        run.metrics.beginnerChapterEvidence?.outcome ?? "",
+        run.metrics.beginnerChapterEvidence?.completed ?? "",
+        decisions.length,
+        new Set(decisions.map(({ templateId }) => templateId)).size,
         run.finalStateChecksum,
       ];
     }),
@@ -592,6 +663,12 @@ export function renderBalanceLabMarkdownV1(report: BalanceLabReportV1): string {
     "| Observations | Mean opening preparedness | Mean terminal preparedness | Candidate challenges | Approved challenges | Stable/resilient unavoidable failure PPM | Six-month nonfatal recovery PPM |",
     "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${report.summary.balanceShadow.observationCount} | ${report.summary.balanceShadow.openingPreparednessMeanScorePpm ?? "—"} | ${report.summary.balanceShadow.terminalPreparednessMeanScorePpm ?? "—"} | ${Object.values(report.summary.balanceShadow.candidateChallengeBands).reduce((sum, count) => sum + count, 0)} | ${Object.values(report.summary.balanceShadow.approvedChallengeBands).reduce((sum, count) => sum + count, 0)} | ${report.summary.balanceShadow.stableResilientUnavoidableFailureRate.ratePpm} | ${report.summary.balanceShadow.nonfatalRecoveryWithinSixMonthsRate.ratePpm} |`,
+    "",
+    "## Beginner chapter",
+    "",
+    "| Assessments | Bankrupt | Fragile | Developing | Strong | Completion PPM | Median decisions | Unique decision templates | Meaningful/crisis PPM |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${report.summary.beginnerChapter.assessmentCount} | ${report.summary.beginnerChapter.outcomeDistribution.bankrupt} | ${report.summary.beginnerChapter.outcomeDistribution.fragile} | ${report.summary.beginnerChapter.outcomeDistribution.developing} | ${report.summary.beginnerChapter.outcomeDistribution.strong} | ${report.summary.beginnerChapter.completionRate.ratePpm} | ${report.summary.beginnerChapter.medianDecisionEventCount ?? "—"} | ${report.summary.beginnerChapter.uniqueDecisionTemplateCount} | ${report.summary.beginnerChapter.meaningfulOrCrisisApprovedRate.ratePpm} |`,
     "",
     "## Acceptance",
     "",
