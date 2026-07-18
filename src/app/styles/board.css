@@ -20,7 +20,7 @@
 .board-loading {
   display: grid;
   place-items: center;
-  height: 100%;
+  min-height: 100dvh;
   color: var(--muted);
   font-size: 1.05rem;
   font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
@@ -376,6 +376,71 @@
 .board-take-action:active {
   transform: translateY(2px);
   box-shadow: 0 6px 0 #e3a91f, 0 12px 20px rgb(152 98 15 / 24%);
+}
+
+.board-take-action:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.35);
+  opacity: 0.72;
+  transform: none;
+}
+
+.board-event-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 20;
+  display: grid;
+  width: min(92vw, 34rem);
+  gap: 0.8rem;
+  padding: clamp(1.4rem, 3vw, 2.2rem);
+  border: 3px solid var(--ink);
+  border-radius: var(--radius, 26px);
+  background: rgb(255 253 246 / 97%);
+  box-shadow: 10px 12px 0 var(--ink), 0 30px 90px rgb(23 35 28 / 28%);
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.board-event-dialog > span {
+  color: var(--danger);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.board-event-dialog h2,
+.board-event-dialog p {
+  margin: 0;
+}
+
+.board-event-dialog h2 {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  line-height: 1;
+}
+
+.board-event-dialog > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+}
+
+.board-event-dialog button {
+  min-height: 3rem;
+  padding: 0.7rem 0.9rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--lime);
+  box-shadow: 3px 4px 0 var(--ink);
+  font-weight: 900;
+}
+
+.board-event-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.58;
 }
 
 /* ---------------------------- island labels ---------------------------- */

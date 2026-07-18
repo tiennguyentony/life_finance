@@ -9,7 +9,7 @@ import {
   migrateGameStateV1ToV2,
   type GameStateV2,
 } from "../../../core/game-state-v2";
-import type { V2Repository } from "../../api/v2/repository-port";
+import type { V2Repository } from "../../api/run-repository-port";
 import {
   SCENARIO_DIRECTOR_AI_RESPONSE_V1,
 } from "../../../core/scenario-director-ai-adapter-v2";

@@ -15,10 +15,10 @@ describe("server-only AI runtime composition", () => {
     expect(source).toContain("getDatabaseConnection");
 
     const routeFiles = [
-      "../../../app/api/v1/openapi.json/route.ts",
-      "../../../app/api/v1/runs/route.ts",
-      "../../../app/api/v1/runs/[runId]/route.ts",
-      "../../../app/api/v1/runs/[runId]/commands/route.ts",
+      "../../../app/api/openapi.json/route.ts",
+      "../../../app/api/runs/route.ts",
+      "../../../app/api/runs/[runId]/route.ts",
+      "../../../app/api/runs/[runId]/commands/route.ts",
     ];
     for (const routeFile of routeFiles) {
       expect(readFileSync(new URL(routeFile, import.meta.url), "utf8")).not.toContain(

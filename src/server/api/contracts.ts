@@ -1,6 +1,9 @@
 import { extendZodWithOpenApi } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 
+// Internal schema-1 persistence compatibility. Browser contracts live in
+// src/contracts/api and must never import this module.
+
 extendZodWithOpenApi(z);
 
 const safeInteger = z.int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);

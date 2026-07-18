@@ -3,13 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { sha256Canonical } from "../../../core/canonical";
 import { decodePersistedGameState } from "../../../core/persisted-game-state";
 import { onboardingDraftForPersonaV1 } from "../../../core/onboarding-personas-v1";
-import { OnboardingApiServiceV1 } from "../onboarding-service-v1";
-import { onboardingReviewResponseV1Schema } from "../onboarding-contracts-v1";
-import { generateOpenApiDocument } from "../openapi";
+import { OnboardingService } from "../onboarding-service";
+import { onboardingReviewResponseV1Schema } from "@/contracts/api/onboarding";
 import {
-  handleOnboardingConfirmV1,
-  handleOnboardingReviewV1,
-} from "../onboarding-http-v1";
+  handleCreateRun,
+  handleReviewOnboarding,
+} from "../current-http";
 
 function repositoryFixture() {
   const persisted: unknown[] = [];
@@ -29,10 +28,10 @@ function repositoryFixture() {
   return { repository: { createRunV2 }, createRunV2, persisted };
 }
 
-describe("Onboarding API service v1", () => {
+describe("Onboarding service", () => {
   it("strictly validates the complete review response contract", () => {
     const fixture = repositoryFixture();
-    const service = new OnboardingApiServiceV1(
+    const service = new OnboardingService(
       fixture.repository,
       () => "player.onboarding.contract",
     );
@@ -48,26 +47,9 @@ describe("Onboarding API service v1", () => {
     ).toBe(false);
   });
 
-  it("publishes concrete onboarding response fields in OpenAPI", () => {
-    const document = generateOpenApiDocument();
-    const reviewResponse = JSON.stringify(
-      document.paths?.["/api/v2/onboarding/review"]?.post?.responses?.["200"],
-    );
-    const parseResponse = JSON.stringify(
-      document.paths?.["/api/v2/onboarding/parse"]?.post?.responses?.["200"],
-    );
-
-    for (const field of ["normalized", "assumptions", "provenance", "preview", "reviewChecksum"]) {
-      expect(reviewResponse).toContain(`\"${field}\"`);
-    }
-    for (const field of ["financialCandidates", "filingStatusCandidate", "clarificationQuestion"]) {
-      expect(parseResponse).toContain(`\"${field}\"`);
-    }
-  });
-
   it("reviews without writing and rejects a stale confirmation before repository access", async () => {
     const fixture = repositoryFixture();
-    const service = new OnboardingApiServiceV1(
+    const service = new OnboardingService(
       fixture.repository,
       () => "player.onboarding.api",
     );
@@ -85,7 +67,7 @@ describe("Onboarding API service v1", () => {
 
   it("integrates reviewed input, scenario catalog, native state, and strict persistence", async () => {
     const fixture = repositoryFixture();
-    const service = new OnboardingApiServiceV1(
+    const service = new OnboardingService(
       fixture.repository,
       () => "player.onboarding.api",
     );
@@ -117,14 +99,15 @@ describe("Onboarding API service v1", () => {
 
   it("runs the strict HTTP review then confirm flow without trusting client state", async () => {
     const fixture = repositoryFixture();
-    const service = new OnboardingApiServiceV1(
+    const service = new OnboardingService(
       fixture.repository,
       () => "player.onboarding.http",
     );
     const draft = onboardingDraftForPersonaV1("nurse", "http-onboarding-seed");
-    const reviewResponse = await handleOnboardingReviewV1(
-      new Request("http://local/api/v2/onboarding/review", {
+    const reviewResponse = await handleReviewOnboarding(
+      new Request("http://local/api/onboarding/review", {
         method: "POST",
+        headers: { Origin: "http://local" },
         body: JSON.stringify({ draft }),
       }),
       service,
@@ -137,9 +120,10 @@ describe("Onboarding API service v1", () => {
     expect(review.status).toBe("ready");
     expect(fixture.createRunV2).not.toHaveBeenCalled();
 
-    const confirmResponse = await handleOnboardingConfirmV1(
-      new Request("http://local/api/v2/runs/from-onboarding", {
+    const confirmResponse = await handleCreateRun(
+      new Request("http://local/api/runs", {
         method: "POST",
+        headers: { Origin: "http://local" },
         body: JSON.stringify({
           draft,
           reviewChecksum: review.reviewChecksum,
@@ -151,9 +135,10 @@ describe("Onboarding API service v1", () => {
     expect(confirmResponse.status).toBe(400);
     expect(fixture.createRunV2).not.toHaveBeenCalled();
 
-    const accepted = await handleOnboardingConfirmV1(
-      new Request("http://local/api/v2/runs/from-onboarding", {
+    const accepted = await handleCreateRun(
+      new Request("http://local/api/runs", {
         method: "POST",
+        headers: { Origin: "http://local" },
         body: JSON.stringify({ draft, reviewChecksum: review.reviewChecksum }),
       }),
       service,
@@ -163,20 +148,22 @@ describe("Onboarding API service v1", () => {
       JSON.stringify(await accepted.clone().json()),
     ).toBe(201);
     expect(fixture.createRunV2).toHaveBeenCalledOnce();
-    const body = (await accepted.json()) as { state: { gameplay: { initialization?: unknown } } };
-    expect(body.state.gameplay.initialization).toBeDefined();
+    const body = (await accepted.json()) as { run: { runId: string } };
+    expect(body.run.runId).toBe("7d594678-6c69-4f54-a3c8-b4fdff255f99");
+    expect(JSON.stringify(body)).not.toContain("accessSecret");
   });
 
   it("rejects client-declared AI provenance without a server-verifiable binding", async () => {
     const fixture = repositoryFixture();
-    const service = new OnboardingApiServiceV1(
+    const service = new OnboardingService(
       fixture.repository,
       () => "player.onboarding.spoof",
     );
     const draft = onboardingDraftForPersonaV1("software", "spoof-ai-provenance");
-    const response = await handleOnboardingReviewV1(
-      new Request("http://local/api/v2/onboarding/review", {
+    const response = await handleReviewOnboarding(
+      new Request("http://local/api/onboarding/review", {
         method: "POST",
+        headers: { Origin: "http://local" },
         body: JSON.stringify({
           draft: {
             ...draft,

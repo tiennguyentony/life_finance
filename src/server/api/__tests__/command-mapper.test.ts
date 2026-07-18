@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapPlayerCommand } from "../v2/command-mapper";
+import { mapPlayerCommand } from "../command-mapper";
 
 describe("v2 player command mapping", () => {
   it("injects the frozen action policy and ignores client authority over sale cost", () => {

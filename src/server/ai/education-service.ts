@@ -4,7 +4,7 @@ import { sha256Canonical } from "../../core/canonical";
 import { simulationMonth } from "../../core/domain/month";
 import type { RecordLearningInteractionV2Command } from "../../core/learning-interaction-v2";
 import { getEducationConcept } from "../../data/education-content";
-import type { V2Repository } from "../api/v2/repository-port";
+import type { V2Repository } from "../api/run-repository-port";
 import { AiRoleClient } from "./client";
 import { AI_CONTRACT_VERSION } from "./contracts";
 import {

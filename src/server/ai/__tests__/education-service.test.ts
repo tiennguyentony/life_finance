@@ -4,7 +4,7 @@ import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { createInitialGameState } from "../../../core/game-state";
 import { migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
 import { recordLearningInteractionV2 } from "../../../core/learning-interaction-v2";
-import type { V2Repository } from "../../api/v2/repository-port";
+import type { V2Repository } from "../../api/run-repository-port";
 import { AiEducationService } from "../education-service";
 
 function initialState() {

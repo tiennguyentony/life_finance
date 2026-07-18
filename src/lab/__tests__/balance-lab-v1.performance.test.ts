@@ -20,7 +20,7 @@ import { createBalanceLabPersonaStateV1 } from "../../data/balance-lab-personas-
 import {
   buildMonthlyTaxEvidenceFromPolicyEngineV1,
   buildTaxRequest,
-} from "../../server/api/v2/tax-orchestrator";
+} from "../../server/api/tax-orchestrator";
 import type { TaxCalculationResult } from "../../server/tax/contracts";
 import {
   BALANCE_LAB_PRODUCTION_PORTS_V1,

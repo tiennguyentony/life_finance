@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { createInitialGameState } from "../../../core/game-state";
 import { finalizeGameStateV2, migrateGameStateV1ToV2 } from "../../../core/game-state-v2";
-import type { V2Repository } from "../../api/v2/repository-port";
+import type { V2Repository } from "../../api/run-repository-port";
 import { AiDebriefService } from "../debrief-service";
 
 function state(terminal: boolean) {

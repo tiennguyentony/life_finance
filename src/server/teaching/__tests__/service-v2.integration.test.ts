@@ -18,8 +18,8 @@ import {
 } from "../../../core/teaching-checkpoint-owner-v2";
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import { simulationMonth } from "../../../core/domain/month";
-import { TeachingCheckpointPanelV2 } from "../../../features/play/teaching-checkpoint-panel-v2";
-import { TeachingMomentPanelV2 } from "../../../features/play/teaching-moment-panel-v2";
+import { TeachingCheckpointPanelV2 } from "../../../features/game/teaching-checkpoint-panel";
+import { TeachingMomentPanelV2 } from "../../../features/game/teaching-moment-panel";
 import {
   handleGetTeachingCheckpointV2,
   handlePostTeachingDebriefV2,

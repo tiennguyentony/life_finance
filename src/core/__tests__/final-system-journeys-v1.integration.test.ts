@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AiWorldDirectorService } from "../../server/ai/world-director-service";
 import { AI_PRIVACY_NOTICE_VERSION } from "../../server/ai/privacy-notice";
-import type { V2Repository } from "../../server/api/v2/repository-port";
+import type { V2Repository } from "../../server/api/run-repository-port";
 import { TeachingRewriteServiceV2 } from "../../server/teaching/rewrite-service-v2";
 import { sha256Canonical } from "../canonical";
 import { moneyCents, ratePpm } from "../domain/money";

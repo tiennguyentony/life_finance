@@ -4,13 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
-import { useGame } from "@/components/game-provider";
+import { useOnboarding } from "./onboarding-provider";
 import { getPersonas } from "@/services/player.service";
 import type { Persona } from "@/types/game";
 
 export function PersonaGallery() {
   const router = useRouter();
-  const { choosePersona } = useGame();
+  const { choosePersona } = useOnboarding();
   const [personas, setPersonas] = useState<readonly Persona[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);

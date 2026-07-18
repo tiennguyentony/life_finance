@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { generatePlayer, getPersonas } from "../player.service";
+import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
+import { projectRunView } from "@/application/game/run-view";
+import { prepareOnboardingReviewV1 } from "@/core/onboarding-v1";
+
+import { createRunFromProfile, getPersonas } from "../player.service";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("player service", () => {
-  it("returns the three playable personas through the async boundary", async () => {
-    const personas = await getPersonas({ delayMs: 0 });
-
+  it("returns the three guided personas without a mock delay", async () => {
+    const personas = await getPersonas();
     expect(personas.map((persona) => persona.name)).toEqual([
       "Burnt-out Junior Developer",
       "Debt-free Educator",
@@ -13,42 +18,27 @@ describe("player service", () => {
     ]);
   });
 
-  it("returns a mocked player shaped by the submitted profile", async () => {
-    const result = await generatePlayer(
-      {
-        personaId: "junior-developer",
-        name: "Mina",
-        age: "27",
-        location: "Seattle, WA",
-        goal: "Build a six-month safety net",
-      },
-      { delayMs: 0 },
-    );
+  it("reviews and creates a backend run from the submitted profile", async () => {
+    const run = projectRunView(currentRunState());
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      paths.push(String(input));
+      if (String(input) === "/api/onboarding/review") {
+        const body = JSON.parse(String(init?.body)) as { draft: Parameters<typeof prepareOnboardingReviewV1>[0] };
+        return Response.json(prepareOnboardingReviewV1(body.draft));
+      }
+      return Response.json({ run, stateChecksum: "a".repeat(64) }, { status: 201 });
+    }));
 
-    expect(result.player).toMatchObject({
+    const result = await createRunFromProfile({
+      personaId: "junior-developer",
       name: "Mina",
-      age: 27,
+      age: "27",
       location: "Seattle, WA",
-      career: "Junior developer",
+      goal: "Build a six-month safety net",
     });
-    expect(result.scenario.player.name).toBe("Mina");
-    expect(result.scenario.scenarioId).toBe("big-city-survivor");
-  });
 
-  it("falls back to safe display values for incomplete profile input", async () => {
-    const result = await generatePlayer(
-      {
-        personaId: "educator",
-        name: "   ",
-        age: "not-a-number",
-        location: "",
-        goal: "",
-      },
-      { delayMs: 0 },
-    );
-
-    expect(result.player.name).toBe("Player One");
-    expect(result.player.age).toBe(28);
-    expect(result.player.location).toBe("Portland, OR");
+    expect(paths).toEqual(["/api/onboarding/review", "/api/runs"]);
+    expect(result).toMatchObject({ runId: "run.current" });
   });
 });

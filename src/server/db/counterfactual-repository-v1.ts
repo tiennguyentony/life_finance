@@ -18,7 +18,7 @@ import type { GameStateV2 } from "../../core/game-state-v2";
 import type { MonthlyTurnV2Record } from "../../core/monthly-turn-v2";
 import type { RunSecretCodec } from "../auth/run-secret";
 import { fingerprintAnnualTaxContext } from "../tax/context-cache";
-import { buildTaxRequest } from "../api/v2/tax-orchestrator";
+import { buildTaxRequest } from "../api/tax-orchestrator";
 import type { LifeFinanceDatabase } from "./client";
 import { loadVerifiedRunReplayHistoryV1 } from "./causal-history-repository-v1";
 import type { VerifiedRunReplayHistoryV1 } from "./causal-history-repository-v1";

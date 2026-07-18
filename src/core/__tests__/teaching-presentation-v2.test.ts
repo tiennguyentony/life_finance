@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { getEducationConcept } from "../../data/education-content";
-import { TeachingMomentPanelV2 } from "../../features/play/teaching-moment-panel-v2";
+import { TeachingMomentPanelV2 } from "../../features/game/teaching-moment-panel";
 import type { TeachingMomentResponseV2 } from "../../server/teaching/service-v2";
 import { simulationMonth } from "../domain/month";
 import { createTeachingFactPacketV2 } from "../teaching-facts-v2";
