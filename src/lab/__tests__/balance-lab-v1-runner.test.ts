@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../../core/canonical";
+import { simulationMonth } from "../../core/domain/month";
 import { advanceEventEpochsV1 } from "../../core/world-random-v1";
 import {
   OfflineBalanceLabV1Error,
@@ -32,6 +33,7 @@ const spec: BalanceLabRunSpecV1 = {
 function owners(
   divergeWorldForRandom = false,
   bankruptcyMode: "none" | "random_only" | "all" = "none",
+  observeBalance = false,
 ): BalanceLabProductionOwnersV1<State, Record> {
   return {
     createOpeningState: ({ personaId, matchedSeed }) =>
@@ -62,7 +64,39 @@ function owners(
         terminal: false,
       };
     },
-    readAuthoritativeMetrics: ({ state, processedMonths }) => ({
+    ...(observeBalance
+      ? {
+          observeBalance: ({ state, monthIndex }: {
+            state: State;
+            record: Record | undefined;
+            monthIndex: number;
+          }) =>
+            Object.freeze({
+              version: "balance-lab-balance-observation-v1" as const,
+              monthIndex,
+              stage: monthIndex === -1 ? "opening" as const : "monthly" as const,
+              month: simulationMonth(`2026-${String(Math.min(12, state.month + 1)).padStart(2, "0")}`),
+              difficulty: "normal" as const,
+              preparedness: Object.freeze({
+                version: "preparedness-assessment-v1" as const,
+                riskVersion: "risk-v1" as const,
+                asOfMonth: simulationMonth("2026-01"),
+                scorePpm: 500_000,
+                band: "stable" as const,
+                components: Object.freeze({
+                  liquidityPpm: 500_000,
+                  cashFlowPpm: 500_000,
+                  debtPpm: 500_000,
+                  insurancePpm: 500_000,
+                  diversificationPpm: 500_000,
+                }),
+              }),
+              candidateChallenges: Object.freeze([]),
+              approvedChallenge: null,
+            }),
+        }
+      : {}),
+    readAuthoritativeMetrics: ({ state, processedMonths, balanceObservations }) => ({
       endReason: bankruptcyMode === "all" ||
           (bankruptcyMode === "random_only" && state.botId === "random-control-v1")
         ? "bankruptcy"
@@ -86,6 +120,7 @@ function owners(
           ? 1
           : 0,
       objectiveValues: { displayedNetWorthCents: state.botId === "disciplined-v1" ? 2_000_000 : 1_000_000 },
+      ...(observeBalance ? { balanceObservations } : {}),
     }),
   };
 }
@@ -110,6 +145,21 @@ describe("offline balance lab v1 runner", () => {
       expect(cohort[0]!.worldEvidence).toEqual(cohort[1]!.worldEvidence);
       expect(cohort[0]!.initialWorldRandom).toEqual(cohort[1]!.initialWorldRandom);
     }
+  });
+
+  it("collects opening and monthly shadow observations without changing outcomes or random state", () => {
+    const withoutShadow = runOfflineBalanceLabV1(spec, owners());
+    const withShadow = runOfflineBalanceLabV1(spec, owners(false, "none", true));
+
+    expect(withShadow.runs[0]!.metrics.balanceObservations).toHaveLength(4);
+    expect(withShadow.runs[0]!.metrics.balanceObservations?.map(({ monthIndex }) => monthIndex))
+      .toEqual([-1, 0, 1, 2]);
+    expect(withShadow.runs.map(({ finalStateChecksum }) => finalStateChecksum))
+      .toEqual(withoutShadow.runs.map(({ finalStateChecksum }) => finalStateChecksum));
+    expect(withShadow.runs.map(({ finalWorldRandom }) => finalWorldRandom))
+      .toEqual(withoutShadow.runs.map(({ finalWorldRandom }) => finalWorldRandom));
+    expect(withShadow.runs.map(({ botRandomFinal }) => botRandomFinal))
+      .toEqual(withoutShadow.runs.map(({ botRandomFinal }) => botRandomFinal));
   });
 
   it("fails instead of publishing an unmatched world comparison", () => {

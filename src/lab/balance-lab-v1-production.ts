@@ -39,6 +39,7 @@ import type {
   BalanceLabWorldEvidenceV1,
 } from "./balance-lab-v1-runner";
 import type { BalanceLabTaxEvidenceSourceV1 } from "./balance-lab-v1-tax-evidence";
+import { observeBalanceLabMonthV1 } from "./balance-lab-balance-observation-v1";
 
 export const BALANCE_LAB_PRODUCTION_PORTS_V1 = Object.freeze({
   setStrategy: setRecurringStrategy,
@@ -466,7 +467,9 @@ export function createBalanceLabProductionOwnersV1(
         botIntents: Object.freeze(botIntents),
       });
     },
-    readAuthoritativeMetrics: ({ state, records }) => {
+    observeBalance: ({ state, record, monthIndex }) =>
+      observeBalanceLabMonthV1(state, record, monthIndex),
+    readAuthoritativeMetrics: ({ state, records, balanceObservations }) => {
       const goal = ports.projectGoal(state.finances);
       const netWorth = ports.calculateNetWorth(state.finances);
       const liquidSolvency = ports.calculateAutomaticLiquidity(state.finances);
@@ -547,6 +550,7 @@ export function createBalanceLabProductionOwnersV1(
         ),
         majorEventPacingViolationCount: pacing.violationCount,
         majorEventPacingSampleCount: pacing.sampleCount,
+        balanceObservations,
         objectiveValues: Object.freeze({
           survival: state.outcome?.kind === "bankruptcy" ? 0 : 1,
           fiProgressPpm: goal.progressPpm,

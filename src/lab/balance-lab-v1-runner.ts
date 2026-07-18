@@ -17,6 +17,7 @@ import {
   type BalanceLabDifficultyV1,
   type BalanceLabRunSpecV1,
 } from "./balance-lab-v1-contracts";
+import type { BalanceLabBalanceObservationV1 } from "./balance-lab-balance-observation-v1";
 
 export type BalanceLabWorldEvidenceV1 = Readonly<{
   monthIndex: number;
@@ -71,6 +72,7 @@ export type BalanceLabAuthoritativeMetricsV1 = Readonly<{
   }>[];
   majorEventPacingViolationCount?: number;
   majorEventPacingSampleCount?: number;
+  balanceObservations?: readonly BalanceLabBalanceObservationV1[];
   /** Objective values are produced by their production owner, never recalculated by the lab. */
   objectiveValues: Readonly<Record<string, number>>;
 }>;
@@ -104,11 +106,17 @@ export type BalanceLabProductionOwnersV1<State, MonthlyRecord> = Readonly<{
     nextBotRandom?: RandomState | undefined;
     botIntents?: readonly BalanceLabBotIntentEvidenceV1[];
   }>;
+  observeBalance?(input: Readonly<{
+    state: State;
+    record: MonthlyRecord | undefined;
+    monthIndex: number;
+  }>): BalanceLabBalanceObservationV1;
   readAuthoritativeMetrics(input: Readonly<{
     state: State;
     records: readonly MonthlyRecord[];
     processedMonths: number;
     terminal: boolean;
+    balanceObservations: readonly BalanceLabBalanceObservationV1[];
   }>): BalanceLabAuthoritativeMetricsV1;
 }>;
 
@@ -265,6 +273,9 @@ function validateMetrics(
     objectiveValues: Object.freeze({ ...metrics.objectiveValues }),
     bankruptcyResidualShortfallCents:
       metrics.bankruptcyResidualShortfallCents ?? 0,
+    ...(metrics.balanceObservations === undefined
+      ? {}
+      : { balanceObservations: Object.freeze([...metrics.balanceObservations]) }),
   });
 }
 
@@ -360,6 +371,14 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
         if (openingStateChecksum !== matchedOpeningChecksum) {
           ownerViolation("matched bots did not receive the same opening production state");
         }
+        const balanceObservations: BalanceLabBalanceObservationV1[] = [];
+        if (owners.observeBalance !== undefined) {
+          balanceObservations.push(owners.observeBalance({
+            state,
+            record: undefined,
+            monthIndex: -1,
+          }));
+        }
 
         let botRandom = botId === "random-control-v1"
           ? deriveBalanceLabBotRandomStateV1({ experimentId: spec.experimentId, personaId, matchedSeed })
@@ -389,6 +408,13 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
           state = transition.state;
           worldRandom = decodeWorldRandomStateV1(transition.worldRandom);
           records.push(transition.record);
+          if (owners.observeBalance !== undefined) {
+            balanceObservations.push(owners.observeBalance({
+              state,
+              record: transition.record,
+              monthIndex,
+            }));
+          }
           worldEvidence.push(validateWorldEvidence(transition.worldEvidence, monthIndex, worldRandom));
           botRandom = transition.nextBotRandom ?? botRandom;
           botIntents.push(...(
@@ -408,6 +434,7 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
             records: Object.freeze([...records]),
             processedMonths: records.length,
             terminal,
+            balanceObservations: Object.freeze([...balanceObservations]),
           }),
           records.length,
         );
