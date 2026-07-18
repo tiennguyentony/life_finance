@@ -20,7 +20,9 @@ import { PlanningPanel } from "./planning-panel";
 import type { HopRequest } from "./sprout-3d";
 import {
   boardMonthRecoveryMessage,
+  boardRecoveryPlanLabel,
   commitBoardTurn,
+  finishBoardMonthAfterRefresh,
   recoverBoardTurnFailure,
   type BoardTurnFailurePhase,
   type BoardTurnRecoveryResult,
@@ -186,9 +188,10 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     opening: RunViewWire,
     ending: RunViewWire,
     plan: BoardPlan,
+    planLabel = plan.label,
   ) => {
     setRun(ending);
-    setMonthResult(boardMonthResult(opening, ending, plan.label));
+    setMonthResult(boardMonthResult(opening, ending, planLabel));
     setSelectedDestinationId(null);
     setSelectedPlanId(null);
     setPlanningError(null);
@@ -206,7 +209,12 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     failure: PendingTurnFailure,
   ) => {
     if (outcome.kind === "completed") {
-      completeMonth(outcome.opening, outcome.run, failure.plan);
+      completeMonth(
+        outcome.opening,
+        outcome.run,
+        failure.plan,
+        boardRecoveryPlanLabel(outcome, failure.plan.label),
+      );
       return;
     }
 
@@ -259,21 +267,30 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   const finishSavedMonth = async (plan: BoardPlan) => {
     if (!run) return;
     const recoveryOpening = turnOpeningRef.current ?? run;
-    let latestRun = run;
+    const latestRun = run;
     setBusy(true);
     setPlanningError(null);
     try {
       const pendingFailure = pendingFailureRef.current;
       if (refreshRequired && pendingFailure) {
-        const outcome = await recoverFailure(pendingFailure);
-        if (outcome.kind !== "finish_month") {
-          adoptRecovery(outcome, pendingFailure);
-          return;
-        }
-        latestRun = outcome.run;
-        setRun(latestRun);
-        setRefreshRequired(false);
-        pendingFailureRef.current = null;
+        const client = new LifeFinanceClient();
+        const outcome = await finishBoardMonthAfterRefresh({
+          client,
+          opening: recoveryOpening,
+          failedRun: pendingFailure.failedRun,
+          error: pendingFailure.error,
+          commandId: `board.month.recovery.${crypto.randomUUID()}`,
+        });
+        const nextFailure = outcome.kind === "completed"
+          ? pendingFailure
+          : {
+              ...pendingFailure,
+              phase: "month" as const,
+              error: outcome.error,
+              failedRun: outcome.run,
+            };
+        adoptRecovery(outcome, nextFailure);
+        return;
       }
 
       const response = await new LifeFinanceClient().submitCommand(latestRun.runId, {
@@ -316,6 +333,11 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         );
     if (!plan || plan.disabledReason !== null) return;
 
+    if (finishMonthOnly) {
+      await finishSavedMonth(plan);
+      return;
+    }
+
     if (refreshRequired) {
       const pendingFailure = pendingFailureRef.current;
       if (!pendingFailure) return;
@@ -326,11 +348,6 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       } finally {
         setBusy(false);
       }
-      return;
-    }
-
-    if (finishMonthOnly) {
-      await finishSavedMonth(plan);
       return;
     }
 
