@@ -156,13 +156,32 @@
   gap: 0.1rem;
   padding: 0.5rem 1.1rem;
   min-width: 122px;
+  /* Faint tone wash over the cream so the money cards read as game tokens
+   * rather than a generic fintech dashboard; the tint is set per tone. */
+  background:
+    linear-gradient(var(--stat-wash, transparent), var(--stat-wash, transparent)),
+    rgb(255 253 246 / 92%);
 }
 
+/* A small coin/chip glyph in the stat's tone sits before the label. */
 .board-stat dt {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
+}
+
+.board-stat dt::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--stat-token, var(--muted));
+  border: 1.5px solid var(--ink);
+  flex-shrink: 0;
 }
 
 .board-stat dd {
@@ -174,6 +193,8 @@
 
 .board-stat-lime {
   border-color: var(--lime-dark);
+  --stat-token: var(--lime);
+  --stat-wash: rgb(184 237 75 / 12%);
 }
 
 .board-stat-lime dd {
@@ -184,6 +205,8 @@
 
 .board-stat-blue {
   border-color: var(--blue);
+  --stat-token: var(--blue);
+  --stat-wash: rgb(120 203 209 / 14%);
 }
 
 .board-stat-blue dd {
@@ -194,6 +217,8 @@
 
 .board-stat-coral {
   border-color: var(--coral);
+  --stat-token: var(--coral);
+  --stat-wash: rgb(255 119 84 / 12%);
 }
 
 .board-stat-coral dd {
