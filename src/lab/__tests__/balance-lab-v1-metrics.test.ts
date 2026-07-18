@@ -310,6 +310,120 @@ describe("offline balance lab v1 metrics", () => {
     });
   });
 
+  it("aggregates beginner outcomes and only counts events with meaningful choices", () => {
+    const decision = (
+      templateId: string,
+      availableChoiceIds: readonly string[] = ["safer", "costlier"],
+    ) => ({
+      eventId: `event.${templateId}`,
+      templateId,
+      choiceId: availableChoiceIds[0]!,
+      availableChoiceIds,
+    });
+    const beginnerRun = (
+      botId: BalanceLabRunResultV1["botId"],
+      outcome: "bankrupt" | "fragile" | "developing" | "strong",
+      decisions: readonly ReturnType<typeof decision>[],
+      challengeBand?: "light" | "meaningful" | "crisis",
+    ) => {
+      const terminal = observation(11, outcome === "strong" ? 600_000 : 400_000, "stable", true);
+      return {
+        ...run(botId, {
+          beginnerChapterEvidence: {
+            outcome,
+            completed: outcome === "developing" || outcome === "strong",
+            observedMonths: outcome === "bankrupt" ? 4 : 12,
+            scorePpm: outcome === "bankrupt" ? 100_000 : terminal.preparedness.scorePpm,
+            preparednessBand: outcome === "bankrupt" ? "critical" : terminal.preparedness.band,
+          },
+          eventDecisionEvidence: decisions,
+          balanceObservations: [
+            observation(-1, 400_000, "stable"),
+            challengeBand === undefined
+              ? { ...terminal, approvedChallenge: null, candidateChallenges: [] }
+              : {
+                  ...terminal,
+                  approvedChallenge: {
+                    ...terminal.approvedChallenge!,
+                    assessment: {
+                      ...terminal.approvedChallenge!.assessment,
+                      band: challengeBand,
+                    },
+                  },
+                },
+          ],
+        } as never),
+        processedMonths: outcome === "bankrupt" ? 4 : 12,
+      };
+    };
+
+    const summary = summarizeBalanceLabRunsV1([
+      beginnerRun("disciplined-v1", "bankrupt", [], "light"),
+      beginnerRun("average-beginner-v1", "fragile", [
+        decision("personal.rent_renewal"),
+        decision("personal.utility_rebate", ["claim_rebate"]),
+      ], "meaningful"),
+      beginnerRun("aggressive-investor-v1", "developing", [
+        decision("personal.transport_repair"),
+        decision("personal.rent_renewal"),
+        decision("personal.family_care_request"),
+        decision("personal.work_device_replacement"),
+        decision("personal.reduced_work_hours"),
+        decision("personal.social_commitment"),
+      ], "crisis"),
+      beginnerRun("cash-hoarder-v1", "strong", [
+        decision("personal.transport_repair"),
+        decision("personal.rent_renewal"),
+        decision("personal.family_care_request"),
+        decision("personal.social_commitment"),
+      ]),
+    ]);
+    const beginner = (summary as unknown as {
+      beginnerChapter: {
+        assessmentCount: number;
+        outcomeDistribution: Record<string, number>;
+        completionRate: { numerator: number; denominator: number; ratePpm: number; confidenceInterval95Ppm: { lower: number; upper: number } };
+        medianDecisionEventCount: number | null;
+        decisionEventsInTargetRangeRate: { numerator: number; denominator: number; ratePpm: number };
+        uniqueDecisionTemplateCount: number;
+        meaningfulOrCrisisApprovedRate: { numerator: number; denominator: number; ratePpm: number };
+      };
+    }).beginnerChapter;
+
+    expect(beginner.assessmentCount).toBe(4);
+    expect(beginner.outcomeDistribution).toEqual({
+      bankrupt: 1,
+      fragile: 1,
+      developing: 1,
+      strong: 1,
+    });
+    expect(beginner.completionRate).toMatchObject({
+      numerator: 2,
+      denominator: 4,
+      ratePpm: 500_000,
+    });
+    expect(beginner.completionRate.confidenceInterval95Ppm.lower).toBeGreaterThan(0);
+    expect(beginner.completionRate.confidenceInterval95Ppm.upper).toBeLessThan(1_000_000);
+    expect(beginner.medianDecisionEventCount).toBe(2);
+    expect(beginner.decisionEventsInTargetRangeRate).toMatchObject({
+      numerator: 1,
+      denominator: 4,
+      ratePpm: 250_000,
+    });
+    expect(beginner.uniqueDecisionTemplateCount).toBe(6);
+    expect(beginner.meaningfulOrCrisisApprovedRate).toMatchObject({
+      numerator: 2,
+      denominator: 3,
+      ratePpm: 666_666,
+    });
+    expect((summary as unknown as { acceptanceEvidence: Record<string, unknown> })
+      .acceptanceEvidence.beginner_median_decision_event_count).toEqual({
+        numerator: 2,
+        denominator: 4,
+        observed: 2,
+      });
+  });
+
   it("measures variance across seeds inside each persona and bot cohort", () => {
     const sample = (personaId: string, matchedSeed: number, value: number) => ({
       ...run("cash-hoarder-v1", {

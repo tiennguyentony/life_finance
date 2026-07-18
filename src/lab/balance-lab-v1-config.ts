@@ -22,10 +22,19 @@ export type BalanceLabAcceptanceRuleV1 = Readonly<{
     | "major_event_pacing_ppm"
     | "matched_strategy_win_rate_ppm"
     | "maximum_strategy_objective_lead_share_ppm"
+    | "beginner_chapter_completion_rate_ppm"
+    | "beginner_bankruptcy_rate_ppm"
+    | "average_beginner_bankruptcy_rate_ppm"
+    | "reckless_bankruptcy_rate_ppm"
+    | "stable_resilient_bankruptcy_rate_ppm"
+    | "beginner_nonfatal_recovery_within_six_months_rate_ppm"
+    | "beginner_meaningful_or_crisis_approved_rate_ppm"
+    | "beginner_median_decision_event_count"
     | "runtime_ms";
   comparator: BalanceLabComparatorV1;
   threshold: number;
   minimumSamples: number;
+  tierIds?: readonly BalanceLabBatchSizeV1[];
 }>;
 
 export type BalanceLabConfigV1 = Readonly<{
@@ -54,8 +63,17 @@ const METRICS = new Set([
   "major_event_pacing_ppm",
   "matched_strategy_win_rate_ppm",
   "maximum_strategy_objective_lead_share_ppm",
+  "beginner_chapter_completion_rate_ppm",
+  "beginner_bankruptcy_rate_ppm",
+  "average_beginner_bankruptcy_rate_ppm",
+  "reckless_bankruptcy_rate_ppm",
+  "stable_resilient_bankruptcy_rate_ppm",
+  "beginner_nonfatal_recovery_within_six_months_rate_ppm",
+  "beginner_meaningful_or_crisis_approved_rate_ppm",
+  "beginner_median_decision_event_count",
   "runtime_ms",
 ]);
+const BATCH_SIZES = ["beginner", "quick", "medium", "large"] as const;
 
 function invalid(message: string): never {
   throw new OfflineBalanceLabV1Error("INVALID_RUN_SPEC", message);
@@ -114,11 +132,17 @@ export function decodeBalanceLabConfigV1(value: unknown): BalanceLabConfigV1 {
   const ids = new Set<string>();
   const acceptance = record.acceptance.map((entry) => {
     const rule = entry as Record<string, unknown> | null;
+    const ruleKeys = rule === null || typeof rule !== "object"
+      ? ""
+      : Object.keys(rule).sort().join("|");
+    const tierIds = rule?.tierIds;
     if (
       rule === null ||
       typeof rule !== "object" ||
-      Object.keys(rule).sort().join("|") !==
-        "comparator|id|metric|minimumSamples|threshold" ||
+      ![
+        "comparator|id|metric|minimumSamples|threshold",
+        "comparator|id|metric|minimumSamples|threshold|tierIds",
+      ].includes(ruleKeys) ||
       typeof rule.id !== "string" ||
       !IDENTIFIER.test(rule.id) ||
       ids.has(rule.id) ||
@@ -126,10 +150,26 @@ export function decodeBalanceLabConfigV1(value: unknown): BalanceLabConfigV1 {
       !["at_least", "at_most", "equals"].includes(rule.comparator as string) ||
       !Number.isSafeInteger(rule.threshold) ||
       !Number.isSafeInteger(rule.minimumSamples) ||
-      (rule.minimumSamples as number) < 1
+      (rule.minimumSamples as number) < 1 ||
+      (tierIds !== undefined && (
+        !Array.isArray(tierIds) ||
+        tierIds.length < 1 ||
+        tierIds.length > BATCH_SIZES.length ||
+        !tierIds.every((tierId) => BATCH_SIZES.includes(tierId as never)) ||
+        new Set(tierIds).size !== tierIds.length
+      ))
     ) return invalid("invalid acceptance rule");
     ids.add(rule.id);
-    return Object.freeze({ ...rule }) as BalanceLabAcceptanceRuleV1;
+    return Object.freeze({
+      id: rule.id,
+      metric: rule.metric,
+      comparator: rule.comparator,
+      threshold: rule.threshold,
+      minimumSamples: rule.minimumSamples,
+      ...(tierIds === undefined
+        ? {}
+        : { tierIds: Object.freeze([...(tierIds as BalanceLabBatchSizeV1[])]) }),
+    }) as BalanceLabAcceptanceRuleV1;
   });
   if (
     !Number.isSafeInteger(record.maximumReproductionBundles) ||

@@ -1,5 +1,7 @@
 import { sha256Canonical } from "../core/canonical";
+import type { BeginnerChapterOutcomeV1 } from "../core/beginner-chapter-v1";
 import { randomState, type RandomState } from "../core/domain/rng";
+import type { PreparednessBandV1 } from "../core/preparedness-assessment-v1";
 import {
   decodeWorldRandomStateV1,
   initializeNamedWorldRandomV1,
@@ -73,6 +75,19 @@ export type BalanceLabAuthoritativeMetricsV1 = Readonly<{
   majorEventPacingViolationCount?: number;
   majorEventPacingSampleCount?: number;
   balanceObservations?: readonly BalanceLabBalanceObservationV1[];
+  beginnerChapterEvidence?: Readonly<{
+    outcome: BeginnerChapterOutcomeV1;
+    completed: boolean;
+    observedMonths: number;
+    scorePpm: number;
+    preparednessBand: PreparednessBandV1;
+  }>;
+  eventDecisionEvidence?: readonly Readonly<{
+    eventId: string;
+    templateId: string;
+    choiceId: string;
+    availableChoiceIds: readonly string[];
+  }>[];
   /** Objective values are produced by their production owner, never recalculated by the lab. */
   objectiveValues: Readonly<Record<string, number>>;
 }>;

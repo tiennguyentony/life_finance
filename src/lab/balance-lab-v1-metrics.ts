@@ -1,4 +1,5 @@
 import type { BalanceLabBotIdV1 } from "./balance-lab-v1-contracts";
+import type { BeginnerChapterOutcomeV1 } from "../core/beginner-chapter-v1";
 import type { PreparednessBandV1 } from "../core/preparedness-assessment-v1";
 import type {
   RuntimeBalanceChallengeBandV1,
@@ -49,6 +50,19 @@ export type BalanceLabBalanceShadowSummaryV1 = Readonly<{
     Record<PreparednessBandV1, BalanceLabRateV1>
   >;
   stableResilientUnavoidableFailureRate: BalanceLabRateV1;
+  stableResilientBankruptcyRate: BalanceLabRateV1;
+  nonfatalRecoveryWithinSixMonthsRate: BalanceLabRateV1;
+}>;
+
+export type BalanceLabBeginnerChapterSummaryV1 = Readonly<{
+  assessmentCount: number;
+  outcomeDistribution: Readonly<Record<BeginnerChapterOutcomeV1, number>>;
+  completionRate: BalanceLabRateV1;
+  bankruptcyByBot: Readonly<Partial<Record<BalanceLabBotIdV1, BalanceLabRateV1>>>;
+  medianDecisionEventCount: number | null;
+  decisionEventsInTargetRangeRate: BalanceLabRateV1;
+  uniqueDecisionTemplateCount: number;
+  meaningfulOrCrisisApprovedRate: BalanceLabRateV1;
   nonfatalRecoveryWithinSixMonthsRate: BalanceLabRateV1;
 }>;
 
@@ -86,6 +100,7 @@ export type BalanceLabMetricSummaryV1 = Readonly<{
   maximumStrategyObjectiveLeadSharePpm: number;
   impactReductionRatePpm: number;
   majorEventPacingPpm: number;
+  beginnerChapter: BalanceLabBeginnerChapterSummaryV1;
   balanceShadow: BalanceLabBalanceShadowSummaryV1;
   matchedObjectiveResults: readonly BalanceLabMatchedObjectiveResultV1[];
   objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot: Readonly<
@@ -145,6 +160,15 @@ function meanInteger(values: readonly number[]): number {
   if (values.length === 0) return 0;
   const sum = values.reduce((total, value) => total + BigInt(value), BigInt(0));
   return Number(sum / BigInt(values.length));
+}
+
+function medianInteger(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].toSorted((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[middle]!
+    : Math.floor((sorted[middle - 1]! + sorted[middle]!) / 2);
 }
 
 function sampleVariance(values: readonly number[]): string {
@@ -473,6 +497,78 @@ function summarizeBalanceShadow(
       preparedCohort.filter(({ run }) => run.metrics.unavoidableFailure).length,
       preparedCohort.length,
     ),
+    stableResilientBankruptcyRate: rate(
+      preparedCohort.filter(({ run }) => run.metrics.endReason === "bankruptcy").length,
+      preparedCohort.length,
+    ),
+    nonfatalRecoveryWithinSixMonthsRate: rate(
+      nonfatalRecovery.filter(
+        ({ status, observedMonths }) => status === "recovered" && observedMonths <= 6,
+      ).length,
+      nonfatalRecovery.length,
+    ),
+  });
+}
+
+function summarizeBeginnerChapter(
+  runs: readonly BalanceLabMetricRunV1[],
+): BalanceLabBeginnerChapterSummaryV1 {
+  const assessed = runs.filter(({ metrics }) => metrics.beginnerChapterEvidence !== undefined);
+  const outcomeDistribution = counts([
+    "bankrupt",
+    "fragile",
+    "developing",
+    "strong",
+  ] as const satisfies readonly BeginnerChapterOutcomeV1[]);
+  for (const run of assessed) {
+    outcomeDistribution[run.metrics.beginnerChapterEvidence!.outcome] += 1;
+  }
+  const decisionCounts = assessed.map(({ metrics }) =>
+    (metrics.eventDecisionEvidence ?? []).filter(
+      ({ availableChoiceIds }) => availableChoiceIds.length >= 2,
+    ).length);
+  const uniqueDecisionTemplates = new Set(
+    assessed.flatMap(({ metrics }) =>
+      (metrics.eventDecisionEvidence ?? [])
+        .filter(({ availableChoiceIds }) => availableChoiceIds.length >= 2)
+        .map(({ templateId }) => templateId)),
+  );
+  const approvedChallenges = assessed.flatMap(({ metrics }) =>
+    (metrics.balanceObservations ?? []).flatMap(({ approvedChallenge }) =>
+      approvedChallenge === null ? [] : [approvedChallenge]));
+  const nonfatalRecovery = assessed
+    .filter(({ metrics }) => metrics.beginnerChapterEvidence!.outcome !== "bankrupt")
+    .flatMap(({ metrics }) => metrics.recoveryObservations ?? []);
+  const bankruptcyByBot = Object.freeze(Object.fromEntries(
+    [...new Set(assessed.map(({ botId }) => botId))].toSorted().map((botId) => {
+      const cohort = assessed.filter((run) => run.botId === botId);
+      return [botId, rate(
+        cohort.filter(({ metrics }) =>
+          metrics.beginnerChapterEvidence!.outcome === "bankrupt").length,
+        cohort.length,
+      )];
+    }),
+  ));
+
+  return Object.freeze({
+    assessmentCount: assessed.length,
+    outcomeDistribution: Object.freeze(outcomeDistribution),
+    completionRate: rate(
+      assessed.filter(({ metrics }) => metrics.beginnerChapterEvidence!.completed).length,
+      assessed.length,
+    ),
+    bankruptcyByBot,
+    medianDecisionEventCount: medianInteger(decisionCounts),
+    decisionEventsInTargetRangeRate: rate(
+      decisionCounts.filter((count) => count >= 3 && count <= 5).length,
+      decisionCounts.length,
+    ),
+    uniqueDecisionTemplateCount: uniqueDecisionTemplates.size,
+    meaningfulOrCrisisApprovedRate: rate(
+      approvedChallenges.filter(({ assessment }) =>
+        assessment.band === "meaningful" || assessment.band === "crisis").length,
+      approvedChallenges.length,
+    ),
     nonfatalRecoveryWithinSixMonthsRate: rate(
       nonfatalRecovery.filter(
         ({ status, observedMonths }) => status === "recovered" && observedMonths <= 6,
@@ -545,6 +641,12 @@ export function summarizeBalanceLabRunsV1(
   );
   const maximumStrategyObjectiveLead = maximumStrategyObjectiveLeadEvidence(matched);
   const impactReduction = matchedImpactReductionEvidence(runs);
+  const beginnerChapter = summarizeBeginnerChapter(runs);
+  const balanceShadow = summarizeBalanceShadow(runs);
+  const averageBeginnerBankruptcy = beginnerChapter.bankruptcyByBot["average-beginner-v1"] ??
+    rate(0, 0);
+  const recklessBankruptcy = beginnerChapter.bankruptcyByBot["debt-heavy-lifestyle-v1"] ??
+    rate(0, 0);
   const majorEventPacing = Object.freeze({
     numerator: majorEventPacingViolationCount,
     denominator: majorEventPacingSampleCount,
@@ -601,7 +703,8 @@ export function summarizeBalanceLabRunsV1(
     maximumStrategyObjectiveLeadSharePpm: maximumStrategyObjectiveLead.observed,
     impactReductionRatePpm: impactReduction.observed,
     majorEventPacingPpm: majorEventPacing.observed,
-    balanceShadow: summarizeBalanceShadow(runs),
+    beginnerChapter,
+    balanceShadow,
     matchedObjectiveResults: matched,
     objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot:
       objectiveVarianceAcrossSeeds(runs),
@@ -625,6 +728,39 @@ export function summarizeBalanceLabRunsV1(
         preparedWins + recklessWins,
       ),
       maximum_strategy_objective_lead_share_ppm: maximumStrategyObjectiveLead,
+      beginner_chapter_completion_rate_ppm: evidence(
+        beginnerChapter.completionRate.numerator,
+        beginnerChapter.completionRate.denominator,
+      ),
+      beginner_bankruptcy_rate_ppm: evidence(
+        beginnerChapter.outcomeDistribution.bankrupt,
+        beginnerChapter.assessmentCount,
+      ),
+      average_beginner_bankruptcy_rate_ppm: evidence(
+        averageBeginnerBankruptcy.numerator,
+        averageBeginnerBankruptcy.denominator,
+      ),
+      reckless_bankruptcy_rate_ppm: evidence(
+        recklessBankruptcy.numerator,
+        recklessBankruptcy.denominator,
+      ),
+      stable_resilient_bankruptcy_rate_ppm: evidence(
+        balanceShadow.stableResilientBankruptcyRate.numerator,
+        balanceShadow.stableResilientBankruptcyRate.denominator,
+      ),
+      beginner_nonfatal_recovery_within_six_months_rate_ppm: evidence(
+        beginnerChapter.nonfatalRecoveryWithinSixMonthsRate.numerator,
+        beginnerChapter.nonfatalRecoveryWithinSixMonthsRate.denominator,
+      ),
+      beginner_meaningful_or_crisis_approved_rate_ppm: evidence(
+        beginnerChapter.meaningfulOrCrisisApprovedRate.numerator,
+        beginnerChapter.meaningfulOrCrisisApprovedRate.denominator,
+      ),
+      beginner_median_decision_event_count: Object.freeze({
+        numerator: beginnerChapter.medianDecisionEventCount ?? 0,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerChapter.medianDecisionEventCount ?? 0,
+      }),
     }),
   });
 }
