@@ -91,6 +91,28 @@ describe("board plan catalog", () => {
     });
   });
 
+  it("targets the current game month after the stored strategy month becomes stale", () => {
+    const opening = projectRunView(currentRunState());
+    const run = { ...opening, currentMonth: "2027-03" };
+    expect(run.strategy.effectiveMonth).not.toBe(run.currentMonth);
+
+    const lifestyle = plansForDestination(run, "home").find(
+      ({ id }) => id === "home.increase-lifestyle",
+    )!;
+    const reserve = plansForDestination(run, "hospital").find(
+      ({ id }) => id === "hospital.reserve-3",
+    )!;
+
+    expect(commandIntentForPlan(run, lifestyle, "board.plan.lifestyle")).toMatchObject({
+      effectiveMonth: "2027-03",
+      type: "take_detailed_action",
+    });
+    expect(commandIntentForPlan(run, reserve, "board.plan.reserve")).toMatchObject({
+      effectiveMonth: "2027-03",
+      type: "set_recurring_strategy",
+    });
+  });
+
   it("caps revolving-credit plans and disables actions the run cannot take", () => {
     const run = projectRunView(currentRunState());
     const constrained = {

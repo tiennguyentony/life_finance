@@ -28,6 +28,7 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 9. The board exposes New Game. Merely entering setup preserves the current save; successfully creating the replacement archives the prior active save.
 10. `/generating` waits for persisted onboarding hydration before deciding whether a profile is missing, and profile state is persisted before navigation.
 11. Restoring a run uses a read-only gateway and does not initialize the tax client; tax configuration is required only by command processing.
+12. Board plan commands always target `run.currentMonth`; the recurring strategy's effective month is historical state and must not be reused after time advances.
 
 ## Local verification performed
 
