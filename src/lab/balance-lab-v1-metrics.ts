@@ -66,6 +66,23 @@ export type BalanceLabBeginnerChapterSummaryV1 = Readonly<{
   nonfatalRecoveryWithinSixMonthsRate: BalanceLabRateV1;
 }>;
 
+export type BalanceLabBeginnerEngagementSummaryV1 = Readonly<{
+  medianTotalPromptCount: number | null;
+  medianMeaningfulDecisionCount: number | null;
+  atLeastSixMeaningfulDecisionRate: BalanceLabRateV1;
+  medianUniqueDecisionTemplateCount: number | null;
+  medianHumorousRootCount: number | null;
+  medianAbsurdRootCount: number | null;
+  positiveOrRecoveryBeatRate: BalanceLabRateV1;
+  adjacentAbsurdViolationCount: number;
+  rootEventStreakViolationCount: number;
+  funnyRootAboveMeaningfulCount: number;
+  preparedFunnyUnavoidableFailureCount: number;
+  safetyOverrideCount: number;
+  playerCausedFollowUpCount: number;
+  distinctResponseCount: number;
+}>;
+
 export type BalanceLabMatchedObjectiveResultV1 = Readonly<{
   objectiveId: string;
   cohortCount: number;
@@ -101,6 +118,7 @@ export type BalanceLabMetricSummaryV1 = Readonly<{
   impactReductionRatePpm: number;
   majorEventPacingPpm: number;
   beginnerChapter: BalanceLabBeginnerChapterSummaryV1;
+  beginnerEngagement: BalanceLabBeginnerEngagementSummaryV1;
   balanceShadow: BalanceLabBalanceShadowSummaryV1;
   matchedObjectiveResults: readonly BalanceLabMatchedObjectiveResultV1[];
   objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot: Readonly<
@@ -585,6 +603,125 @@ function summarizeBeginnerChapter(
   });
 }
 
+function summarizeBeginnerEngagement(
+  runs: readonly BalanceLabMetricRunV1[],
+): BalanceLabBeginnerEngagementSummaryV1 {
+  const assessed = runs.filter(
+    ({ metrics }) => metrics.beginnerChapterEvidence !== undefined,
+  );
+  const perRun = assessed.map((run) => {
+    const decisions = run.metrics.eventDecisionEvidence ?? [];
+    const meaningful = decisions.filter(
+      ({ materiallyAvailableChoiceIds }) =>
+        materiallyAvailableChoiceIds.length >= 3,
+    );
+    const roots = decisions.filter(({ cadenceRole }) => cadenceRole !== "follow_up");
+    const humorousRoots = roots.filter(({ tone }) => tone !== "serious");
+    const absurdRoots = roots.filter(({ tone }) => tone === "absurd_comedy");
+    let adjacentAbsurdViolationCount = 0;
+    let previousRootWasAbsurd = false;
+    for (const root of roots) {
+      const currentIsAbsurd = root.tone === "absurd_comedy";
+      if (currentIsAbsurd && previousRootWasAbsurd) {
+        adjacentAbsurdViolationCount += 1;
+      }
+      previousRootWasAbsurd = currentIsAbsurd;
+    }
+    const rootByTemplateId = new Map(
+      roots.map((decision) => [decision.templateId, decision]),
+    );
+    const cadence = run.metrics.beginnerEventCadenceEvidence ?? [];
+    const rootEventStreakViolationCount = cadence.filter((entry) =>
+      entry.assessment.rootEventStreak >= 2 &&
+      entry.scheduledTemplateId !== null &&
+      rootByTemplateId.has(entry.scheduledTemplateId)
+    ).length;
+    const funnyRootAboveMeaningfulCount = humorousRoots.filter(
+      ({ challengeBand }) =>
+        challengeBand === "crisis" ||
+        challengeBand === "extreme" ||
+        challengeBand === "above_limit",
+    ).length;
+    const impactedEventIds = new Set(
+      (run.metrics.eventImpactSamples ?? []).map(({ eventId }) => eventId),
+    );
+    const preparedFunnyUnavoidableFailureCount =
+      run.botId === "disciplined-v1" && run.metrics.unavoidableFailure
+        ? humorousRoots.filter(({ eventId }) => impactedEventIds.has(eventId)).length
+        : 0;
+    return Object.freeze({
+      totalPromptCount: decisions.length,
+      meaningfulDecisionCount: meaningful.length,
+      uniqueDecisionTemplateCount: new Set(
+        meaningful.map(({ templateId }) => templateId),
+      ).size,
+      humorousRootCount: humorousRoots.length,
+      absurdRootCount: absurdRoots.length,
+      positiveOrRecoveryBeat:
+        decisions.some(({ classification }) => classification === "positive") ||
+        (run.metrics.recoveryObservations ?? []).some(
+          ({ status }) => status === "recovered",
+        ),
+      adjacentAbsurdViolationCount,
+      rootEventStreakViolationCount,
+      funnyRootAboveMeaningfulCount,
+      preparedFunnyUnavoidableFailureCount,
+      safetyOverrideCount: cadence.filter(({ safetyOverride }) => safetyOverride).length,
+      playerCausedFollowUpCount: decisions.filter(
+        ({ followUpSourceEventId }) => followUpSourceEventId !== null,
+      ).length,
+      responseIds: decisions.map(({ choiceId }) => choiceId),
+    });
+  });
+  const sum = (
+    field:
+      | "adjacentAbsurdViolationCount"
+      | "rootEventStreakViolationCount"
+      | "funnyRootAboveMeaningfulCount"
+      | "preparedFunnyUnavoidableFailureCount"
+      | "safetyOverrideCount"
+      | "playerCausedFollowUpCount",
+  ) => perRun.reduce((total, item) => total + item[field], 0);
+
+  return Object.freeze({
+    medianTotalPromptCount: medianInteger(
+      perRun.map(({ totalPromptCount }) => totalPromptCount),
+    ),
+    medianMeaningfulDecisionCount: medianInteger(
+      perRun.map(({ meaningfulDecisionCount }) => meaningfulDecisionCount),
+    ),
+    atLeastSixMeaningfulDecisionRate: rate(
+      perRun.filter(({ meaningfulDecisionCount }) => meaningfulDecisionCount >= 6)
+        .length,
+      perRun.length,
+    ),
+    medianUniqueDecisionTemplateCount: medianInteger(
+      perRun.map(({ uniqueDecisionTemplateCount }) => uniqueDecisionTemplateCount),
+    ),
+    medianHumorousRootCount: medianInteger(
+      perRun.map(({ humorousRootCount }) => humorousRootCount),
+    ),
+    medianAbsurdRootCount: medianInteger(
+      perRun.map(({ absurdRootCount }) => absurdRootCount),
+    ),
+    positiveOrRecoveryBeatRate: rate(
+      perRun.filter(({ positiveOrRecoveryBeat }) => positiveOrRecoveryBeat).length,
+      perRun.length,
+    ),
+    adjacentAbsurdViolationCount: sum("adjacentAbsurdViolationCount"),
+    rootEventStreakViolationCount: sum("rootEventStreakViolationCount"),
+    funnyRootAboveMeaningfulCount: sum("funnyRootAboveMeaningfulCount"),
+    preparedFunnyUnavoidableFailureCount: sum(
+      "preparedFunnyUnavoidableFailureCount",
+    ),
+    safetyOverrideCount: sum("safetyOverrideCount"),
+    playerCausedFollowUpCount: sum("playerCausedFollowUpCount"),
+    distinctResponseCount: new Set(
+      perRun.flatMap(({ responseIds }) => responseIds),
+    ).size,
+  });
+}
+
 export function summarizeBalanceLabRunsV1(
   runs: readonly BalanceLabMetricRunV1[],
 ): BalanceLabMetricSummaryV1 {
@@ -649,6 +786,7 @@ export function summarizeBalanceLabRunsV1(
   const maximumStrategyObjectiveLead = maximumStrategyObjectiveLeadEvidence(matched);
   const impactReduction = matchedImpactReductionEvidence(runs);
   const beginnerChapter = summarizeBeginnerChapter(runs);
+  const beginnerEngagement = summarizeBeginnerEngagement(runs);
   const balanceShadow = summarizeBalanceShadow(runs);
   const averageBeginnerBankruptcy = beginnerChapter.bankruptcyByBot["average-beginner-v1"] ??
     rate(0, 0);
@@ -711,6 +849,7 @@ export function summarizeBalanceLabRunsV1(
     impactReductionRatePpm: impactReduction.observed,
     majorEventPacingPpm: majorEventPacing.observed,
     beginnerChapter,
+    beginnerEngagement,
     balanceShadow,
     matchedObjectiveResults: matched,
     objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot:
@@ -774,6 +913,59 @@ export function summarizeBalanceLabRunsV1(
         numerator: beginnerChapter.medianDecisionEventCount ?? 0,
         denominator: beginnerChapter.assessmentCount,
         observed: beginnerChapter.medianDecisionEventCount ?? 0,
+      }),
+      beginner_median_total_prompt_count: Object.freeze({
+        numerator: beginnerEngagement.medianTotalPromptCount ?? 0,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.medianTotalPromptCount ?? 0,
+      }),
+      beginner_median_meaningful_decision_count: Object.freeze({
+        numerator: beginnerEngagement.medianMeaningfulDecisionCount ?? 0,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.medianMeaningfulDecisionCount ?? 0,
+      }),
+      beginner_at_least_six_meaningful_decision_rate_ppm: evidence(
+        beginnerEngagement.atLeastSixMeaningfulDecisionRate.numerator,
+        beginnerEngagement.atLeastSixMeaningfulDecisionRate.denominator,
+      ),
+      beginner_median_unique_decision_template_count: Object.freeze({
+        numerator: beginnerEngagement.medianUniqueDecisionTemplateCount ?? 0,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.medianUniqueDecisionTemplateCount ?? 0,
+      }),
+      beginner_median_humorous_root_count: Object.freeze({
+        numerator: beginnerEngagement.medianHumorousRootCount ?? 0,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.medianHumorousRootCount ?? 0,
+      }),
+      beginner_median_absurd_root_count: Object.freeze({
+        numerator: beginnerEngagement.medianAbsurdRootCount ?? 0,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.medianAbsurdRootCount ?? 0,
+      }),
+      beginner_positive_or_recovery_beat_rate_ppm: evidence(
+        beginnerEngagement.positiveOrRecoveryBeatRate.numerator,
+        beginnerEngagement.positiveOrRecoveryBeatRate.denominator,
+      ),
+      beginner_adjacent_absurd_violation_count: Object.freeze({
+        numerator: beginnerEngagement.adjacentAbsurdViolationCount,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.adjacentAbsurdViolationCount,
+      }),
+      beginner_root_event_streak_violation_count: Object.freeze({
+        numerator: beginnerEngagement.rootEventStreakViolationCount,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.rootEventStreakViolationCount,
+      }),
+      beginner_funny_root_above_meaningful_count: Object.freeze({
+        numerator: beginnerEngagement.funnyRootAboveMeaningfulCount,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.funnyRootAboveMeaningfulCount,
+      }),
+      beginner_prepared_funny_unavoidable_failure_count: Object.freeze({
+        numerator: beginnerEngagement.preparedFunnyUnavoidableFailureCount,
+        denominator: beginnerChapter.assessmentCount,
+        observed: beginnerEngagement.preparedFunnyUnavoidableFailureCount,
       }),
     }),
   });

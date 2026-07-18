@@ -113,6 +113,7 @@ const METRIC_KEYS = [
   "recoveryObservations", "lessonIds", "noEventMonths", "unavoidableFailure",
   "bankruptcyResidualShortfallCents", "eventImpactSamples",
   "majorEventPacingViolationCount", "majorEventPacingSampleCount", "objectiveValues",
+  "eventDecisionEvidence", "beginnerEventCadenceEvidence",
 ] as const;
 
 const PREPAREDNESS_BANDS = ["critical", "exposed", "stable", "resilient"] as const;
@@ -188,7 +189,7 @@ function validateBalanceObservation(value: unknown): void {
 function validateRunMetrics(value: Record<string, unknown>): void {
   if (!hasExactKeys(value, METRIC_KEYS, [
     "totalEventPlayerCostCents", "totalEventGrossCostCents", "balanceObservations",
-    "beginnerChapterEvidence", "eventDecisionEvidence",
+    "beginnerChapterEvidence",
   ]) || !["active", "bankruptcy", "financial_independence", "retirement"].includes(
     value.endReason as string,
   ) || !(value.grade === null || typeof value.grade === "string") ||
@@ -253,18 +254,65 @@ function validateRunMetrics(value: Record<string, unknown>): void {
       invalidReport("invalid beginner chapter evidence");
     }
   }
-  if (value.eventDecisionEvidence !== undefined) {
-    if (!Array.isArray(value.eventDecisionEvidence)) {
+  if (!Array.isArray(value.eventDecisionEvidence)) {
+    invalidReport("invalid event decision evidence");
+  }
+  for (const decision of value.eventDecisionEvidence) {
+    if (!isRecord(decision) || !hasExactKeys(decision, [
+      "eventId", "templateId", "templateVersion", "scheduledMonth", "tone",
+      "cadenceRole", "classification", "challengeBand", "followUpSourceEventId",
+      "choiceId", "availableChoiceIds", "materiallyAvailableChoiceIds",
+      "responseAvailability",
+    ]) || typeof decision.eventId !== "string" || typeof decision.templateId !== "string" ||
+        !isFiniteInteger(decision.templateVersion) || typeof decision.scheduledMonth !== "string" ||
+        !["serious", "relatable_comedy", "absurd_comedy"].includes(decision.tone as string) ||
+        !["challenge", "engagement", "follow_up"].includes(decision.cadenceRole as string) ||
+        !["positive", "neutral", "negative"].includes(decision.classification as string) ||
+        !(decision.challengeBand === null ||
+          CHALLENGE_BANDS.includes(decision.challengeBand as never)) ||
+        !(decision.followUpSourceEventId === null ||
+          typeof decision.followUpSourceEventId === "string") ||
+        typeof decision.choiceId !== "string" || !Array.isArray(decision.availableChoiceIds) ||
+        !decision.availableChoiceIds.every((choiceId) => typeof choiceId === "string") ||
+        !Array.isArray(decision.materiallyAvailableChoiceIds) ||
+        !decision.materiallyAvailableChoiceIds.every((choiceId) => typeof choiceId === "string") ||
+        !Array.isArray(decision.responseAvailability)) {
       invalidReport("invalid event decision evidence");
     }
-    for (const decision of value.eventDecisionEvidence) {
-      if (!isRecord(decision) || !hasExactKeys(decision, [
-        "eventId", "templateId", "choiceId", "availableChoiceIds",
-      ]) || typeof decision.eventId !== "string" || typeof decision.templateId !== "string" ||
-          typeof decision.choiceId !== "string" || !Array.isArray(decision.availableChoiceIds) ||
-          !decision.availableChoiceIds.every((choiceId) => typeof choiceId === "string")) {
-        invalidReport("invalid event decision evidence");
+    for (const response of decision.responseAvailability) {
+      if (!isRecord(response) || !hasExactKeys(response, [
+        "responseId", "status", "materiallyDistinct",
+      ]) || typeof response.responseId !== "string" ||
+          !["available", "unavailable", "error"].includes(response.status as string) ||
+          typeof response.materiallyDistinct !== "boolean") {
+        invalidReport("invalid event response availability");
       }
+    }
+  }
+  if (!Array.isArray(value.beginnerEventCadenceEvidence)) {
+    invalidReport("invalid beginner cadence evidence");
+  }
+  for (const cadence of value.beginnerEventCadenceEvidence) {
+    if (!isRecord(cadence) || !hasExactKeys(cadence, [
+      "assessment", "inputCandidateIds", "outputCandidateIds",
+      "preferredCandidateIds", "scheduledTemplateId", "safetyOverride",
+    ]) || !isRecord(cadence.assessment) || !hasExactKeys(cadence.assessment, [
+      "version", "mode", "chapterMonth", "quietEligibleStreak", "eventMonthStreak",
+      "rootEventStreak", "positiveObserved", "previousRootTone", "reasonCodes",
+    ]) || cadence.assessment.version !== "beginner-event-cadence-v1" ||
+        !isFiniteInteger(cadence.assessment.chapterMonth) ||
+        !isFiniteInteger(cadence.assessment.quietEligibleStreak) ||
+        !isFiniteInteger(cadence.assessment.eventMonthStreak) ||
+        !isFiniteInteger(cadence.assessment.rootEventStreak) ||
+        typeof cadence.assessment.positiveObserved !== "boolean" ||
+        !Array.isArray(cadence.assessment.reasonCodes) ||
+        !Array.isArray(cadence.inputCandidateIds) ||
+        !Array.isArray(cadence.outputCandidateIds) ||
+        !Array.isArray(cadence.preferredCandidateIds) ||
+        !(cadence.scheduledTemplateId === null ||
+          typeof cadence.scheduledTemplateId === "string") ||
+        typeof cadence.safetyOverride !== "boolean") {
+      invalidReport("invalid beginner cadence evidence");
     }
   }
 }
@@ -336,6 +384,31 @@ function validateBeginnerChapterSummary(value: unknown): void {
   for (const groupedRate of Object.values(value.bankruptcyByBot)) validateRate(groupedRate);
 }
 
+function validateBeginnerEngagementSummary(value: unknown): void {
+  const nullableMedians = [
+    "medianTotalPromptCount", "medianMeaningfulDecisionCount",
+    "medianUniqueDecisionTemplateCount", "medianHumorousRootCount",
+    "medianAbsurdRootCount",
+  ] as const;
+  const counts = [
+    "adjacentAbsurdViolationCount", "rootEventStreakViolationCount",
+    "funnyRootAboveMeaningfulCount", "preparedFunnyUnavoidableFailureCount",
+    "safetyOverrideCount", "playerCausedFollowUpCount", "distinctResponseCount",
+  ] as const;
+  if (!isRecord(value) || !hasExactKeys(value, [
+    ...nullableMedians,
+    "atLeastSixMeaningfulDecisionRate",
+    "positiveOrRecoveryBeatRate",
+    ...counts,
+  ]) || nullableMedians.some((key) =>
+    !(value[key] === null || isFiniteInteger(value[key]))
+  ) || counts.some((key) => !isFiniteInteger(value[key]))) {
+    invalidReport("invalid beginner engagement summary");
+  }
+  validateRate(value.atLeastSixMeaningfulDecisionRate);
+  validateRate(value.positiveOrRecoveryBeatRate);
+}
+
 function validateSummary(value: Record<string, unknown>): void {
   const keys = [
     "runCount", "processedMonths", "bankruptcyRate", "fiAchievementRate",
@@ -349,7 +422,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "matchedStrategyWinRatePpm", "maximumStrategyObjectiveLeadSharePpm",
     "impactReductionRatePpm", "majorEventPacingPpm", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
-    "beginnerChapter", "balanceShadow",
+    "beginnerChapter", "beginnerEngagement", "balanceShadow",
   ] as const;
   if (!hasExactKeys(value, keys)) invalidReport("unsupported summary fields");
   validateRate(value.bankruptcyRate);
@@ -360,7 +433,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "gradeDistribution", "totalHighInterestDebtCreatedCents", "totalInterestPaidCents",
     "eventCountByTier", "meanRecoveryMonths", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
-    "beginnerChapter", "balanceShadow",
+    "beginnerChapter", "beginnerEngagement", "balanceShadow",
   ].includes(key));
   if (!integerKeys.every((key) => isFiniteInteger(value[key])) ||
       !(value.meanRecoveryMonths === null || isFiniteInteger(value.meanRecoveryMonths)) ||
@@ -386,6 +459,7 @@ function validateSummary(value: Record<string, unknown>): void {
     }
   }
   validateBeginnerChapterSummary(value.beginnerChapter);
+  validateBeginnerEngagementSummary(value.beginnerEngagement);
   validateBalanceShadow(value.balanceShadow);
   for (const byObjective of Object.values(
     value.objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot,
@@ -412,6 +486,17 @@ function validateSummary(value: Record<string, unknown>): void {
     "beginner_meaningful_or_crisis_approved_rate_ppm",
     "beginner_extreme_approved_rate_ppm",
     "beginner_median_decision_event_count",
+    "beginner_median_total_prompt_count",
+    "beginner_median_meaningful_decision_count",
+    "beginner_at_least_six_meaningful_decision_rate_ppm",
+    "beginner_median_unique_decision_template_count",
+    "beginner_median_humorous_root_count",
+    "beginner_median_absurd_root_count",
+    "beginner_positive_or_recovery_beat_rate_ppm",
+    "beginner_adjacent_absurd_violation_count",
+    "beginner_root_event_streak_violation_count",
+    "beginner_funny_root_above_meaningful_count",
+    "beginner_prepared_funny_unavoidable_failure_count",
   ];
   if (!hasExactKeys(value.acceptanceEvidence, acceptanceMetricKeys)) {
     invalidReport("invalid acceptance evidence metrics");
@@ -570,8 +655,15 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
       "approved_challenge_band",
       "beginner_chapter_outcome",
       "beginner_chapter_completed",
-      "decision_event_count",
+      "total_prompt_count",
+      "meaningful_decision_count",
       "unique_decision_template_count",
+      "humorous_root_count",
+      "absurd_root_count",
+      "player_caused_follow_up_count",
+      "adjacent_absurd_violation_count",
+      "root_event_streak_violation_count",
+      "safety_override_count",
       "final_state_checksum",
     ],
     ...report.result.runs.map((run) => {
@@ -581,9 +673,23 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
       const approved = observations.findLast(
         ({ approvedChallenge }) => approvedChallenge !== null,
       )?.approvedChallenge ?? null;
-      const decisions = (run.metrics.eventDecisionEvidence ?? []).filter(
-        ({ availableChoiceIds }) => availableChoiceIds.length >= 2,
+      const prompts = run.metrics.eventDecisionEvidence ?? [];
+      const decisions = prompts.filter(
+        ({ materiallyAvailableChoiceIds }) =>
+          materiallyAvailableChoiceIds.length >= 3,
       );
+      const roots = prompts.filter(({ cadenceRole }) => cadenceRole !== "follow_up");
+      let adjacentAbsurdViolationCount = 0;
+      let previousRootWasAbsurd = false;
+      for (const root of roots) {
+        const currentIsAbsurd = root.tone === "absurd_comedy";
+        if (currentIsAbsurd && previousRootWasAbsurd) {
+          adjacentAbsurdViolationCount += 1;
+        }
+        previousRootWasAbsurd = currentIsAbsurd;
+      }
+      const rootTemplateIds = new Set(roots.map(({ templateId }) => templateId));
+      const cadence = run.metrics.beginnerEventCadenceEvidence ?? [];
       return [
         run.personaId,
         run.matchedSeed,
@@ -604,8 +710,20 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
         approved?.assessment.band ?? "",
         run.metrics.beginnerChapterEvidence?.outcome ?? "",
         run.metrics.beginnerChapterEvidence?.completed ?? "",
+        prompts.length,
         decisions.length,
         new Set(decisions.map(({ templateId }) => templateId)).size,
+        roots.filter(({ tone }) => tone !== "serious").length,
+        roots.filter(({ tone }) => tone === "absurd_comedy").length,
+        prompts.filter(({ followUpSourceEventId }) => followUpSourceEventId !== null)
+          .length,
+        adjacentAbsurdViolationCount,
+        cadence.filter((entry) =>
+          entry.assessment.rootEventStreak >= 2 &&
+          entry.scheduledTemplateId !== null &&
+          rootTemplateIds.has(entry.scheduledTemplateId)
+        ).length,
+        cadence.filter(({ safetyOverride }) => safetyOverride).length,
         run.finalStateChecksum,
       ];
     }),
@@ -670,6 +788,22 @@ export function renderBalanceLabMarkdownV1(report: BalanceLabReportV1): string {
     "| Assessments | Bankrupt | Fragile | Developing | Strong | Completion PPM | Median decisions | Unique decision templates | Meaningful/crisis PPM |",
     "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${report.summary.beginnerChapter.assessmentCount} | ${report.summary.beginnerChapter.outcomeDistribution.bankrupt} | ${report.summary.beginnerChapter.outcomeDistribution.fragile} | ${report.summary.beginnerChapter.outcomeDistribution.developing} | ${report.summary.beginnerChapter.outcomeDistribution.strong} | ${report.summary.beginnerChapter.completionRate.ratePpm} | ${report.summary.beginnerChapter.medianDecisionEventCount ?? "—"} | ${report.summary.beginnerChapter.uniqueDecisionTemplateCount} | ${report.summary.beginnerChapter.meaningfulOrCrisisApprovedRate.ratePpm} |`,
+    "",
+    "## Beginner engagement",
+    "",
+    "| Metric | Observed | Target |",
+    "| --- | ---: | ---: |",
+    `| Median total prompts | ${report.summary.beginnerEngagement.medianTotalPromptCount ?? "—"} | 8-10 |`,
+    `| Median meaningful decisions | ${report.summary.beginnerEngagement.medianMeaningfulDecisionCount ?? "—"} | 6-8 |`,
+    `| At least six meaningful decisions PPM | ${report.summary.beginnerEngagement.atLeastSixMeaningfulDecisionRate.ratePpm} | >= 750000 |`,
+    `| Median unique decision templates | ${report.summary.beginnerEngagement.medianUniqueDecisionTemplateCount ?? "—"} | >= 5 |`,
+    `| Median humorous roots | ${report.summary.beginnerEngagement.medianHumorousRootCount ?? "—"} | 4-6 |`,
+    `| Median absurd roots | ${report.summary.beginnerEngagement.medianAbsurdRootCount ?? "—"} | 1-2 |`,
+    `| Positive or recovery beat PPM | ${report.summary.beginnerEngagement.positiveOrRecoveryBeatRate.ratePpm} | >= 900000 |`,
+    `| Adjacent absurd violations | ${report.summary.beginnerEngagement.adjacentAbsurdViolationCount} | 0 |`,
+    `| Root event-streak violations | ${report.summary.beginnerEngagement.rootEventStreakViolationCount} | 0 |`,
+    `| Funny roots above meaningful | ${report.summary.beginnerEngagement.funnyRootAboveMeaningfulCount} | 0 |`,
+    `| Prepared funny unavoidable failures | ${report.summary.beginnerEngagement.preparedFunnyUnavoidableFailureCount} | 0 |`,
     "",
     "## Acceptance",
     "",

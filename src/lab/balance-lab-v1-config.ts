@@ -31,6 +31,17 @@ export type BalanceLabAcceptanceRuleV1 = Readonly<{
     | "beginner_meaningful_or_crisis_approved_rate_ppm"
     | "beginner_extreme_approved_rate_ppm"
     | "beginner_median_decision_event_count"
+    | "beginner_median_total_prompt_count"
+    | "beginner_median_meaningful_decision_count"
+    | "beginner_at_least_six_meaningful_decision_rate_ppm"
+    | "beginner_median_unique_decision_template_count"
+    | "beginner_median_humorous_root_count"
+    | "beginner_median_absurd_root_count"
+    | "beginner_positive_or_recovery_beat_rate_ppm"
+    | "beginner_adjacent_absurd_violation_count"
+    | "beginner_root_event_streak_violation_count"
+    | "beginner_funny_root_above_meaningful_count"
+    | "beginner_prepared_funny_unavoidable_failure_count"
     | "runtime_ms";
   comparator: BalanceLabComparatorV1;
   threshold: number;
@@ -73,6 +84,17 @@ const METRICS = new Set([
   "beginner_meaningful_or_crisis_approved_rate_ppm",
   "beginner_extreme_approved_rate_ppm",
   "beginner_median_decision_event_count",
+  "beginner_median_total_prompt_count",
+  "beginner_median_meaningful_decision_count",
+  "beginner_at_least_six_meaningful_decision_rate_ppm",
+  "beginner_median_unique_decision_template_count",
+  "beginner_median_humorous_root_count",
+  "beginner_median_absurd_root_count",
+  "beginner_positive_or_recovery_beat_rate_ppm",
+  "beginner_adjacent_absurd_violation_count",
+  "beginner_root_event_streak_violation_count",
+  "beginner_funny_root_above_meaningful_count",
+  "beginner_prepared_funny_unavoidable_failure_count",
   "runtime_ms",
 ]);
 const BATCH_SIZES = ["beginner", "quick", "medium", "large"] as const;

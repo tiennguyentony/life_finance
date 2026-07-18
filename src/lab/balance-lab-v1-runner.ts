@@ -1,7 +1,14 @@
 import { sha256Canonical } from "../core/canonical";
 import type { BeginnerChapterOutcomeV1 } from "../core/beginner-chapter-v1";
+import type { BeginnerEventCadenceEvidenceV1 } from "../core/beginner-event-cadence-v1";
+import type { SimulationMonth } from "../core/domain/month";
 import { randomState, type RandomState } from "../core/domain/rng";
 import type { PreparednessBandV1 } from "../core/preparedness-assessment-v1";
+import type { RuntimeBalanceChallengeBandV1 } from "../core/runtime-balance-challenge-v1";
+import type {
+  PersonalEventCadenceRoleV1,
+  PersonalEventPresentationToneV1,
+} from "../data/personal-event-presentation-v1";
 import {
   decodeWorldRandomStateV1,
   initializeNamedWorldRandomV1,
@@ -36,6 +43,26 @@ export type BalanceLabBotIntentEvidenceV1 = Readonly<{
   disposition: "applied" | "not_applicable" | "resolved";
   eventId?: string;
   choiceId?: string;
+}>;
+
+export type BalanceLabEventDecisionEvidenceV1 = Readonly<{
+  eventId: string;
+  templateId: string;
+  templateVersion: number;
+  scheduledMonth: SimulationMonth;
+  tone: PersonalEventPresentationToneV1;
+  cadenceRole: PersonalEventCadenceRoleV1;
+  classification: "positive" | "neutral" | "negative";
+  challengeBand: RuntimeBalanceChallengeBandV1 | null;
+  followUpSourceEventId: string | null;
+  choiceId: string;
+  availableChoiceIds: readonly string[];
+  materiallyAvailableChoiceIds: readonly string[];
+  responseAvailability: readonly Readonly<{
+    responseId: string;
+    status: "available" | "unavailable" | "error";
+    materiallyDistinct: boolean;
+  }>[];
 }>;
 
 export type BalanceLabAuthoritativeMetricsV1 = Readonly<{
@@ -82,12 +109,8 @@ export type BalanceLabAuthoritativeMetricsV1 = Readonly<{
     scorePpm: number;
     preparednessBand: PreparednessBandV1;
   }>;
-  eventDecisionEvidence?: readonly Readonly<{
-    eventId: string;
-    templateId: string;
-    choiceId: string;
-    availableChoiceIds: readonly string[];
-  }>[];
+  eventDecisionEvidence?: readonly BalanceLabEventDecisionEvidenceV1[];
+  beginnerEventCadenceEvidence?: readonly BeginnerEventCadenceEvidenceV1[];
   /** Objective values are produced by their production owner, never recalculated by the lab. */
   objectiveValues: Readonly<Record<string, number>>;
 }>;
@@ -265,6 +288,78 @@ function validateMetrics(
     (metrics.majorEventPacingViolationCount ?? 0) >
     (metrics.majorEventPacingSampleCount ?? 0)
   ) ownerViolation("major-event pacing violations exceed samples");
+  for (const decision of metrics.eventDecisionEvidence ?? []) {
+    if (
+      !IDENTIFIER.test(decision.eventId) ||
+      !IDENTIFIER.test(decision.templateId) ||
+      !Number.isSafeInteger(decision.templateVersion) ||
+      decision.templateVersion < 1 ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(decision.scheduledMonth) ||
+      !["serious", "relatable_comedy", "absurd_comedy"].includes(decision.tone) ||
+      !["challenge", "engagement", "follow_up"].includes(decision.cadenceRole) ||
+      !["positive", "neutral", "negative"].includes(decision.classification) ||
+      (decision.challengeBand !== null && ![
+        "light", "meaningful", "crisis", "extreme", "above_limit",
+      ].includes(decision.challengeBand)) ||
+      (decision.followUpSourceEventId !== null &&
+        !IDENTIFIER.test(decision.followUpSourceEventId)) ||
+      !IDENTIFIER.test(decision.choiceId) ||
+      !decision.availableChoiceIds.includes(decision.choiceId) ||
+      new Set(decision.availableChoiceIds).size !==
+        decision.availableChoiceIds.length ||
+      new Set(decision.materiallyAvailableChoiceIds).size !==
+        decision.materiallyAvailableChoiceIds.length ||
+      decision.materiallyAvailableChoiceIds.some(
+        (choiceId) => !decision.availableChoiceIds.includes(choiceId),
+      ) ||
+      decision.responseAvailability.length === 0 ||
+      new Set(decision.responseAvailability.map(({ responseId }) => responseId)).size !==
+        decision.responseAvailability.length
+    ) {
+      ownerViolation("event decision evidence is inconsistent");
+    }
+    for (const response of decision.responseAvailability) {
+      if (
+        !IDENTIFIER.test(response.responseId) ||
+        !["available", "unavailable", "error"].includes(response.status) ||
+        typeof response.materiallyDistinct !== "boolean" ||
+        (response.status === "available") !==
+          decision.availableChoiceIds.includes(response.responseId) ||
+        response.materiallyDistinct !==
+          decision.materiallyAvailableChoiceIds.includes(response.responseId)
+      ) {
+        ownerViolation("event response availability is inconsistent");
+      }
+    }
+  }
+  for (const cadence of metrics.beginnerEventCadenceEvidence ?? []) {
+    if (
+      cadence.assessment.version !== "beginner-event-cadence-v1" ||
+      ![
+        "inactive", "pending_or_terminal", "follow_up_due", "positive_due",
+        "engagement_due", "open", "recovery_preferred",
+      ].includes(cadence.assessment.mode) ||
+      !Number.isSafeInteger(cadence.assessment.chapterMonth) ||
+      !Number.isSafeInteger(cadence.assessment.quietEligibleStreak) ||
+      !Number.isSafeInteger(cadence.assessment.eventMonthStreak) ||
+      !Number.isSafeInteger(cadence.assessment.rootEventStreak) ||
+      typeof cadence.assessment.positiveObserved !== "boolean" ||
+      (cadence.assessment.previousRootTone !== null && ![
+        "serious", "relatable_comedy", "absurd_comedy",
+      ].includes(cadence.assessment.previousRootTone)) ||
+      typeof cadence.safetyOverride !== "boolean" ||
+      (cadence.scheduledTemplateId !== null &&
+        !IDENTIFIER.test(cadence.scheduledTemplateId)) ||
+      [
+        ...cadence.assessment.reasonCodes,
+        ...cadence.inputCandidateIds,
+        ...cadence.outputCandidateIds,
+        ...cadence.preferredCandidateIds,
+      ].some((id) => !IDENTIFIER.test(id))
+    ) {
+      ownerViolation("beginner cadence evidence is inconsistent");
+    }
+  }
   for (const [objectiveId, value] of Object.entries(metrics.objectiveValues)) {
     if (!IDENTIFIER.test(objectiveId)) ownerViolation("objective id must be canonical");
     requireSafeInteger(value, `objective ${objectiveId}`);
@@ -285,6 +380,34 @@ function validateMetrics(
     majorEventPacingViolationCount:
       metrics.majorEventPacingViolationCount ?? 0,
     majorEventPacingSampleCount: metrics.majorEventPacingSampleCount ?? 0,
+    eventDecisionEvidence: Object.freeze(
+      (metrics.eventDecisionEvidence ?? []).map((decision) => Object.freeze({
+        ...decision,
+        availableChoiceIds: Object.freeze([...decision.availableChoiceIds]),
+        materiallyAvailableChoiceIds: Object.freeze([
+          ...decision.materiallyAvailableChoiceIds,
+        ]),
+        responseAvailability: Object.freeze(
+          decision.responseAvailability.map((response) =>
+            Object.freeze({ ...response })
+          ),
+        ),
+      })),
+    ),
+    beginnerEventCadenceEvidence: Object.freeze(
+      (metrics.beginnerEventCadenceEvidence ?? []).map((cadence) =>
+        Object.freeze({
+          ...cadence,
+          assessment: Object.freeze({
+            ...cadence.assessment,
+            reasonCodes: Object.freeze([...cadence.assessment.reasonCodes]),
+          }),
+          inputCandidateIds: Object.freeze([...cadence.inputCandidateIds]),
+          outputCandidateIds: Object.freeze([...cadence.outputCandidateIds]),
+          preferredCandidateIds: Object.freeze([...cadence.preferredCandidateIds]),
+        })
+      ),
+    ),
     objectiveValues: Object.freeze({ ...metrics.objectiveValues }),
     bankruptcyResidualShortfallCents:
       metrics.bankruptcyResidualShortfallCents ?? 0,
