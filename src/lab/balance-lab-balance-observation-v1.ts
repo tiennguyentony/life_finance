@@ -1,4 +1,5 @@
 import type { GameStateV2 } from "../core/game-state-v2";
+import type { PersonalEventTemplateV2 } from "../core/personal-event-v2";
 import { assessPreparednessV1, type PreparednessAssessmentV1 } from "../core/preparedness-assessment-v1";
 import { analyzeRiskV1 } from "../core/risk-v1";
 import {
@@ -41,9 +42,13 @@ export type BalanceLabBalanceObservationRecordV1 = Readonly<{
   }>;
 }>;
 
+export type BalanceLabObservedEventTierV1 =
+  PersonalEventTemplateV2["severityTier"] | "unknown";
+
 export type BalanceLabCandidateChallengeObservationV1 = Readonly<{
   templateId: string;
   templateVersion: number;
+  eventTier: BalanceLabObservedEventTierV1;
   rank: number;
   rejectionCodes: readonly string[];
   assessment: RuntimeBalanceChallengeAssessmentV1;
@@ -70,6 +75,10 @@ export function observeBalanceLabMonthV1(
   state: GameStateV2,
   record: BalanceLabBalanceObservationRecordV1 | undefined,
   monthIndex: number,
+  eventCatalog: readonly Pick<
+    PersonalEventTemplateV2,
+    "id" | "version" | "severityTier"
+  >[] = [],
 ): BalanceLabBalanceObservationV1 {
   if (!Number.isSafeInteger(monthIndex) || monthIndex < -1) {
     throw new RangeError("balance observation month index must be -1 or a non-negative safe integer");
@@ -91,6 +100,11 @@ export function observeBalanceLabMonthV1(
       return [Object.freeze({
         templateId: candidate.templateId,
         templateVersion: candidate.templateVersion,
+        eventTier: eventCatalog.find(
+          (template) =>
+            template.id === candidate.templateId &&
+            template.version === candidate.templateVersion,
+        )?.severityTier ?? "unknown",
         rank: candidate.rank,
         rejectionCodes: Object.freeze([...candidate.rejectionCodes]),
         assessment: assessRuntimeBalanceChallengeV1(

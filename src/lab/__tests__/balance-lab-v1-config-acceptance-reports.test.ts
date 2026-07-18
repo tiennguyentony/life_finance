@@ -274,13 +274,17 @@ describe("balance lab config, acceptance, and reports", () => {
       },
     })).toThrow();
     expect(runsCsv).toContain("\r\n");
+    expect(runsCsv).toContain("opening_preparedness_score_ppm");
+    expect(runsCsv).toContain("terminal_preparedness_band");
+    expect(runsCsv).toContain("approved_challenge_score_ppm");
     expect(matchedCsv).toContain("objective_id");
+    expect(markdown).toContain("## Balance equation shadow");
     expect(markdown).toContain(
       "No production large/catastrophe templates.",
     );
     expect(markdown).toContain("f".repeat(64));
     expect(sha256Canonical({ json, runsCsv, matchedCsv, markdown })).toBe(
-      "85db3345407ddfc0a1597352913fc0f9374bacd1f563d3a2600097474f2566b6",
+      "330cd442a5324c09fd66ab1424ec121f11388ee6306d7d407ea2dc241083fff8",
     );
   });
 });
