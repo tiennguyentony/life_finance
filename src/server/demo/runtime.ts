@@ -1,0 +1,76 @@
+import type { CommandRunner } from "@/application/game/use-cases";
+import { onboardingDraftForPersonaV1 } from "@/core/onboarding-personas-v1";
+import type { CreatedRunV2 } from "@/server/db/run-repository-contracts";
+import { OnboardingService } from "@/server/api/onboarding-service";
+import { RunService } from "@/server/api/run-service";
+
+import { InMemoryRunRepository } from "./in-memory-run-repository";
+import { OfflineDemoTaxCalculator } from "./offline-tax-calculator";
+
+type PersistentRunServiceFactory = () => CommandRunner;
+
+export class LocalDemoRuntime {
+  readonly #repository: InMemoryRunRepository;
+  readonly #onboardingService: OnboardingService;
+  readonly #runService: RunService;
+
+  constructor(
+    repository: InMemoryRunRepository = new InMemoryRunRepository(),
+  ) {
+    this.#repository = repository;
+    this.#onboardingService = new OnboardingService(repository);
+    this.#runService = new RunService(
+      repository,
+      new OfflineDemoTaxCalculator(),
+    );
+  }
+
+  hasRun(runId: string): boolean {
+    return this.#repository.hasRun(runId);
+  }
+
+  async createRun(): Promise<CreatedRunV2> {
+    const draft = onboardingDraftForPersonaV1(
+      "software",
+      "local-demo-seed-v1",
+    );
+    const review = this.#onboardingService.review(draft);
+    return this.#onboardingService.confirm({
+      draft,
+      reviewChecksum: review.reviewChecksum,
+    });
+  }
+
+  createRunGateway(
+    persistentServiceFactory: PersistentRunServiceFactory,
+  ): CommandRunner {
+    const serviceFor = (runId: string): CommandRunner =>
+      this.hasRun(runId) ? this.#runService : persistentServiceFactory();
+    return Object.freeze({
+      getRun: (runId: string, accessSecret: string) =>
+        serviceFor(runId).getRun(runId, accessSecret),
+      submitCommand: (runId, accessSecret, command) =>
+        serviceFor(runId).submitCommand(runId, accessSecret, command),
+    });
+  }
+}
+
+export function createLocalDemoRuntime(): LocalDemoRuntime {
+  return new LocalDemoRuntime();
+}
+
+export function isLocalDemoEnabled(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return environment.NODE_ENV === "development";
+}
+
+type DemoGlobal = typeof globalThis & {
+  __lifeFinanceLocalDemoRuntime?: LocalDemoRuntime;
+};
+
+export function getLocalDemoRuntime(): LocalDemoRuntime {
+  const demoGlobal = globalThis as DemoGlobal;
+  demoGlobal.__lifeFinanceLocalDemoRuntime ??= createLocalDemoRuntime();
+  return demoGlobal.__lifeFinanceLocalDemoRuntime;
+}

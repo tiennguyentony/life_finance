@@ -1030,7 +1030,10 @@ function processMonthlyTurnV2Kernel200(
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   const eventCatalog = dependencies.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
-  const validationOptions = { personalEventCatalog: eventCatalog };
+  const validationOptions = {
+    personalEventCatalog: eventCatalog,
+    allowTransientRandomAdvance: true,
+  };
   if (worldRandomVersion === WORLD_RANDOM_VERSION_V1) {
     const violations = validatePersonalEventCatalogV2(eventCatalog);
     if (violations.length > 0) {
