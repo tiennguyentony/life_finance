@@ -76,6 +76,49 @@ describe("board planning surfaces", () => {
     expect(markup).toContain("Ready to live this month.");
   });
 
+  it("makes month-only recovery explicit and prevents silently closing it", () => {
+    const run = projectRunView(currentRunState());
+    const markup = renderToStaticMarkup(
+      <PlanningPanel
+        busy={false}
+        commitVariant="finish_month"
+        destinationId="financial"
+        errorMessage="The month did not advance."
+        onClose={() => undefined}
+        onCommit={() => undefined}
+        onSelectPlan={() => undefined}
+        plans={plansForDestination(run, "financial")}
+        selectedPlanId="financial.broad-index"
+      />,
+    );
+
+    expect(markup).toContain("Finish this month");
+    expect(markup).toContain("will not submit a plan again");
+    expect(markup).not.toContain("Close plan chooser");
+    expect(markup).not.toContain("Live this month");
+  });
+
+  it("announces month-only recovery as finishing rather than saving the plan", () => {
+    const run = projectRunView(currentRunState());
+    const markup = renderToStaticMarkup(
+      <PlanningPanel
+        busy
+        commitVariant="finish_month"
+        destinationId="financial"
+        errorMessage={null}
+        onClose={() => undefined}
+        onCommit={() => undefined}
+        onSelectPlan={() => undefined}
+        plans={plansForDestination(run, "financial")}
+        selectedPlanId="financial.broad-index"
+      />,
+    );
+
+    expect(markup).toContain("Finishing this month...");
+    expect(markup).toContain("Finish this month");
+    expect(markup).not.toContain("Saving your plan");
+  });
+
   it("announces a pending event from the result dialog", () => {
     const opening = projectRunView(currentRunState());
     const ending = {

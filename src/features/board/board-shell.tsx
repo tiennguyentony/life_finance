@@ -18,7 +18,13 @@ import {
 } from "./plan-catalog";
 import { PlanningPanel } from "./planning-panel";
 import type { HopRequest } from "./sprout-3d";
-import { commitBoardTurn } from "./turn-commit";
+import {
+  boardMonthRecoveryMessage,
+  commitBoardTurn,
+  recoverBoardTurnFailure,
+  type BoardTurnFailurePhase,
+  type BoardTurnRecoveryResult,
+} from "./turn-commit";
 
 const BoardScene = dynamic(() => import("./board-scene"), {
   ssr: false,
@@ -33,7 +39,15 @@ type ActiveHop = HopRequest & Readonly<{ toId: string }>;
 
 // Long enough that a screen reader can finish announcing before it hides.
 const TOAST_MS = 4000;
-const MONTH_RECOVERY_MESSAGE = "Your plan was saved, but the month did not advance.";
+
+type PendingTurnFailure = Readonly<{
+  phase: BoardTurnFailurePhase;
+  error: unknown;
+  opening: RunViewWire;
+  failedRun: RunViewWire;
+  plan: BoardPlan;
+  planApplied: boolean;
+}>;
 
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -69,8 +83,11 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   const [planningError, setPlanningError] = useState<string | null>(null);
   const [finishMonthOnly, setFinishMonthOnly] = useState(false);
   const [recoveryPlan, setRecoveryPlan] = useState<BoardPlan | null>(null);
+  const [recoveryPlanApplied, setRecoveryPlanApplied] = useState(false);
+  const [refreshRequired, setRefreshRequired] = useState(false);
   const [reactionToken, setReactionToken] = useState(0);
   const turnOpeningRef = useRef<RunViewWire | null>(null);
+  const pendingFailureRef = useRef<PendingTurnFailure | null>(null);
   // The message persists through the exit transition; `visible` drives it.
   // Kept mounted so the aria-live region is present before its text changes.
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({
@@ -142,7 +159,8 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     if (
       busy ||
       monthResult ||
-      finishMonthOnly
+      finishMonthOnly ||
+      refreshRequired
     ) {
       return;
     }
@@ -155,6 +173,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     setSelectedPlanId(firstEnabledPlan?.id ?? null);
     setPlanningError(null);
     setRecoveryPlan(null);
+    setRecoveryPlanApplied(false);
   };
 
   const handleHopEnd = () => {
@@ -175,25 +194,106 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     setPlanningError(null);
     setFinishMonthOnly(false);
     setRecoveryPlan(null);
+    setRecoveryPlanApplied(false);
+    setRefreshRequired(false);
     turnOpeningRef.current = null;
+    pendingFailureRef.current = null;
     setReactionToken((token) => token + 1);
   };
+
+  const adoptRecovery = (
+    outcome: BoardTurnRecoveryResult,
+    failure: PendingTurnFailure,
+  ) => {
+    if (outcome.kind === "completed") {
+      completeMonth(outcome.opening, outcome.run, failure.plan);
+      return;
+    }
+
+    setRun(outcome.run);
+    if (outcome.kind === "planning") {
+      setFinishMonthOnly(false);
+      setRecoveryPlan(null);
+      setRecoveryPlanApplied(false);
+      setRefreshRequired(false);
+      turnOpeningRef.current = null;
+      pendingFailureRef.current = null;
+      setPlanningError(errorMessage(failure.error, "The plan could not be saved."));
+      return;
+    }
+
+    setRecoveryPlan(failure.plan);
+    setRecoveryPlanApplied(failure.planApplied);
+    turnOpeningRef.current = failure.opening;
+    if (outcome.kind === "finish_month") {
+      setFinishMonthOnly(true);
+      setRefreshRequired(false);
+      pendingFailureRef.current = null;
+      setPlanningError(
+        failure.phase === "plan"
+          ? "The run changed while saving. To avoid repeating a plan that may already be saved, finish this month only."
+          : boardMonthRecoveryMessage(failure.planApplied),
+      );
+      return;
+    }
+
+    setFinishMonthOnly(failure.phase === "month");
+    setRefreshRequired(true);
+    pendingFailureRef.current = failure;
+    setPlanningError(
+      failure.phase === "month"
+        ? "The latest run could not be refreshed. Finish this month will refresh it again before advancing."
+        : "The latest run could not be refreshed. Refresh the board before trying this plan again.",
+    );
+  };
+
+  const recoverFailure = (failure: PendingTurnFailure) =>
+    recoverBoardTurnFailure({
+      phase: failure.phase,
+      error: failure.error,
+      opening: failure.opening,
+      failedRun: failure.failedRun,
+      getSession: () => new LifeFinanceClient().getSession(),
+    });
 
   const finishSavedMonth = async (plan: BoardPlan) => {
     if (!run) return;
     const recoveryOpening = turnOpeningRef.current ?? run;
+    let latestRun = run;
     setBusy(true);
     setPlanningError(null);
     try {
-      const response = await new LifeFinanceClient().submitCommand(run.runId, {
+      const pendingFailure = pendingFailureRef.current;
+      if (refreshRequired && pendingFailure) {
+        const outcome = await recoverFailure(pendingFailure);
+        if (outcome.kind !== "finish_month") {
+          adoptRecovery(outcome, pendingFailure);
+          return;
+        }
+        latestRun = outcome.run;
+        setRun(latestRun);
+        setRefreshRequired(false);
+        pendingFailureRef.current = null;
+      }
+
+      const response = await new LifeFinanceClient().submitCommand(latestRun.runId, {
         id: `board.month.recovery.${crypto.randomUUID()}`,
-        expectedRevision: run.revision,
+        expectedRevision: latestRun.revision,
         type: "process_month",
         payload: {},
       });
       completeMonth(recoveryOpening, response.run, plan);
     } catch (reason) {
-      setPlanningError(errorMessage(reason, "The month still could not advance."));
+      const failure: PendingTurnFailure = {
+        phase: "month",
+        error: reason,
+        opening: recoveryOpening,
+        failedRun: latestRun,
+        plan,
+        planApplied: recoveryPlanApplied,
+      };
+      pendingFailureRef.current = failure;
+      adoptRecovery(await recoverFailure(failure), failure);
     } finally {
       setBusy(false);
     }
@@ -216,6 +316,19 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         );
     if (!plan || plan.disabledReason !== null) return;
 
+    if (refreshRequired) {
+      const pendingFailure = pendingFailureRef.current;
+      if (!pendingFailure) return;
+      setBusy(true);
+      setPlanningError(null);
+      try {
+        adoptRecovery(await recoverFailure(pendingFailure), pendingFailure);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     if (finishMonthOnly) {
       await finishSavedMonth(plan);
       return;
@@ -235,15 +348,27 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       if (result.kind === "completed") {
         completeMonth(result.opening, result.run, plan);
       } else if (result.kind === "plan_failed") {
-        setRun(result.run);
-        turnOpeningRef.current = null;
-        setRecoveryPlan(null);
-        setPlanningError(errorMessage(result.error, "The plan could not be saved."));
+        const failure: PendingTurnFailure = {
+          phase: "plan",
+          error: result.error,
+          opening,
+          failedRun: result.run,
+          plan,
+          planApplied: false,
+        };
+        pendingFailureRef.current = failure;
+        adoptRecovery(await recoverFailure(failure), failure);
       } else {
-        setRun(result.run);
-        setFinishMonthOnly(true);
-        setRecoveryPlan(plan);
-        setPlanningError(MONTH_RECOVERY_MESSAGE);
+        const failure: PendingTurnFailure = {
+          phase: "month",
+          error: result.error,
+          opening,
+          failedRun: result.run,
+          plan,
+          planApplied: result.planApplied,
+        };
+        pendingFailureRef.current = failure;
+        adoptRecovery(await recoverFailure(failure), failure);
       }
     } finally {
       setBusy(false);
@@ -312,21 +437,20 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   const planningPanel = selectedDestinationId ? (
     <PlanningPanel
       busy={busy}
+      commitVariant={finishMonthOnly ? "finish_month" : refreshRequired ? "refresh" : "plan"}
       destinationId={selectedDestinationId}
       errorMessage={planningError}
       onClose={() => {
-        if (finishMonthOnly) {
-          setPlanningError(MONTH_RECOVERY_MESSAGE);
-          return;
-        }
+        if (finishMonthOnly || refreshRequired) return;
         setSelectedDestinationId(null);
         setSelectedPlanId(null);
         setPlanningError(null);
         setRecoveryPlan(null);
+        setRecoveryPlanApplied(false);
       }}
       onCommit={() => void handleCommitPlan()}
       onSelectPlan={(planId) => {
-        if (finishMonthOnly) return;
+        if (finishMonthOnly || refreshRequired) return;
         setSelectedPlanId(planId);
         setPlanningError(null);
       }}
