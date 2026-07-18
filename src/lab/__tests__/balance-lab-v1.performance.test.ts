@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 
 import rawConfig from "../../../balance-lab.config.json";
+import { projectRunView } from "../../application/game/run-view";
 import { sha256Canonical } from "../../core/canonical";
 import { moneyCents, ratePpm } from "../../core/domain/money";
 import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../../core/event-scheduler-v2";
@@ -156,6 +157,14 @@ describe("offline balance lab production performance", () => {
       expect(run.finalStateChecksum).toBe(
         "874eb11785fa52675065fdf88195aa0570350a409007bb40b54bae5b1a41f2df",
       );
+      const finalOpeningState = advanceTime.mock.calls.at(-1)?.[0];
+      if (!finalOpeningState) throw new Error("missing final opening state");
+      expect(
+        Buffer.byteLength(JSON.stringify(finalOpeningState)),
+      ).toBeLessThan(1_000_000);
+      expect(
+        Buffer.byteLength(JSON.stringify(projectRunView(finalOpeningState))),
+      ).toBeLessThan(8_192);
       expect(advanceTime).toHaveBeenCalledTimes(480);
       for (const [, command] of advanceTime.mock.calls) {
         expect(command.monthlyInputs[0]!.payload).toMatchObject({

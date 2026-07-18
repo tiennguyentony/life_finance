@@ -12,6 +12,14 @@ This file is the durable continuation context for the current implementation bra
 - `72d4458` — bounded demo memory and lighter landing/board rendering
 - `fdddd69` — local auth/save verification and deployment handoff
 - `ea9945b` — browser-safe Supabase public environment configuration
+- `e63e83a` — new-game onboarding hydration and navigation fix
+- `c29747c` — restore saved runs without initializing the tax runtime
+- `fc40e55` — board commands consistently target the current run month
+- `0f277bf` — pin Three.js r182 to remove the deprecated Clock warning
+- `59b008b` — account save listing and atomic restore backend
+- `115beef` — saved-game navigation and restore UI
+- `6b389b7` — keep current-game management on `/saves`
+- `5cacde9` — allow confirmed custom living costs to evolve after onboarding
 
 Nothing in this sequence has been pushed to `main`. Continue testing locally and obtain player acceptance before merge/push.
 
@@ -42,6 +50,19 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 - Local email OTP produced the custom six-digit email and verified to a Supabase user/session.
 - PostgreSQL repository tests include account ownership, archive, resume, and cross-account claim rejection.
 - The latest locally generated account run was loaded and projected successfully through the read-only gateway.
+- A persisted start-to-retirement profile processed 480 months plus 11 event choices in 53.1 seconds. Command latency was 111 ms at p50, 179 ms at p95, and 226 ms maximum on the local machine.
+- At month 480 the authoritative state was about 783 KB, while the browser projection remained about 2.1 KB. The long-run regression gate caps these at 1 MB and 8 KiB respectively.
+- Heap samples across the persistent run fluctuated with garbage collection instead of increasing monotonically. RSS ended near 345 MB in the Vitest process.
+- The optimized production Next.js server idled near 157 MB RSS. The development compiler reached roughly 1.5 GB after extended use, so dev RSS must not be treated as deployment memory.
+- A cold development command spent about 950 ms compiling and 25 ms in application code; the next command completed in 16 ms total and 11 ms in application code.
+
+## Performance interpretation
+
+- Public reads and command responses use `RunView`; ledger history, command IDs, and other internal replay data are not sent to the browser.
+- PostgreSQL statement execution was a small part of the 480-month profile. The largest individual statements averaged about 1–2 ms; deterministic reduction, validation, hashing, and serialization dominate late-game command time.
+- The authoritative state intentionally retains an append-only ledger and accepted command IDs for audit and deterministic replay. It grows linearly with game age, but remains below the current 1 MB long-run budget. Do not remove this evidence merely to reduce JSON size without first replacing replay and integrity guarantees.
+- PolicyEngine is cached by annual tax context. The first uncached calculation can be much slower than later monthly commands; do not call the tax service again for an unchanged annual context.
+- Custom expense evidence is an immutable record of the confirmed opening budget. The live annual living cost is mutable because inflation and player choices change it; conflating those fields previously broke the first month of a custom-expense run.
 
 ## Before deployment
 
