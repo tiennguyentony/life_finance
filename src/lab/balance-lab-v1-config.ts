@@ -29,6 +29,7 @@ export type BalanceLabAcceptanceRuleV1 = Readonly<{
     | "stable_resilient_bankruptcy_rate_ppm"
     | "beginner_nonfatal_recovery_within_six_months_rate_ppm"
     | "beginner_meaningful_or_crisis_approved_rate_ppm"
+    | "beginner_extreme_approved_rate_ppm"
     | "beginner_median_decision_event_count"
     | "runtime_ms";
   comparator: BalanceLabComparatorV1;
@@ -70,6 +71,7 @@ const METRICS = new Set([
   "stable_resilient_bankruptcy_rate_ppm",
   "beginner_nonfatal_recovery_within_six_months_rate_ppm",
   "beginner_meaningful_or_crisis_approved_rate_ppm",
+  "beginner_extreme_approved_rate_ppm",
   "beginner_median_decision_event_count",
   "runtime_ms",
 ]);

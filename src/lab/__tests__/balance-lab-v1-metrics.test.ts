@@ -451,6 +451,12 @@ describe("offline balance lab v1 metrics", () => {
         denominator: 4,
         observed: 2,
       });
+    expect((summary as unknown as { acceptanceEvidence: Record<string, unknown> })
+      .acceptanceEvidence.beginner_extreme_approved_rate_ppm).toEqual({
+        numerator: 0,
+        denominator: 3,
+        observed: 0,
+      });
   });
 
   it("measures variance across seeds inside each persona and bot cohort", () => {
