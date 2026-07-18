@@ -1,5 +1,5 @@
 import { handleGetAccountRun, handleGetRun } from "@/server/api/current-http";
-import { getRunGateway, isLocalDemoRun } from "@/server/api/runtime";
+import { getRunReaderGateway, isLocalDemoRun } from "@/server/api/runtime";
 import { getAuthenticatedUser } from "@/server/auth/supabase-user";
 
 export const runtime = "nodejs";
@@ -11,9 +11,9 @@ export async function GET(
 ): Promise<Response> {
   const { runId } = await context.params;
   if (isLocalDemoRun(runId)) {
-    return handleGetRun(request, runId, getRunGateway());
+    return handleGetRun(request, runId, getRunReaderGateway());
   }
   const user = await getAuthenticatedUser();
-  if (user) return handleGetAccountRun(user, runId, getRunGateway());
-  return handleGetRun(request, runId, getRunGateway());
+  if (user) return handleGetAccountRun(user, runId, getRunReaderGateway());
+  return handleGetRun(request, runId, getRunReaderGateway());
 }

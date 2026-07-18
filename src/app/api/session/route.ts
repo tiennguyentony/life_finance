@@ -4,7 +4,7 @@ import {
   handleGetSession,
 } from "@/server/api/current-http";
 import {
-  getRunGateway,
+  getRunReaderGateway,
   getRunRepository,
   isLocalDemoRun,
 } from "@/server/api/runtime";
@@ -17,13 +17,17 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request): Promise<Response> {
   const capability = parseRunSessionCookie(request.headers.get("cookie"));
   if (capability && isLocalDemoRun(capability.runId)) {
-    return handleGetSession(request, getRunGateway());
+    return handleGetSession(request, getRunReaderGateway());
   }
   const user = await getAuthenticatedUser();
   if (user) {
-    return handleGetAccountSession(user, getRunRepository(), getRunGateway());
+    return handleGetAccountSession(
+      user,
+      getRunRepository(),
+      getRunReaderGateway(),
+    );
   }
-  return handleGetSession(request, getRunGateway());
+  return handleGetSession(request, getRunReaderGateway());
 }
 
 export function DELETE(request: Request): Response {

@@ -156,6 +156,9 @@ function failure(error: unknown, requestId: string): Response {
   }
   const status = publicErrorStatus(error);
   if (status === null) {
+    // Keep internal details out of the response, but retain enough server-side
+    // evidence to diagnose a failed request by its public request ID.
+    console.error("Life Finance API request failed", { requestId, error });
     return jsonResponse(
       {
         error: {
