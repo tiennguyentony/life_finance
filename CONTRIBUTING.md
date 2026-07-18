@@ -2,24 +2,29 @@
 
 ## Before changing code
 
-1. Read `docs/architecture/repository.md`.
-2. Keep the change inside one authority boundary when possible.
-3. Add financial behavior to `src/core` only when it is deterministic and framework-free.
-4. Run `corepack pnpm verify` before opening a pull request.
+1. Read [`docs/architecture/overview.md`](docs/architecture/overview.md) and [`docs/architecture/current-system-audit.md`](docs/architecture/current-system-audit.md).
+2. Confirm whether the behavior is core-only, server-exposed, or player-exposed; do not document an internal module as a shipped feature.
+3. Keep deterministic financial behavior in `src/core`, framework-free and covered by adjacent tests.
+4. Keep route files thin and expose browser data only through `RunView` and the unversioned contracts in `src/contracts/api`.
+5. Run `pnpm verify` before merging.
 
 ## Folder ownership
 
-- `src/app` owns route files and page composition. It does not own game rules.
-- `src/features/<feature>` owns one user-facing capability and keeps controller
-  orchestration separate from presentation components.
-- `src/components` contains presentation shared by at least two real consumers.
-- `src/core` contains the deterministic simulation and its contracts. It cannot import React or Next.js.
-- `src/data` contains immutable shared catalogs. It never contains mutable player state.
-- Tests live in an adjacent `__tests__` directory. The automated layout check
-  rejects test files mixed into production directories.
+- `src/app`: Next.js pages and route adapters; no game rules.
+- `src/features/<feature>`: one user-facing capability, with orchestration separated from presentation.
+- `src/components`: presentation shared by at least two real consumers.
+- `src/contracts/api`: versionless browser contracts.
+- `src/application/game`: use cases and the frontend-safe `RunView` projection.
+- `src/server`: authentication, HTTP orchestration, persistence, tax, AI, and teaching adapters.
+- `src/core`: deterministic simulation and replay contracts; it cannot import React or Next.js.
+- `src/data`: immutable, versioned catalogs; never mutable player state.
+- `services/tax`: independently runnable PolicyEngine service.
 
-## Adding a vertical slice
+Tests belong in an adjacent `__tests__` directory. `pnpm check:test-layout` rejects test files mixed into production directories.
 
-Start from one user-visible outcome. Define the deterministic rule in `src/core`, prove it with a failing test, add the smallest feature UI that consumes it, and keep the route file thin.
+## Authority rules
 
-AI may describe a result that deterministic code already produced. AI cannot calculate balances, select events, validate choices, or mutate game state.
+- The browser sends player intent, never tax results, random draws, ledger postings, effective months, or schema versions.
+- The server validates authorization and revision, supplies server-owned evidence, applies the reducer, persists atomically, then projects a `RunView`.
+- AI output must not directly mutate balances or invent an event outside the deterministic candidate/effect contract. Current public gameplay does not call the AI world-director or teaching services.
+- The local demo must remain explicitly development-only and must never become a silent fallback for failed persistent onboarding.

@@ -1,49 +1,81 @@
 # Architecture overview
 
-Life Finance has one product path: onboarding creates an authoritative run, then the 3D board reads and changes that run through the same-origin API.
+Life Finance has one active product path: persona onboarding creates an authoritative run, then the 3D board reads and changes it through a same-origin browser API.
 
 ```mermaid
 flowchart LR
-  O["Onboarding UI"] --> C["Browser API client"]
-  B["3D board UI"] --> C
-  C --> H["Unversioned /api routes"]
-  H --> U["Application use cases"]
-  U --> S["Run and onboarding services"]
-  S --> E["Deterministic core engine"]
-  S --> R["Run repository"]
-  S --> T["Tax service"]
-  R --> P[("PostgreSQL")]
-  E --> R
+  O[Onboarding UI] --> C[Browser API client]
+  B[3D board UI] --> C
+  C --> H[Unversioned Next.js API]
+  H --> A[Application use cases]
+  A --> S[Onboarding and Run services]
+  S --> E[Deterministic schema-2 engine]
+  S --> T[Tax adapter]
+  S --> R[Run repository]
+  R --> P[(PostgreSQL)]
+  T --> X[PolicyEngine service]
 ```
 
-## Boundary rules
+The development-only demo replaces PostgreSQL with an in-memory repository and PolicyEngine with a simplified deterministic tax adapter. It retains the same browser API, HttpOnly cookie, use cases, and core engine.
 
-- The board renders only `RunView`, never persisted engine state.
-- The browser submits command intent. It does not choose schema versions, simulation month, tax evidence, ledger entries, or random outcomes.
-- The application layer supplies server-owned command metadata and projects engine state into `RunView`.
-- The deterministic core owns financial math, events, outcomes, replay, and ledger invariants.
-- PostgreSQL owns authoritative runs, accepted commands, snapshots, evidence, and the transactional outbox.
-- AI may extract onboarding candidates or rewrite explanations. It never mutates authoritative financial state directly.
+## Runtime boundaries
+
+- The board renders `RunView`; it never receives persisted `GameStateV2`.
+- The browser submits command intent. It does not choose schema version, effective month, tax evidence, market draw, event probability, or ledger entries.
+- Application use cases validate public intent and attach server-owned command metadata.
+- `RunService` orchestrates tax evidence, deterministic reduction, market/event policy, persistence, and projection.
+- The core owns exact-cent financial math, event effects, outcomes, replay, and state invariants.
+- PostgreSQL owns the current state, revisions, idempotency records, evidence, snapshots, ledger, and outbox.
+- AI is optional infrastructure. Today the public API exposes optional onboarding text extraction; the current typed onboarding UI and playable board do not perform AI inference.
+
+## Monthly command flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Board
+  participant API as Same-origin API
+  participant RS as RunService
+  participant TAX as Tax adapter
+  participant CORE as Deterministic core
+  participant DB as Repository
+  UI->>API: plan intent (optional)
+  API->>RS: authorized intent + expected revision
+  RS->>CORE: reduce detailed action/strategy
+  RS->>DB: atomic command result
+  UI->>API: process_month
+  API->>RS: authorized intent + expected revision
+  RS->>TAX: cached or fresh annual-context evidence
+  RS->>CORE: monthly kernel + market + outcomes
+  RS->>CORE: event candidates, ranking, fairness
+  RS->>DB: state + evidence + ledger + outbox
+  RS-->>UI: projected RunView
+```
+
+The board deliberately issues the plan and month as two revisioned commands. Its recovery logic detects partial success, refreshes authoritative state, and can retry only the missing month so a plan is not applied twice.
 
 ## Main folders
 
 | Folder | Responsibility |
 | --- | --- |
 | `src/app` | Next.js pages and thin route adapters |
-| `src/features/board` | 3D scene, HUD, movement, and `RunView` mapping |
-| `src/features/onboarding` | Persona/profile flow and run creation state |
-| `src/contracts/api` | Public, unversioned JSON schemas |
-| `src/lib/api-client` | Credential-free browser client |
-| `src/application/game` | Use cases and the frontend-safe projection |
-| `src/server/api` | Runtime composition and service orchestration |
-| `src/server/auth` | Run-session cookie and same-origin protection |
-| `src/server/db` | Drizzle/PostgreSQL repositories and replay |
+| `src/features/board` | WebGL scene, HUD, strategy dialogs, and `RunView` display mapping |
+| `src/features/onboarding` | Persona/profile UI and client-side flow state |
+| `src/contracts/api` | Public, unversioned JSON schemas and lightweight OpenAPI document |
+| `src/lib/api-client` | Same-origin browser client with response validation |
+| `src/application/game` | Use cases and frontend-safe projection |
+| `src/server/api` | Runtime composition, HTTP handlers, onboarding, and run orchestration |
+| `src/server/auth` | Cookie session and same-origin write protection |
+| `src/server/db` | Drizzle/PostgreSQL persistence, snapshots, replay, and history |
+| `src/server/tax` | Tax-service client, caching context, and adapters |
+| `src/server/ai`, `src/server/teaching` | Implemented optional services, mostly not publicly routed |
 | `src/core` | Pure deterministic domain engine |
 
-## Adding behavior
+## Adding player-visible behavior
 
-1. Add or change the core rule with deterministic tests.
-2. Expose a versionless intent in `src/contracts/api` if the browser needs it.
-3. Map intent to the current engine command in the application layer.
-4. Return a projected `RunView`.
-5. Update the board without importing server or engine state types.
+1. Implement and test the deterministic rule in `src/core`.
+2. Add a versionless intent in `src/contracts/api` only when the browser needs it.
+3. Map that intent to the current internal command in the application layer.
+4. Persist it atomically and expose only the necessary `RunView` fields.
+5. Add the board interaction and an end-to-end contract test.
+
+An implemented core module is not a shipped feature until a public route/use case and a UI surface actually reach it.

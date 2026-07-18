@@ -1,56 +1,49 @@
 # Life Finance
 
-Life Finance is a deterministic personal-finance simulation presented as a 3D board game. The product flow is:
+Life Finance is a deterministic US personal-finance simulation presented as a 3D board game. The current playable product is a monthly strategy loop:
 
-1. Choose a persona and complete a short profile.
-2. The backend reviews the profile and creates an authoritative run.
+1. Choose a persona and enter a short profile.
+2. The server reviews the persona-derived draft and creates an authoritative run.
 3. The browser receives an HttpOnly run-session cookie.
-4. On `/board`, the player chooses a financial focus, reviews engine-backed plans, selects one plan, and chooses **Live this month**.
-5. The board submits that one plan, advances exactly one month, and shows the authoritative before-and-after result.
-6. Any life event is resolved before the next planning turn.
+4. On `/board`, choose a destination and one financial plan.
+5. Submit the plan and advance exactly one month.
+6. Review authoritative cash, debt, net-worth, and financial-independence changes.
+7. Resolve a pending life event before planning the next month.
 
-The canonical `/board` is strategy-first. It has no die mechanic, tile traversal, or automatic hopping. `/board/free` remains a direct-travel variant for development and review.
+`/board` is the canonical strategy-first UI. It does not use dice or tile traversal. `/board/free` is a direct-travel review variant built on the same backend state.
 
-The 3D board is the canonical gameplay UI. There is no parallel mock or prototype game path.
+## Run it locally
 
-## Instant local demo
-
-The playable demo needs only Node.js 22+ and pnpm 11. It still uses the real backend HTTP boundary, session cookie, and deterministic game engine; run state and simplified tax estimates stay in memory.
+The quickest path requires Node.js 22+ and pnpm 11, but no database, tax service, or AI key:
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://localhost:3000`, select **Instant demo**, and play on the canonical 3D board. Refreshing keeps the run; restarting the dev server resets it. Demo creation is disabled in production.
+Open `http://localhost:3000` and choose **Instant demo**. The demo uses the real HTTP, cookie, application, and deterministic-engine boundaries, but keeps state in server memory and uses a simplified deterministic tax adapter. A browser refresh preserves the run; restarting Next.js clears it. `/api/demo` returns 404 in production.
 
-## Full backend setup
-
-Normal onboarding uses PostgreSQL and the Python tax service described in `services/tax/README.md`.
+For persistent onboarding, copy `.env.example` to `.env.local` and configure PostgreSQL plus the tax service. Then run:
 
 ```bash
 pnpm db:migrate
 pnpm dev
 ```
 
-Copy `.env.example` to `.env.local` and provide at least:
+The required variables are `DATABASE_URL`, `RUN_SECRET_PEPPER_BASE64URL`, `TAX_SERVICE_URL`, and `TAX_SERVICE_TOKEN`. AI credentials are optional for the current typed onboarding and board loop. A Vercel access token alone is not a runtime configuration and is not enough to run the persistent path.
 
-- `DATABASE_URL`
-- `RUN_SECRET_PEPPER_BASE64URL`
-- `TAX_SERVICE_URL`
-- `TAX_SERVICE_TOKEN`
+See [`docs/operations/local-development.md`](docs/operations/local-development.md) for exact setup and shared-environment safety notes.
 
-Without a database, normal onboarding intentionally fails at run creation. It never falls back to the demo adapters or fake frontend financial data.
+## Current routes
 
-## Main routes
-
-- `/`: landing page
-- `/start` and `/profile`: onboarding
-- `/generating`: backend run creation
-- `/board`: canonical strategy-first board
-- `/board/free`: direct-travel board variant for development
-- `/api/demo`: development-only local demo creation
-- `/api/openapi.json`: current browser API description
+| Route | Purpose |
+| --- | --- |
+| `/` | Landing and development-only instant-demo entry |
+| `/start`, `/profile`, `/generating` | Persona onboarding and run creation |
+| `/board` | Canonical strategy-first board |
+| `/board/free` | Direct-travel review variant |
+| `/api/health` | Process liveness only |
+| `/api/openapi.json` | Lightweight browser API route description |
 
 ## Verification
 
@@ -58,8 +51,8 @@ Without a database, normal onboarding intentionally fails at run creation. It ne
 pnpm verify
 ```
 
-The command runs lint, TypeScript checking, unit/integration tests, long-run simulation tests, and a production build.
+This runs lint, TypeScript, test-layout enforcement, parallel tests, long-run simulations, and a production build. PostgreSQL and provider integration suites are opt-in and are described in the operations guide.
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md). It links the current architecture, API, board experience, persistence model, and local operations. Historical prompt plans and superseded prototype specifications are intentionally not part of the live documentation.
+Start with [`docs/README.md`](docs/README.md). The implementation audit in [`docs/architecture/current-system-audit.md`](docs/architecture/current-system-audit.md) distinguishes what exists in the engine from what is actually exposed through today’s API and UI.

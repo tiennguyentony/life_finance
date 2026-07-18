@@ -1,36 +1,72 @@
-# Board experience
+# Current board and onboarding experience
 
-The 3D board at `/board` is the end-product gameplay interface. Its scene composition, islands, Sprout character, HUD placement, camera, colors, motion, and assets are canonical and should be evolved in place rather than replaced with another dashboard. The canonical board is strategy-first: it has no tile traversal or die mechanic.
+The 3D board at `/board` is the canonical gameplay surface. It is strategy-first: no die, tile traversal, or automatic hopping controls the simulation.
 
-## Player flow
+## Onboarding reality
 
-After `/start`, `/profile`, and `/generating` create an authoritative run, the browser receives the run cookie and navigates to `/board`. Each board turn follows this loop:
+The UI offers three cards, but backend creation maps them to two authoritative persona drafts:
 
-1. Choose one of the five financial focus locations.
-2. Review two or three engine-backed plans and their immediate trade-offs.
+| UI persona | Backend persona | Starting scenario |
+| --- | --- | --- |
+| Burnt-out Junior Developer | `software` | Seattle software career, $120,000 salary, $25,000 cash, HSA health plan, renters insurance |
+| Debt-free Educator | `teacher` | Chicago teacher, $70,000 salary, $15,000 cash, no starting debt |
+| Big City Survivor | `software` | The same current software draft as Junior Developer |
+
+The profile form collects name, age, location, and a free-text goal. In the current adapter, only valid age changes authoritative state by deriving the birth month. Name, entered location, and free-text goal are not yet mapped into run creation; the persona draft still supplies identity/location and the core supplies its default financial-independence goal. Invalid or under-18 age silently falls back to the persona age.
+
+These are known product gaps, not intended game rules. The “Big City Survivor” runway label is UI copy rather than a backend-calculated guarantee.
+
+The current UI uses deterministic typed drafts. `/api/onboarding/parse` supports optional AI-assisted extraction, but no current onboarding screen calls it.
+
+## Turn flow
+
+1. Pick one of five board destinations.
+2. Review the plans defined in `src/features/board/plan-catalog.ts`.
 3. Select one plan and choose **Live this month**.
-4. The board submits the plan, then advances exactly one month.
-5. Review authoritative cash, net-worth, debt, and goal-progress changes.
-6. Resolve any life event before planning the next month.
+4. Submit the plan command when it is not “stay the course.”
+5. Submit `process_month` at the next authoritative revision.
+6. Compare before/after cash, net worth, debt, and goal progress.
+7. If an event is pending, resolve it before another planning turn.
 
-Each turn contains one plan followed by exactly one month. The authoritative before-and-after result is shown before an event decision, and an event must be resolved before the next planning turn is available.
+The result dialog is shown before event choice. If the first command succeeds but month processing fails, recovery refreshes the run and retries only the month instead of repeating the plan.
 
-Visiting `/board` without a valid session redirects to `/start`.
+## Exact current plan menu
 
-## UI data ownership
+| Destination | Player choices |
+| --- | --- |
+| Home | Reduce annual living cost by $1,200; increase it by $1,200; stay the course |
+| Bank | Pay up to $500 revolving credit; draw up to $500 available revolving credit; stay the course |
+| Financial | Invest exactly $500 into taxable broad-index, sector, or speculative assets |
+| Startup | Start certificate ($2,000, 3 months, up to +$3,000 annual salary), bootcamp ($8,000, 6 months, up to +$12,000), or degree ($30,000, 24 months, up to +$24,000) |
+| Hospital | Set the recurring-strategy emergency target to 3 or 6 months; stay the course |
 
-`board-model.ts` is the adapter from `RunView` to display values. The HUD currently derives cash, net worth, debt, month/year, goal progress, level/XP, event badge, and completed trophies from backend state.
+Availability checks use the current `RunView` (cash, credit, debt, employment, and programs in progress). The displayed immediate effects are authored in the frontend plan catalog. They are not responses from the implemented internal action-preview engine, which has no active public route. The final monthly result is always calculated by the backend.
 
-Board components must not contain fallback financial fixtures. Loading, empty-session, and API-error states should remain explicit.
+## Display ownership
+
+`board-model.ts` maps `RunView` into HUD values. The HUD shows cash, net worth, debt, calendar, financial-independence progress, event status, and outcome-derived trophies. Current level is a presentation derivation from revision, and XP mirrors FI progress; neither is a persisted progression system. The player label is currently presented as “Sprout,” not the profile-form name.
+
+The strategy route intentionally hides several prototype side panels. `/board/free` still contains Goals, Events, Journal, and Menu controls that are placeholders for later milestones.
 
 ## Board modes
 
-- `/board` is the canonical strategy-first product loop. It does not use tile traversal, automatic hopping, or a die mechanic.
-- `/board/free` uses the same scene and backend state but permits direct island travel for development and review.
+- `/board`: canonical strategy-first loop with destination selection and plan confirmation.
+- `/board/free`: same scene and backend run, with direct island travel for development/review.
+- A loop mode exists in component code but has no public page route.
 
 ## Accessibility and performance
 
-- Preserve keyboard-accessible controls and semantic dialog behavior for decisions.
-- Honor reduced-motion behavior when changing animation.
-- Keep the HUD readable independently of the WebGL scene.
-- Avoid remounting the full canvas for ordinary API state updates.
+- Preserve keyboard controls and semantic dialogs.
+- Preserve result-to-event focus handoff and reduced-motion behavior.
+- Keep critical HUD information readable without relying on the WebGL scene.
+- Do not remount the canvas for ordinary `RunView` updates.
+
+## Currently missing from the playable experience
+
+- Editable authoritative name, location, family situation, debts, insurance, health plan, and custom FI target during onboarding.
+- A broad life-event library and unscheduled narrative event variety.
+- Player-visible tax breakdown and education explaining 401(k), HSA, insurance, debt, and tax decisions.
+- Mounted teaching, counterfactual, causal-history, checkpoint, or debrief UI.
+- AI-directed monthly scenarios; the playable monthly pipeline is deterministic.
+
+Core/server modules cover portions of these areas, but they are not player-visible until connected through current contracts and UI.
