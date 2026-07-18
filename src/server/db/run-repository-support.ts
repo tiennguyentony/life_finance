@@ -32,6 +32,7 @@ import {
   RUN_SECRET_HASH_VERSION,
   RunSecretCodec,
 } from "../auth/run-secret";
+import { accountIdFromRunCredential } from "../auth/account-run-credential";
 import type { GameCommandV2 } from "./run-repository-contracts";
 import { RunRepositoryError } from "./run-repository-contracts";
 import {
@@ -154,7 +155,10 @@ export function isAuthorized(
   accessSecret: string,
   storedHash: string,
   storedHashVersion: number,
+  ownerUserId: string | null = null,
 ): boolean {
+  const accountId = accountIdFromRunCredential(accessSecret);
+  if (accountId !== null) return ownerUserId === accountId;
   return (
     storedHashVersion === RUN_SECRET_HASH_VERSION &&
     secretCodec.verify(accessSecret, storedHash)

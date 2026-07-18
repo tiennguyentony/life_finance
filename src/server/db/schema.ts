@@ -27,6 +27,7 @@ import type { ResolvedScenarioSnapshot } from "../../core/scenario-catalog";
 import type { RunStateSnapshotKind } from "./snapshot-policy-v2";
 
 export const runStatus = pgEnum("run_status", ["active", "terminal"]);
+export const runSaveStatus = pgEnum("run_save_status", ["active", "archived"]);
 export const outboxStatus = pgEnum("outbox_status", [
   "pending",
   "processing",
@@ -51,6 +52,8 @@ export const gameRuns = pgTable(
   "game_runs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id"),
+    saveStatus: runSaveStatus("save_status").notNull().default("active"),
     accessSecretHash: char("access_secret_hash", { length: 64 }).notNull(),
     accessSecretHashVersion: smallint("access_secret_hash_version")
       .notNull()
@@ -73,6 +76,16 @@ export const gameRuns = pgTable(
   },
   (table) => [
     uniqueIndex("game_runs_access_secret_hash_uidx").on(table.accessSecretHash),
+    uniqueIndex("game_runs_one_active_save_per_owner_uidx")
+      .on(table.ownerUserId)
+      .where(
+        sql`${table.ownerUserId} IS NOT NULL AND ${table.saveStatus} = 'active'`,
+      ),
+    index("game_runs_owner_save_updated_idx").on(
+      table.ownerUserId,
+      table.saveStatus,
+      table.updatedAt,
+    ),
     index("game_runs_status_updated_idx").on(table.status, table.updatedAt),
     check("game_runs_revision_nonnegative", sql`${table.currentRevision} >= 0`),
     check(

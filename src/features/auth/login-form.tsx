@@ -55,6 +55,13 @@ export function LoginForm() {
         type: "email",
       });
       if (error) throw error;
+      const claimResponse = await fetch("/api/session/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!claimResponse.ok) {
+        throw new Error("Signed in, but the existing save could not be attached to this account.");
+      }
       router.replace("/start");
       router.refresh();
     } catch (error) {

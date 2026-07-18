@@ -37,6 +37,8 @@ import {
 import { RunApiV2Error } from "./errors";
 import { OnboardingError, type OnboardingService } from "./onboarding-service";
 import type { OnboardingAiServiceV1 } from "@/server/ai/onboarding-service-v1";
+import { accountRunCredential } from "@/server/auth/account-run-credential";
+import type { AuthenticatedUser } from "@/server/auth/supabase-user";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
@@ -260,6 +262,7 @@ export async function handleCreateRun(
   options: Readonly<{
     secureCookies?: boolean;
     requestIdFactory?: RequestIdFactory;
+    ownerUserId?: string;
   }> = {},
 ): Promise<Response> {
   const requestId = (options.requestIdFactory ?? randomUUID)();
@@ -269,6 +272,7 @@ export async function handleCreateRun(
     const created = await service.confirm({
       draft: input.draft as OnboardingDraftV1,
       reviewChecksum: input.reviewChecksum,
+      ...(options.ownerUserId ? { ownerUserId: options.ownerUserId } : {}),
     });
     const cookie = serializeRunSessionCookie(
       { runId: created.runId, accessSecret: created.accessSecret },
@@ -285,6 +289,114 @@ export async function handleCreateRun(
       201,
       requestId,
       { "Set-Cookie": cookie },
+    );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+type OwnedRunSessionRepository = Readonly<{
+  loadActiveOwnedRunId(ownerUserId: string): Promise<string | null>;
+  claimRunV2(
+    ownerUserId: string,
+    runId: string,
+    accessSecret: string,
+  ): Promise<void>;
+}>;
+
+export async function handleGetAccountSession(
+  user: AuthenticatedUser,
+  repository: Pick<OwnedRunSessionRepository, "loadActiveOwnedRunId">,
+  service: RunReader,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    const runId = await repository.loadActiveOwnedRunId(user.userId);
+    if (!runId) {
+      return jsonResponse(
+        { account: { userId: user.userId }, session: null },
+        200,
+        requestId,
+      );
+    }
+    const session = await getRun(
+      service,
+      runId,
+      accountRunCredential(user.userId),
+    );
+    return jsonResponse(
+      { account: { userId: user.userId }, session },
+      200,
+      requestId,
+    );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleClaimAccountSession(
+  request: Request,
+  user: AuthenticatedUser,
+  repository: OwnedRunSessionRepository,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    const session = parseRunSessionCookie(request.headers.get("cookie"));
+    if (session) {
+      await repository.claimRunV2(
+        user.userId,
+        session.runId,
+        session.accessSecret,
+      );
+    }
+    const runId = await repository.loadActiveOwnedRunId(user.userId);
+    return jsonResponse({ claimed: session !== null, runId }, 200, requestId);
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleGetAccountRun(
+  user: AuthenticatedUser,
+  runId: string,
+  service: RunReader,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    return jsonResponse(
+      await getRun(service, runId, accountRunCredential(user.userId)),
+      200,
+      requestId,
+    );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleSubmitAccountCommand(
+  request: Request,
+  user: AuthenticatedUser,
+  runId: string,
+  service: CommandRunner,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    const intent = commandIntentSchema.parse(await readJson(request));
+    return jsonResponse(
+      await submitCommand(
+        service,
+        runId,
+        accountRunCredential(user.userId),
+        intent,
+      ),
+      200,
+      requestId,
     );
   } catch (error) {
     return failure(error, requestId);

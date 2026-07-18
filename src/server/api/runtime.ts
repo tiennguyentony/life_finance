@@ -13,19 +13,23 @@ let runService: RunService | undefined;
 let onboardingService: OnboardingService | undefined;
 let onboardingAiService: OnboardingAiServiceV1 | undefined;
 let runGateway: CommandRunner | undefined;
+let runRepository: RunRepository | undefined;
 
-function createRunRepository(): RunRepository {
-  const connection = getDatabaseConnection();
-  return new RunRepository(
-    connection.db,
-    runSecretCodecFromEnvironment(),
-  );
+export function getRunRepository(): RunRepository {
+  if (!runRepository) {
+    const connection = getDatabaseConnection();
+    runRepository = new RunRepository(
+      connection.db,
+      runSecretCodecFromEnvironment(),
+    );
+  }
+  return runRepository;
 }
 
 export function getRunService(): RunService {
   if (!runService) {
     runService = new RunService(
-      createRunRepository(),
+      getRunRepository(),
       createTaxClientFromEnvironment(),
     );
   }
@@ -41,7 +45,7 @@ export function getRunGateway(): CommandRunner {
 
 export function getOnboardingService(): OnboardingService {
   if (!onboardingService) {
-    onboardingService = new OnboardingService(createRunRepository());
+    onboardingService = new OnboardingService(getRunRepository());
   }
   return onboardingService;
 }

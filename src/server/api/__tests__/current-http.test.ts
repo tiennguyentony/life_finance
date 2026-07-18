@@ -8,7 +8,9 @@ import { prepareOnboardingReviewV1 } from "@/core/onboarding-v1";
 import {
   handleCreateDemoRun,
   handleCreateRun,
+  handleClaimAccountSession,
   handleDeleteSession,
+  handleGetAccountSession,
   handleGetSession,
   handleGetRun,
   handleParseOnboarding,
@@ -255,6 +257,55 @@ describe("current frontend HTTP API", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ session: null });
+  });
+
+  it("restores the active save by account without requiring a browser cookie", async () => {
+    const state = currentRunState();
+    const response = await handleGetAccountSession(
+      { userId: SESSION.runId },
+      { loadActiveOwnedRunId: async () => SESSION.runId },
+      {
+        getRun: async (runId, credential) => {
+          expect(runId).toBe(SESSION.runId);
+          expect(credential).toBe(`lf_account:${SESSION.runId}`);
+          return { state, stateChecksum: "a".repeat(64) };
+        },
+      },
+      () => "request.account-session",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      account: { userId: SESSION.runId },
+      session: { run: { runId: "run.current" } },
+    });
+  });
+
+  it("claims a legacy cookie save for the signed-in account", async () => {
+    const claimRunV2 = vi.fn(async () => undefined);
+    const response = await handleClaimAccountSession(
+      new Request("https://game.test/api/session/claim", {
+        method: "POST",
+        headers: { Origin: "https://game.test", Cookie: COOKIE },
+      }),
+      { userId: SESSION.runId },
+      {
+        claimRunV2,
+        loadActiveOwnedRunId: async () => SESSION.runId,
+      },
+      () => "request.claim",
+    );
+
+    expect(response.status).toBe(200);
+    expect(claimRunV2).toHaveBeenCalledWith(
+      SESSION.runId,
+      SESSION.runId,
+      SESSION.accessSecret,
+    );
+    await expect(response.json()).resolves.toEqual({
+      claimed: true,
+      runId: SESSION.runId,
+    });
   });
 
   it("restores a cookie-authenticated RunView without exposing the secret", async () => {
