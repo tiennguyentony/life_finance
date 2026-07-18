@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function BoardPage() {
-  return <BoardShell mode="loop" />;
+  return <BoardShell mode="strategy" />;
 }

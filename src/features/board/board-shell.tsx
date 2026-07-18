@@ -6,12 +6,19 @@ import { useEffect, useRef, useState } from "react";
 import type { RunViewWire } from "@/contracts/api/contracts";
 import { LifeFinanceClient } from "@/lib/api-client/client";
 
+import { boardMonthResult, boardViewFromRun, type BoardMonthResult } from "./board-model";
 import type { BoardMode } from "./board-scene";
-import { boardViewFromRun } from "./board-model";
 import { BoardHud } from "./hud";
-import { standPointForIsland, HOME_ISLAND_ID } from "./islands";
+import { HOME_ISLAND_ID, standPointForIsland } from "./islands";
+import { MonthResultDialog } from "./month-result-dialog";
+import {
+  plansForDestination,
+  type BoardDestinationId,
+  type BoardPlan,
+} from "./plan-catalog";
+import { PlanningPanel } from "./planning-panel";
 import type { HopRequest } from "./sprout-3d";
-import { TRACK, destinationLandmarkId, standPointAt } from "./track";
+import { commitBoardTurn } from "./turn-commit";
 
 const BoardScene = dynamic(() => import("./board-scene"), {
   ssr: false,
@@ -22,11 +29,11 @@ const BoardScene = dynamic(() => import("./board-scene"), {
   ),
 });
 
-/** Free mode travels by island id; loop mode by track index. */
-type ActiveHop = HopRequest & Readonly<{ toId?: string; toIndex?: number }>;
+type ActiveHop = HopRequest & Readonly<{ toId: string }>;
 
 // Long enough that a screen reader can finish announcing before it hides.
 const TOAST_MS = 4000;
+const MONTH_RECOVERY_MESSAGE = "Your plan was saved, but the month did not advance.";
 
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -40,22 +47,32 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
+function errorMessage(reason: unknown, fallback: string): string {
+  return reason instanceof Error && reason.message ? reason.message : fallback;
+}
+
 type BoardShellProps = Readonly<{
-  /** "free": click any island to travel. "loop": one Move button, fixed order. */
   mode?: BoardMode;
 }>;
 
-export function BoardShell({ mode = "free" }: BoardShellProps) {
+export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   const router = useRouter();
   const [run, setRun] = useState<RunViewWire | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [currentIslandId, setCurrentIslandId] = useState<string>(HOME_ISLAND_ID);
-  const [trackIndex, setTrackIndex] = useState(0);
   const [hop, setHop] = useState<ActiveHop | null>(null);
+  const [selectedDestinationId, setSelectedDestinationId] =
+    useState<BoardDestinationId | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [monthResult, setMonthResult] = useState<BoardMonthResult | null>(null);
+  const [planningError, setPlanningError] = useState<string | null>(null);
+  const [finishMonthOnly, setFinishMonthOnly] = useState(false);
+  const [recoveryPlan, setRecoveryPlan] = useState<BoardPlan | null>(null);
+  const [reactionToken, setReactionToken] = useState(0);
+  const turnOpeningRef = useRef<RunViewWire | null>(null);
   // The message persists through the exit transition; `visible` drives it.
-  // Kept mounted (not conditionally rendered) so the aria-live region is
-  // already in the DOM when its text changes and reliably announces.
+  // Kept mounted so the aria-live region is present before its text changes.
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({
     message: "",
     visible: false,
@@ -96,14 +113,13 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
     setToast({ message, visible: true });
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(
-      () => setToast((prev) => ({ ...prev, visible: false })),
+      () => setToast((previous) => ({ ...previous, visible: false })),
       TOAST_MS,
     );
   };
 
   const startFreeHop = (islandId: string) => {
-    if (hop) return; // one hop at a time
-    // Hopping to the island you are on gives a bounce-in-place as feedback.
+    if (hop) return;
     setHop({
       from: standPointForIsland(currentIslandId),
       to: standPointForIsland(islandId),
@@ -111,36 +127,126 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
     });
   };
 
-  const hopToTrackIndex = (toIndex: number, fromIndex: number) => {
-    setHop({ from: standPointAt(fromIndex), to: standPointAt(toIndex), toIndex });
-  };
-
   const handleSelect = (islandId: string) => {
-    if (mode === "loop") {
-      // The loop removes navigation choices: islands are stops, not links.
-      if (islandId !== currentIslandId) showToast("Sprout only moves forward. Press Move.");
-      else if (!hop) hopToTrackIndex(trackIndex, trackIndex); // bounce in place
+    if (mode === "free") {
+      startFreeHop(islandId);
       return;
     }
-    startFreeHop(islandId);
+    if (
+      !run ||
+      !run.capabilities.canAct ||
+      run.pendingInteraction.kind === "event"
+    ) {
+      return;
+    }
+    if (
+      busy ||
+      monthResult ||
+      finishMonthOnly
+    ) {
+      return;
+    }
+
+    const destinationId = islandId as BoardDestinationId;
+    const firstEnabledPlan = plansForDestination(run, destinationId).find(
+      (plan) => plan.disabledReason === null,
+    );
+    setSelectedDestinationId(destinationId);
+    setSelectedPlanId(firstEnabledPlan?.id ?? null);
+    setPlanningError(null);
+    setRecoveryPlan(null);
   };
 
   const handleHopEnd = () => {
     if (!hop) return;
-    if (mode === "free") {
-      if (hop.toId) setCurrentIslandId(hop.toId);
-      setHop(null);
+    setCurrentIslandId(hop.toId);
+    setHop(null);
+  };
+
+  const completeMonth = (
+    opening: RunViewWire,
+    ending: RunViewWire,
+    plan: BoardPlan,
+  ) => {
+    setRun(ending);
+    setMonthResult(boardMonthResult(opening, ending, plan.label));
+    setSelectedDestinationId(null);
+    setSelectedPlanId(null);
+    setPlanningError(null);
+    setFinishMonthOnly(false);
+    setRecoveryPlan(null);
+    turnOpeningRef.current = null;
+    setReactionToken((token) => token + 1);
+  };
+
+  const finishSavedMonth = async (plan: BoardPlan) => {
+    if (!run) return;
+    const recoveryOpening = turnOpeningRef.current ?? run;
+    setBusy(true);
+    setPlanningError(null);
+    try {
+      const response = await new LifeFinanceClient().submitCommand(run.runId, {
+        id: `board.month.recovery.${crypto.randomUUID()}`,
+        expectedRevision: run.revision,
+        type: "process_month",
+        payload: {},
+      });
+      completeMonth(recoveryOpening, response.run, plan);
+    } catch (reason) {
+      setPlanningError(errorMessage(reason, "The month still could not advance."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCommitPlan = async () => {
+    if (
+      !run ||
+      busy ||
+      !selectedDestinationId ||
+      !selectedPlanId ||
+      run.pendingInteraction.kind === "event"
+    ) {
       return;
     }
-    // Loop: keep hopping tile-to-tile until the next landmark, Monopoly-style.
-    const landedIndex = hop.toIndex ?? trackIndex;
-    setTrackIndex(landedIndex);
-    const landed = TRACK[landedIndex]!;
-    if (landed.kind === "landmark") {
-      setCurrentIslandId(landed.islandId);
-      setHop(null);
-    } else {
-      hopToTrackIndex((landedIndex + 1) % TRACK.length, landedIndex);
+    const plan = finishMonthOnly
+      ? recoveryPlan
+      : plansForDestination(run, selectedDestinationId).find(
+          (candidate) => candidate.id === selectedPlanId,
+        );
+    if (!plan || plan.disabledReason !== null) return;
+
+    if (finishMonthOnly) {
+      await finishSavedMonth(plan);
+      return;
+    }
+
+    const opening = run;
+    turnOpeningRef.current = opening;
+    setBusy(true);
+    setPlanningError(null);
+    try {
+      const result = await commitBoardTurn({
+        client: new LifeFinanceClient(),
+        opening,
+        plan,
+        createId: (phase) => `board.turn.${phase}.${crypto.randomUUID()}`,
+      });
+      if (result.kind === "completed") {
+        completeMonth(result.opening, result.run, plan);
+      } else if (result.kind === "plan_failed") {
+        setRun(result.run);
+        turnOpeningRef.current = null;
+        setRecoveryPlan(null);
+        setPlanningError(errorMessage(result.error, "The plan could not be saved."));
+      } else {
+        setRun(result.run);
+        setFinishMonthOnly(true);
+        setRecoveryPlan(plan);
+        setPlanningError(MONTH_RECOVERY_MESSAGE);
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -149,27 +255,23 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
     setBusy(true);
     try {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
-        id: `board.month.${crypto.randomUUID()}`,
+        id: `board.free.month.${crypto.randomUUID()}`,
         expectedRevision: run.revision,
         type: "process_month",
         payload: {},
       });
       setRun(response.run);
       showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
-      if (mode === "loop") {
-        hopToTrackIndex((trackIndex + 1) % TRACK.length, trackIndex);
-      } else {
-        startFreeHop(currentIslandId);
-      }
+      startFreeHop(currentIslandId);
     } catch (reason) {
-      showToast(reason instanceof Error ? reason.message : "The turn could not advance.");
+      showToast(errorMessage(reason, "The turn could not advance."));
     } finally {
       setBusy(false);
     }
   };
 
   const handleResolveEvent = async (choiceId: string) => {
-    if (!run || busy || run.pendingInteraction.kind !== "event") return;
+    if (!run || busy || monthResult || run.pendingInteraction.kind !== "event") return;
     setBusy(true);
     try {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
@@ -179,9 +281,13 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
         payload: { eventId: run.pendingInteraction.eventId, choiceId },
       });
       setRun(response.run);
-      showToast("Decision applied. Your board is ready to move again.");
+      showToast(
+        mode === "strategy"
+          ? "Decision applied. Your board is ready for a new focus."
+          : "Decision applied. Your board is ready to travel again.",
+      );
     } catch (reason) {
-      showToast(reason instanceof Error ? reason.message : "The decision could not be applied.");
+      showToast(errorMessage(reason, "The decision could not be applied."));
     } finally {
       setBusy(false);
     }
@@ -196,36 +302,76 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
   }
 
   const view = boardViewFromRun(run);
+  const plans = selectedDestinationId
+    ? finishMonthOnly && recoveryPlan
+      ? plansForDestination(run, selectedDestinationId).map((plan) =>
+          plan.id === recoveryPlan.id ? recoveryPlan : plan,
+        )
+      : plansForDestination(run, selectedDestinationId)
+    : [];
+  const planningPanel = selectedDestinationId ? (
+    <PlanningPanel
+      busy={busy}
+      destinationId={selectedDestinationId}
+      errorMessage={planningError}
+      onClose={() => {
+        if (finishMonthOnly) {
+          setPlanningError(MONTH_RECOVERY_MESSAGE);
+          return;
+        }
+        setSelectedDestinationId(null);
+        setSelectedPlanId(null);
+        setPlanningError(null);
+        setRecoveryPlan(null);
+      }}
+      onCommit={() => void handleCommitPlan()}
+      onSelectPlan={(planId) => {
+        if (finishMonthOnly) return;
+        setSelectedPlanId(planId);
+        setPlanningError(null);
+      }}
+      plans={plans}
+      selectedPlanId={selectedPlanId}
+    />
+  ) : null;
+  const eventVisible = view.pendingEvent !== null && monthResult === null;
 
   return (
     <div className="board-stage">
       <div className="board-canvas">
         <BoardScene
           currentIslandId={currentIslandId}
-          flagIslandId={mode === "loop" ? destinationLandmarkId(trackIndex) : null}
-          hop={hop}
+          hop={mode === "free" ? hop : null}
           mode={mode}
           onHopEnd={handleHopEnd}
           onSelect={handleSelect}
+          reactionToken={reactionToken}
           reducedMotion={reducedMotion}
+          selectedIslandId={mode === "strategy" ? selectedDestinationId : null}
           standingAt={
-            mode === "loop" ? standPointAt(trackIndex) : standPointForIsland(currentIslandId)
+            mode === "strategy"
+              ? standPointForIsland(HOME_ISLAND_ID)
+              : standPointForIsland(currentIslandId)
           }
         />
       </div>
       <BoardHud
-        actionHint={
-          view.pendingEvent
-            ? "Resolve the event first"
-            : mode === "loop"
-              ? "Advance one month and hop"
-              : "Advance one financial month"
-        }
-        actionLabel={busy ? "Saving..." : view.pendingEvent ? "Decision Required" : mode === "loop" ? "Move" : "Take Action"}
+        actionHint={view.pendingEvent ? "Resolve the event first" : "Advance one financial month"}
+        actionLabel={busy ? "Saving..." : view.pendingEvent ? "Decision Required" : "Take Action"}
         busy={busy}
+        eventVisible={eventVisible}
+        mode={mode}
+        monthResultDialog={
+          <MonthResultDialog
+            busy={busy}
+            onContinue={() => setMonthResult(null)}
+            result={monthResult}
+          />
+        }
+        onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
         onTakeAction={handleTakeAction}
-        onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
+        planningPanel={planningPanel}
         toastMessage={toast.message}
         toastVisible={toast.visible}
         view={view}
