@@ -47,7 +47,7 @@ export function GeneratingScreen() {
       </div>
       <div className="generating-copy">
         <p>{error ? "Generation interrupted" : "Building your financial universe"}</p>
-        <h1>{error ? "Sprout lost a receipt." : "Crunching the fake numbers..."}</h1>
+        <h1>{error ? "Sprout lost a receipt." : "Crunching your numbers..."}</h1>
         {error ? (
           <>
             <p className="form-error" role="alert">{error}</p>

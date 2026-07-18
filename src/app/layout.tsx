@@ -30,7 +30,7 @@ export default function RootLayout({
           </main>
           <footer className="site-footer">
             <div>Life Finance</div>
-            <div>Developer play interface</div>
+            <div>Learn money by living the choices</div>
           </footer>
         </OnboardingProvider>
       </body>
