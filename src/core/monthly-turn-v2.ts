@@ -1046,6 +1046,7 @@ function processMonthlyTurnV2Kernel200(
   validateCommand(state, command);
   const eventCatalog = dependencies.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
   const activeEventCatalog = dependencies.activePersonalEventCatalog ??
+    dependencies.personalEventCatalog ??
     PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2;
   const beginnerEventCadenceVersion =
     dependencies.beginnerEventCadenceVersion ??

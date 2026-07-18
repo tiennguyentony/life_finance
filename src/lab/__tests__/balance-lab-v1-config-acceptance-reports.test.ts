@@ -352,8 +352,11 @@ describe("balance lab config, acceptance, and reports", () => {
       ...report,
       summary: { ...report.summary, extra: true },
     })).toThrow();
-    const { beginnerEngagement: _engagement, ...summaryWithoutEngagement } =
-      report.summary;
+    const summaryWithoutEngagement = { ...report.summary } as Record<
+      string,
+      unknown
+    >;
+    Reflect.deleteProperty(summaryWithoutEngagement, "beginnerEngagement");
     expect(() => decodeBalanceLabReportV1({
       ...report,
       summary: summaryWithoutEngagement,
@@ -372,10 +375,13 @@ describe("balance lab config, acceptance, and reports", () => {
         }],
       },
     })).toThrow();
-    const {
-      beginnerEventCadenceEvidence: _cadence,
-      ...metricsWithoutCadence
-    } = report.result.runs[0]!.metrics;
+    const metricsWithoutCadence = {
+      ...report.result.runs[0]!.metrics,
+    } as Record<string, unknown>;
+    Reflect.deleteProperty(
+      metricsWithoutCadence,
+      "beginnerEventCadenceEvidence",
+    );
     expect(() => decodeBalanceLabReportV1({
       ...report,
       result: {
