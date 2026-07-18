@@ -6,7 +6,10 @@ import {
   POLICYENGINE_US_VERSION,
   type TaxCalculationResult,
 } from "../../server/tax/contracts";
-import { createBalanceLabPersonaStateV1 } from "../../data/balance-lab-personas-v1";
+import {
+  BALANCE_LAB_PERSONA_IDS_V1,
+  createBalanceLabPersonaStateV1,
+} from "../../data/balance-lab-personas-v1";
 import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
 import type { PersonalEventTemplateV2 } from "../../core/personal-event-v2";
 import { ratePpm } from "../../core/domain/money";
@@ -65,6 +68,23 @@ function testTaxSource(): BalanceLabTaxEvidenceSourceV1 {
 }
 
 describe("offline balance lab production owners", () => {
+  it("initializes every declared persona inside its selected scenario bounds", () => {
+    for (const personaId of BALANCE_LAB_PERSONA_IDS_V1) {
+      const state = createBalanceLabPersonaStateV1({
+        personaId,
+        matchedSeed: 1,
+        difficulty: "guided",
+      });
+      const scenario = state.gameplay.catalogSnapshot!.selected.scenario;
+      expect(state.finances.cashCents).toBeGreaterThanOrEqual(
+        scenario.minimumStartingCashCents,
+      );
+      expect(state.finances.cashCents).toBeLessThanOrEqual(
+        scenario.maximumStartingCashCents,
+      );
+    }
+  });
+
   it("integrates the real strategy, Time Controller, monthly, market, event, director, balance, lifecycle, and goal owners", () => {
     const ports = {
       ...BALANCE_LAB_PRODUCTION_PORTS_V1,
