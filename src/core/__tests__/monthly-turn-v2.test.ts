@@ -648,14 +648,14 @@ describe("atomic v2 monthly turn", () => {
       approvedCandidate:
         first.record.runtimeBalanceDecision?.approved?.templateId ?? null,
     }).toEqual({
-      stateChecksum: "986abcc6cc2ba10e9aa31a6c0652a1d31c8e522b14790463f33ebebad93bc9b7",
-      randomValue: 2_643_935_435,
+      stateChecksum: "8cbe67a510e1da8a8aa62e9b69e5fe2c9d1a8846408dff3f18adea6ff86955bd",
+      randomValue: 2_579_994_238,
       candidateSetChecksum:
-        "3acb64aa2450184824091ffa309af84d07e971b470d1b9937ae36a62e93e4455",
+        "3af4ea6d7042ad8fc85fcb56a0f78315a7745a41a43e464db8c87c1c08eafc8d",
       rankingInputChecksum:
-        "58a2a8e03833deccf6bab3c658a449e510dad8899ac25a078e5f3b79565243c8",
-      topCandidate: "personal.utility_rebate",
-      approvedCandidate: "personal.utility_rebate",
+        "ba4440f908a637cb4cfd3548b0547561bb05f64455e385fc156555beafdec8f8",
+      topCandidate: "personal.performance_bonus",
+      approvedCandidate: "personal.performance_bonus",
     });
   });
 
@@ -724,9 +724,9 @@ describe("atomic v2 monthly turn", () => {
       approvedEventId:
         observed.record.runtimeBalanceDecision?.approved?.eventId,
     }).toEqual({
-      checksum: "9b92b81d2fcb316432c04d11b0e678d2c6860a2cecfedc177943fc04b8a77c15",
-      randomValue: 2_643_935_435,
-      approvedEventId: "evt.2026-08.personal.utility_rebate.v2",
+      checksum: "e3ab92c6783cd9ab1702a40fca80f15b805298f177ae096c7ce86b2258d25c69",
+      randomValue: 2_579_994_238,
+      approvedEventId: "evt.2026-08.personal.performance_bonus.v2",
     });
   });
 
