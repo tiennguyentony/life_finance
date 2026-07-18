@@ -15,6 +15,10 @@ export type BoardPlanEffect = Readonly<{
   certainty: "exact" | "directional";
 }>;
 
+export type BoardPlanContinuationV1 =
+  | Readonly<{ kind: "repeat_transaction"; actionLabel: string }>
+  | Readonly<{ kind: "advance_only" }>;
+
 export type BoardPlan = Readonly<{
   id: string;
   destinationId: BoardDestinationId;
@@ -22,6 +26,7 @@ export type BoardPlan = Readonly<{
   description: string;
   effects: readonly BoardPlanEffect[];
   disabledReason: string | null;
+  continuation: BoardPlanContinuationV1;
   command:
     | Readonly<{ type: "none" }>
     | Readonly<{ type: "take_detailed_action"; action: Record<string, unknown> }>
@@ -103,6 +108,7 @@ function homePlans(run: BoardPlanRun): readonly BoardPlan[] {
       disabledReason: cannotReduce
         ? "Living costs cannot be reduced by another $100 per month."
         : null,
+      continuation: { kind: "advance_only" },
       command: {
         type: "take_detailed_action",
         action: {
@@ -121,6 +127,7 @@ function homePlans(run: BoardPlanRun): readonly BoardPlan[] {
         directionalEffect("Lifestyle flexibility", "Higher", "positive"),
       ],
       disabledReason: null,
+      continuation: { kind: "advance_only" },
       command: {
         type: "take_detailed_action",
         action: {
@@ -160,6 +167,10 @@ function bankPlans(run: BoardPlanRun): readonly BoardPlan[] {
           ? "No revolving credit balance is available to pay."
           : "You need cash to make a revolving-credit payment."
         : null,
+      continuation: {
+        kind: "repeat_transaction",
+        actionLabel: `Pay another ${formatPlanMoney(paymentCents)}`,
+      },
       command: {
         type: "take_detailed_action",
         action: { type: "pay_revolving_credit", amountCents: paymentCents },
@@ -178,6 +189,7 @@ function bankPlans(run: BoardPlanRun): readonly BoardPlan[] {
       disabledReason: drawCents <= 0
         ? "No revolving credit is available to draw."
         : null,
+      continuation: { kind: "advance_only" },
       command: {
         type: "take_detailed_action",
         action: { type: "draw_revolving_credit", amountCents: drawCents },
@@ -210,6 +222,10 @@ function investmentPlan(
     disabledReason: run.finances.cashCents < DEMO_ACTION_CENTS
       ? "You need $500 in cash."
       : null,
+    continuation: {
+      kind: "repeat_transaction",
+      actionLabel: `Invest another ${formatPlanMoney(DEMO_ACTION_CENTS)}`,
+    },
     command: {
       type: "take_detailed_action",
       action: { type: "invest_taxable", bucket, amountCents: DEMO_ACTION_CENTS },
@@ -250,6 +266,7 @@ function upskillPlan(program: UpskillProgram, run: BoardPlanRun): BoardPlan {
       ),
     ],
     disabledReason,
+    continuation: { kind: "advance_only" },
     command: {
       type: "take_detailed_action",
       action: { type: "start_upskill", programId: program.id },
@@ -280,6 +297,7 @@ function reservePlan(months: number): BoardPlan {
       directionalEffect("Future reserve allocation", "Protects the target", "positive"),
     ],
     disabledReason: null,
+    continuation: { kind: "advance_only" },
     command: {
       type: "set_recurring_strategy",
       emergencyFundTargetMonthsPpm: months * 1_000_000,
@@ -295,6 +313,7 @@ function stayTheCoursePlan(destinationId: "home" | "bank" | "hospital"): BoardPl
     description: "Make no immediate change before living this month.",
     effects: [exactEffect("Immediate change", "None", "neutral")],
     disabledReason: null,
+    continuation: { kind: "advance_only" },
     command: { type: "none" },
   };
 }

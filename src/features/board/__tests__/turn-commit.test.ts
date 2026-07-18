@@ -24,6 +24,7 @@ const actionPlan: BoardPlan = {
   description: "Pay down the balance.",
   effects: [],
   disabledReason: null,
+  continuation: { kind: "repeat_transaction", actionLabel: "Pay another $500" },
   command: {
     type: "take_detailed_action",
     action: { type: "pay_revolving_credit", amountCents: 50_000 },
