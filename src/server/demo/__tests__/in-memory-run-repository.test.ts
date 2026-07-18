@@ -6,6 +6,7 @@ import {
   constructOnboardedGameStateV1,
   prepareOnboardingReviewV1,
 } from "@/core/onboarding-v1";
+import { createRunReader } from "@/server/api/run-reader";
 
 import { InMemoryRunRepository } from "../in-memory-run-repository";
 
@@ -22,6 +23,21 @@ function initialState(runId: string) {
 }
 
 describe("InMemoryRunRepository", () => {
+  it("restores a run through the read-only gateway without a tax client", async () => {
+    const repository = new InMemoryRunRepository({
+      runIdFactory: () => RUN_ID,
+      accessSecretFactory: () => ACCESS_SECRET,
+    });
+    const created = await repository.createRunV2(initialState);
+
+    await expect(
+      createRunReader(repository).getRun(RUN_ID, ACCESS_SECRET),
+    ).resolves.toMatchObject({
+      state: { runId: RUN_ID },
+      stateChecksum: created.stateChecksum,
+    });
+  });
+
   it("creates, authorizes, and identifies a local run", async () => {
     const repository = new InMemoryRunRepository({
       runIdFactory: () => RUN_ID,

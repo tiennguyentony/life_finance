@@ -1,4 +1,4 @@
-import type { CommandRunner } from "@/application/game/use-cases";
+import type { CommandRunner, RunReader } from "@/application/game/use-cases";
 import { onboardingDraftForPersonaV1 } from "@/core/onboarding-personas-v1";
 import type { CreatedRunV2 } from "@/server/db/run-repository-contracts";
 import { OnboardingService } from "@/server/api/onboarding-service";
@@ -8,6 +8,7 @@ import { InMemoryRunRepository } from "./in-memory-run-repository";
 import { OfflineDemoTaxCalculator } from "./offline-tax-calculator";
 
 type PersistentRunServiceFactory = () => CommandRunner;
+type PersistentRunReaderFactory = () => RunReader;
 
 export class LocalDemoRuntime {
   readonly #repository: InMemoryRunRepository;
@@ -51,6 +52,17 @@ export class LocalDemoRuntime {
         serviceFor(runId).getRun(runId, accessSecret),
       submitCommand: (runId, accessSecret, command) =>
         serviceFor(runId).submitCommand(runId, accessSecret, command),
+    });
+  }
+
+  createRunReaderGateway(
+    persistentReaderFactory: PersistentRunReaderFactory,
+  ): RunReader {
+    const readerFor = (runId: string): RunReader =>
+      this.hasRun(runId) ? this.#runService : persistentReaderFactory();
+    return Object.freeze({
+      getRun: (runId: string, accessSecret: string) =>
+        readerFor(runId).getRun(runId, accessSecret),
     });
   }
 }

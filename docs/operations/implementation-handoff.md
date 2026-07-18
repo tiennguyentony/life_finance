@@ -27,6 +27,7 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 8. The three onboarding personas are starting profiles, not independent save slots.
 9. The board exposes New Game. Merely entering setup preserves the current save; successfully creating the replacement archives the prior active save.
 10. `/generating` waits for persisted onboarding hydration before deciding whether a profile is missing, and profile state is persisted before navigation.
+11. Restoring a run uses a read-only gateway and does not initialize the tax client; tax configuration is required only by command processing.
 
 ## Local verification performed
 
@@ -36,6 +37,7 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 - Local Supabase migrations `0000` through `0008` applied successfully.
 - Local email OTP produced the custom six-digit email and verified to a Supabase user/session.
 - PostgreSQL repository tests include account ownership, archive, resume, and cross-account claim rejection.
+- The latest locally generated account run was loaded and projected successfully through the read-only gateway.
 
 ## Before deployment
 

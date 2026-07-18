@@ -28,7 +28,7 @@ This path still exercises the real same-origin API, HttpOnly cookie, use cases, 
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
    RUN_SECRET_PEPPER_BASE64URL=...
    TAX_SERVICE_URL=http://127.0.0.1:8000
-   TAX_SERVICE_TOKEN=use-the-same-high-entropy-token-as-the-tax-service
+   TAX_SERVICE_TOKEN=use-the-same-high-entropy-token-at-least-32-characters
    ```
 
 3. Install packages: `pnpm install --frozen-lockfile`.

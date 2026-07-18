@@ -1,5 +1,5 @@
 import { OnboardingAiServiceV1 } from "../ai/onboarding-service-v1";
-import type { CommandRunner } from "../../application/game/use-cases";
+import type { CommandRunner, RunReader } from "../../application/game/use-cases";
 import { getAiRoleClient } from "../ai/runtime";
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { RunRepository } from "../db/run-repository";
@@ -8,11 +8,13 @@ import { createTaxClientFromEnvironment } from "../tax/client";
 import { getLocalDemoRuntime } from "../demo/runtime";
 import { OnboardingService } from "./onboarding-service";
 import { RunService } from "./run-service";
+import { createRunReader } from "./run-reader";
 
 let runService: RunService | undefined;
 let onboardingService: OnboardingService | undefined;
 let onboardingAiService: OnboardingAiServiceV1 | undefined;
 let runGateway: CommandRunner | undefined;
+let runReaderGateway: RunReader | undefined;
 let runRepository: RunRepository | undefined;
 
 export function getRunRepository(): RunRepository {
@@ -41,6 +43,16 @@ export function getRunGateway(): CommandRunner {
     runGateway = getLocalDemoRuntime().createRunGateway(getRunService);
   }
   return runGateway;
+}
+
+export function getRunReaderGateway(): RunReader {
+  if (!runReaderGateway) {
+    const persistentReader = createRunReader(getRunRepository());
+    runReaderGateway = getLocalDemoRuntime().createRunReaderGateway(
+      () => persistentReader,
+    );
+  }
+  return runReaderGateway;
 }
 
 export function isLocalDemoRun(runId: string): boolean {
