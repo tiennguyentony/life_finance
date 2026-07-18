@@ -27,7 +27,7 @@ type BoardSceneProps = Readonly<{
   currentIslandId: string;
   hop: HopRequest | null;
   mode: BoardMode;
-  onSelect: (islandId: string) => void;
+  onSelect: (islandId: string, focusTarget?: HTMLElement) => void;
   onHopEnd: () => void;
   reducedMotion: boolean;
   reactionToken: number;
@@ -191,7 +191,7 @@ const BUILDINGS: Readonly<Record<string, () => React.JSX.Element>> = {
 
 type IslandProps = Readonly<{
   island: BoardIsland;
-  onSelect: (islandId: string) => void;
+  onSelect: (islandId: string, focusTarget?: HTMLElement) => void;
   position: BoardPoint;
   radius: number;
   reducedMotion: boolean;
@@ -281,7 +281,8 @@ function Island({
       >
         <button
           className={`board-chip${isHighlighted ? " board-chip-current" : ""}`}
-          onClick={() => onSelect(island.id)}
+          data-board-destination={island.id}
+          onClick={(event) => onSelect(island.id, event.currentTarget)}
           style={{ pointerEvents: "auto", borderColor: island.accent }}
           type="button"
         >

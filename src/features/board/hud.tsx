@@ -14,6 +14,7 @@ type BoardHudProps = Readonly<{
   actionLabel: string;
   actionHint: string;
   busy: boolean;
+  eventReturnFocusTarget: HTMLElement | null;
   eventVisible: boolean;
   mode: BoardMode;
   monthResultDialog: ReactNode;
@@ -38,6 +39,7 @@ export function BoardHud({
   actionLabel,
   actionHint,
   busy,
+  eventReturnFocusTarget,
   eventVisible,
   mode,
   monthResultDialog,
@@ -49,7 +51,9 @@ export function BoardHud({
   toastMessage,
   toastVisible,
 }: BoardHudProps) {
-  const eventDialogRef = useModalDialog(eventVisible);
+  const eventDialogRef = useModalDialog(eventVisible, {
+    returnFocusTarget: eventReturnFocusTarget,
+  });
   const goalPercent = Math.min(
     100,
     Math.round((view.goal.current / Math.max(1, view.goal.target)) * 100),

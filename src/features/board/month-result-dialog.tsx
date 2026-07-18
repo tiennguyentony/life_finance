@@ -7,6 +7,7 @@ type MonthResultDialogProps = Readonly<{
   busy: boolean;
   onContinue: () => void;
   result: BoardMonthResult | null;
+  returnFocusTarget: HTMLElement | null;
 }>;
 
 function formatMonth(month: string): string {
@@ -26,8 +27,14 @@ function formatProgressDelta(ppm: number): string {
   return percentagePoints > 0 ? `+${formatted}` : percentagePoints < 0 ? `-${formatted}` : formatted;
 }
 
-export function MonthResultDialog({ busy, onContinue, result }: MonthResultDialogProps) {
-  const dialogRef = useModalDialog(result !== null);
+export function MonthResultDialog({
+  busy,
+  onContinue,
+  result,
+  returnFocusTarget,
+}: MonthResultDialogProps) {
+  const restoreFocus = result ? !result.hasPendingEvent : true;
+  const dialogRef = useModalDialog(result !== null, { restoreFocus, returnFocusTarget });
 
   if (!result) return null;
 
@@ -71,7 +78,11 @@ export function MonthResultDialog({ busy, onContinue, result }: MonthResultDialo
         </dl>
 
         <button disabled={busy} onClick={onContinue} type="button">
-          {busy ? "Continuing..." : result.hasPendingEvent ? "Review decision" : "Continue"}
+          {busy
+            ? "Continuing..."
+            : result.hasPendingEvent
+              ? "Review decision"
+              : `Continue to ${formatMonth(result.toMonth)}`}
         </button>
       </section>
     </dialog>

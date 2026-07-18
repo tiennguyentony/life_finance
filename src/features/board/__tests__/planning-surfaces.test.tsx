@@ -143,7 +143,12 @@ describe("board planning surfaces", () => {
     };
     const result = boardMonthResult(opening, ending, "Invest in broad index");
     const markup = renderToStaticMarkup(
-      <MonthResultDialog busy={false} onContinue={() => undefined} result={result} />,
+      <MonthResultDialog
+        busy={false}
+        onContinue={() => undefined}
+        result={result}
+        returnFocusTarget={null}
+      />,
     );
 
     expect(markup).toContain('role="dialog"');
@@ -161,5 +166,23 @@ describe("board planning surfaces", () => {
     expect(markup).toContain("0.4 percentage points");
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("A life decision is waiting before the next month.");
+    expect(markup).toContain(">Review decision</button>");
+  });
+
+  it("continues to the authoritative ending month when no event is pending", () => {
+    const opening = projectRunView(currentRunState());
+    const ending = { ...opening, currentMonth: "2026-08" };
+    const result = boardMonthResult(opening, ending, "Stay the course");
+    const markup = renderToStaticMarkup(
+      <MonthResultDialog
+        busy={false}
+        onContinue={() => undefined}
+        result={result}
+        returnFocusTarget={null}
+      />,
+    );
+
+    expect(markup).toContain(">Continue to August 2026</button>");
+    expect(markup).not.toContain("Review decision");
   });
 });
