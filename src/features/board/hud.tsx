@@ -4,7 +4,6 @@ import Image from "next/image";
 
 import {
   type BoardView,
-  formatBoardChoice,
   formatBoardMoney,
 } from "./board-model";
 
@@ -159,14 +158,14 @@ export function BoardHud({
           <h2 id="board-event-title">{view.pendingEvent.headline}</h2>
           <p>{view.pendingEvent.body}</p>
           <div>
-            {view.pendingEvent.choiceIds.map((choiceId) => (
+            {view.pendingEvent.choices.map((choice) => (
               <button
                 disabled={busy}
-                key={choiceId}
-                onClick={() => onResolveEvent(choiceId)}
+                key={choice.id}
+                onClick={() => onResolveEvent(choice.id)}
                 type="button"
               >
-                {formatBoardChoice(choiceId)}
+                {choice.label}
               </button>
             ))}
           </div>
