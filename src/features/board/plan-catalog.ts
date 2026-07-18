@@ -36,6 +36,7 @@ export const ANNUAL_LIFESTYLE_DELTA_CENTS = 120_000;
 
 type BoardPlanRun = Readonly<{
   revision: number;
+  currentMonth: string;
   finances: Readonly<{
     cashCents: number;
     creditLimitCents: number;
@@ -327,7 +328,7 @@ export function commandIntentForPlan(
     return {
       id: commandId,
       expectedRevision: run.revision,
-      effectiveMonth: run.strategy.effectiveMonth,
+      effectiveMonth: run.currentMonth,
       type: "take_detailed_action",
       payload: { action: plan.command.action },
     };
@@ -338,7 +339,7 @@ export function commandIntentForPlan(
   return {
     id: commandId,
     expectedRevision: run.revision,
-    effectiveMonth: run.strategy.effectiveMonth,
+    effectiveMonth: run.currentMonth,
     type: "set_recurring_strategy",
     payload: {
       strategy: {
