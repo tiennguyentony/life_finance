@@ -182,9 +182,11 @@ export function BoardHud({
           aria-labelledby="board-event-title"
           aria-modal="true"
           className="board-event-dialog"
+          hidden={!eventVisible}
           onCancel={(event) => event.preventDefault()}
           ref={eventDialogRef}
           role="dialog"
+          style={eventVisible ? undefined : { display: "none" }}
         >
           <span>Decision required</span>
           <h2 id="board-event-title">{view.pendingEvent.headline}</h2>
