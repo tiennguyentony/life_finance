@@ -1,7 +1,7 @@
 import type { GameStateV2 } from "../../core/game-state-v2";
 import { sha256Canonical } from "../../core/canonical";
 import { lifeMilestoneState } from "../../core/life-milestones-v2";
-import type { V2Repository } from "../api/v2/repository-port";
+import type { V2Repository } from "../api/run-repository-port";
 import type { AiRoleClient } from "./client";
 import { AI_CONTRACT_VERSION, type TeacherRequest, type TeacherResponse } from "./contracts";
 import {

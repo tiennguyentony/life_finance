@@ -13,7 +13,7 @@ import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import type { DeterministicGameOutcomeV1 } from "../game-state";
 import { buildTeachingDebriefV2 } from "../teaching-debrief-v2";
-import { TeachingDebriefPanelV2 } from "../../features/play/teaching-moment-panel-v2";
+import { TeachingDebriefPanelV2 } from "../../features/game/teaching-moment-panel";
 
 function affected(metricId: string, before: number, after: number) {
   return {

@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { AI_PRIVACY_NOTICE_VERSION } from "../privacy-notice";
 import { AiRoleClient, type AiAuditRecord } from "../client";
 import { OnboardingAiServiceV1 } from "../onboarding-service-v1";
-import { handleOnboardingParseV1 } from "../../api/onboarding-http-v1";
-import { onboardingParseResponseV1Schema } from "../../api/onboarding-contracts-v1";
+import { handleParseOnboarding } from "../../api/current-http";
+import { onboardingParseResponseV1Schema } from "@/contracts/api/onboarding";
 
 const validOutput = {
   birthMonth: "1990-04",
@@ -114,9 +114,10 @@ describe("Onboarding AI extraction v1", () => {
 
   it("keeps the HTTP parse endpoint optional while enforcing explicit consent", async () => {
     const service = new OnboardingAiServiceV1(null);
-    const unavailable = await handleOnboardingParseV1(
-      new Request("http://local/api/v2/onboarding/parse", {
+    const unavailable = await handleParseOnboarding(
+      new Request("http://local/api/onboarding/parse", {
         method: "POST",
+        headers: { Origin: "http://local" },
         body: JSON.stringify({
           privacyNoticeVersion: AI_PRIVACY_NOTICE_VERSION,
           dataUseAccepted: true,
@@ -131,9 +132,10 @@ describe("Onboarding AI extraction v1", () => {
       issues: [{ code: "AI_UNAVAILABLE" }],
     });
 
-    const missingConsent = await handleOnboardingParseV1(
-      new Request("http://local/api/v2/onboarding/parse", {
+    const missingConsent = await handleParseOnboarding(
+      new Request("http://local/api/onboarding/parse", {
         method: "POST",
+        headers: { Origin: "http://local" },
         body: JSON.stringify({ freeText: "I work in software in Seattle." }),
       }),
       service,

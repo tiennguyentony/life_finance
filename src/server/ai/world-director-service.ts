@@ -15,7 +15,7 @@ import {
 } from "../../core/scenario-director-v2";
 import { SCENARIO_DIRECTOR_V2_VERSION } from "../../core/scenario-director-policy-v2";
 import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
-import type { V2Repository } from "../api/v2/repository-port";
+import type { V2Repository } from "../api/run-repository-port";
 import type { AiRoleClient } from "./client";
 import {
   AI_SCENARIO_DIRECTOR_CONTRACT_VERSION,

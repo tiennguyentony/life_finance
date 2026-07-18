@@ -27,12 +27,12 @@ import {
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
 import { reduceGameCommandV2 } from "../../db/run-repository-support";
 import { commandV2ResponseSchema } from "../contracts-v2";
-import { RunApiServiceV2 } from "../service-v2";
-import { summarizeMonthlyRecord } from "../v2/monthly-record";
+import { RunApiServiceV2 } from "../run-service";
+import { summarizeMonthlyRecord } from "../monthly-record";
 import {
   buildTaxRequest,
   projectAnnualPretaxContributions,
-} from "../v2/tax-orchestrator";
+} from "../tax-orchestrator";
 
 function stateWithStrategy() {
   const resolvedScenario = resolveScenarioCatalogSelection(

@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { useGame } from "@/components/game-provider";
 import { Sprout } from "@/components/sprout";
+import { useOnboarding } from "./onboarding-provider";
 
 const GENERATING_STEPS = [
   "Reading your questionable choices",
@@ -14,7 +14,7 @@ const GENERATING_STEPS = [
 
 export function GeneratingScreen() {
   const router = useRouter();
-  const { generateGame, pendingProfile, error } = useGame();
+  const { generateGame, pendingProfile, error } = useOnboarding();
   const started = useRef(false);
   const [activeStep, setActiveStep] = useState(0);
 
@@ -30,7 +30,7 @@ export function GeneratingScreen() {
     const firstTimer = window.setTimeout(() => setActiveStep(1), 520);
     const secondTimer = window.setTimeout(() => setActiveStep(2), 1080);
     generateGame()
-      .then(() => window.setTimeout(() => router.replace("/game"), 350))
+      .then(() => window.setTimeout(() => router.replace("/board"), 350))
       .catch(() => undefined);
 
     return () => {
@@ -49,9 +49,12 @@ export function GeneratingScreen() {
         <p>{error ? "Generation interrupted" : "Building your financial universe"}</p>
         <h1>{error ? "Sprout lost a receipt." : "Crunching the fake numbers..."}</h1>
         {error ? (
-          <button className="button button-primary" onClick={() => router.replace("/profile")} type="button">
-            Back to profile
-          </button>
+          <>
+            <p className="form-error" role="alert">{error}</p>
+            <button className="button button-primary" onClick={() => router.replace("/profile")} type="button">
+              Back to profile
+            </button>
+          </>
         ) : (
           <ol className="generating-list">
             {GENERATING_STEPS.map((label, index) => (

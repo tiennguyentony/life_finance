@@ -4,7 +4,7 @@ import type { MonthlyTaxEvidence } from "../core/payroll-v2";
 import {
   buildMonthlyTaxEvidenceFromPolicyEngineV1,
   buildTaxRequest,
-} from "../server/api/v2/tax-orchestrator";
+} from "../server/api/tax-orchestrator";
 import { fingerprintAnnualTaxContext } from "../server/tax/context-cache";
 import { OfflineBalanceLabV1Error } from "./balance-lab-v1-contracts";
 import type { BalanceLabRunSpecV1 } from "./balance-lab-v1-contracts";

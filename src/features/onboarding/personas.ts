@@ -1,0 +1,40 @@
+import type { Persona } from "@/types/game";
+
+export const PERSONAS = [
+  {
+    id: "junior-developer",
+    name: "Burnt-out Junior Developer",
+    eyebrow: "Difficulty: spicy",
+    description: "Good paycheck. Bad sleep. Seven subscriptions you forgot about.",
+    career: "Junior developer",
+    location: "Seattle, WA",
+    age: 24,
+    stat: "$120K",
+    statLabel: "salary",
+    tone: "lime",
+  },
+  {
+    id: "educator",
+    name: "Debt-free Educator",
+    eyebrow: "Difficulty: steady",
+    description: "No debt, a real emergency fund, and elite packed-lunch discipline.",
+    career: "Teacher",
+    location: "Chicago, IL",
+    age: 28,
+    stat: "$15K",
+    statLabel: "cash buffer",
+    tone: "gold",
+  },
+  {
+    id: "city-survivor",
+    name: "Big City Survivor",
+    eyebrow: "Difficulty: rent",
+    description: "A solid paycheck, an expensive city, and little room for surprises.",
+    career: "Software engineer",
+    location: "Seattle, WA",
+    age: 24,
+    stat: "2.0",
+    statLabel: "months of runway",
+    tone: "coral",
+  },
+] as const satisfies readonly Persona[];

@@ -3,19 +3,18 @@
 import Image from "next/image";
 
 import {
-  BOARD_CALENDAR,
-  BOARD_GOAL,
-  BOARD_PLAYER,
-  BOARD_SIDE_PANELS,
-  BOARD_STATS,
-  BOARD_TROPHIES,
+  type BoardView,
+  formatBoardChoice,
   formatBoardMoney,
-} from "./placeholder-data";
+} from "./board-model";
 
 type BoardHudProps = Readonly<{
   actionLabel: string;
   actionHint: string;
+  busy: boolean;
+  view: BoardView;
   onTakeAction: () => void;
+  onResolveEvent: (choiceId: string) => void;
   /** Placeholder handler for panels that have no screen yet. */
   onStub: (label: string) => void;
   toastMessage: string;
@@ -32,13 +31,19 @@ function PanelBadge({ count }: Readonly<{ count: number }>) {
 export function BoardHud({
   actionLabel,
   actionHint,
+  busy,
+  view,
   onTakeAction,
+  onResolveEvent,
   onStub,
   toastMessage,
   toastVisible,
 }: BoardHudProps) {
-  const goalPercent = Math.round((BOARD_GOAL.current / BOARD_GOAL.target) * 100);
-  const [goals, events, journal] = BOARD_SIDE_PANELS;
+  const goalPercent = Math.min(
+    100,
+    Math.round((view.goal.current / Math.max(1, view.goal.target)) * 100),
+  );
+  const [goals, events, journal] = view.sidePanels;
 
   return (
     <div className="board-hud">
@@ -46,30 +51,30 @@ export function BoardHud({
         <div className="board-player-card">
           <span className="board-avatar">
             <Image
-              alt={BOARD_PLAYER.avatarAlt}
+              alt={view.player.avatarAlt}
               fill
               sizes="52px"
-              src={BOARD_PLAYER.avatarSrc}
+              src={view.player.avatarSrc}
             />
           </span>
           <div className="board-player-meta">
-            <strong>{BOARD_PLAYER.name}</strong>
-            <span>Level {BOARD_PLAYER.level}</span>
+            <strong>{view.player.name}</strong>
+            <span>Level {view.player.level}</span>
             <span
-              aria-label={`Experience ${BOARD_PLAYER.xpPercent} percent`}
+              aria-label={`Experience ${view.player.xpPercent} percent`}
               aria-valuemax={100}
               aria-valuemin={0}
-              aria-valuenow={BOARD_PLAYER.xpPercent}
+              aria-valuenow={view.player.xpPercent}
               className="board-xp"
               role="progressbar"
             >
-              <i style={{ width: `${BOARD_PLAYER.xpPercent}%` }} />
+              <i style={{ width: `${view.player.xpPercent}%` }} />
             </span>
           </div>
         </div>
 
         <dl className="board-stat-row">
-          {BOARD_STATS.map((stat) => (
+          {view.stats.map((stat) => (
             <div className={`board-stat board-stat-${stat.tone}`} key={stat.id}>
               <dt>{stat.label}</dt>
               <dd>{formatBoardMoney(stat.amount)}</dd>
@@ -78,7 +83,7 @@ export function BoardHud({
         </dl>
 
         <div className="board-top-right">
-          <span className="board-trophies">Trophies {BOARD_TROPHIES}</span>
+          <span className="board-trophies">Trophies {view.trophies}</span>
           <button className="board-icon-button" onClick={() => onStub("Menu")} type="button">
             Menu
           </button>
@@ -111,12 +116,12 @@ export function BoardHud({
 
       <footer className="board-hud-bottom">
         <div className="board-calendar">
-          <strong>Day {BOARD_CALENDAR.day}</strong>
-          <span>Week {BOARD_CALENDAR.week}</span>
+          <strong>{view.calendar.label}</strong>
+          <span>{view.calendar.detail}</span>
         </div>
 
         <div className="board-goal">
-          <span className="board-goal-label">{BOARD_GOAL.label}</span>
+          <span className="board-goal-label">{view.goal.label}</span>
           <span
             aria-label={`Goal progress ${goalPercent} percent`}
             aria-valuemax={100}
@@ -128,15 +133,45 @@ export function BoardHud({
             <i style={{ width: `${goalPercent}%` }} />
           </span>
           <span className="board-goal-amount">
-            {formatBoardMoney(BOARD_GOAL.current)} / {formatBoardMoney(BOARD_GOAL.target)}
+            {formatBoardMoney(view.goal.current)} / {formatBoardMoney(view.goal.target)}
           </span>
         </div>
 
-        <button className="board-take-action" onClick={onTakeAction} type="button">
+        <button
+          className="board-take-action"
+          disabled={busy || view.pendingEvent !== null}
+          onClick={onTakeAction}
+          type="button"
+        >
           {actionLabel}
           <small>{actionHint}</small>
         </button>
       </footer>
+
+      {view.pendingEvent ? (
+        <section
+          aria-labelledby="board-event-title"
+          aria-modal="true"
+          className="board-event-dialog"
+          role="dialog"
+        >
+          <span>Decision required</span>
+          <h2 id="board-event-title">{view.pendingEvent.headline}</h2>
+          <p>{view.pendingEvent.body}</p>
+          <div>
+            {view.pendingEvent.choiceIds.map((choiceId) => (
+              <button
+                disabled={busy}
+                key={choiceId}
+                onClick={() => onResolveEvent(choiceId)}
+                type="button"
+              >
+                {formatBoardChoice(choiceId)}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* Always mounted so the live region reliably announces on text change;
           `data-visible` drives the enter/exit transition and hides it at rest. */}

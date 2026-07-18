@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildTaxRequest } from "../../server/api/v2/tax-orchestrator";
+import { buildTaxRequest } from "../../server/api/tax-orchestrator";
 import {
   POLICYENGINE_BUNDLE_VERSION,
   POLICYENGINE_US_VERSION,
@@ -19,7 +19,7 @@ import {
 } from "../balance-lab-v1-production";
 import { runOfflineBalanceLabV1 } from "../balance-lab-v1-runner";
 import type { BalanceLabTaxEvidenceSourceV1 } from "../balance-lab-v1-tax-evidence";
-import { buildMonthlyTaxEvidenceFromPolicyEngineV1 } from "../../server/api/v2/tax-orchestrator";
+import { buildMonthlyTaxEvidenceFromPolicyEngineV1 } from "../../server/api/tax-orchestrator";
 
 function testTaxSource(): BalanceLabTaxEvidenceSourceV1 {
   return Object.freeze({

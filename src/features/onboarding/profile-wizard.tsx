@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { LoadingState } from "@/components/async-state";
-import { useGame } from "@/components/game-provider";
+import { useOnboarding } from "./onboarding-provider";
 import { Sprout } from "@/components/sprout";
 import { getPersonas } from "@/services/player.service";
 import type { Persona, ProfileInput } from "@/types/game";
@@ -13,7 +13,7 @@ const STEP_LABELS = ["You", "Where", "Why"] as const;
 
 export function ProfileWizard() {
   const router = useRouter();
-  const { selectedPersonaId, choosePersona, queueProfile } = useGame();
+  const { selectedPersonaId, choosePersona, queueProfile } = useOnboarding();
   const [personas, setPersonas] = useState<readonly Persona[]>([]);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Omit<ProfileInput, "personaId">>({
@@ -25,7 +25,7 @@ export function ProfileWizard() {
 
   useEffect(() => {
     let active = true;
-    getPersonas({ delayMs: 350 }).then((result) => {
+    getPersonas().then((result) => {
       if (active) setPersonas(result);
     });
     return () => {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppHeader } from "@/components/app-header";
-import { GameProvider } from "@/components/game-provider";
+import { OnboardingProvider } from "@/features/onboarding/onboarding-provider";
 
 import "./globals.css";
 
@@ -20,7 +20,7 @@ export default function RootLayout({
   return (
     <html data-scroll-behavior="smooth" lang="en">
       <body>
-        <GameProvider>
+        <OnboardingProvider>
           <a className="skip-link" href="#main-content">
             Skip to content
           </a>
@@ -32,7 +32,7 @@ export default function RootLayout({
             <div>Life Finance</div>
             <div>Developer play interface</div>
           </footer>
-        </GameProvider>
+        </OnboardingProvider>
       </body>
     </html>
   );

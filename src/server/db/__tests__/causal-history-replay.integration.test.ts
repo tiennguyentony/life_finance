@@ -34,7 +34,7 @@ import {
   deriveCausalHistoryFromReplayV1,
 } from "../causal-history-repository-v1";
 import { runCounterfactualFromReplayV1 } from "../counterfactual-repository-v1";
-import { buildTaxRequest } from "../../api/v2/tax-orchestrator";
+import { buildTaxRequest } from "../../api/tax-orchestrator";
 import { fingerprintAnnualTaxContext } from "../../tax/context-cache";
 import type { GameCommandV2 } from "../run-repository-contracts";
 import { reduceGameCommandV2 } from "../run-repository-support";

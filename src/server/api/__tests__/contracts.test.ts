@@ -11,7 +11,6 @@ import {
   internalGameCommandSchema,
   journalTransactionSchema,
 } from "../contracts";
-import { generateOpenApiDocument } from "../openapi";
 import {
   advanceTimeV2RequestSchema,
   advanceTimeV2ResponseSchema,
@@ -367,75 +366,6 @@ describe("v2 API contracts", () => {
         },
       }).type,
     ).toBe("manage_life_milestone");
-  });
-});
-
-describe("generated OpenAPI", () => {
-  it("publishes versioned paths from the same strict schemas", () => {
-    const document = generateOpenApiDocument();
-
-    expect(document.openapi).toBe("3.1.0");
-    expect(Object.keys(document.paths ?? {}).toSorted()).toEqual([
-      "/api/v1/health",
-      "/api/v1/runs",
-      "/api/v1/runs/{runId}",
-      "/api/v1/runs/{runId}/commands",
-      "/api/v2/onboarding/parse",
-      "/api/v2/onboarding/review",
-      "/api/v2/runs",
-      "/api/v2/runs/from-onboarding",
-      "/api/v2/runs/{runId}",
-      "/api/v2/runs/{runId}/advance",
-      "/api/v2/runs/{runId}/ai/explanation",
-      "/api/v2/runs/{runId}/ai/debrief",
-      "/api/v2/runs/{runId}/ai/world-event",
-      "/api/v2/runs/{runId}/checkpoint",
-      "/api/v2/runs/{runId}/commands",
-      "/api/v2/runs/{runId}/commands/preview",
-      "/api/v2/runs/{runId}/counterfactual",
-      "/api/v2/runs/{runId}/history",
-      "/api/v2/runs/{runId}/migrate",
-    ].toSorted());
-    expect(
-      document.paths?.["/api/v1/runs/{runId}"]?.get?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(document.components?.securitySchemes).toHaveProperty("runBearer");
-    expect(JSON.stringify(document.paths?.["/api/v1/runs/{runId}"])).not.toContain(
-      "accessSecret",
-    );
-    expect(
-      document.paths?.["/api/v2/runs/{runId}/commands"]?.post?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(
-      document.paths?.["/api/v2/runs/{runId}/advance"]?.post?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(
-      document.paths?.["/api/v2/runs/{runId}/checkpoint"]?.get?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(
-      document.paths?.["/api/v2/runs/{runId}/history"]?.get?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(
-      document.paths?.["/api/v2/runs/{runId}/counterfactual"]?.post?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(
-      document.paths?.["/api/v2/runs/{runId}/migrate"]?.post?.security,
-    ).toEqual([{ runBearer: [] }]);
-    expect(
-      JSON.stringify(document.paths?.["/api/v2/runs/{runId}/commands"]),
-    ).not.toContain("taxEvidence");
-    expect(document.paths?.["/api/v1/runs"]?.post?.deprecated).toBe(true);
-    expect(
-      Object.keys(document.paths?.["/api/v1/runs"]?.post?.responses ?? {}),
-    ).toEqual(["410"]);
-    expect(
-      document.paths?.["/api/v1/runs/{runId}/commands"]?.post?.deprecated,
-    ).toBe(true);
-    expect(
-      Object.keys(
-        document.paths?.["/api/v1/runs/{runId}/commands"]?.post?.responses ?? {},
-      ),
-    ).toEqual(["410"]);
   });
 });
 

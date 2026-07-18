@@ -1,9 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import type { RunViewWire } from "@/contracts/api/contracts";
+import { LifeFinanceClient } from "@/lib/api-client/client";
 
 import type { BoardMode } from "./board-scene";
+import { boardViewFromRun } from "./board-model";
 import { BoardHud } from "./hud";
 import { standPointForIsland, HOME_ISLAND_ID } from "./islands";
 import type { HopRequest } from "./sprout-3d";
@@ -42,6 +46,10 @@ type BoardShellProps = Readonly<{
 }>;
 
 export function BoardShell({ mode = "free" }: BoardShellProps) {
+  const router = useRouter();
+  const [run, setRun] = useState<RunViewWire | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [currentIslandId, setCurrentIslandId] = useState<string>(HOME_ISLAND_ID);
   const [trackIndex, setTrackIndex] = useState(0);
   const [hop, setHop] = useState<ActiveHop | null>(null);
@@ -54,6 +62,29 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
   });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    let active = true;
+    new LifeFinanceClient()
+      .getSession()
+      .then(({ session }) => {
+        if (!active) return;
+        if (!session) {
+          router.replace("/start");
+          return;
+        }
+        setRun(session.run);
+      })
+      .catch(() => {
+        if (active) router.replace("/start");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   useEffect(() => {
     return () => {
@@ -113,15 +144,58 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
     }
   };
 
-  const handleTakeAction = () => {
-    if (mode === "loop") {
-      // Kick off the first hop; handleHopEnd chains tile hops to the landmark.
-      if (!hop) hopToTrackIndex((trackIndex + 1) % TRACK.length, trackIndex);
-      return;
+  const handleTakeAction = async () => {
+    if (!run || busy || hop || !run.capabilities.canAdvance) return;
+    setBusy(true);
+    try {
+      const response = await new LifeFinanceClient().submitCommand(run.runId, {
+        id: `board.month.${crypto.randomUUID()}`,
+        expectedRevision: run.revision,
+        type: "process_month",
+        payload: {},
+      });
+      setRun(response.run);
+      showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
+      if (mode === "loop") {
+        hopToTrackIndex((trackIndex + 1) % TRACK.length, trackIndex);
+      } else {
+        startFreeHop(currentIslandId);
+      }
+    } catch (reason) {
+      showToast(reason instanceof Error ? reason.message : "The turn could not advance.");
+    } finally {
+      setBusy(false);
     }
-    startFreeHop(currentIslandId);
-    showToast("Nothing to roll yet. Turn logic arrives in the next milestone.");
   };
+
+  const handleResolveEvent = async (choiceId: string) => {
+    if (!run || busy || run.pendingInteraction.kind !== "event") return;
+    setBusy(true);
+    try {
+      const response = await new LifeFinanceClient().submitCommand(run.runId, {
+        id: `board.event.${crypto.randomUUID()}`,
+        expectedRevision: run.revision,
+        type: "resolve_event_choice",
+        payload: { eventId: run.pendingInteraction.eventId, choiceId },
+      });
+      setRun(response.run);
+      showToast("Decision applied. Your board is ready to move again.");
+    } catch (reason) {
+      showToast(reason instanceof Error ? reason.message : "The decision could not be applied.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading || !run) {
+    return (
+      <div className="board-loading" role="status">
+        Loading your financial board...
+      </div>
+    );
+  }
+
+  const view = boardViewFromRun(run);
 
   return (
     <div className="board-stage">
@@ -140,12 +214,21 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
         />
       </div>
       <BoardHud
-        actionHint={mode === "loop" ? "Hop to the next stop" : "Roll and see what happens"}
-        actionLabel={mode === "loop" ? "Move" : "Take Action"}
+        actionHint={
+          view.pendingEvent
+            ? "Resolve the event first"
+            : mode === "loop"
+              ? "Advance one month and hop"
+              : "Advance one financial month"
+        }
+        actionLabel={busy ? "Saving..." : view.pendingEvent ? "Decision Required" : mode === "loop" ? "Move" : "Take Action"}
+        busy={busy}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
         onTakeAction={handleTakeAction}
+        onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
         toastMessage={toast.message}
         toastVisible={toast.visible}
+        view={view}
       />
     </div>
   );
