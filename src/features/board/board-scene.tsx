@@ -1,12 +1,10 @@
 "use client";
 
 import {
-  Clone,
   ContactShadows,
   Html,
   OrbitControls,
   useCursor,
-  useGLTF,
 } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef, useState } from "react";
@@ -20,63 +18,23 @@ import {
   type BoardIsland,
 } from "./islands";
 import { Sprout3d, type HopRequest } from "./sprout-3d";
-import { TRACK, destinationLandmarkId } from "./track";
 
-export type BoardMode = "free" | "loop";
+export type BoardMode = "strategy" | "free";
 
 type BoardSceneProps = Readonly<{
   currentIslandId: string;
-  /** Landmark that gets the destination flag (loop mode's next stop). */
-  flagIslandId?: string | null;
   hop: HopRequest | null;
   mode: BoardMode;
   onSelect: (islandId: string) => void;
   onHopEnd: () => void;
   reducedMotion: boolean;
+  reactionToken: number;
+  selectedIslandId: string | null;
   /** Sprout's resting point while not hopping (final world coordinates). */
   standingAt: BoardPoint;
 }>;
 
 const PLATFORM_TOP_Y = 0.55;
-
-/* ---------------------------- KayKit models ----------------------------- */
-/* CC0 board-game pieces by Kay Lousberg (kaylousberg.com), served from
- * public/assets/board/kaykit. Each .gltf pulls its sibling .bin + the
- * shared texture atlas. */
-
-const KAYKIT = "/assets/board/kaykit";
-
-type KayModelProps = Readonly<{
-  url: string;
-  position?: [number, number, number];
-  rotation?: [number, number, number];
-  scale?: number;
-}>;
-
-function KayModel({ url, position, rotation, scale }: KayModelProps) {
-  const { scene } = useGLTF(url);
-  return <Clone object={scene} position={position} rotation={rotation} scale={scale} />;
-}
-
-/** Travel tiles are colored by where the segment leads. */
-const TILE_URL_BY_DESTINATION: Readonly<Record<string, string>> = {
-  home: `${KAYKIT}/tile_green.gltf`,
-  hospital: `${KAYKIT}/tile_red.gltf`,
-  financial: `${KAYKIT}/tile_blue.gltf`,
-  bank: `${KAYKIT}/tile_yellow.gltf`,
-  startup: `${KAYKIT}/tile_purple.gltf`,
-};
-
-const FLAG_URL = `${KAYKIT}/flag_A_red.gltf`;
-const COIN_URL = `${KAYKIT}/coin_gold.gltf`;
-const COIN_STACK_URL = `${KAYKIT}/coin_5_gold.gltf`;
-const DIE_URL = `${KAYKIT}/D6_A_yellow.gltf`;
-
-for (const url of Object.values(TILE_URL_BY_DESTINATION)) useGLTF.preload(url);
-useGLTF.preload(FLAG_URL);
-useGLTF.preload(COIN_URL);
-useGLTF.preload(COIN_STACK_URL);
-useGLTF.preload(DIE_URL);
 
 /* ------------------------------ buildings ------------------------------ */
 /* Placeholder low-poly silhouettes, one composition per island. Real asset
@@ -231,33 +189,31 @@ const BUILDINGS: Readonly<Record<string, () => React.JSX.Element>> = {
 
 type IslandProps = Readonly<{
   island: BoardIsland;
-  isCurrent: boolean;
-  /** Marks the loop's next destination with a planted flag. */
-  flagged?: boolean;
   onSelect: (islandId: string) => void;
   position: BoardPoint;
   radius: number;
   reducedMotion: boolean;
+  statusLabel: string | null;
 }>;
 
 function Island({
   island,
-  isCurrent,
-  flagged = false,
   onSelect,
   position,
   radius,
   reducedMotion,
+  statusLabel,
 }: IslandProps) {
   const groupRef = useRef<Group>(null);
   const ringRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
   useCursor(hovered);
+  const isHighlighted = statusLabel !== null;
 
   useFrame((_, delta) => {
     const group = groupRef.current;
     if (group) {
-      const targetY = hovered && !isCurrent ? 0.22 : 0;
+      const targetY = hovered && !isHighlighted ? 0.22 : 0;
       group.position.y = reducedMotion
         ? targetY
         : group.position.y + (targetY - group.position.y) * Math.min(1, delta * 9);
@@ -267,7 +223,7 @@ function Island({
       const material = ring.material as MeshStandardMaterial;
       // A painted trim ring in daylight: a soft lift on hover, a brighter
       // one for the current stop, never the night version's neon glow.
-      material.emissiveIntensity = isCurrent ? 0.55 : hovered ? 0.4 : 0.12;
+      material.emissiveIntensity = isHighlighted ? 0.55 : hovered ? 0.4 : 0.12;
     }
   });
 
@@ -301,16 +257,6 @@ function Island({
           <group position={[0, PLATFORM_TOP_Y, 0]} scale={radius < 2 ? 0.72 : 1}>
             <Buildings />
           </group>
-          {flagged ? (
-            <Suspense fallback={null}>
-              <group
-                position={[-radius * 0.55, PLATFORM_TOP_Y, radius * 0.55]}
-                rotation={[0, 0.5, 0.04]}
-              >
-                <KayModel scale={1.15} url={FLAG_URL} />
-              </group>
-            </Suspense>
-          ) : null}
           {/* painted trim ring: a candy-colored rim, not a night glow */}
           <mesh position={[0, 0.42, 0]} ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
             <torusGeometry args={[radius + 0.09, 0.045, 10, 48]} />
@@ -332,13 +278,13 @@ function Island({
         zIndexRange={[1, 0]}
       >
         <button
-          className={`board-chip${isCurrent ? " board-chip-current" : ""}`}
+          className={`board-chip${isHighlighted ? " board-chip-current" : ""}`}
           onClick={() => onSelect(island.id)}
           style={{ pointerEvents: "auto", borderColor: island.accent }}
           type="button"
         >
           <strong>{island.name}</strong>
-          <span>{isCurrent ? "Current location" : island.tagline}</span>
+          <span>{statusLabel ?? island.tagline}</span>
         </button>
       </Html>
     </group>
@@ -412,90 +358,6 @@ function PathDots({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   );
 }
 
-/* ----------------------------- track tiles ------------------------------ */
-
-/** Track indices that get a decorative gold coin on their tile. */
-const COIN_TILE_INDICES = [5, 10, 18];
-
-/** Loop mode's travel spaces: KayKit tiles colored by destination. */
-function TrackTiles({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
-  const groupsRef = useRef<Group[]>([]);
-  const tiles = useMemo(
-    () =>
-      TRACK.flatMap((stop, index) =>
-        stop.kind === "tile"
-          ? [
-              {
-                position: stop.position,
-                phase: index * 0.7,
-                url:
-                  TILE_URL_BY_DESTINATION[destinationLandmarkId(index)] ??
-                  TILE_URL_BY_DESTINATION.home!,
-                coin: COIN_TILE_INDICES.includes(index),
-              },
-            ]
-          : [],
-      ),
-    [],
-  );
-
-  useFrame(({ clock }) => {
-    if (reducedMotion) return;
-    const elapsed = clock.getElapsedTime();
-    groupsRef.current.forEach((group, index) => {
-      if (!group) return;
-      // Gentle out-of-phase bob so the track feels alive without distracting.
-      group.position.y = Math.sin(elapsed * 1.6 - tiles[index]!.phase) * 0.05;
-    });
-  });
-
-  return (
-    <group>
-      {tiles.map((tile, index) => (
-        <group
-          key={index}
-          position={[tile.position.x, 0, tile.position.z]}
-          ref={(group) => {
-            if (group) groupsRef.current[index] = group;
-          }}
-        >
-          {/* Tile model is 1x0.2x1 with a bottom origin: top lands at
-              PLATFORM_TOP_Y so Sprout's feet touch it exactly. */}
-          <KayModel position={[0, PLATFORM_TOP_Y - 0.2, 0]} scale={1.5} url={tile.url} />
-          {tile.coin ? (
-            <KayModel
-              position={[0.18, PLATFORM_TOP_Y, -0.14]}
-              rotation={[0, 0.8, 0]}
-              scale={0.55}
-              url={COIN_URL}
-            />
-          ) : null}
-        </group>
-      ))}
-    </group>
-  );
-}
-
-/** Loop mode's center piece: a die slowly tumbling above the board. Kept
- * smaller and pushed back off the Home axis so it hints at the future roll
- * mechanic without out-competing the player as the board's focal point. */
-function CenterDie({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
-  const dieRef = useRef<Group>(null);
-
-  useFrame(({ clock }, delta) => {
-    const die = dieRef.current;
-    if (!die || reducedMotion) return;
-    die.rotation.y += delta * 0.25;
-    die.position.y = 0.35 + Math.sin(clock.getElapsedTime() * 0.9) * 0.08;
-  });
-
-  return (
-    <group position={[0, 0.35, -1.5]} ref={dieRef} rotation={[0.45, 0.7, 0.15]}>
-      <KayModel scale={1.45} url={DIE_URL} />
-    </group>
-  );
-}
-
 /* -------------------------------- scene -------------------------------- */
 
 function Water() {
@@ -512,27 +374,21 @@ function Water() {
 
 export default function BoardScene({
   currentIslandId,
-  flagIslandId = null,
   hop,
   mode,
   onSelect,
   onHopEnd,
   reducedMotion,
+  reactionToken,
+  selectedIslandId,
   standingAt,
 }: BoardSceneProps) {
-  // Free mode: Home-centered star. Loop mode: landmarks on the track corners.
   const layout: ReadonlyArray<{ island: BoardIsland; position: BoardPoint; radius: number }> =
-    mode === "loop"
-      ? TRACK.flatMap((stop) =>
-          stop.kind === "landmark"
-            ? [{ island: islandById(stop.islandId), position: stop.position, radius: 1.5 }]
-            : [],
-        )
-      : BOARD_ISLANDS.map((island) => ({
-          island,
-          position: island.position,
-          radius: island.id === HOME_ISLAND_ID ? 2.35 : 2.05,
-        }));
+    BOARD_ISLANDS.map((island) => ({
+      island,
+      position: island.position,
+      radius: island.id === HOME_ISLAND_ID ? 2.35 : 2.05,
+    }));
 
   return (
     <Canvas
@@ -581,31 +437,24 @@ export default function BoardScene({
         resolution={1024}
         scale={46}
       />
-      {mode === "loop" ? (
-        <Suspense fallback={null}>
-          <TrackTiles reducedMotion={reducedMotion} />
-          <CenterDie reducedMotion={reducedMotion} />
-          {/* A little treasure by the bank's vault. */}
-          <KayModel
-            position={[5.4, PLATFORM_TOP_Y, -3]}
-            rotation={[0, 0.5, 0]}
-            scale={0.6}
-            url={COIN_STACK_URL}
-          />
-        </Suspense>
-      ) : (
-        <PathDots reducedMotion={reducedMotion} />
-      )}
+      <PathDots reducedMotion={reducedMotion} />
       {layout.map(({ island, position, radius }) => (
         <Island
-          flagged={island.id === flagIslandId}
           island={island}
-          isCurrent={island.id === currentIslandId}
           key={island.id}
           onSelect={onSelect}
           position={position}
           radius={radius}
           reducedMotion={reducedMotion}
+          statusLabel={
+            mode === "strategy"
+              ? island.id === selectedIslandId
+                ? "Selected focus"
+                : null
+              : island.id === currentIslandId
+                ? "Current location"
+                : null
+          }
         />
       ))}
 
@@ -613,6 +462,7 @@ export default function BoardScene({
         <Sprout3d
           hop={hop}
           onHopEnd={onHopEnd}
+          reactionToken={reactionToken}
           reducedMotion={reducedMotion}
           standingAt={standingAt}
         />
