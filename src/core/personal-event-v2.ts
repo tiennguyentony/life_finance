@@ -653,7 +653,8 @@ export function personalEventHistoryAvailabilityReasonsV2(
 
 export function generateDeclarativePersonalEventCandidatesV2(
   state: GameStateV2,
-  catalog: readonly PersonalEventTemplateV2[],
+  activeCatalog: readonly PersonalEventTemplateV2[],
+  exactCatalog: readonly PersonalEventTemplateV2[] = activeCatalog,
 ): DeclarativePersonalEventCandidatesV2 {
   if (state.outcome || state.gameplay.eventLifecycle.pending) {
     return Object.freeze({
@@ -672,7 +673,7 @@ export function generateDeclarativePersonalEventCandidatesV2(
       left.templateVersion - right.templateVersion,
     )
     .find((followUp) => {
-      const target = catalog.find(
+      const target = exactCatalog.find(
         ({ id, version }) =>
           id === followUp.templateId && version === followUp.templateVersion,
       );
@@ -680,11 +681,11 @@ export function generateDeclarativePersonalEventCandidatesV2(
         target &&
         validatePersonalEventTemplateV2(target).length === 0 &&
         personalEventEligibilityReasonsV2(target, state).length === 0 &&
-        personalEventHistoryAvailabilityReasonsV2(target, state, catalog).length === 0,
+        personalEventHistoryAvailabilityReasonsV2(target, state, exactCatalog).length === 0,
       );
     });
   if (dueFollowUp) {
-    const template = catalog.find(
+    const template = exactCatalog.find(
       ({ id, version }) =>
         id === dueFollowUp.templateId && version === dueFollowUp.templateVersion,
     );
@@ -702,10 +703,10 @@ export function generateDeclarativePersonalEventCandidatesV2(
       candidateTemplateIds: Object.freeze([template.id]),
     });
   }
-  const eligible = catalog
+  const eligible = activeCatalog
     .filter((template) => validatePersonalEventTemplateV2(template).length === 0)
     .filter((template) => personalEventEligibilityReasonsV2(template, state).length === 0)
-    .filter((template) => personalEventHistoryAvailabilityReasonsV2(template, state, catalog).length === 0)
+    .filter((template) => personalEventHistoryAvailabilityReasonsV2(template, state, exactCatalog).length === 0)
     .toSorted((left, right) => left.id.localeCompare(right.id) || left.version - right.version);
   let random = state.random;
   const candidates: DeclarativePersonalEventCandidateV2[] = [];
@@ -735,9 +736,10 @@ export function generateDeclarativePersonalEventCandidatesV2(
  */
 export function generateNamedDeclarativePersonalEventCandidatesV2(
   state: GameStateV2,
-  catalog: readonly PersonalEventTemplateV2[],
+  activeCatalog: readonly PersonalEventTemplateV2[],
+  exactCatalog: readonly PersonalEventTemplateV2[] = activeCatalog,
 ): NamedDeclarativePersonalEventCandidatesV2 {
-  const violations = validatePersonalEventCatalogV2(catalog);
+  const violations = validatePersonalEventCatalogV2(activeCatalog);
   if (violations.length > 0) {
     throw new RangeError(
       `invalid declarative event catalog: ${violations
@@ -749,7 +751,7 @@ export function generateNamedDeclarativePersonalEventCandidatesV2(
     throw new RangeError("named declarative event scheduling requires named world state");
   }
   const monthIndex = monthsBetween(simulationMonth("0001-01"), state.currentMonth);
-  const orderedCatalog = [...catalog].toSorted(
+  const orderedCatalog = [...activeCatalog].toSorted(
     (left, right) => left.id.localeCompare(right.id) || left.version - right.version,
   );
   const rawOpportunityEvidence = Object.freeze(
@@ -805,17 +807,17 @@ export function generateNamedDeclarativePersonalEventCandidatesV2(
       left.templateVersion - right.templateVersion,
     )
     .find((followUp) => {
-      const target = orderedCatalog.find(
+      const target = exactCatalog.find(
         ({ id, version }) => id === followUp.templateId && version === followUp.templateVersion,
       );
       return Boolean(
         target &&
         personalEventEligibilityReasonsV2(target, state).length === 0 &&
-        personalEventHistoryAvailabilityReasonsV2(target, state, orderedCatalog).length === 0,
+        personalEventHistoryAvailabilityReasonsV2(target, state, exactCatalog).length === 0,
       );
     });
   if (dueFollowUp !== undefined) {
-    const template = orderedCatalog.find(
+    const template = exactCatalog.find(
       ({ id, version }) => id === dueFollowUp.templateId && version === dueFollowUp.templateVersion,
     )!;
     return frozen({
@@ -833,7 +835,7 @@ export function generateNamedDeclarativePersonalEventCandidatesV2(
   const eligible = orderedCatalog
     .filter((template) => personalEventEligibilityReasonsV2(template, state).length === 0)
     .filter((template) =>
-      personalEventHistoryAvailabilityReasonsV2(template, state, orderedCatalog).length === 0,
+      personalEventHistoryAvailabilityReasonsV2(template, state, exactCatalog).length === 0,
     );
   const candidates = eligible
     .filter((template) => {
