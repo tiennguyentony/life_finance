@@ -36,6 +36,7 @@ export function Landing({ demoEnabled = false }: LandingProps) {
               fill
               sizes="72px"
               src="/assets/characters/sprout/reference/sprout-landing-3.png"
+              unoptimized
             />
           </span>
           <strong>Life<br />Finance</strong>
