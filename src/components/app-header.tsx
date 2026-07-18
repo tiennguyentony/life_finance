@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { LogoutButton } from "@/features/auth/logout-button";
+
 export function AppHeader() {
   const pathname = usePathname();
 
@@ -24,6 +26,7 @@ export function AppHeader() {
               New game
             </Link>
           ) : null}
+          {pathname !== "/login" ? <LogoutButton /> : null}
         </nav>
       </div>
     </header>
