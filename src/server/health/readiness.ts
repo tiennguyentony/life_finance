@@ -6,7 +6,10 @@ import { auditAdminAuthorizerFromEnvironment } from "../ai/audit-repository";
 import { aiTransportFromEnvironment } from "../ai/runtime";
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { getDatabaseConnection } from "../db/runtime";
-import { createTaxClientFromEnvironment } from "../tax/client";
+import {
+  createTaxCalculatorFromEnvironment,
+  usesDeterministicTaxCalculator,
+} from "../tax/runtime";
 
 const TAX_HEALTH_TIMEOUT_MS = 45_000;
 const MAX_HEALTH_RESPONSE_BYTES = 4_096;
@@ -78,7 +81,7 @@ export function assertProductionConfiguration(
 ): void {
   assertDatabaseConfiguration(environment);
   runSecretCodecFromEnvironment(environment);
-  createTaxClientFromEnvironment(environment);
+  createTaxCalculatorFromEnvironment(environment);
   auditCipherFromEnvironment(environment);
   auditAdminAuthorizerFromEnvironment(environment);
   aiTransportFromEnvironment(environment);
@@ -132,6 +135,7 @@ export function checkRuntimeReadiness(
       await getDatabaseConnection().db.execute(sql`select 1`);
     },
     taxPolicy: async () => {
+      if (usesDeterministicTaxCalculator(environment)) return;
       const baseUrl = environment.TAX_SERVICE_URL;
       if (!baseUrl) throw new Error("tax service URL is unavailable");
       await probePinnedTaxService(baseUrl);
