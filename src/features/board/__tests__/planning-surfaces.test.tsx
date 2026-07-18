@@ -10,7 +10,7 @@ import { PlanningPanel } from "../planning-panel";
 import { plansForDestination } from "../plan-catalog";
 
 describe("board planning surfaces", () => {
-  it("renders exact and directional preview semantics", () => {
+  it("renders selectable plan previews with their certainty semantics", () => {
     const run = projectRunView(currentRunState());
     const markup = renderToStaticMarkup(
       <PlanningPanel
@@ -26,16 +26,18 @@ describe("board planning surfaces", () => {
     );
 
     expect(markup).toContain("Choose your plan");
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('aria-pressed="false"');
     expect(markup).toContain("Exact");
     expect(markup).toContain("Directional");
+    expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain("Live this month");
+    expect(markup).not.toContain('disabled=""');
   });
 
-  it("shows disabled plan reasons and commit status", () => {
-    const run = {
-      ...projectRunView(currentRunState()),
-      finances: { ...projectRunView(currentRunState()).finances, cashCents: 0 },
-    };
+  it("explains disabled plans and keeps a busy commit unavailable", () => {
+    const opening = projectRunView(currentRunState());
+    const run = { ...opening, finances: { ...opening.finances, cashCents: 0 } };
     const markup = renderToStaticMarkup(
       <PlanningPanel
         busy
@@ -52,6 +54,26 @@ describe("board planning surfaces", () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("You need $500 in cash.");
     expect(markup).toContain("Saving your plan...");
+    expect(markup).toContain('disabled=""');
+  });
+
+  it("keeps the commit unavailable without an enabled selection", () => {
+    const run = projectRunView(currentRunState());
+    const markup = renderToStaticMarkup(
+      <PlanningPanel
+        busy={false}
+        destinationId="financial"
+        errorMessage={null}
+        onClose={() => undefined}
+        onCommit={() => undefined}
+        onSelectPlan={() => undefined}
+        plans={plansForDestination(run, "financial")}
+        selectedPlanId={null}
+      />,
+    );
+
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("Ready to live this month.");
   });
 
   it("announces a pending event from the result dialog", () => {
@@ -82,9 +104,19 @@ describe("board planning surfaces", () => {
     );
 
     expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-labelledby="board-month-result-title"');
+    expect(markup).toMatch(/<h2 id="board-month-result-title">[^<]*August 2026[^<]*<\/h2>/);
     expect(markup).toContain("Review life decision");
+    expect(markup).toContain("Plan: Invest in broad index");
     expect(markup).toContain("Cash");
+    expect(markup).toContain("+$125");
+    expect(markup).toContain("Net worth");
+    expect(markup).toContain("+$150");
+    expect(markup).toContain("Debt");
+    expect(markup).toContain("$0");
     expect(markup).toContain("Goal progress");
     expect(markup).toContain("0.4 percentage points");
+    expect(markup).toContain('aria-live="assertive"');
+    expect(markup).toContain("A life decision is waiting before the next month.");
   });
 });
