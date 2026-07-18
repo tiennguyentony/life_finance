@@ -919,9 +919,17 @@
   }
 
   .board-trophies,
-  .board-top-right,
   .board-side {
     display: none;
+  }
+
+  .board-top-right {
+    gap: 0.35rem;
+  }
+
+  .board-icon-button {
+    padding: 0.42rem 0.58rem;
+    font-size: 0.68rem;
   }
 
   .board-hud-bottom {

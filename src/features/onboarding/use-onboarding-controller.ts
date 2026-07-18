@@ -48,6 +48,10 @@ function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : "Sprout lost the paperwork.";
 }
 
+function storeOnboarding(onboarding: StoredOnboarding): void {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(onboarding));
+}
+
 export function useOnboardingController(): OnboardingController {
   const [onboarding, setOnboarding] = useState<StoredOnboarding>(EMPTY_ONBOARDING);
   const [generating, setGenerating] = useState(false);
@@ -69,14 +73,21 @@ export function useOnboardingController(): OnboardingController {
   }, [hydrated, onboarding]);
 
   const choosePersona = useCallback((selectedPersonaId: PersonaId) => {
-    setOnboarding((current) => ({ ...current, selectedPersonaId }));
-  }, []);
+    const next = { ...onboarding, selectedPersonaId };
+    // Persist before navigation so a remount cannot lose this selection.
+    storeOnboarding(next);
+    setOnboarding(next);
+  }, [onboarding]);
 
   const queueProfile = useCallback((pendingProfile: ProfileInput) => {
-    setOnboarding({
+    const next = {
       selectedPersonaId: pendingProfile.personaId,
       pendingProfile,
-    });
+    };
+    // ProfileWizard navigates immediately after this call. Writing here,
+    // rather than waiting for an effect, makes that transition durable.
+    storeOnboarding(next);
+    setOnboarding(next);
   }, []);
 
   const generateGame = useCallback(async () => {

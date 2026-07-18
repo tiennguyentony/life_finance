@@ -12,17 +12,31 @@ const GENERATING_STEPS = [
   "Giving Sprout access to the numbers",
 ] as const;
 
+export type GenerationGate = "wait" | "redirect" | "generate";
+
+export function generationGate(
+  hydrated: boolean,
+  hasPendingProfile: boolean,
+): GenerationGate {
+  if (!hydrated) return "wait";
+  return hasPendingProfile ? "generate" : "redirect";
+}
+
 export function GeneratingScreen() {
   const router = useRouter();
-  const { generateGame, pendingProfile, error } = useOnboarding();
+  const { generateGame, pendingProfile, error, hydrated } = useOnboarding();
   const started = useRef(false);
   const [activeStep, setActiveStep] = useState(0);
 
   useEffect(() => {
-    if (started.current) return;
+    // The provider restores an in-progress profile from localStorage after
+    // hydration. Checking pendingProfile before that point makes a valid
+    // launch look empty after a page remount and sends the player to /start.
+    const gate = generationGate(hydrated, pendingProfile !== null);
+    if (gate === "wait" || started.current) return;
     started.current = true;
 
-    if (!pendingProfile) {
+    if (gate === "redirect" || !pendingProfile) {
       router.replace("/start");
       return;
     }
@@ -37,7 +51,7 @@ export function GeneratingScreen() {
       window.clearTimeout(firstTimer);
       window.clearTimeout(secondTimer);
     };
-  }, [generateGame, pendingProfile, router]);
+  }, [generateGame, hydrated, pendingProfile, router]);
 
   return (
     <div className="screen generating-screen">

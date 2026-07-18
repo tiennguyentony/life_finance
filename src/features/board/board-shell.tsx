@@ -439,6 +439,14 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     }
   };
 
+  const handleNewGame = () => {
+    if (busy) return;
+    const confirmed = window.confirm(
+      "Start setting up a new game? Your current game remains saved until the new game is successfully created. Creating it will archive this active game.",
+    );
+    if (confirmed) router.push("/start");
+  };
+
   if (loading || !run) {
     return (
       <div className="board-loading" role="status">
@@ -539,6 +547,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
           />
         }
         onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
+        onNewGame={handleNewGame}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
         onTakeAction={handleTakeAction}
         planningPanel={planningPanel}
