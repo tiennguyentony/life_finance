@@ -23,6 +23,7 @@ type BoardHudProps = Readonly<{
   onTakeAction: () => void;
   onResolveEvent: (choiceId: string) => void;
   onNewGame: () => void;
+  onSavedGames: () => void;
   /** Placeholder handler for panels that have no screen yet. */
   onStub: (label: string) => void;
   toastMessage: string;
@@ -49,6 +50,7 @@ export function BoardHud({
   onTakeAction,
   onResolveEvent,
   onNewGame,
+  onSavedGames,
   onStub,
   toastMessage,
   toastVisible,
@@ -110,6 +112,9 @@ export function BoardHud({
           ) : null}
           <button className="board-icon-button" disabled={busy} onClick={onNewGame} type="button">
             New game
+          </button>
+          <button className="board-icon-button" disabled={busy} onClick={onSavedGames} type="button">
+            Saves
           </button>
         </div>
       </header>

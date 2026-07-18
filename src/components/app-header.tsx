@@ -21,7 +21,12 @@ export function AppHeader() {
           <small>play your money</small>
         </Link>
         <nav aria-label="Game navigation" className="site-nav">
-          {pathname !== "/start" ? (
+          {pathname !== "/saves" && pathname !== "/login" ? (
+            <Link className="nav-pill" href="/saves">
+              Saved games
+            </Link>
+          ) : null}
+          {pathname !== "/start" && pathname !== "/login" ? (
             <Link className="nav-pill" href="/start">
               New game
             </Link>

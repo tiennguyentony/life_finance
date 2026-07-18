@@ -635,6 +635,65 @@ textarea:focus-visible {
   align-content: center;
 }
 
+.active-save-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin: 0 auto clamp(2rem, 5vw, 4rem);
+  padding: 1.25rem 1.5rem;
+  width: min(100%, 900px);
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.active-save-banner > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.active-save-banner span,
+.save-card > span {
+  color: var(--forest);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.active-save-banner strong { font-size: 1.35rem; }
+.active-save-banner small { color: var(--muted); }
+.active-save-actions { display: flex; gap: 0.75rem; }
+
+.saves-screen { display: grid; align-content: start; }
+.saved-games-panel { margin-top: clamp(2rem, 5vw, 4rem); }
+.save-status { text-align: center; font-weight: 800; }
+.save-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.25rem;
+}
+
+.save-card,
+.save-empty {
+  padding: 1.5rem;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.save-card[data-active="true"] { background: #efffcf; }
+.save-card h2,
+.save-empty h2 { margin: 0.55rem 0 1rem; }
+.save-card dl { display: grid; gap: 0.55rem; margin: 0 0 1.4rem; }
+.save-card dl > div { display: flex; justify-content: space-between; gap: 1rem; }
+.save-card dt { color: var(--muted); }
+.save-card dd { margin: 0; font-weight: 800; text-align: right; }
+.save-empty { text-align: center; }
+
 .screen-heading {
   text-align: center;
 }
@@ -1270,6 +1329,13 @@ textarea:focus-visible {
   .persona-grid {
     grid-template-columns: 1fr;
   }
+
+  .active-save-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .active-save-actions { flex-wrap: wrap; }
 
   .persona-card {
     min-height: 340px;
