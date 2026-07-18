@@ -29,6 +29,45 @@ const recurringStrategySchema = z
   })
   .strict();
 
+const preparednessBandSchema = z.enum(["critical", "exposed", "stable", "resilient"]);
+const preparednessSchema = z
+  .object({
+    version: z.literal("preparedness-assessment-v1"),
+    riskVersion: z.literal("risk-v1"),
+    asOfMonth: monthSchema,
+    scorePpm: rateSchema,
+    band: preparednessBandSchema,
+    components: z
+      .object({
+        liquidityPpm: rateSchema,
+        cashFlowPpm: rateSchema,
+        debtPpm: rateSchema,
+        insurancePpm: rateSchema,
+        diversificationPpm: rateSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const beginnerCheckpointSchema = z
+  .object({
+    version: z.literal("beginner-chapter-v1"),
+    checkpointMonth: monthSchema,
+    outcome: z.enum(["bankrupt", "fragile", "developing", "strong"]),
+    completed: z.boolean(),
+    scorePpm: rateSchema,
+    preparednessBand: preparednessBandSchema,
+    weakestComponent: z.enum([
+      "liquidity",
+      "cash_flow",
+      "debt",
+      "insurance",
+      "diversification",
+    ]),
+    lessonKey: identifierSchema,
+  })
+  .strict();
+
 const pendingInteractionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
   z
@@ -49,6 +88,7 @@ export const runViewSchema = z
   .object({
     runId: identifierSchema,
     revision: z.number().int().min(0),
+    startMonth: monthSchema,
     currentMonth: monthSchema,
     status: z.enum(["active", "completed"]),
     player: z
@@ -105,6 +145,8 @@ export const runViewSchema = z
         weaknessTags: z.array(identifierSchema),
       })
       .strict(),
+    preparedness: preparednessSchema,
+    beginnerCheckpoint: beginnerCheckpointSchema.nullable(),
     strategy: recurringStrategySchema,
     market: z
       .object({

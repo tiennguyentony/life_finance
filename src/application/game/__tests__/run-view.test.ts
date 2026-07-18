@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { moneyCents, ratePpm } from "@/core/domain/money";
+import { simulationMonth } from "@/core/domain/month";
 import { calculateNetWorth } from "@/core/game-state";
 import { queueScheduledDeclarativePersonalEventV2 } from "@/core/event-lifecycle-v2";
 import { UNRELATED_HAZARD_TARGET } from "@/core/events";
@@ -28,6 +29,7 @@ describe("projectRunView", () => {
     expect(view).toMatchObject({
       runId: "run.current",
       revision: 0,
+      startMonth: "2026-07",
       currentMonth: "2026-07",
       status: "active",
       player: {
@@ -42,6 +44,12 @@ describe("projectRunView", () => {
         netWorthCents: calculateNetWorth(state.finances),
       },
       income: { annualGrossSalaryCents: 12000000 },
+      preparedness: {
+        version: "preparedness-assessment-v1",
+        scorePpm: expect.any(Number),
+        band: expect.stringMatching(/critical|exposed|stable|resilient/),
+      },
+      beginnerCheckpoint: null,
       pendingInteraction: { kind: "none" },
       capabilities: {
         canAdvance: true,
@@ -52,6 +60,36 @@ describe("projectRunView", () => {
     expect(view).not.toHaveProperty("schemaVersion");
     expect(view).not.toHaveProperty("engineVersion");
     expect(view).not.toHaveProperty("ledger");
+  });
+
+  it("projects the immutable beginner checkpoint at month 12", () => {
+    const base = currentRunState();
+    const state: GameStateV2 = {
+      ...base,
+      currentMonth: simulationMonth("2027-07"),
+    };
+
+    expect(projectRunView(state)).toMatchObject({
+      startMonth: "2026-07",
+      currentMonth: "2027-07",
+      preparedness: {
+        version: "preparedness-assessment-v1",
+        scorePpm: expect.any(Number),
+        components: {
+          liquidityPpm: expect.any(Number),
+          cashFlowPpm: expect.any(Number),
+          debtPpm: expect.any(Number),
+          insurancePpm: expect.any(Number),
+          diversificationPpm: expect.any(Number),
+        },
+      },
+      beginnerCheckpoint: {
+        version: "beginner-chapter-v1",
+        checkpointMonth: "2027-07",
+        outcome: expect.stringMatching(/fragile|developing|strong/),
+        scorePpm: expect.any(Number),
+      },
+    });
   });
 
   it("projects human event choices and resolved parameters", () => {
