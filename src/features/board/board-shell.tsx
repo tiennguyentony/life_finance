@@ -548,6 +548,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         }
         onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
         onNewGame={handleNewGame}
+        onSavedGames={() => router.push("/saves")}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
         onTakeAction={handleTakeAction}
         planningPanel={planningPanel}
