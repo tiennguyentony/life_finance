@@ -46,7 +46,7 @@ export class LifeFinanceClient {
   readonly #fetch: typeof fetch;
 
   constructor(fetchImplementation: typeof fetch = fetch) {
-    this.#fetch = fetchImplementation;
+    this.#fetch = fetchImplementation.bind(globalThis);
   }
 
   async #request<T>(
