@@ -29,6 +29,7 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 10. `/generating` waits for persisted onboarding hydration before deciding whether a profile is missing, and profile state is persisted before navigation.
 11. Restoring a run uses a read-only gateway and does not initialize the tax client; tax configuration is required only by command processing.
 12. Board plan commands always target `run.currentMonth`; the recurring strategy's effective month is historical state and must not be reused after time advances.
+13. Three.js is pinned to r182 until React Three Fiber replaces its deprecated `THREE.Clock` dependency; do not widen the version range without checking the browser console and board render.
 
 ## Local verification performed
 
