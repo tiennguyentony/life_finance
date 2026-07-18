@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { sha256Canonical } from "../canonical";
 import { moneyCents } from "../domain/money";
+import { finalizeGameStateV2 } from "../game-state-v2";
 import { decodePersistedGameState } from "../persisted-game-state";
 import {
   constructOnboardedGameStateV1,
@@ -88,6 +89,21 @@ describe("Onboarding v1 authoritative state integration", () => {
     expect(result.state.gameplay.financialGoal?.desiredAnnualSpendingCents).toBe(
       3_600_000,
     );
+
+    const inflationAdjusted = finalizeGameStateV2({
+      ...result.state,
+      finances: {
+        ...result.state.finances,
+        annualLivingCostCents: moneyCents(
+          result.state.finances.annualLivingCostCents + 1,
+        ),
+      },
+    });
+    expect(inflationAdjusted.finances.annualLivingCostCents).toBe(3_600_001);
+    expect(
+      inflationAdjusted.gameplay.initialization?.declaredExpenses
+        ?.totalAnnualCents,
+    ).toBe(3_600_000);
   });
 
   it("rejects stale confirmation before constructing state", () => {
