@@ -66,13 +66,48 @@ describe("offline balance lab v1 bots", () => {
           throw new Error("non-random bot must publish mapped event responses");
         }
         expect(Object.keys(bot.eventResponses.byTemplateId).toSorted()).toEqual([
+          "personal.family_care_request",
           "personal.lifestyle_upgrade",
           "personal.medical_bill",
           "personal.performance_bonus",
+          "personal.reduced_work_hours",
+          "personal.rent_renewal",
+          "personal.social_commitment",
+          "personal.transport_repair",
+          "personal.transport_repair_followup",
           "personal.utility_rebate",
+          "personal.work_device_replacement",
         ]);
       }
     }
+  });
+
+  it("uses safer tradeoffs for prepared bots and costly tradeoffs for reckless bots", () => {
+    const prepared = BALANCE_LAB_BOTS_V1.find((bot) => bot.id === "disciplined-v1");
+    const reckless = BALANCE_LAB_BOTS_V1.find((bot) => bot.id === "debt-heavy-lifestyle-v1");
+
+    expect(prepared?.eventResponses).toMatchObject({
+      kind: "mapped",
+      byTemplateId: {
+        "personal.transport_repair": "pay_now",
+        "personal.rent_renewal": "move_to_cheaper_home",
+        "personal.family_care_request": "split_cost_and_time",
+        "personal.work_device_replacement": "buy_basic",
+        "personal.reduced_work_hours": "trim_spending",
+        "personal.social_commitment": "decline_commitment",
+      },
+    });
+    expect(reckless?.eventResponses).toMatchObject({
+      kind: "mapped",
+      byTemplateId: {
+        "personal.transport_repair": "defer_repair",
+        "personal.rent_renewal": "accept_increase",
+        "personal.family_care_request": "cover_full_cost",
+        "personal.work_device_replacement": "device_payment_plan",
+        "personal.reduced_work_hours": "spread_income_gap",
+        "personal.social_commitment": "spread_commitment_cost",
+      },
+    });
   });
 
   it("resolves mapped and random event choices without touching world randomness", () => {

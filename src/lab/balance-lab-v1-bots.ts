@@ -52,6 +52,13 @@ const PREPARED_EVENT_RESPONSES = Object.freeze({
   "personal.medical_bill": "use_insurance",
   "personal.lifestyle_upgrade": "keep_current_lifestyle",
   "personal.performance_bonus": "accept_bonus",
+  "personal.transport_repair": "pay_now",
+  "personal.transport_repair_followup": "complete_repair",
+  "personal.rent_renewal": "move_to_cheaper_home",
+  "personal.family_care_request": "split_cost_and_time",
+  "personal.work_device_replacement": "buy_basic",
+  "personal.reduced_work_hours": "trim_spending",
+  "personal.social_commitment": "decline_commitment",
   "personal.utility_rebate": "claim_rebate",
 });
 
@@ -59,6 +66,13 @@ const RECKLESS_EVENT_RESPONSES = Object.freeze({
   "personal.medical_bill": "pay_uninsured",
   "personal.lifestyle_upgrade": "accept_upgrade",
   "personal.performance_bonus": "accept_bonus",
+  "personal.transport_repair": "defer_repair",
+  "personal.transport_repair_followup": "complete_repair",
+  "personal.rent_renewal": "accept_increase",
+  "personal.family_care_request": "cover_full_cost",
+  "personal.work_device_replacement": "device_payment_plan",
+  "personal.reduced_work_hours": "spread_income_gap",
+  "personal.social_commitment": "spread_commitment_cost",
   "personal.utility_rebate": "claim_rebate",
 });
 

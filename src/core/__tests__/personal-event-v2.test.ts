@@ -115,6 +115,40 @@ describe("declarative personal-event v2 catalog", () => {
     expect(PERSONAL_EVENT_TEMPLATES_V2.filter(({ classification }) => classification === "positive")).toHaveLength(2);
   });
 
+  it("contains six distinct beginner decisions with materially different responses", () => {
+    const decisionIds = [
+      "personal.transport_repair",
+      "personal.rent_renewal",
+      "personal.family_care_request",
+      "personal.work_device_replacement",
+      "personal.reduced_work_hours",
+      "personal.social_commitment",
+    ] as const;
+
+    expect(PERSONAL_EVENT_TEMPLATES_V2.length).toBeGreaterThanOrEqual(11);
+    for (const id of decisionIds) {
+      const template = getPersonalEventTemplateV2(id);
+      expect(template.responses.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(template.responses.map(({ effects }) => JSON.stringify(effects))).size)
+        .toBe(template.responses.length);
+      expect(Object.isFrozen(template)).toBe(true);
+      expect(Object.isFrozen(template.responses)).toBe(true);
+    }
+
+    const repair = getPersonalEventTemplateV2("personal.transport_repair");
+    expect(repair.responses.map(({ id }) => id)).toEqual([
+      "pay_now",
+      "payment_plan",
+      "defer_repair",
+    ]);
+    expect(repair.followUps).toEqual([expect.objectContaining({
+      templateId: "personal.transport_repair_followup",
+      whenResponseIds: ["defer_repair"],
+    })]);
+    expect(getPersonalEventTemplateV2("personal.transport_repair_followup"))
+      .toMatchObject({ classification: "negative", severityTier: "medium" });
+  });
+
   it("rejects duplicate identities, invalid bounds, missing lessons, and responses without effects", () => {
     const valid = alwaysTemplate();
     const invalid: PersonalEventTemplateV2 = {
