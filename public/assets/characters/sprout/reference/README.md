@@ -6,4 +6,4 @@
 
 `palette.png` is generated from the canonical main character and provides a starting color reference for future asset work.
 
-Do not overwrite it. Derive future assets from this reference and preserve the immutable rules in `/docs/CHARACTER-RULE.md`.
+Do not overwrite it. Derive future assets from this reference and preserve its silhouette, body proportions, face, leaf, feet, material, camera, and lighting unless a deliberate art-direction change replaces this canonical reference.
