@@ -1,10 +1,15 @@
 import type { GameStateV2 } from "@/core/game-state-v2";
+import { assessBeginnerChapterV1, type BeginnerChapterAssessmentV1 } from "@/core/beginner-chapter-v1";
 import {
   calculateInvestableAssets,
   calculateNetWorth,
 } from "@/core/game-state";
 import { projectFinancialGoal } from "@/core/financial-goals-v2";
 import { analyzeRiskV1 } from "@/core/risk-v1";
+import {
+  assessPreparednessV1,
+  type PreparednessAssessmentV1,
+} from "@/core/preparedness-assessment-v1";
 import type {
   PersonalEventEffectV2,
   PersonalEventMagnitudeV2,
@@ -15,6 +20,7 @@ import { getPersonalEventTemplateV2 } from "@/data/personal-event-templates-v2";
 export type RunView = Readonly<{
   runId: string;
   revision: number;
+  startMonth: string;
   currentMonth: string;
   status: "active" | "completed";
   player: Readonly<{
@@ -58,6 +64,8 @@ export type RunView = Readonly<{
     aggregateSeverityPpm: number;
     weaknessTags: readonly string[];
   }>;
+  preparedness: PreparednessAssessmentV1;
+  beginnerCheckpoint: BeginnerChapterAssessmentV1 | null;
   strategy: Readonly<{
     effectiveMonth: string;
     emergencyFundTargetMonthsPpm?: number;
@@ -236,12 +244,20 @@ export function projectRunView(state: GameStateV2): RunView {
     state.gameplay.financialGoal,
   );
   const risk = analyzeRiskV1(state);
+  const preparedness = assessPreparednessV1(risk);
+  const beginnerCheckpoint = assessBeginnerChapterV1({
+    startMonth: state.startMonth,
+    currentMonth: state.currentMonth,
+    preparedness,
+    outcome: state.outcome,
+  });
   const pending = state.gameplay.eventLifecycle.pending;
   const active = state.outcome === null;
 
   return Object.freeze({
     runId: state.runId,
     revision: state.revision,
+    startMonth: state.startMonth,
     currentMonth: state.currentMonth,
     status: active ? "active" : "completed",
     player: Object.freeze({
@@ -286,6 +302,8 @@ export function projectRunView(state: GameStateV2): RunView {
       aggregateSeverityPpm: risk.aggregateSeverityPpm,
       weaknessTags: risk.weaknessTags,
     }),
+    preparedness,
+    beginnerCheckpoint,
     strategy: state.gameplay.recurringStrategy,
     market: Object.freeze({
       regime: state.marketRegime,
