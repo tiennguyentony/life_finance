@@ -46,6 +46,7 @@ import {
 
 export type GameStateV2ValidationOptions = Readonly<{
   personalEventCatalog?: readonly PersonalEventTemplateV2[];
+  allowTransientRandomAdvance?: boolean;
 }>;
 
 export class InvalidGameStateV2Error extends Error {
@@ -103,6 +104,7 @@ const ONBOARDING_FIELD_SOURCES = new Set([
 function validateOnboardingInitializationV1(
   state: GameStateV2,
   violations: StateInvariantViolation[],
+  options: GameStateV2ValidationOptions,
 ): void {
   const evidence = state.gameplay.initialization;
   if (evidence === undefined) return;
@@ -139,6 +141,7 @@ function validateOnboardingInitializationV1(
   }
   if (
     state.revision === 0 &&
+    options.allowTransientRandomAdvance !== true &&
     sha256Canonical(randomState(evidence.initialRandomSeed)) !==
       sha256Canonical(state.random)
   ) {
@@ -666,7 +669,7 @@ export function validateGameStateV2(
   // Most replayed/native states predate confirmed onboarding evidence. Keep
   // that optional validation out of the very hot monthly-finalization path.
   if (state.gameplay.initialization !== undefined) {
-    validateOnboardingInitializationV1(state, violations);
+    validateOnboardingInitializationV1(state, violations, options);
   }
   try {
     decodeOptionalWorldRandomStateV1(state.worldRandom);
