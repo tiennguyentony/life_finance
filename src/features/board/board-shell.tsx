@@ -2,16 +2,16 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { RunViewWire } from "@/contracts/api/contracts";
 import { LifeFinanceClient } from "@/lib/api-client/client";
 
+import { INITIAL_NAV_STATE, boardNavReducer } from "./board-nav";
 import type { BoardMode } from "./board-scene";
 import { boardViewFromRun } from "./board-model";
 import { BoardHud } from "./hud";
-import { islandById, standPointForIsland, HOME_ISLAND_ID } from "./islands";
-import type { HopRequest } from "./sprout-3d";
-import { TRACK, destinationLandmarkId, standPointAt } from "./track";
+import { islandById, standPointForIsland } from "./islands";
+import { destinationLandmarkId, standPointAt } from "./track";
 
 const BoardScene = dynamic(() => import("./board-scene"), {
   ssr: false,
@@ -21,9 +21,6 @@ const BoardScene = dynamic(() => import("./board-scene"), {
     </div>
   ),
 });
-
-/** Free mode travels by island id; loop mode by track index. */
-type ActiveHop = HopRequest & Readonly<{ toId?: string; toIndex?: number }>;
 
 // Long enough that a screen reader can finish announcing before it hides.
 const TOAST_MS = 4000;
@@ -50,9 +47,7 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
   const [run, setRun] = useState<RunViewWire | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [currentIslandId, setCurrentIslandId] = useState<string>(HOME_ISLAND_ID);
-  const [trackIndex, setTrackIndex] = useState(0);
-  const [hop, setHop] = useState<ActiveHop | null>(null);
+  const [nav, dispatch] = useReducer(boardNavReducer, INITIAL_NAV_STATE);
   // The message persists through the exit transition; `visible` drives it.
   // Kept mounted (not conditionally rendered) so the aria-live region is
   // already in the DOM when its text changes and reliably announces.
@@ -101,51 +96,23 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
     );
   };
 
-  const startFreeHop = (islandId: string) => {
-    if (hop) return; // one hop at a time
-    // Hopping to the island you are on gives a bounce-in-place as feedback.
-    setHop({
-      from: standPointForIsland(currentIslandId),
-      to: standPointForIsland(islandId),
-      toId: islandId,
-    });
-  };
-
-  const hopToTrackIndex = (toIndex: number, fromIndex: number) => {
-    setHop({ from: standPointAt(fromIndex), to: standPointAt(toIndex), toIndex });
-  };
-
   const handleSelect = (islandId: string) => {
     if (mode === "loop") {
       // The loop removes navigation choices: islands are stops, not links.
-      if (islandId !== currentIslandId) showToast("Sprout only moves forward. Press Move.");
-      else if (!hop) hopToTrackIndex(trackIndex, trackIndex); // bounce in place
+      if (islandId !== nav.currentIslandId) {
+        showToast("Sprout only moves forward. Press Move.");
+      } else {
+        dispatch({ type: "loop-bounce" }); // bounce in place as feedback
+      }
       return;
     }
-    startFreeHop(islandId);
+    dispatch({ type: "free-select", islandId });
   };
 
-  const handleHopEnd = () => {
-    if (!hop) return;
-    if (mode === "free") {
-      if (hop.toId) setCurrentIslandId(hop.toId);
-      setHop(null);
-      return;
-    }
-    // Loop: keep hopping tile-to-tile until the next landmark, Monopoly-style.
-    const landedIndex = hop.toIndex ?? trackIndex;
-    setTrackIndex(landedIndex);
-    const landed = TRACK[landedIndex]!;
-    if (landed.kind === "landmark") {
-      setCurrentIslandId(landed.islandId);
-      setHop(null);
-    } else {
-      hopToTrackIndex((landedIndex + 1) % TRACK.length, landedIndex);
-    }
-  };
+  const handleHopEnd = () => dispatch({ type: "hop-end", mode });
 
   const handleTakeAction = async () => {
-    if (!run || busy || hop || !run.capabilities.canAdvance) return;
+    if (!run || busy || nav.hop || !run.capabilities.canAdvance) return;
     setBusy(true);
     try {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
@@ -156,11 +123,7 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
       });
       setRun(response.run);
       showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
-      if (mode === "loop") {
-        hopToTrackIndex((trackIndex + 1) % TRACK.length, trackIndex);
-      } else {
-        startFreeHop(currentIslandId);
-      }
+      dispatch(mode === "loop" ? { type: "loop-advance" } : { type: "free-bounce" });
     } catch (reason) {
       showToast(reason instanceof Error ? reason.message : "The turn could not advance.");
     } finally {
@@ -203,19 +166,21 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
       {/* Announces the character's location to screen readers as it moves,
           since the 3D canvas itself conveys that only visually. */}
       <p aria-live="polite" className="sr-only" role="status">
-        Sprout is at {islandById(currentIslandId).name}
+        Sprout is at {islandById(nav.currentIslandId).name}
       </p>
       <div className="board-canvas">
         <BoardScene
-          currentIslandId={currentIslandId}
-          flagIslandId={mode === "loop" ? destinationLandmarkId(trackIndex) : null}
-          hop={hop}
+          currentIslandId={nav.currentIslandId}
+          flagIslandId={mode === "loop" ? destinationLandmarkId(nav.trackIndex) : null}
+          hop={nav.hop}
           mode={mode}
           onHopEnd={handleHopEnd}
           onSelect={handleSelect}
           reducedMotion={reducedMotion}
           standingAt={
-            mode === "loop" ? standPointAt(trackIndex) : standPointForIsland(currentIslandId)
+            mode === "loop"
+              ? standPointAt(nav.trackIndex)
+              : standPointForIsland(nav.currentIslandId)
           }
         />
       </div>
