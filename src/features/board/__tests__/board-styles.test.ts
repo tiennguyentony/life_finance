@@ -17,6 +17,9 @@ describe("strategy board styles", () => {
     expect(boardStyles).toMatch(/\.board-month-result-dialog\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\);[\s\S]*?overflow:\s*auto;/);
     expect(boardStyles).toContain(".board-month-result-deltas");
     expect(boardStyles).toContain(".board-month-result-deltas dd");
+    expect(boardStyles).toContain(".board-month-result-highlight");
+    expect(boardStyles).toMatch(/\.board-month-result-actions\s*\{[^}]*display:\s*grid;/);
+    expect(boardStyles).toMatch(/\.board-month-result-actions button \+ button\s*\{[^}]*background:\s*var\(--paper-deep\);/);
     expect(boardStyles).toMatch(/\.board-event-dialog\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\);[\s\S]*?overflow:\s*auto;/);
     expect(boardStyles).toMatch(/\.board-event-dialog\s*\{[^}]*color:\s*var\(--ink\);/);
     expect(boardStyles).toMatch(/\.board-event-dialog > span\s*\{[^}]*color:\s*var\(--ink\);/);
