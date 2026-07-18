@@ -422,6 +422,308 @@
   transform: none;
 }
 
+/* --------------------------- strategy planning ------------------------- */
+
+.board-strategy-prompt {
+  margin: 0 0.5rem 0 auto;
+  padding: 0.7rem 1.05rem;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm, 16px);
+  background: rgb(255 253 246 / 94%);
+  box-shadow: 4px 5px 0 var(--ink);
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.board-planning-panel {
+  position: absolute;
+  top: 7.25rem;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 12;
+  display: flex;
+  width: min(25rem, calc(100vw - 2.5rem));
+  flex-direction: column;
+  gap: 0.9rem;
+  overflow: auto;
+  padding: 1.1rem;
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  background: rgb(255 253 246 / 97%);
+  box-shadow: 8px 10px 0 var(--ink);
+  pointer-events: auto;
+}
+
+.board-planning-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.board-planning-header p,
+.board-planning-header h2,
+.board-planning-panel [role="alert"] {
+  margin: 0;
+}
+
+.board-planning-header p {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.board-planning-header h2 {
+  margin-block: 0.14rem 0.28rem;
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1;
+}
+
+.board-planning-header button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.45rem 0.7rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  box-shadow: 2px 3px 0 var(--ink);
+  font-weight: 800;
+}
+
+.board-planning-panel [role="alert"] {
+  padding: 0.58rem 0.7rem;
+  border: 2px solid #c0392b;
+  border-radius: 12px;
+  background: #fff0eb;
+  color: #8b2d21;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.board-plan-options {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.board-plan-option {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.board-plan-card {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  gap: 0.34rem;
+  padding: 0.8rem;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: 4px 5px 0 var(--ink);
+  text-align: left;
+  transition: background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.board-plan-card > strong {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 1rem;
+}
+
+.board-plan-card > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.board-plan-card > span[data-tone] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: var(--ink);
+}
+
+.board-plan-card > span[data-tone="positive"] b {
+  color: #2e7d32;
+}
+
+.board-plan-card > span[data-tone="negative"] b {
+  color: #c0392b;
+}
+
+.board-plan-card small {
+  margin-left: auto;
+  padding: 0.1rem 0.38rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: #45584a;
+  font-size: 0.64rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.board-plan-card[aria-pressed="true"] {
+  background: var(--paper-deep);
+  box-shadow: 2px 3px 0 var(--ink);
+  transform: translateY(2px);
+}
+
+.board-plan-card:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.35);
+  opacity: 0.7;
+}
+
+.board-plan-disabled-reason {
+  margin: 0;
+  padding-left: 0.15rem;
+  color: #8b2d21;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.board-planning-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.board-commit-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.board-planning-actions > button {
+  min-height: 44px;
+  padding: 0.7rem 1rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 4px 5px 0 var(--ink);
+  color: var(--ink);
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.95rem;
+}
+
+.board-planning-actions > button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.25);
+  opacity: 0.72;
+}
+
+/* ----------------------------- month result ---------------------------- */
+
+.board-month-result-dialog {
+  width: min(92vw, 31rem);
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  overflow: auto;
+  padding: 0;
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  background: rgb(255 253 246 / 98%);
+  box-shadow: 10px 12px 0 var(--ink), 0 30px 90px rgb(23 35 28 / 28%);
+  color: var(--ink);
+  animation: board-result-enter 180ms ease-out;
+}
+
+.board-month-result-dialog::backdrop {
+  background: rgb(23 35 28 / 35%);
+}
+
+.board-month-result-dialog > section {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.2rem, 4vw, 2rem);
+}
+
+.board-month-result-dialog h2,
+.board-month-result-dialog p {
+  margin: 0;
+}
+
+.board-month-result-dialog h2 {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: clamp(1.55rem, 4vw, 2.35rem);
+  line-height: 1;
+}
+
+.board-month-result-dialog header p,
+.board-month-result-dialog [role="status"] {
+  margin-top: 0.42rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.board-month-result-dialog [role="status"] {
+  padding: 0.62rem 0.72rem;
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  background: #fff6d9;
+  color: #70500f;
+  font-weight: 800;
+}
+
+.board-month-result-deltas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+  margin: 0;
+}
+
+.board-month-result-deltas > div {
+  padding: 0.62rem 0.7rem;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper-deep);
+}
+
+.board-month-result-deltas dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.board-month-result-deltas dd {
+  margin: 0.16rem 0 0;
+  color: var(--ink);
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.98rem;
+}
+
+.board-month-result-dialog button {
+  min-height: 44px;
+  padding: 0.72rem 1rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--lime);
+  box-shadow: 4px 5px 0 var(--ink);
+  color: var(--ink);
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 0.96rem;
+}
+
+.board-month-result-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+@keyframes board-result-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .board-event-dialog {
   position: absolute;
   top: 50%;
@@ -429,18 +731,21 @@
   z-index: 20;
   display: grid;
   width: min(92vw, 34rem);
+  max-height: calc(100dvh - 2rem);
   gap: 0.8rem;
+  overflow: auto;
   padding: clamp(1.4rem, 3vw, 2.2rem);
   border: 3px solid var(--ink);
   border-radius: var(--radius, 26px);
   background: rgb(255 253 246 / 97%);
   box-shadow: 10px 12px 0 var(--ink), 0 30px 90px rgb(23 35 28 / 28%);
+  color: var(--ink);
   pointer-events: auto;
   transform: translate(-50%, -50%);
 }
 
 .board-event-dialog > span {
-  color: var(--danger);
+  color: var(--ink);
   font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -466,12 +771,30 @@
 }
 
 .board-event-dialog button {
+  display: grid;
+  gap: 0.18rem;
   min-height: 3rem;
   padding: 0.7rem 0.9rem;
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--lime);
   box-shadow: 3px 4px 0 var(--ink);
+  font-weight: 900;
+  text-align: left;
+}
+
+.board-event-dialog button strong {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+}
+
+.board-event-dialog button span {
+  color: #27472d;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.board-event-amount {
+  color: #8b2d21;
   font-weight: 900;
 }
 
@@ -547,12 +870,144 @@
   transform: translateX(-50%) translateY(0);
 }
 
+@media (max-width: 760px) {
+  .board-hud-top {
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.65rem;
+  }
+
+  .board-player-card {
+    gap: 0.4rem;
+    padding: 0.25rem 0.45rem 0.25rem 0.25rem;
+    box-shadow: 2px 3px 0 var(--ink);
+  }
+
+  .board-avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .board-player-meta span,
+  .board-xp {
+    display: none;
+  }
+
+  .board-player-meta strong {
+    font-size: 0.84rem;
+  }
+
+  .board-stat-row {
+    flex: 1;
+    gap: 0.35rem;
+  }
+
+  .board-stat {
+    min-width: 0;
+    padding: 0.4rem 0.55rem;
+    box-shadow: 2px 3px 0 var(--ink);
+    text-align: center;
+  }
+
+  .board-stat dt {
+    font-size: 0.55rem;
+    letter-spacing: 0.04em;
+  }
+
+  .board-stat dd {
+    font-size: 0.84rem;
+  }
+
+  .board-trophies,
+  .board-top-right,
+  .board-side {
+    display: none;
+  }
+
+  .board-hud-bottom {
+    gap: 0.55rem;
+    padding: 0.65rem;
+  }
+
+  .board-goal {
+    display: none;
+  }
+
+  .board-calendar {
+    padding: 0.4rem 0.6rem;
+    box-shadow: 2px 3px 0 var(--ink);
+  }
+
+  .board-strategy-prompt {
+    margin: 0 0 0 auto;
+    padding: 0.55rem 0.72rem;
+    box-shadow: 2px 3px 0 var(--ink);
+    font-size: 0.78rem;
+  }
+
+  .board-planning-panel {
+    top: auto;
+    right: 0.65rem;
+    bottom: 0.65rem;
+    left: 0.65rem;
+    width: auto;
+    max-height: min(62dvh, 34rem);
+    padding: 0.9rem;
+    box-shadow: 5px 6px 0 var(--ink);
+  }
+
+  .board-plan-options {
+    gap: 0.55rem;
+  }
+
+  .board-plan-card {
+    padding: 0.68rem;
+    box-shadow: 2px 3px 0 var(--ink);
+  }
+
+  .board-planning-actions {
+    position: sticky;
+    z-index: 1;
+    bottom: 0;
+    margin-right: -0.9rem;
+    margin-bottom: -0.9rem;
+    margin-left: -0.9rem;
+    padding: 0.75rem 0.9rem 0.9rem;
+    border-top: 2px solid var(--ink);
+    background: rgb(255 253 246);
+  }
+
+  .board-month-result-deltas {
+    gap: 0.45rem;
+  }
+
+  .board-month-result-deltas > div {
+    padding: 0.52rem 0.55rem;
+  }
+
+  .board-event-dialog {
+    width: min(92vw, 29rem);
+    padding: 1.2rem;
+    box-shadow: 6px 7px 0 var(--ink), 0 20px 55px rgb(23 35 28 / 28%);
+  }
+
+  .board-event-dialog > div {
+    grid-template-columns: 1fr;
+  }
+
+  .board-toast {
+    bottom: 4.8rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .board-toast,
   .board-icon-button,
   .board-side-button,
   .board-take-action,
-  .board-chip {
+  .board-chip,
+  .board-plan-card,
+  .board-month-result-dialog {
     animation: none;
     transition: none;
   }
@@ -566,7 +1021,8 @@
   .board-take-action:hover,
   .board-take-action:active,
   .board-chip:hover,
-  .board-chip:active {
+  .board-chip:active,
+  .board-plan-card[aria-pressed="true"] {
     transform: none;
   }
 }

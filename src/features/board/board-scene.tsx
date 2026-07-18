@@ -8,10 +8,12 @@ import {
   useCursor,
   useGLTF,
 } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { PerspectiveCamera } from "three";
 import type { Group, Mesh, MeshStandardMaterial } from "three";
 
+import { verticalFovForAspect } from "./camera-fov";
 import { type BoardPoint } from "./hop";
 import {
   BOARD_ISLANDS,
@@ -22,27 +24,23 @@ import {
 import { Sprout3d, type HopRequest } from "./sprout-3d";
 import { TRACK, destinationLandmarkId } from "./track";
 
-export type BoardMode = "free" | "loop";
+export type BoardMode = "strategy" | "free" | "loop";
 
 type BoardSceneProps = Readonly<{
   currentIslandId: string;
-  /** Landmark that gets the destination flag (loop mode's next stop). */
   flagIslandId?: string | null;
   hop: HopRequest | null;
   mode: BoardMode;
-  onSelect: (islandId: string) => void;
+  onSelect: (islandId: string, focusTarget?: HTMLElement) => void;
   onHopEnd: () => void;
   reducedMotion: boolean;
+  reactionToken: number;
+  selectedIslandId: string | null;
   /** Sprout's resting point while not hopping (final world coordinates). */
   standingAt: BoardPoint;
 }>;
 
 const PLATFORM_TOP_Y = 0.55;
-
-/* ---------------------------- KayKit models ----------------------------- */
-/* CC0 board-game pieces by Kay Lousberg (kaylousberg.com), served from
- * public/assets/board/kaykit. Each .gltf pulls its sibling .bin + the
- * shared texture atlas. */
 
 const KAYKIT = "/assets/board/kaykit";
 
@@ -58,7 +56,6 @@ function KayModel({ url, position, rotation, scale }: KayModelProps) {
   return <Clone object={scene} position={position} rotation={rotation} scale={scale} />;
 }
 
-/** Travel tiles are colored by where the segment leads. */
 const TILE_URL_BY_DESTINATION: Readonly<Record<string, string>> = {
   home: `${KAYKIT}/tile_green.gltf`,
   hospital: `${KAYKIT}/tile_red.gltf`,
@@ -230,34 +227,34 @@ const BUILDINGS: Readonly<Record<string, () => React.JSX.Element>> = {
 /* ------------------------------- island -------------------------------- */
 
 type IslandProps = Readonly<{
-  island: BoardIsland;
-  isCurrent: boolean;
-  /** Marks the loop's next destination with a planted flag. */
   flagged?: boolean;
-  onSelect: (islandId: string) => void;
+  island: BoardIsland;
+  onSelect: (islandId: string, focusTarget?: HTMLElement) => void;
   position: BoardPoint;
   radius: number;
   reducedMotion: boolean;
+  statusLabel: string | null;
 }>;
 
 function Island({
-  island,
-  isCurrent,
   flagged = false,
+  island,
   onSelect,
   position,
   radius,
   reducedMotion,
+  statusLabel,
 }: IslandProps) {
   const groupRef = useRef<Group>(null);
   const ringRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
   useCursor(hovered);
+  const isHighlighted = statusLabel !== null;
 
   useFrame((_, delta) => {
     const group = groupRef.current;
     if (group) {
-      const targetY = hovered && !isCurrent ? 0.22 : 0;
+      const targetY = hovered && !isHighlighted ? 0.22 : 0;
       group.position.y = reducedMotion
         ? targetY
         : group.position.y + (targetY - group.position.y) * Math.min(1, delta * 9);
@@ -267,7 +264,7 @@ function Island({
       const material = ring.material as MeshStandardMaterial;
       // A painted trim ring in daylight: a soft lift on hover, a brighter
       // one for the current stop, never the night version's neon glow.
-      material.emissiveIntensity = isCurrent ? 0.55 : hovered ? 0.4 : 0.12;
+      material.emissiveIntensity = isHighlighted ? 0.55 : hovered ? 0.4 : 0.12;
     }
   });
 
@@ -332,13 +329,14 @@ function Island({
         zIndexRange={[1, 0]}
       >
         <button
-          className={`board-chip${isCurrent ? " board-chip-current" : ""}`}
-          onClick={() => onSelect(island.id)}
+          className={`board-chip${isHighlighted ? " board-chip-current" : ""}`}
+          data-board-destination={island.id}
+          onClick={(event) => onSelect(island.id, event.currentTarget)}
           style={{ pointerEvents: "auto", borderColor: island.accent }}
           type="button"
         >
           <strong>{island.name}</strong>
-          <span>{isCurrent ? "Current location" : island.tagline}</span>
+          <span>{statusLabel ?? island.tagline}</span>
         </button>
       </Html>
     </group>
@@ -412,12 +410,8 @@ function PathDots({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   );
 }
 
-/* ----------------------------- track tiles ------------------------------ */
-
-/** Track indices that get a decorative gold coin on their tile. */
 const COIN_TILE_INDICES = [5, 10, 18];
 
-/** Loop mode's travel spaces: KayKit tiles colored by destination. */
 function TrackTiles({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   const groupsRef = useRef<Group[]>([]);
   const tiles = useMemo(
@@ -444,7 +438,6 @@ function TrackTiles({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
     const elapsed = clock.getElapsedTime();
     groupsRef.current.forEach((group, index) => {
       if (!group) return;
-      // Gentle out-of-phase bob so the track feels alive without distracting.
       group.position.y = Math.sin(elapsed * 1.6 - tiles[index]!.phase) * 0.05;
     });
   });
@@ -459,8 +452,6 @@ function TrackTiles({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
             if (group) groupsRef.current[index] = group;
           }}
         >
-          {/* Tile model is 1x0.2x1 with a bottom origin: top lands at
-              PLATFORM_TOP_Y so Sprout's feet touch it exactly. */}
           <KayModel position={[0, PLATFORM_TOP_Y - 0.2, 0]} scale={1.5} url={tile.url} />
           {tile.coin ? (
             <KayModel
@@ -476,9 +467,6 @@ function TrackTiles({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   );
 }
 
-/** Loop mode's center piece: a die slowly tumbling above the board. Kept
- * smaller and pushed back off the Home axis so it hints at the future roll
- * mechanic without out-competing the player as the board's focal point. */
 function CenterDie({ reducedMotion }: Readonly<{ reducedMotion: boolean }>) {
   const dieRef = useRef<Group>(null);
 
@@ -510,6 +498,28 @@ function Water() {
   );
 }
 
+function ResponsiveStrategyCamera() {
+  const { get, invalidate, size } = useThree();
+
+  useLayoutEffect(() => {
+    const { camera } = get();
+    if (!(camera instanceof PerspectiveCamera)) return;
+
+    const previousFov = camera.fov;
+    camera.fov = verticalFovForAspect(size.width / size.height);
+    camera.updateProjectionMatrix();
+    invalidate();
+
+    return () => {
+      camera.fov = previousFov;
+      camera.updateProjectionMatrix();
+      invalidate();
+    };
+  }, [get, invalidate, size.height, size.width]);
+
+  return null;
+}
+
 export default function BoardScene({
   currentIslandId,
   flagIslandId = null,
@@ -518,9 +528,10 @@ export default function BoardScene({
   onSelect,
   onHopEnd,
   reducedMotion,
+  reactionToken,
+  selectedIslandId,
   standingAt,
 }: BoardSceneProps) {
-  // Free mode: Home-centered star. Loop mode: landmarks on the track corners.
   const layout: ReadonlyArray<{ island: BoardIsland; position: BoardPoint; radius: number }> =
     mode === "loop"
       ? TRACK.flatMap((stop) =>
@@ -544,6 +555,8 @@ export default function BoardScene({
       frameloop={reducedMotion ? "demand" : "always"}
       role="img"
     >
+      {mode === "strategy" ? <ResponsiveStrategyCamera /> : null}
+
       {/* Wheel-zoom only: the view stays locked (no rotate/pan) so the board
           keeps its fixed 3/4 look, but you can pull back to see every corner
           building or lean in on a stop. Target matches the old lookAt point. */}
@@ -587,7 +600,6 @@ export default function BoardScene({
         <Suspense fallback={null}>
           <TrackTiles reducedMotion={reducedMotion} />
           <CenterDie reducedMotion={reducedMotion} />
-          {/* A little treasure by the bank's vault. */}
           <KayModel
             position={[5.4, PLATFORM_TOP_Y, -3]}
             rotation={[0, 0.5, 0]}
@@ -602,12 +614,20 @@ export default function BoardScene({
         <Island
           flagged={island.id === flagIslandId}
           island={island}
-          isCurrent={island.id === currentIslandId}
           key={island.id}
           onSelect={onSelect}
           position={position}
           radius={radius}
           reducedMotion={reducedMotion}
+          statusLabel={
+            mode === "strategy"
+              ? island.id === selectedIslandId
+                ? "Selected focus"
+                : null
+              : island.id === currentIslandId
+                ? "Current location"
+                : null
+          }
         />
       ))}
 
@@ -615,6 +635,7 @@ export default function BoardScene({
         <Sprout3d
           hop={hop}
           onHopEnd={onHopEnd}
+          reactionToken={reactionToken}
           reducedMotion={reducedMotion}
           standingAt={standingAt}
         />
