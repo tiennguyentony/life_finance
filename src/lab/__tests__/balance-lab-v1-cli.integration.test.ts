@@ -202,6 +202,38 @@ describe("offline balance lab CLI pipeline", () => {
     ]);
   }, 65_000);
 
+  it("runs the beginner cohort through bounded deterministic workers", () => {
+    const root = temporaryDirectory();
+    const configPath = join(root, "config.json");
+    const output = join(root, "beginner");
+    writeFileSync(configPath, JSON.stringify({
+      ...rawConfig,
+      acceptance: [],
+      tiers: {
+        ...rawConfig.tiers,
+        beginner: {
+          ...rawConfig.tiers.beginner,
+          matchedSeedCount: 2,
+        },
+      },
+    }));
+
+    execFileSync(process.execPath, [
+      "scripts/run-balance-lab.mjs", "--size", "beginner", "--config", configPath,
+      "--output", output,
+    ], { cwd: process.cwd(), encoding: "utf8", timeout: 120_000 });
+
+    const report = decodeBalanceLabReportV1(JSON.parse(
+      readFileSync(join(output, "beginner.report.json"), "utf8"),
+    ));
+    expect(report.summary.runCount).toBe(36);
+    expect(report.result.deterministicResultFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(report.runtime.elapsedMs).toBeLessThan(rawConfig.tiers.beginner.runtimeBudgetMs);
+    expect(report.limitations).toContain(
+      "Exact repeatability was re-executed for 2 matched seeds; the full cohort was executed once.",
+    );
+  }, 125_000);
+
   it("binds a validated CLI event catalog into configuration and result fingerprints", () => {
     const root = temporaryDirectory();
     const configPath = join(root, "config.json");
@@ -263,7 +295,7 @@ describe("offline balance lab CLI pipeline", () => {
     expect(customReport.result.deterministicResultFingerprint).not.toBe(
       defaultReport.result.deterministicResultFingerprint,
     );
-    expect(defaultReport.limitations).toContain(
+    expect(defaultReport.limitations).not.toContain(
       "The supplied event catalog contains no large or catastrophe templates.",
     );
     expect(customReport.limitations).not.toContain(

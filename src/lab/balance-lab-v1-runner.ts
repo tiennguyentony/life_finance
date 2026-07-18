@@ -362,6 +362,52 @@ function initialWorldRandom(spec: BalanceLabRunSpecV1, personaId: string, matche
   );
 }
 
+export function assembleOfflineBalanceLabResultV1(
+  unsafeSpec: BalanceLabRunSpecV1,
+  unorderedRuns: readonly BalanceLabRunResultV1[],
+): OfflineBalanceLabResultV1 {
+  const spec = decodeBalanceLabRunSpecV1(unsafeSpec);
+  const personaOrder = new Map(spec.personaIds.map((id, index) => [id, index]));
+  const seedOrder = new Map(spec.matchedSeeds.map((seed, index) => [seed, index]));
+  const botOrder = new Map(spec.botIds.map((id, index) => [id, index]));
+  const expectedRunCount = spec.personaIds.length * spec.matchedSeeds.length * spec.botIds.length;
+  const identities = new Set<string>();
+  if (unorderedRuns.length !== expectedRunCount) {
+    ownerViolation(`assembled run count must equal ${expectedRunCount}`);
+  }
+  for (const run of unorderedRuns) {
+    if (
+      !personaOrder.has(run.personaId) ||
+      !seedOrder.has(run.matchedSeed) ||
+      !botOrder.has(run.botId)
+    ) ownerViolation("assembled run is outside the requested cohort");
+    const identity = `${run.personaId}|${run.matchedSeed}|${run.botId}`;
+    if (identities.has(identity)) ownerViolation("assembled cohort contains a duplicate run");
+    identities.add(identity);
+  }
+  const orderedRuns = [...unorderedRuns].toSorted((left, right) =>
+    personaOrder.get(left.personaId)! - personaOrder.get(right.personaId)! ||
+    seedOrder.get(left.matchedSeed)! - seedOrder.get(right.matchedSeed)! ||
+    botOrder.get(left.botId)! - botOrder.get(right.botId)!);
+  const frozenRuns = classifyMatchedUnavoidableFailures(orderedRuns, spec.botIds.length);
+  assertMatchedWorlds(frozenRuns);
+  const configurationHash = sha256Canonical({
+    spec,
+    worldRandomVersion: "named-world-rng-v1",
+    botPolicies: spec.botIds.map(balanceLabBotPolicyV1),
+  });
+  const fingerprintInput = {
+    version: "offline-balance-lab-v1" as const,
+    spec,
+    configurationHash,
+    runs: frozenRuns,
+  };
+  return Object.freeze({
+    ...fingerprintInput,
+    deterministicResultFingerprint: sha256Canonical(fingerprintInput),
+  });
+}
+
 export function runOfflineBalanceLabV1<State, MonthlyRecord>(
   unsafeSpec: BalanceLabRunSpecV1,
   owners: BalanceLabProductionOwnersV1<State, MonthlyRecord>,
@@ -480,21 +526,5 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
     }
   }
 
-  const frozenRuns = classifyMatchedUnavoidableFailures(runs, spec.botIds.length);
-  assertMatchedWorlds(frozenRuns);
-  const configurationHash = sha256Canonical({
-    spec,
-    worldRandomVersion: "named-world-rng-v1",
-    botPolicies: spec.botIds.map(balanceLabBotPolicyV1),
-  });
-  const fingerprintInput = {
-    version: "offline-balance-lab-v1" as const,
-    spec,
-    configurationHash,
-    runs: frozenRuns,
-  };
-  return Object.freeze({
-    ...fingerprintInput,
-    deterministicResultFingerprint: sha256Canonical(fingerprintInput),
-  });
+  return assembleOfflineBalanceLabResultV1(spec, runs);
 }

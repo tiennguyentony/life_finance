@@ -8,9 +8,11 @@ import {
   type BalanceLabRunSpecV1,
 } from "../balance-lab-v1-contracts";
 import {
+  assembleOfflineBalanceLabResultV1,
   runOfflineBalanceLabV1,
   type BalanceLabProductionOwnersV1,
 } from "../balance-lab-v1-runner";
+import { runOfflineBalanceLabShardsV1 } from "../balance-lab-v1-parallel";
 
 type State = Readonly<{
   personaId: string;
@@ -176,5 +178,36 @@ describe("offline balance lab v1 runner", () => {
 
     expect(strategyCaused.runs.every(({ metrics }) => !metrics.unavoidableFailure)).toBe(true);
     expect(cohortWide.runs.every(({ metrics }) => metrics.unavoidableFailure)).toBe(true);
+  });
+
+  it("assembles seed shards into the exact canonical full-cohort result", () => {
+    const full = runOfflineBalanceLabV1(spec, owners());
+    const firstShard = runOfflineBalanceLabV1(
+      { ...spec, matchedSeeds: [spec.matchedSeeds[0]!] },
+      owners(),
+    );
+    const secondShard = runOfflineBalanceLabV1(
+      { ...spec, matchedSeeds: [spec.matchedSeeds[1]!] },
+      owners(),
+    );
+
+    const assembled = assembleOfflineBalanceLabResultV1(
+      spec,
+      [...secondShard.runs, ...firstShard.runs],
+    );
+
+    expect(assembled).toEqual(full);
+  });
+
+  it("produces the exact same result with one or multiple asynchronous workers", async () => {
+    const full = runOfflineBalanceLabV1(spec, owners());
+    const runShard = async (shard: BalanceLabRunSpecV1) =>
+      runOfflineBalanceLabV1(shard, owners());
+
+    const singleWorker = await runOfflineBalanceLabShardsV1(spec, 1, runShard);
+    const twoWorkers = await runOfflineBalanceLabShardsV1(spec, 2, runShard);
+
+    expect(singleWorker).toEqual(full);
+    expect(twoWorkers).toEqual(full);
   });
 });

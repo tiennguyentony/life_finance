@@ -260,6 +260,35 @@ describe("offline balance lab v1 metrics", () => {
     });
   });
 
+  it("does not count recovery windows censored before six months as failures", () => {
+    const summary = summarizeBalanceLabRunsV1([run("disciplined-v1", {
+      beginnerChapterEvidence: {
+        outcome: "developing",
+        completed: true,
+        observedMonths: 12,
+        scorePpm: 400_000,
+        preparednessBand: "exposed",
+      },
+      recoveryObservations: [
+        { eventMonthIndex: 0, status: "recovered", observedMonths: 4 },
+        { eventMonthIndex: 1, status: "recovered", observedMonths: 8 },
+        { eventMonthIndex: 8, status: "censored", observedMonths: 3 },
+        { eventMonthIndex: 3, status: "censored", observedMonths: 7 },
+      ],
+    } as never)]);
+
+    expect(summary.balanceShadow.nonfatalRecoveryWithinSixMonthsRate).toMatchObject({
+      numerator: 1,
+      denominator: 3,
+      ratePpm: 333_333,
+    });
+    expect(summary.beginnerChapter.nonfatalRecoveryWithinSixMonthsRate).toMatchObject({
+      numerator: 1,
+      denominator: 3,
+      ratePpm: 333_333,
+    });
+  });
+
   it("measures prepared impact reduction only from matched relevant event outcomes", () => {
     const event = (
       eventId: string,
