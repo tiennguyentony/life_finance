@@ -10,6 +10,8 @@ This file is the durable continuation context for the current implementation bra
 - `542884f` — account-owned persistent saves and legacy-save claim
 - `455a27d` — reduced command traffic, dormant outbox writes, and missing FK index
 - `72d4458` — bounded demo memory and lighter landing/board rendering
+- `fdddd69` — local auth/save verification and deployment handoff
+- `ea9945b` — browser-safe Supabase public environment configuration
 
 Nothing in this sequence has been pushed to `main`. Continue testing locally and obtain player acceptance before merge/push.
 
@@ -22,6 +24,9 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 5. Persistent commands authorize against the server-derived user ID, never a browser-supplied user ID.
 6. Instant Demo remains development-only, in memory, and capability-authenticated.
 7. Normal browser commands avoid the old preliminary state read and do not return the unused monthly record.
+8. The three onboarding personas are starting profiles, not independent save slots.
+9. The board exposes New Game. Merely entering setup preserves the current save; successfully creating the replacement archives the prior active save.
+10. `/generating` waits for persisted onboarding hydration before deciding whether a profile is missing, and profile state is persisted before navigation.
 
 ## Local verification performed
 
