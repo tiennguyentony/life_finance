@@ -7,7 +7,6 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/async-state";
 import { useOnboarding } from "./onboarding-provider";
 import { getPersonas } from "@/services/player.service";
 import type { Persona } from "@/types/game";
-import { ActiveSaveBanner } from "@/features/saves/saved-games-panel";
 
 export function PersonaGallery() {
   const router = useRouter();
@@ -82,7 +81,6 @@ export function PersonaGallery() {
 
   return (
     <div className="screen selection-screen">
-      <ActiveSaveBanner />
       <header className="screen-heading">
         <p>Step 1 of 3</p>
         <h1>Choose your financial fighter.</h1>

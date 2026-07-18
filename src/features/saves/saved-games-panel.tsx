@@ -20,31 +20,6 @@ function dateLabel(value: string): string {
   }).format(new Date(value));
 }
 
-export function ActiveSaveBanner() {
-  const [active, setActive] = useState<SavedRunWire | null>(null);
-  useEffect(() => {
-    let mounted = true;
-    new LifeFinanceClient().listSavedRuns().then(({ saves }) => {
-      if (mounted) setActive(saves.find((save) => save.saveStatus === "active") ?? null);
-    }).catch(() => undefined);
-    return () => { mounted = false; };
-  }, []);
-  if (!active) return null;
-  return (
-    <aside className="active-save-banner" aria-label="Current saved game">
-      <div>
-        <span>Current game</span>
-        <strong>{monthLabel(active.currentMonth)}</strong>
-        <small>Turn {active.revision} · saved {dateLabel(active.updatedAt)}</small>
-      </div>
-      <div className="active-save-actions">
-        <Link className="button button-primary" href="/board">Continue game</Link>
-        <Link className="button button-secondary" href="/saves">All saved games</Link>
-      </div>
-    </aside>
-  );
-}
-
 export function SavedGamesPanel() {
   const router = useRouter();
   const [saves, setSaves] = useState<readonly SavedRunWire[]>([]);

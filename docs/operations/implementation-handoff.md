@@ -30,7 +30,7 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 11. Restoring a run uses a read-only gateway and does not initialize the tax client; tax configuration is required only by command processing.
 12. Board plan commands always target `run.currentMonth`; the recurring strategy's effective month is historical state and must not be reused after time advances.
 13. Three.js is pinned to r182 until React Three Fiber replaces its deprecated `THREE.Clock` dependency; do not widen the version range without checking the browser console and board render.
-14. `/start` exposes the active save, `/saves` lists up to 50 account-owned games, and restoring an archived game atomically archives the previous active game without deleting either.
+14. `/start` is dedicated to new-game persona selection; the header links to `/saves`, which lists up to 50 account-owned games. Restoring an archived game atomically archives the previous active game without deleting either.
 15. Account commands are accepted only for the currently active save; archived saves are read-only until restored.
 
 ## Local verification performed
