@@ -708,7 +708,7 @@
 }
 
 .board-event-dialog > span {
-  color: var(--danger);
+  color: var(--ink);
   font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.08em;
