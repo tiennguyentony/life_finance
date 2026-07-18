@@ -115,4 +115,33 @@ describe("InMemoryRunRepository", () => {
       }),
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_MISMATCH" });
   });
+
+  it("bounds local demo memory with LRU eviction and idle expiry", async () => {
+    const ids = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ];
+    let now = 0;
+    const repository = new InMemoryRunRepository({
+      runIdFactory: () => ids.shift()!,
+      accessSecretFactory: () => ACCESS_SECRET,
+      clock: () => now,
+      maxRuns: 2,
+      ttlMs: 100,
+    });
+
+    const first = await repository.createRunV2(initialState);
+    now = 10;
+    const second = await repository.createRunV2(initialState);
+    expect(repository.hasRun(first.runId)).toBe(true);
+    now = 20;
+    const third = await repository.createRunV2(initialState);
+
+    expect(repository.hasRun(first.runId)).toBe(true);
+    expect(repository.hasRun(second.runId)).toBe(false);
+    expect(repository.hasRun(third.runId)).toBe(true);
+    now = 121;
+    expect(repository.hasRun(first.runId)).toBe(false);
+  });
 });

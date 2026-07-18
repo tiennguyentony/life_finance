@@ -27,26 +27,39 @@ type StoredDemoRun = {
   readonly acceptedCommands: Map<string, StoredDemoCommand>;
   readonly taxEvidenceByCommand: Map<string, MonthlyTaxEvidence>;
   readonly taxEvidenceByContext: Map<string, MonthlyTaxEvidence>;
+  lastAccessedAt: number;
 };
 
 type InMemoryRunRepositoryOptions = Readonly<{
   runIdFactory?: () => string;
   accessSecretFactory?: () => string;
+  clock?: () => number;
+  maxRuns?: number;
+  ttlMs?: number;
 }>;
 
 export class InMemoryRunRepository implements V2Repository {
   readonly #runs = new Map<string, StoredDemoRun>();
   readonly #runIdFactory: () => string;
   readonly #accessSecretFactory: () => string;
+  readonly #clock: () => number;
+  readonly #maxRuns: number;
+  readonly #ttlMs: number;
 
   constructor(options: InMemoryRunRepositoryOptions = {}) {
     this.#runIdFactory = options.runIdFactory ?? randomUUID;
     this.#accessSecretFactory =
       options.accessSecretFactory ?? (() => secretCodec.create().secret);
+    this.#clock = options.clock ?? Date.now;
+    this.#maxRuns = options.maxRuns ?? 16;
+    this.#ttlMs = options.ttlMs ?? 2 * 60 * 60 * 1_000;
+    if (!Number.isInteger(this.#maxRuns) || this.#maxRuns < 1) {
+      throw new TypeError("demo maxRuns must be a positive integer");
+    }
   }
 
   hasRun(runId: string): boolean {
-    return this.#runs.has(runId);
+    return this.#findRun(runId) !== null;
   }
 
   async createRunV2(
@@ -77,7 +90,9 @@ export class InMemoryRunRepository implements V2Repository {
       acceptedCommands: new Map(),
       taxEvidenceByCommand: new Map(),
       taxEvidenceByContext: new Map(),
+      lastAccessedAt: this.#clock(),
     });
+    this.#prune();
     return Object.freeze({
       runId,
       accessSecret,
@@ -208,7 +223,7 @@ export class InMemoryRunRepository implements V2Repository {
   }
 
   #authorize(runId: string, accessSecret: string): StoredDemoRun {
-    const run = this.#runs.get(runId);
+    const run = this.#findRun(runId);
     if (!run || run.accessSecret !== accessSecret) {
       throw new RunRepositoryError(
         "NOT_FOUND_OR_UNAUTHORIZED",
@@ -216,5 +231,31 @@ export class InMemoryRunRepository implements V2Repository {
       );
     }
     return run;
+  }
+
+  #findRun(runId: string): StoredDemoRun | null {
+    const run = this.#runs.get(runId);
+    if (!run) return null;
+    const now = this.#clock();
+    if (now - run.lastAccessedAt > this.#ttlMs) {
+      this.#runs.delete(runId);
+      return null;
+    }
+    run.lastAccessedAt = now;
+    this.#runs.delete(runId);
+    this.#runs.set(runId, run);
+    return run;
+  }
+
+  #prune(): void {
+    const now = this.#clock();
+    for (const [runId, run] of this.#runs) {
+      if (now - run.lastAccessedAt > this.#ttlMs) this.#runs.delete(runId);
+    }
+    while (this.#runs.size > this.#maxRuns) {
+      const oldestRunId = this.#runs.keys().next().value as string | undefined;
+      if (!oldestRunId) break;
+      this.#runs.delete(oldestRunId);
+    }
   }
 }
