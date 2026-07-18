@@ -20,6 +20,11 @@ import {
   getPersonalEventTemplateV2,
 } from "../../data/personal-event-templates-v2";
 import {
+  PERSONAL_EVENT_PRESENTATIONS_V1,
+  getPersonalEventPresentationV1,
+  validatePersonalEventPresentationCatalogV1,
+} from "../../data/personal-event-presentation-v1";
+import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
@@ -137,7 +142,150 @@ describe("declarative personal-event v2 catalog", () => {
     expect(validatePersonalEventCatalogV2(PERSONAL_EVENT_TEMPLATES_V2)).toEqual([]);
     expect(PERSONAL_EVENT_TEMPLATES_V2.some(({ classification }) => classification === "negative")).toBe(true);
     expect(PERSONAL_EVENT_TEMPLATES_V2.some(({ category }) => category === "behavioral_trap")).toBe(true);
-    expect(PERSONAL_EVENT_TEMPLATES_V2.filter(({ classification }) => classification === "positive")).toHaveLength(2);
+    expect(PERSONAL_EVENT_TEMPLATES_V2.filter(({ classification }) => classification === "positive").length)
+      .toBeGreaterThanOrEqual(2);
+  });
+
+  it("adds eight low-stakes humorous roots with distinct three-or-four-way decisions", () => {
+    const expected = [
+      ["personal.subscription_archaeology", "relatable_comedy", 180_000],
+      ["personal.group_chat_gift", "relatable_comedy", 180_000],
+      ["personal.countertop_gadget_sale", "relatable_comedy", 180_000],
+      ["personal.double_grocery_delivery", "relatable_comedy", 180_000],
+      ["personal.mascot_side_hustle", "relatable_comedy", 180_000],
+      ["personal.laundry_final_spin", "relatable_comedy", 180_000],
+      ["personal.raccoon_sanitation", "absurd_comedy", 90_000],
+      ["personal.rare_yard_sale_lamp", "absurd_comedy", 90_000],
+    ] as const;
+
+    for (const [id, tone, chancePpm] of expected) {
+      const template = getPersonalEventTemplateV2(id, 2);
+      expect(template).toMatchObject({
+        severityTier: "micro",
+        hazard: {
+          baseChancePpm: chancePpm,
+          minimumChancePpm: chancePpm,
+          maximumChancePpm: chancePpm,
+          modifiers: [],
+        },
+        cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+        maximumOccurrences: 1,
+      });
+      expect(template.pressureCost).toBeLessThanOrEqual(1);
+      expect(template.responses.length).toBeGreaterThanOrEqual(3);
+      expect(template.responses.length).toBeLessThanOrEqual(4);
+      expect(new Set(template.responses.map(({ effects }) => JSON.stringify(effects))).size)
+        .toBe(template.responses.length);
+      expect(getPersonalEventPresentationV1(id, 2)).toMatchObject({
+        tone,
+        cadenceRole: "engagement",
+      });
+      expect(Object.isFrozen(template)).toBe(true);
+      expect(Object.isFrozen(template.responses)).toBe(true);
+    }
+  });
+
+  it("encodes the approved funny-event economy and declared follow-ups", () => {
+    const gadget = getPersonalEventTemplateV2("personal.countertop_gadget_sale", 2);
+    expect(gadget.responses.find(({ id }) => id === "four_month_plan")?.effects)
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        type: "recurring_expense",
+        magnitude: expect.objectContaining({ multiplierPpm: 300_000 }),
+        durationMonths: 4,
+      })]));
+
+    const groceries = getPersonalEventTemplateV2("personal.double_grocery_delivery", 2);
+    expect(groceries.responses.find(({ id }) => id === "resell_surplus")?.effects)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: "temporary_expense",
+          magnitude: expect.objectContaining({ multiplierPpm: 1_000_000 }),
+        }),
+        expect.objectContaining({
+          type: "temporary_income",
+          magnitude: expect.objectContaining({ multiplierPpm: 800_000 }),
+        }),
+      ]));
+
+    const mascot = getPersonalEventTemplateV2("personal.mascot_side_hustle", 2);
+    const weekendIncomePpm = mascot.responses
+      .find(({ id }) => id === "work_weekend")!
+      .effects
+      .filter((effect) => effect.type === "temporary_income")
+      .reduce((sum, effect) => sum + (
+        effect.type === "temporary_income" && effect.magnitude.source === "parameter"
+          ? effect.magnitude.multiplierPpm
+          : 0
+      ), 0);
+    expect(weekendIncomePpm).toBe(2_200_000);
+
+    expect(getPersonalEventTemplateV2("personal.raccoon_sanitation", 2).followUps)
+      .toEqual([{
+        templateId: "personal.raccoon_management_followup",
+        templateVersion: 2,
+        delayMonths: 2,
+        whenResponseIds: ["ignore_inspector"],
+      }]);
+    expect(getPersonalEventTemplateV2("personal.rare_yard_sale_lamp", 2).followUps)
+      .toEqual([{
+        templateId: "personal.lamp_market_followup",
+        templateVersion: 2,
+        delayMonths: 2,
+        whenResponseIds: ["buy_restore_and_list"],
+      }]);
+    for (const id of [
+      "personal.raccoon_management_followup",
+      "personal.lamp_market_followup",
+    ]) {
+      expect(getPersonalEventTemplateV2(id, 2).hazard.maximumChancePpm).toBe(0);
+      expect(getPersonalEventPresentationV1(id, 2).cadenceRole).toBe("follow_up");
+    }
+  });
+
+  it("requires immutable exact-version presentation metadata for the complete catalog", () => {
+    expect(validatePersonalEventPresentationCatalogV1(
+      PERSONAL_EVENT_TEMPLATES_V2,
+      PERSONAL_EVENT_PRESENTATIONS_V1,
+    )).toEqual([]);
+    expect(PERSONAL_EVENT_PRESENTATIONS_V1).toHaveLength(PERSONAL_EVENT_TEMPLATES_V2.length);
+    expect(Object.isFrozen(PERSONAL_EVENT_PRESENTATIONS_V1)).toBe(true);
+    expect(Object.isFrozen(PERSONAL_EVENT_PRESENTATIONS_V1[0])).toBe(true);
+  });
+
+  it("rejects missing, duplicate, unknown, unsafe-humor, and exogenous-follow-up metadata", () => {
+    const first = PERSONAL_EVENT_PRESENTATIONS_V1[0]!;
+    expect(validatePersonalEventPresentationCatalogV1(
+      PERSONAL_EVENT_TEMPLATES_V2,
+      PERSONAL_EVENT_PRESENTATIONS_V1.slice(1),
+    ).map(({ code }) => code)).toContain("missing_presentation_identity");
+    expect(validatePersonalEventPresentationCatalogV1(
+      PERSONAL_EVENT_TEMPLATES_V2,
+      [...PERSONAL_EVENT_PRESENTATIONS_V1, first],
+    ).map(({ code }) => code)).toContain("duplicate_presentation_identity");
+    expect(validatePersonalEventPresentationCatalogV1(
+      PERSONAL_EVENT_TEMPLATES_V2,
+      [...PERSONAL_EVENT_PRESENTATIONS_V1, {
+        templateId: "personal.unknown",
+        templateVersion: 2,
+        tone: "serious",
+        cadenceRole: "challenge",
+      }],
+    ).map(({ code }) => code)).toContain("unknown_presentation_identity");
+
+    const funny = getPersonalEventTemplateV2("personal.raccoon_sanitation", 2);
+    expect(validatePersonalEventPresentationCatalogV1(
+      [{ ...funny, severityTier: "medium" }],
+      [getPersonalEventPresentationV1(funny.id, funny.version)],
+    ).map(({ code }) => code)).toContain("unsafe_humorous_root");
+
+    const followUp = getPersonalEventTemplateV2("personal.lamp_market_followup", 2);
+    expect(validatePersonalEventPresentationCatalogV1(
+      [{
+        ...followUp,
+        hazard: { ...followUp.hazard, maximumChancePpm: 1 },
+      }],
+      [getPersonalEventPresentationV1(followUp.id, followUp.version)],
+    ).map(({ code }) => code)).toContain("exogenous_follow_up");
   });
 
   it("contains six distinct beginner decisions with materially different responses", () => {

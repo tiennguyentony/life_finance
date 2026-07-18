@@ -1,0 +1,843 @@
+import {
+  PERSONAL_EVENT_SCHEMA_V2,
+  type PersonalEventTemplateV2,
+} from "../core/personal-event-v2";
+import { deepFreeze, parameter } from "./personal-event-template-helpers";
+
+const RELATABLE_CHANCE_PPM = 180_000;
+const ABSURD_CHANCE_PPM = 90_000;
+
+export const PERSONAL_EVENT_FUNNY_TEMPLATES_V2:
+  readonly PersonalEventTemplateV2[] = deepFreeze([
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.subscription_archaeology",
+      version: 2,
+      category: "behavioral_trap",
+      classification: "neutral",
+      lessonTags: { primary: "recurring_costs", secondary: ["opportunity_cost"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: RELATABLE_CHANCE_PPM,
+        minimumChancePpm: RELATABLE_CHANCE_PPM,
+        maximumChancePpm: RELATABLE_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 0,
+      parameters: [{
+        id: "annual_subscription_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 12_000,
+        maximum: 60_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "cancel_all",
+          label: "Cancel every forgotten subscription",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "annual_living_cost_delta",
+              magnitude: parameter("annual_subscription_cents", -1_000_000),
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: -20_000 },
+            },
+          ],
+        },
+        {
+          id: "keep_favorite",
+          label: "Keep one favorite",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "annual_living_cost_delta",
+            magnitude: parameter("annual_subscription_cents", -500_000),
+          }],
+        },
+        {
+          id: "keep_digital_fossils",
+          label: "Keep the digital fossils",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "wellbeing_delta",
+            field: "happinessPpm",
+            magnitude: { source: "fixed", value: 10_000 },
+          }],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 0 },
+      fallbackNarrative: {
+        headline: "Subscription Archaeology",
+        body: "A forgotten annual charge has been renewing so faithfully it may qualify as a dependent.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.group_chat_gift",
+      version: 2,
+      category: "social",
+      classification: "negative",
+      lessonTags: {
+        primary: "social_spending_boundaries",
+        secondary: ["non_money_costs"],
+      },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: RELATABLE_CHANCE_PPM,
+        minimumChancePpm: RELATABLE_CHANCE_PPM,
+        maximumChancePpm: RELATABLE_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [{
+        id: "gift_contribution_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 2_000,
+        maximum: 15_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "contribute_full",
+          label: "Contribute the full amount",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("gift_contribution_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 30_000 },
+            },
+          ],
+        },
+        {
+          id: "make_gift",
+          label: "Make a lower-cost gift",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("gift_contribution_cents", 350_000),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 25_000 },
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 15_000 },
+            },
+          ],
+        },
+        {
+          id: "decline_gift",
+          label: "Politely decline",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "wellbeing_delta",
+            field: "happinessPpm",
+            magnitude: { source: "fixed", value: -30_000 },
+          }],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 1 },
+      fallbackNarrative: {
+        headline: "Group-Chat Gift Emergency",
+        body: "The group chat needs money today, but time and boundaries are also valid currencies.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.countertop_gadget_sale",
+      version: 2,
+      category: "behavioral_trap",
+      classification: "negative",
+      lessonTags: { primary: "needs_vs_wants", secondary: ["financing_friction"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: RELATABLE_CHANCE_PPM,
+        minimumChancePpm: RELATABLE_CHANCE_PPM,
+        maximumChancePpm: RELATABLE_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [{
+        id: "gadget_price_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 3_000,
+        maximum: 25_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "skip_gadget",
+          label: "Skip the gadget",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "wellbeing_delta",
+            field: "happinessPpm",
+            magnitude: { source: "fixed", value: -10_000 },
+          }],
+        },
+        {
+          id: "buy_basic",
+          label: "Buy the basic model",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "temporary_expense",
+            magnitude: parameter("gadget_price_cents", 600_000),
+            durationMonths: 1,
+          }],
+        },
+        {
+          id: "buy_deluxe",
+          label: "Buy the deluxe model now",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("gadget_price_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 25_000 },
+            },
+          ],
+        },
+        {
+          id: "four_month_plan",
+          label: "Use a four-month payment plan",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "recurring_expense",
+              magnitude: parameter("gadget_price_cents", 300_000),
+              durationMonths: 4,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 25_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 1 },
+      fallbackNarrative: {
+        headline: "Countertop Gadget Flash Sale",
+        body: "A countertop gadget promises to transform dinner and occupy one highly visible outlet.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.double_grocery_delivery",
+      version: 2,
+      category: "maintenance",
+      classification: "negative",
+      lessonTags: { primary: "sunk_cost_recovery", secondary: ["time_value"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: RELATABLE_CHANCE_PPM,
+        minimumChancePpm: RELATABLE_CHANCE_PPM,
+        maximumChancePpm: RELATABLE_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [{
+        id: "duplicate_charge_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 2_000,
+        maximum: 18_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "return_duplicate",
+          label: "Return the duplicate",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "wellbeing_delta",
+            field: "burnoutPpm",
+            magnitude: { source: "fixed", value: 20_000 },
+          }],
+        },
+        {
+          id: "keep_duplicate",
+          label: "Keep it",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("duplicate_charge_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 10_000 },
+            },
+          ],
+        },
+        {
+          id: "share_duplicate",
+          label: "Share the surplus",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("duplicate_charge_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 25_000 },
+            },
+          ],
+        },
+        {
+          id: "resell_surplus",
+          label: "Resell the surplus",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("duplicate_charge_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "temporary_income",
+              magnitude: parameter("duplicate_charge_cents", 800_000),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 30_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 1 },
+      fallbackNarrative: {
+        headline: "Double Grocery Delivery",
+        body: "Two identical grocery orders arrive, creating a small lesson in recovery rather than sunk-cost panic.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.mascot_side_hustle",
+      version: 2,
+      category: "career",
+      classification: "neutral",
+      lessonTags: { primary: "side_hustle_capacity", secondary: ["startup_costs"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: RELATABLE_CHANCE_PPM,
+        minimumChancePpm: RELATABLE_CHANCE_PPM,
+        maximumChancePpm: RELATABLE_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 0,
+      parameters: [
+        {
+          id: "shift_pay_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 5_000,
+          maximum: 30_000,
+        },
+        {
+          id: "costume_cost_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 2_000,
+          maximum: 8_000,
+        },
+      ],
+      mitigations: [],
+      responses: [
+        {
+          id: "decline_shift",
+          label: "Decline the shift",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "wellbeing_delta",
+            field: "happinessPpm",
+            magnitude: { source: "fixed", value: 0 },
+          }],
+        },
+        {
+          id: "work_one_shift",
+          label: "Work one shift",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_income",
+              magnitude: parameter("shift_pay_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 20_000 },
+            },
+          ],
+        },
+        {
+          id: "work_weekend",
+          label: "Buy the costume and work the weekend",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_income",
+              magnitude: parameter("shift_pay_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "temporary_income",
+              magnitude: parameter("shift_pay_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "temporary_income",
+              magnitude: parameter("shift_pay_cents", 200_000),
+              durationMonths: 1,
+            },
+            {
+              type: "temporary_expense",
+              magnitude: parameter("costume_cost_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 45_000 },
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 15_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 1 },
+      fallbackNarrative: {
+        headline: "Mascot Side Hustle",
+        body: "A paid mascot shift offers extra income in exchange for heat, dignity, and a weekend.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.laundry_final_spin",
+      version: 2,
+      category: "maintenance",
+      classification: "negative",
+      lessonTags: { primary: "cash_timing", secondary: ["execution_risk"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: RELATABLE_CHANCE_PPM,
+        minimumChancePpm: RELATABLE_CHANCE_PPM,
+        maximumChancePpm: RELATABLE_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [{
+        id: "repair_estimate_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 4_000,
+        maximum: 25_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "use_laundromat",
+          label: "Use a laundromat for two months",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "recurring_expense",
+              magnitude: parameter("repair_estimate_cents", 300_000),
+              durationMonths: 2,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 10_000 },
+            },
+          ],
+        },
+        {
+          id: "hire_repairer",
+          label: "Hire a repairer",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "temporary_expense",
+            magnitude: parameter("repair_estimate_cents"),
+            durationMonths: 1,
+          }],
+        },
+        {
+          id: "diy_repair",
+          label: "Attempt a do-it-yourself repair",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("repair_estimate_cents", 500_000),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 35_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 2 },
+      fallbackNarrative: {
+        headline: "Laundry Machine's Final Spin",
+        body: "The washing machine performs one final dramatic spin and leaves three ways to handle the cost.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.raccoon_sanitation",
+      version: 2,
+      category: "maintenance",
+      classification: "negative",
+      lessonTags: { primary: "prevention_cost", secondary: ["cost_of_delay"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: ABSURD_CHANCE_PPM,
+        minimumChancePpm: ABSURD_CHANCE_PPM,
+        maximumChancePpm: ABSURD_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [{
+        id: "cleanup_cost_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 1_500,
+        maximum: 12_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "hire_cleanup",
+          label: "Hire cleanup",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "temporary_expense",
+            magnitude: parameter("cleanup_cost_cents"),
+            durationMonths: 1,
+          }],
+        },
+        {
+          id: "build_trash_armor",
+          label: "Build do-it-yourself trash armor",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("cleanup_cost_cents", 400_000),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 15_000 },
+            },
+          ],
+        },
+        {
+          id: "ignore_inspector",
+          label: "Ignore the tiny inspector",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: -15_000 },
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 20_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [{
+        templateId: "personal.raccoon_management_followup",
+        templateVersion: 2,
+        delayMonths: 2,
+        whenResponseIds: ["ignore_inspector"],
+      }],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 2 },
+      fallbackNarrative: {
+        headline: "Raccoon Sanitation Department",
+        body: "A tiny sanitation official has inspected the bins and issued consequences with surprising confidence.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.raccoon_management_followup",
+      version: 2,
+      category: "maintenance",
+      classification: "negative",
+      lessonTags: { primary: "prevention_cost", secondary: ["cost_of_delay"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: 0,
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [{
+        id: "escalated_cleanup_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 5_000,
+        maximum: 30_000,
+      }],
+      mitigations: [],
+      responses: [
+        {
+          id: "pay_cleanup_now",
+          label: "Pay for cleanup now",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "temporary_expense",
+            magnitude: parameter("escalated_cleanup_cents"),
+            durationMonths: 1,
+          }],
+        },
+        {
+          id: "cleanup_payment_plan",
+          label: "Use a four-month cleanup plan",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "recurring_expense",
+            magnitude: parameter("escalated_cleanup_cents", 300_000),
+            durationMonths: 4,
+          }],
+        },
+        {
+          id: "diy_management_cleanup",
+          label: "Handle the management cleanup yourself",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("escalated_cleanup_cents", 600_000),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "burnoutPpm",
+              magnitude: { source: "fixed", value: 35_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 4 },
+      fallbackNarrative: {
+        headline: "Raccoon Returns With Management",
+        body: "The raccoon has returned with management, a larger cleanup, and no interest in excuses.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.rare_yard_sale_lamp",
+      version: 2,
+      category: "opportunity",
+      classification: "neutral",
+      lessonTags: { primary: "speculation_cost_basis", secondary: ["uncertain_returns"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: ABSURD_CHANCE_PPM,
+        minimumChancePpm: ABSURD_CHANCE_PPM,
+        maximumChancePpm: ABSURD_CHANCE_PPM,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 1,
+      parameters: [
+        {
+          id: "purchase_price_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 1_000,
+          maximum: 10_000,
+        },
+        {
+          id: "restoration_cost_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 1_000,
+          maximum: 10_000,
+        },
+      ],
+      mitigations: [],
+      responses: [
+        {
+          id: "walk_away",
+          label: "Walk away",
+          requiresMitigationIds: [],
+          effects: [{
+            type: "wellbeing_delta",
+            field: "happinessPpm",
+            magnitude: { source: "fixed", value: -10_000 },
+          }],
+        },
+        {
+          id: "buy_and_keep",
+          label: "Buy and keep the questionable treasure",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("purchase_price_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 15_000 },
+            },
+          ],
+        },
+        {
+          id: "buy_restore_and_list",
+          label: "Buy, restore, and list it",
+          requiresMitigationIds: [],
+          effects: [
+            {
+              type: "temporary_expense",
+              magnitude: parameter("purchase_price_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "temporary_expense",
+              magnitude: parameter("restoration_cost_cents"),
+              durationMonths: 1,
+            },
+            {
+              type: "wellbeing_delta",
+              field: "happinessPpm",
+              magnitude: { source: "fixed", value: 20_000 },
+            },
+          ],
+        },
+      ],
+      followUps: [{
+        templateId: "personal.lamp_market_followup",
+        templateVersion: 2,
+        delayMonths: 2,
+        whenResponseIds: ["buy_restore_and_list"],
+      }],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 2 },
+      fallbackNarrative: {
+        headline: "Definitely-Rare Yard-Sale Lamp",
+        body: "A yard-sale lamp may be rare, may be haunted, and definitely has a known cost basis.",
+      },
+    },
+    {
+      schemaVersion: PERSONAL_EVENT_SCHEMA_V2,
+      id: "personal.lamp_market_followup",
+      version: 2,
+      category: "opportunity",
+      classification: "positive",
+      lessonTags: { primary: "speculation_cost_basis", secondary: ["uncertain_returns"] },
+      eligibility: [],
+      hazard: {
+        baseChancePpm: 0,
+        minimumChancePpm: 0,
+        maximumChancePpm: 0,
+        modifiers: [],
+      },
+      severityTier: "micro",
+      pressureCost: 0,
+      parameters: [{
+        id: "resale_proceeds_cents",
+        kind: "money_cents",
+        distribution: "uniform_int",
+        minimum: 0,
+        maximum: 25_000,
+      }],
+      mitigations: [],
+      responses: [{
+        id: "sell_lamp",
+        label: "Sell the lamp",
+        requiresMitigationIds: [],
+        effects: [{
+          type: "temporary_income",
+          magnitude: parameter("resale_proceeds_cents"),
+          durationMonths: 1,
+        }],
+      }],
+      followUps: [],
+      cooldowns: { eventMonths: 12, categoryMonths: 1, lessonMonths: 1 },
+      maximumOccurrences: 1,
+      recovery: { durationMonths: 0 },
+      fallbackNarrative: {
+        headline: "Lamp Finds Its Market",
+        body: "The lamp has found a buyer; compare the proceeds with everything already spent.",
+      },
+    },
+  ]);

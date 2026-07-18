@@ -4,6 +4,7 @@ import {
   type PersonalEventTemplateV2,
 } from "../core/personal-event-v2";
 import { deepFreeze, parameter } from "./personal-event-template-helpers";
+import { PERSONAL_EVENT_FUNNY_TEMPLATES_V2 } from "./personal-event-funny-templates-v2";
 
 const templates: readonly PersonalEventTemplateV2[] = [
   {
@@ -735,7 +736,12 @@ const templates: readonly PersonalEventTemplateV2[] = [
   },
 ];
 
-const violations = validatePersonalEventCatalogV2(templates);
+const completeTemplates = [
+  ...templates,
+  ...PERSONAL_EVENT_FUNNY_TEMPLATES_V2,
+] as const satisfies readonly PersonalEventTemplateV2[];
+
+const violations = validatePersonalEventCatalogV2(completeTemplates);
 if (violations.length > 0) {
   throw new Error(`invalid personal event v2 catalog: ${violations[0]!.path}:${violations[0]!.code}`);
 }
@@ -746,7 +752,7 @@ export const HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2:
 ]);
 
 export const PERSONAL_EVENT_TEMPLATES_V2: readonly PersonalEventTemplateV2[] =
-  HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2;
+  deepFreeze([...completeTemplates]);
 
 function highestVersionByTemplateId(
   catalog: readonly PersonalEventTemplateV2[],
