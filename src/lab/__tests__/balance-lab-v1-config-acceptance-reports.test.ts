@@ -46,6 +46,8 @@ const run = {
     eventImpactSamples: [],
     majorEventPacingViolationCount: 0,
     majorEventPacingSampleCount: 0,
+    eventDecisionEvidence: [],
+    beginnerEventCadenceEvidence: [],
     objectiveValues: { survival: 1 },
   },
 };
@@ -83,12 +85,31 @@ describe("balance lab config, acceptance, and reports", () => {
         "beginner_nonfatal_recovery_within_six_months_rate_ppm",
         "beginner_meaningful_or_crisis_approved_rate_ppm",
         "beginner_extreme_approved_rate_ppm",
-        "beginner_median_decision_event_count",
+        "beginner_median_total_prompt_count",
+        "beginner_median_meaningful_decision_count",
+        "beginner_at_least_six_meaningful_decision_rate_ppm",
+        "beginner_median_unique_decision_template_count",
+        "beginner_median_humorous_root_count",
+        "beginner_median_absurd_root_count",
+        "beginner_positive_or_recovery_beat_rate_ppm",
+        "beginner_adjacent_absurd_violation_count",
+        "beginner_root_event_streak_violation_count",
+        "beginner_funny_root_above_meaningful_count",
+        "beginner_prepared_funny_unavoidable_failure_count",
       ]),
     );
     expect(config.acceptance.find(
       ({ id }) => id === "beginner-prepared-vs-reckless-bankruptcy",
     )).toMatchObject({ threshold: 200_000, tierIds: ["beginner"] });
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-total-prompts-minimum",
+    )).toMatchObject({ threshold: 8, minimumSamples: 200 });
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-meaningful-decisions-maximum",
+    )).toMatchObject({ threshold: 8, comparator: "at_most" });
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-adjacent-absurd-violations",
+    )).toMatchObject({ threshold: 0, comparator: "equals" });
   });
 
   it("emits three-state configurable acceptance with sample evidence", () => {
@@ -331,6 +352,12 @@ describe("balance lab config, acceptance, and reports", () => {
       ...report,
       summary: { ...report.summary, extra: true },
     })).toThrow();
+    const { beginnerEngagement: _engagement, ...summaryWithoutEngagement } =
+      report.summary;
+    expect(() => decodeBalanceLabReportV1({
+      ...report,
+      summary: summaryWithoutEngagement,
+    })).toThrow();
     expect(() => decodeBalanceLabReportV1({
       ...report,
       acceptance: [{ ...report.acceptance[0]!, observed: "0" }],
@@ -345,21 +372,37 @@ describe("balance lab config, acceptance, and reports", () => {
         }],
       },
     })).toThrow();
+    const {
+      beginnerEventCadenceEvidence: _cadence,
+      ...metricsWithoutCadence
+    } = report.result.runs[0]!.metrics;
+    expect(() => decodeBalanceLabReportV1({
+      ...report,
+      result: {
+        ...report.result,
+        runs: [{
+          ...report.result.runs[0]!,
+          metrics: metricsWithoutCadence,
+        }],
+      },
+    })).toThrow();
     expect(runsCsv).toContain("\r\n");
     expect(runsCsv).toContain("opening_preparedness_score_ppm");
     expect(runsCsv).toContain("terminal_preparedness_band");
     expect(runsCsv).toContain("approved_challenge_score_ppm");
     expect(runsCsv).toContain("beginner_chapter_outcome");
-    expect(runsCsv).toContain("decision_event_count");
+    expect(runsCsv).toContain("meaningful_decision_count");
+    expect(runsCsv).toContain("safety_override_count");
     expect(matchedCsv).toContain("objective_id");
     expect(markdown).toContain("## Balance equation shadow");
     expect(markdown).toContain("## Beginner chapter");
+    expect(markdown).toContain("## Beginner engagement");
     expect(markdown).toContain(
       "No production large/catastrophe templates.",
     );
     expect(markdown).toContain("f".repeat(64));
     expect(sha256Canonical({ json, runsCsv, matchedCsv, markdown })).toBe(
-      "8b284180793934da11689c7713121eb4a5b27801f404ca612aff6b9686260042",
+      "adec7577cdf9fb07af6a32a92f7645192557bbf7a7f1fddbbd2094baf4f06d56",
     );
   });
 });

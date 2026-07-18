@@ -253,18 +253,122 @@
       "tierIds": ["beginner"]
     },
     {
-      "id": "beginner-decision-events-minimum",
-      "metric": "beginner_median_decision_event_count",
+      "id": "beginner-total-prompts-minimum",
+      "metric": "beginner_median_total_prompt_count",
       "comparator": "at_least",
-      "threshold": 3,
+      "threshold": 8,
       "minimumSamples": 200,
       "tierIds": ["beginner"]
     },
     {
-      "id": "beginner-decision-events-maximum",
-      "metric": "beginner_median_decision_event_count",
+      "id": "beginner-total-prompts-maximum",
+      "metric": "beginner_median_total_prompt_count",
       "comparator": "at_most",
+      "threshold": 10,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-meaningful-decisions-minimum",
+      "metric": "beginner_median_meaningful_decision_count",
+      "comparator": "at_least",
+      "threshold": 6,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-meaningful-decisions-maximum",
+      "metric": "beginner_median_meaningful_decision_count",
+      "comparator": "at_most",
+      "threshold": 8,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-six-meaningful-decision-rate",
+      "metric": "beginner_at_least_six_meaningful_decision_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 750000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-unique-decision-templates",
+      "metric": "beginner_median_unique_decision_template_count",
+      "comparator": "at_least",
       "threshold": 5,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-humorous-roots-minimum",
+      "metric": "beginner_median_humorous_root_count",
+      "comparator": "at_least",
+      "threshold": 4,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-humorous-roots-maximum",
+      "metric": "beginner_median_humorous_root_count",
+      "comparator": "at_most",
+      "threshold": 6,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-absurd-roots-minimum",
+      "metric": "beginner_median_absurd_root_count",
+      "comparator": "at_least",
+      "threshold": 1,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-absurd-roots-maximum",
+      "metric": "beginner_median_absurd_root_count",
+      "comparator": "at_most",
+      "threshold": 2,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-positive-or-recovery-beat",
+      "metric": "beginner_positive_or_recovery_beat_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 900000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-adjacent-absurd-violations",
+      "metric": "beginner_adjacent_absurd_violation_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-root-event-streak-violations",
+      "metric": "beginner_root_event_streak_violation_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-funny-root-challenge-ceiling",
+      "metric": "beginner_funny_root_above_meaningful_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-prepared-funny-unavoidable-failures",
+      "metric": "beginner_prepared_funny_unavoidable_failure_count",
+      "comparator": "equals",
+      "threshold": 0,
       "minimumSamples": 200,
       "tierIds": ["beginner"]
     },

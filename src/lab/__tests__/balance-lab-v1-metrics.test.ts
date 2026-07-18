@@ -342,12 +342,25 @@ describe("offline balance lab v1 metrics", () => {
   it("aggregates beginner outcomes and only counts events with meaningful choices", () => {
     const decision = (
       templateId: string,
-      availableChoiceIds: readonly string[] = ["safer", "costlier"],
+      availableChoiceIds: readonly string[] = ["safer", "middle", "costlier"],
     ) => ({
       eventId: `event.${templateId}`,
       templateId,
+      templateVersion: 2,
+      scheduledMonth: "2026-02",
+      tone: "serious" as const,
+      cadenceRole: "challenge" as const,
+      classification: "neutral" as const,
+      challengeBand: "meaningful" as const,
+      followUpSourceEventId: null,
       choiceId: availableChoiceIds[0]!,
       availableChoiceIds,
+      materiallyAvailableChoiceIds: availableChoiceIds,
+      responseAvailability: availableChoiceIds.map((responseId) => ({
+        responseId,
+        status: "available" as const,
+        materiallyDistinct: true,
+      })),
     });
     const beginnerRun = (
       botId: BalanceLabRunResultV1["botId"],
@@ -457,6 +470,145 @@ describe("offline balance lab v1 metrics", () => {
         denominator: 3,
         observed: 0,
       });
+  });
+
+  it("reconciles beginner engagement, cadence, humor, and safety evidence", () => {
+    const decision = (
+      index: number,
+      options: Partial<{
+        meaningful: boolean;
+        tone: "serious" | "relatable_comedy" | "absurd_comedy";
+        cadenceRole: "challenge" | "engagement" | "follow_up";
+        classification: "positive" | "neutral" | "negative";
+        challengeBand: "light" | "meaningful" | "crisis" | null;
+        followUpSourceEventId: string | null;
+      }> = {},
+    ) => {
+      const meaningful = options.meaningful ?? true;
+      const choiceIds = meaningful ? ["a", "b", "c"] : ["a", "b"];
+      return {
+        eventId: `event.engagement.${index}`,
+        templateId: `personal.engagement_${index % 5}`,
+        templateVersion: 2,
+        scheduledMonth: `2026-${String(index + 1).padStart(2, "0")}`,
+        tone: options.tone ?? "serious",
+        cadenceRole: options.cadenceRole ?? "challenge",
+        classification: options.classification ?? "neutral",
+        challengeBand: options.challengeBand ?? "light",
+        followUpSourceEventId: options.followUpSourceEventId ?? null,
+        choiceId: `choice.${index}`,
+        availableChoiceIds: choiceIds,
+        materiallyAvailableChoiceIds: choiceIds,
+        responseAvailability: choiceIds.map((responseId) => ({
+          responseId,
+          status: "available",
+          materiallyDistinct: true,
+        })),
+      };
+    };
+    const cadence = (
+      rootEventStreak: number,
+      scheduledTemplateId: string | null,
+      safetyOverride = false,
+    ) => ({
+      assessment: {
+        version: "beginner-event-cadence-v1",
+        mode: rootEventStreak >= 2 ? "recovery_preferred" : "open",
+        chapterMonth: 4,
+        quietEligibleStreak: 0,
+        eventMonthStreak: rootEventStreak,
+        rootEventStreak,
+        positiveObserved: false,
+        previousRootTone: null,
+        reasonCodes: [],
+      },
+      inputCandidateIds: scheduledTemplateId === null ? [] : [scheduledTemplateId],
+      outputCandidateIds: scheduledTemplateId === null ? [] : [scheduledTemplateId],
+      preferredCandidateIds: [],
+      scheduledTemplateId,
+      safetyOverride,
+    });
+    const firstDecisions = Array.from({ length: 8 }, (_, index) => decision(index, {
+      meaningful: index < 6,
+      tone: index === 0
+        ? "absurd_comedy"
+        : index < 4
+          ? "relatable_comedy"
+          : "serious",
+      cadenceRole: index < 4 ? "engagement" : "challenge",
+      classification: index === 7 ? "positive" : "neutral",
+    }));
+    const secondDecisions = Array.from({ length: 10 }, (_, index) => decision(index, {
+      meaningful: index < 8,
+      tone: index < 2
+        ? "absurd_comedy"
+        : index < 6
+          ? "relatable_comedy"
+          : "serious",
+      cadenceRole: index === 9 ? "follow_up" : index < 6 ? "engagement" : "challenge",
+      challengeBand: index === 2 ? "crisis" : "light",
+      followUpSourceEventId: index === 9 ? "event.engagement.8" : null,
+    }));
+    const chapter = {
+      outcome: "developing" as const,
+      completed: true,
+      observedMonths: 12,
+      scorePpm: 500_000,
+      preparednessBand: "stable" as const,
+    };
+    const first = run("disciplined-v1", {
+      beginnerChapterEvidence: chapter,
+      eventDecisionEvidence: firstDecisions,
+      beginnerEventCadenceEvidence: [cadence(0, null, true)],
+      unavoidableFailure: true,
+      eventImpactSamples: [{
+        eventId: firstDecisions[0]!.eventId,
+        templateId: firstDecisions[0]!.templateId,
+        playerCostCents: 100,
+        grossCostCents: 100,
+      }],
+    } as never);
+    const second = run("average-beginner-v1", {
+      beginnerChapterEvidence: chapter,
+      eventDecisionEvidence: secondDecisions,
+      beginnerEventCadenceEvidence: [
+        cadence(2, secondDecisions[3]!.templateId),
+      ],
+      recoveryObservations: [{
+        eventMonthIndex: 2,
+        status: "recovered",
+        observedMonths: 3,
+      }],
+    } as never);
+
+    const engagement = (summarizeBalanceLabRunsV1([first, second]) as unknown as {
+      beginnerEngagement: Record<string, unknown>;
+    }).beginnerEngagement;
+
+    expect(engagement).toMatchObject({
+      medianTotalPromptCount: 9,
+      medianMeaningfulDecisionCount: 7,
+      atLeastSixMeaningfulDecisionRate: {
+        numerator: 2,
+        denominator: 2,
+        ratePpm: 1_000_000,
+      },
+      medianUniqueDecisionTemplateCount: 5,
+      medianHumorousRootCount: 5,
+      medianAbsurdRootCount: 1,
+      positiveOrRecoveryBeatRate: {
+        numerator: 2,
+        denominator: 2,
+        ratePpm: 1_000_000,
+      },
+      adjacentAbsurdViolationCount: 1,
+      rootEventStreakViolationCount: 1,
+      funnyRootAboveMeaningfulCount: 1,
+      preparedFunnyUnavoidableFailureCount: 1,
+      safetyOverrideCount: 1,
+      playerCausedFollowUpCount: 1,
+      distinctResponseCount: 10,
+    });
   });
 
   it("measures variance across seeds inside each persona and bot cohort", () => {

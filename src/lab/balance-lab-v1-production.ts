@@ -1,5 +1,7 @@
 import { sha256Canonical } from "../core/canonical";
 import { assessBeginnerChapterV1 } from "../core/beginner-chapter-v1";
+import { BEGINNER_EVENT_CADENCE_V1_VERSION } from "../core/beginner-event-cadence-v1";
+import { projectPersonalEventResponsePreviewV1 } from "../application/game/personal-event-response-preview-v1";
 import { reduceDetailedFinanceCommand } from "../core/detailed-actions-v2";
 import type { DetailedFinancialAction } from "../core/detailed-actions-v2";
 import { moneyCents, ratePpm } from "../core/domain/money";
@@ -25,7 +27,15 @@ import { SCENARIO_DIRECTOR_V2_VERSION } from "../core/scenario-director-policy-v
 import { advanceTimeV2 } from "../core/time-controller-v2";
 import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../core/event-scheduler-v2";
 import { WORLD_RANDOM_VERSION_V1 } from "../core/world-random-v1";
-import { PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
+import {
+  ACTIVE_PERSONAL_EVENT_TEMPLATES_V2,
+  PERSONAL_EVENT_TEMPLATES_V2,
+} from "../data/personal-event-templates-v2";
+import {
+  getPersonalEventPresentationV1,
+  type PersonalEventCadenceRoleV1,
+  type PersonalEventPresentationToneV1,
+} from "../data/personal-event-presentation-v1";
 import type { PersonalEventTemplateV2 } from "../core/personal-event-v2";
 import {
   balanceLabBotPolicyV1,
@@ -70,7 +80,20 @@ export type BalanceLabProductionMonthRecordV1 = Readonly<{
   closingAutomaticLiquidityCents: number;
   resolvedEvent?: Readonly<{
     monthIndex: number;
+    eventId: string;
+    templateId: string;
+    templateVersion: number;
+    scheduledMonth: SimulationMonth;
+    choiceId: string;
+    availableChoiceIds: readonly string[];
+    materiallyAvailableChoiceIds: readonly string[];
+    responseAvailability: readonly Readonly<{
+      responseId: string;
+      status: "available" | "unavailable" | "error";
+      materiallyDistinct: boolean;
+    }>[];
     classification: "positive" | "neutral" | "negative";
+    followUpSourceEventId: string | null;
     playerCostCents: number;
     insurerCostCents: number;
     baselineLiquidityCents: number;
@@ -192,6 +215,27 @@ export function measureRuntimeBalancePacingV1(
   return Object.freeze({ violationCount, sampleCount: major.length });
 }
 
+function eventPresentationV1(
+  templateId: string,
+  templateVersion: number,
+): Readonly<{
+  tone: PersonalEventPresentationToneV1;
+  cadenceRole: PersonalEventCadenceRoleV1;
+}> {
+  try {
+    const presentation = getPersonalEventPresentationV1(
+      templateId,
+      templateVersion,
+    );
+    return Object.freeze({
+      tone: presentation.tone,
+      cadenceRole: presentation.cadenceRole,
+    });
+  } catch {
+    return Object.freeze({ tone: "serious", cadenceRole: "challenge" });
+  }
+}
+
 function strategyForPolicy(
   state: GameStateV2,
   policy: BalanceLabBotPolicyV1,
@@ -273,6 +317,8 @@ export function createBalanceLabProductionOwnersV1(
 ): BalanceLabProductionOwnersV1<GameStateV2, BalanceLabProductionMonthRecordV1> {
   const ports = options.ports ?? BALANCE_LAB_PRODUCTION_PORTS_V1;
   const personalEventCatalog = options.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
+  const activePersonalEventCatalog = options.personalEventCatalog ??
+    ACTIVE_PERSONAL_EVENT_TEMPLATES_V2;
   return Object.freeze({
     createOpeningState: ({ personaId, matchedSeed, difficulty, worldRandom }) =>
       finalizeGameStateV2({
@@ -377,7 +423,8 @@ export function createBalanceLabProductionOwnersV1(
         },
         {
           personalEventCatalog,
-          activePersonalEventCatalog: personalEventCatalog,
+          activePersonalEventCatalog,
+          beginnerEventCadenceVersion: BEGINNER_EVENT_CADENCE_V1_VERSION,
         },
       );
       const record = advanced.records[0];
@@ -396,12 +443,70 @@ export function createBalanceLabProductionOwnersV1(
       let resolvedEvent: BalanceLabProductionMonthRecordV1["resolvedEvent"];
       if (nextState.outcome === null && nextState.gameplay.eventLifecycle.pending !== null) {
         const pending = nextState.gameplay.eventLifecycle.pending;
+        const template = personalEventCatalog.find(
+          ({ id, version }) =>
+            id === pending.templateId && version === pending.templateVersion,
+        );
+        if (template === undefined) {
+          throw new OfflineBalanceLabV1Error(
+            "PRODUCTION_OWNER_VIOLATION",
+            "pending event is absent from the exact lab event catalog",
+          );
+        }
+        const seenMaterialOutcomes = new Set<string>();
+        const responseAvailability = Object.freeze(
+          pending.choiceIds.map((responseId) => {
+            const preview = projectPersonalEventResponsePreviewV1(
+              nextState,
+              pending,
+              template,
+              responseId,
+              personalEventCatalog,
+            );
+            const materialFingerprint = sha256Canonical({
+              immediateCashChangeCents: preview.immediateCashChangeCents,
+              recurringCashFlows: preview.recurringCashFlows,
+              annualLivingCostChangeCents: preview.annualLivingCostChangeCents,
+              wellbeingChangesPpm: preview.wellbeingChangesPpm,
+              followUps: preview.followUps,
+              netOutcomeCents: preview.netOutcomeCents,
+            });
+            const materiallyDistinct = preview.status === "available" &&
+              !seenMaterialOutcomes.has(materialFingerprint);
+            if (preview.status === "available") {
+              seenMaterialOutcomes.add(materialFingerprint);
+            }
+            return Object.freeze({
+              responseId,
+              status: preview.status,
+              materiallyDistinct,
+            });
+          }),
+        );
+        const availableChoiceIds = Object.freeze(
+          responseAvailability
+            .filter(({ status }) => status === "available")
+            .map(({ responseId }) => responseId),
+        );
+        const materiallyAvailableChoiceIds = Object.freeze(
+          responseAvailability
+            .filter(({ status, materiallyDistinct }) =>
+              status === "available" && materiallyDistinct
+            )
+            .map(({ responseId }) => responseId),
+        );
+        if (availableChoiceIds.length === 0) {
+          throw new OfflineBalanceLabV1Error(
+            "PRODUCTION_OWNER_VIOLATION",
+            "pending event has no available response",
+          );
+        }
         const baselineLiquidityCents = record.closingAutomaticLiquidityCents ??
           ports.calculateAutomaticLiquidity(nextState.finances);
         const response = chooseBalanceLabEventResponseV1({
           policy,
           templateId: pending.templateId,
-          validChoiceIds: pending.choiceIds,
+          validChoiceIds: availableChoiceIds,
           botRandom: nextBotRandom,
         });
         const choiceId = response.choiceId;
@@ -422,7 +527,16 @@ export function createBalanceLabProductionOwnersV1(
         if (evidence !== undefined) {
           resolvedEvent = Object.freeze({
             monthIndex,
+            eventId: evidence.eventId,
+            templateId: evidence.templateId,
+            templateVersion: evidence.templateVersion,
+            scheduledMonth: evidence.scheduledMonth,
+            choiceId: evidence.choiceId,
+            availableChoiceIds,
+            materiallyAvailableChoiceIds,
+            responseAvailability,
             classification: evidence.classification ?? "neutral",
+            followUpSourceEventId: evidence.followUpSourceEventId ?? null,
             playerCostCents: evidence.playerCostCents,
             insurerCostCents: evidence.insurerCostCents,
             baselineLiquidityCents,
@@ -527,6 +641,44 @@ export function createBalanceLabProductionOwnersV1(
               scorePpm: chapterAssessment.scorePpm,
               preparednessBand: chapterAssessment.preparednessBand,
             });
+      const eventDecisionEvidence = Object.freeze(
+        records.flatMap(({ resolvedEvent }) => {
+          if (resolvedEvent === undefined) return [];
+          const presentation = eventPresentationV1(
+            resolvedEvent.templateId,
+            resolvedEvent.templateVersion,
+          );
+          const approvedChallenge = balanceObservations.find(
+            ({ monthIndex, approvedChallenge }) =>
+              monthIndex === resolvedEvent.monthIndex &&
+              approvedChallenge?.templateId === resolvedEvent.templateId &&
+              approvedChallenge.templateVersion === resolvedEvent.templateVersion,
+          )?.approvedChallenge;
+          return [Object.freeze({
+            eventId: resolvedEvent.eventId,
+            templateId: resolvedEvent.templateId,
+            templateVersion: resolvedEvent.templateVersion,
+            scheduledMonth: resolvedEvent.scheduledMonth,
+            tone: presentation.tone,
+            cadenceRole: presentation.cadenceRole,
+            classification: resolvedEvent.classification,
+            challengeBand: approvedChallenge?.assessment.band ?? null,
+            followUpSourceEventId: resolvedEvent.followUpSourceEventId,
+            choiceId: resolvedEvent.choiceId,
+            availableChoiceIds: resolvedEvent.availableChoiceIds,
+            materiallyAvailableChoiceIds:
+              resolvedEvent.materiallyAvailableChoiceIds,
+            responseAvailability: resolvedEvent.responseAvailability,
+          })];
+        }),
+      );
+      const beginnerEventCadenceEvidence = Object.freeze(
+        records.flatMap(({ turn }) =>
+          turn.beginnerEventCadence === undefined
+            ? []
+            : [turn.beginnerEventCadence]
+        ),
+      );
       return Object.freeze({
         endReason,
         grade: state.outcome?.grade ?? null,
@@ -586,14 +738,8 @@ export function createBalanceLabProductionOwnersV1(
         majorEventPacingSampleCount: pacing.sampleCount,
         balanceObservations,
         ...(beginnerChapterEvidence === undefined ? {} : { beginnerChapterEvidence }),
-        eventDecisionEvidence: Object.freeze(
-          history.map((event) => Object.freeze({
-            eventId: event.eventId,
-            templateId: event.templateId,
-            choiceId: event.choiceId,
-            availableChoiceIds: Object.freeze([...event.availableChoiceIds]),
-          })),
-        ),
+        eventDecisionEvidence,
+        beginnerEventCadenceEvidence,
         objectiveValues: Object.freeze({
           survival: state.outcome?.kind === "bankruptcy" ? 0 : 1,
           fiProgressPpm: goal.progressPpm,

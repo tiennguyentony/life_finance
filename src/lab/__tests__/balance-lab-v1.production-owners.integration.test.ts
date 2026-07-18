@@ -218,8 +218,21 @@ describe("offline balance lab production owners", () => {
     expect(result.runs[0]!.metrics.eventDecisionEvidence).toEqual([
       expect.objectContaining({
         templateId: "personal.custom_large_bill",
+        templateVersion: 2,
+        tone: "serious",
+        cadenceRole: "challenge",
         choiceId: "pay_uninsured",
         availableChoiceIds: expect.arrayContaining(["pay_uninsured", "use_insurance"]),
+        materiallyAvailableChoiceIds: expect.arrayContaining([
+          "pay_uninsured",
+          "use_insurance",
+        ]),
+        responseAvailability: expect.arrayContaining([
+          expect.objectContaining({
+            responseId: "pay_uninsured",
+            status: "available",
+          }),
+        ]),
       }),
     ]);
     expect(result.runs[0]!.metrics.recoveryObservations).toEqual([
@@ -252,5 +265,6 @@ describe("offline balance lab production owners", () => {
       scorePpm: expect.any(Number),
       preparednessBand: expect.stringMatching(/^(critical|exposed|stable|resilient)$/),
     });
+    expect(result.runs[0]!.metrics.beginnerEventCadenceEvidence).toHaveLength(12);
   });
 });
