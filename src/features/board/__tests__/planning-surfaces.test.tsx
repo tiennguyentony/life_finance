@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
 import { projectRunView } from "@/application/game/run-view";
 
-import { boardMonthResult } from "../board-model";
+import { boardMonthResult, boardViewFromRun } from "../board-model";
+import { BoardHud } from "../hud";
 import { MonthResultDialog } from "../month-result-dialog";
 import { PlanningPanel } from "../planning-panel";
 import { plansForDestination } from "../plan-catalog";
@@ -135,7 +136,24 @@ describe("board planning surfaces", () => {
         eventId: "event.unexpected-expense",
         templateId: "event.unexpected-expense",
         choiceIds: ["pay-now"],
-        choices: [{ id: "pay-now", label: "Pay it now", description: "Use cash." }],
+        choices: [{
+          id: "pay-now",
+          label: "Pay it now",
+          description: "Use cash.",
+          enabled: true,
+          preview: {
+            version: "personal-event-response-preview-v1" as const,
+            status: "available" as const,
+            immediateCashChangeCents: -12_500,
+            recurringCashFlows: [],
+            annualLivingCostChangeCents: 0,
+            wellbeingChangesPpm: { happiness: 0, burnout: 0 },
+            followUps: [],
+            netOutcomeCents: null,
+            unavailableReason: null,
+            summary: "Pay $125.00 now.",
+          },
+        }],
         parameters: {},
         headline: "A decision is waiting",
         body: "Choose how to respond.",
@@ -171,6 +189,93 @@ describe("board planning surfaces", () => {
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("A life decision is waiting before the next month.");
     expect(markup).toContain(">Review decision</button>");
+  });
+
+  it("renders monthly, total, follow-up, and disabled preview evidence", () => {
+    const run = projectRunView(currentRunState());
+    const view = boardViewFromRun({
+      ...run,
+      pendingInteraction: {
+        kind: "event",
+        eventId: "event.preview",
+        choiceIds: ["finance", "insured"],
+        choices: [
+          {
+            id: "finance",
+            label: "Finance it",
+            description: "Pay $75.00 per month for 4 months ($300.00 total). Schedules a follow-up in 2 months.",
+            enabled: true,
+            preview: {
+              version: "personal-event-response-preview-v1",
+              status: "available",
+              immediateCashChangeCents: 0,
+              recurringCashFlows: [{
+                direction: "expense",
+                monthlyCents: 7_500,
+                durationMonths: 4,
+                totalCents: 30_000,
+              }],
+              annualLivingCostChangeCents: 0,
+              wellbeingChangesPpm: { happiness: 0, burnout: 0 },
+              followUps: [{
+                templateId: "personal.followup",
+                templateVersion: 2,
+                delayMonths: 2,
+                parameterRanges: { cost_cents: { minimum: 5_000, maximum: 30_000 } },
+              }],
+              netOutcomeCents: null,
+              unavailableReason: null,
+              summary: "Pay $75.00 per month for 4 months ($300.00 total).",
+            },
+          },
+          {
+            id: "insured",
+            label: "Use coverage",
+            description: "Requires active health coverage",
+            enabled: false,
+            preview: {
+              version: "personal-event-response-preview-v1",
+              status: "unavailable",
+              immediateCashChangeCents: 0,
+              recurringCashFlows: [],
+              annualLivingCostChangeCents: 0,
+              wellbeingChangesPpm: { happiness: 0, burnout: 0 },
+              followUps: [],
+              netOutcomeCents: null,
+              unavailableReason: "Requires active health coverage",
+              summary: "Requires active health coverage",
+            },
+          },
+        ],
+        parameters: {},
+        headline: "Choose a response",
+        body: "Every cost is shown before confirmation.",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      <BoardHud
+        actionHint=""
+        actionLabel="Continue"
+        busy={false}
+        eventReturnFocusTarget={null}
+        eventVisible
+        mode="strategy"
+        monthResultDialog={null}
+        onResolveEvent={() => undefined}
+        onStub={() => undefined}
+        onTakeAction={() => undefined}
+        planningPanel={null}
+        toastMessage=""
+        toastVisible={false}
+        view={view}
+      />,
+    );
+
+    expect(markup).toContain("$75.00 per month");
+    expect(markup).toContain("$300.00 total");
+    expect(markup).toContain("personal.followup in 2 months");
+    expect(markup).toContain("Requires active health coverage");
+    expect(markup).toContain('disabled=""');
   });
 
   it("continues to the authoritative ending month when no event is pending", () => {

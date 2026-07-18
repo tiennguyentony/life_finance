@@ -6,11 +6,46 @@ const rateSchema = z.number().int().min(0).max(1_000_000);
 const emergencyFundMonthsSchema = z.number().int().min(0).max(24_000_000);
 const identifierSchema = z.string().trim().min(1).max(160);
 
+const eventResponsePreviewSchema = z
+  .object({
+    version: z.literal("personal-event-response-preview-v1"),
+    status: z.enum(["available", "unavailable", "error"]),
+    immediateCashChangeCents: centsSchema,
+    recurringCashFlows: z.array(z
+      .object({
+        direction: z.enum(["expense", "income"]),
+        monthlyCents: centsSchema.nonnegative(),
+        durationMonths: z.number().int().min(2).max(120),
+        totalCents: centsSchema.nonnegative(),
+      })
+      .strict()),
+    annualLivingCostChangeCents: centsSchema,
+    wellbeingChangesPpm: z
+      .object({ happiness: centsSchema, burnout: centsSchema })
+      .strict(),
+    followUps: z.array(z
+      .object({
+        templateId: identifierSchema,
+        templateVersion: z.number().int().min(2),
+        delayMonths: z.number().int().min(1).max(120),
+        parameterRanges: z.record(z.string(), z
+          .object({ minimum: centsSchema, maximum: centsSchema })
+          .strict()),
+      })
+      .strict()),
+    netOutcomeCents: centsSchema.nullable(),
+    unavailableReason: z.string().max(500).nullable(),
+    summary: z.string().max(2_000),
+  })
+  .strict();
+
 const eventChoiceSchema = z
   .object({
     id: identifierSchema,
     label: z.string().trim().min(1).max(120),
-    description: z.string().max(500),
+    description: z.string().max(2_000),
+    enabled: z.boolean(),
+    preview: eventResponsePreviewSchema,
   })
   .strict();
 
