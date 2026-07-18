@@ -1,27 +1,28 @@
 {
-    "services": {
-        "frontend": {
-            "root": ".",
-            "framework": "nextjs"
-        },
-        "tax": {
-            "root": "services/tax"
-        }
+  "services": {
+    "frontend": {
+      "root": ".",
+      "framework": "nextjs"
     },
-    "rewrites": [
-        {
-            "source": "/api/tax(/.*)?",
-            "destination": {
-                "type": "service",
-                "service": "tax"
-            }
-        },
-        {
-            "source": "/(.*)",
-            "destination": {
-                "type": "service",
-                "service": "frontend"
-            }
-        }
-    ]
+    "tax": {
+      "root": "services/tax",
+      "entrypoint": "api/index.py"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/tax(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "tax"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend"
+      }
+    }
+  ]
 }
