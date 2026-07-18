@@ -65,7 +65,7 @@ describe("LifeFinanceClient", () => {
       return Response.json({
         run,
         stateChecksum: "a".repeat(64),
-        result: { idempotentReplay: false, monthlyRecord: null },
+        result: { idempotentReplay: false },
       });
     });
 
@@ -73,6 +73,7 @@ describe("LifeFinanceClient", () => {
       client.submitCommand("run.current", {
         id: "ui.month.1",
         expectedRevision: 0,
+        effectiveMonth: "2026-07",
         type: "process_month",
         payload: {},
       }),

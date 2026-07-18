@@ -24,7 +24,7 @@ describe("game application use cases", () => {
     const state = currentRunState();
     let received: GameCommandV2Public | null = null;
     const service = {
-      getRun: async () => ({ state, stateChecksum: "a".repeat(64) }),
+      getRun: async () => Promise.reject(new Error("redundant state read")),
       submitCommand: async (
         _runId: string,
         _secret: string,
@@ -47,6 +47,7 @@ describe("game application use cases", () => {
       {
         id: "ui.command.1",
         expectedRevision: 0,
+        effectiveMonth: "2026-07",
         type: "resolve_event_choice",
         payload: { eventId: "event.1", choiceId: "choice.1" },
       },
@@ -63,7 +64,7 @@ describe("game application use cases", () => {
     expect(response).toMatchObject({
       run: { runId: "run.current" },
       stateChecksum: "a".repeat(64),
-      result: { idempotentReplay: false, monthlyRecord: null },
+      result: { idempotentReplay: false },
     });
     expect(response).not.toHaveProperty("state");
   });

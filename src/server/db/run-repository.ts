@@ -1151,10 +1151,6 @@ export class RunRepository {
         previousTransactionCount,
       );
       const now = this.#clock();
-      const recordChecksum = reduction.monthlyRecord
-        ? sha256Canonical(reduction.monthlyRecord)
-        : null;
-
       await persistSparseSnapshotsV2(
         tx,
         runId,
@@ -1231,28 +1227,6 @@ export class RunRepository {
           "run revision changed before the v2 command could commit",
         );
       }
-      await tx.insert(transactionalOutbox).values({
-        runId,
-        commandId: command.id,
-        topic:
-          command.type === "process_month_v2"
-            ? "run.v2.month.processed"
-            : "run.v2.command.accepted",
-        idempotencyKey: `${runId}:v2:${command.id}`,
-        payload: {
-          runId,
-          commandId: command.id,
-          commandType: command.type,
-          revision: nextState.revision,
-          stateChecksum: checksum,
-          monthlyRecordChecksum: recordChecksum,
-          outcome: nextState.outcome,
-        },
-        status: "pending",
-        availableAt: now,
-        createdAt: now,
-      });
-
       return Object.freeze({
         state: nextState,
         stateChecksum: checksum,

@@ -156,6 +156,7 @@ export async function finishBoardMonthAfterRefresh({
     const response = await client.submitCommand(recovery.run.runId, {
       id: commandId,
       expectedRevision: recovery.run.revision,
+      effectiveMonth: recovery.run.currentMonth,
       type: "process_month",
       payload: {},
     });
@@ -207,6 +208,7 @@ export async function commitBoardTurn({
     const response = await client.submitCommand(run.runId, {
       id: createId("month"),
       expectedRevision: run.revision,
+      effectiveMonth: run.currentMonth,
       type: "process_month",
       payload: {},
     });

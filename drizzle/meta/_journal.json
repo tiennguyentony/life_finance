@@ -57,6 +57,13 @@
       "when": 1784406883400,
       "tag": "0007_fantastic_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784407067253,
+      "tag": "0008_brief_gorilla_man",
+      "breakpoints": true
     }
   ]
 }

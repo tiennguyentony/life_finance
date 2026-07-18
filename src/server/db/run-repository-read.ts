@@ -221,7 +221,11 @@ async function findAcceptedMonthlyCommandV2(
 ): Promise<ProcessMonthV2Command | null> {
   assertUuid(runId);
   const [run] = await db
-    .select()
+    .select({
+      accessSecretHash: gameRuns.accessSecretHash,
+      accessSecretHashVersion: gameRuns.accessSecretHashVersion,
+      ownerUserId: gameRuns.ownerUserId,
+    })
     .from(gameRuns)
     .where(eq(gameRuns.id, runId))
     .limit(1);
@@ -296,7 +300,11 @@ export async function loadAcceptedCommandV2(
 ): Promise<GameCommandV2 | null> {
   assertUuid(runId);
   const [run] = await db
-    .select()
+    .select({
+      accessSecretHash: gameRuns.accessSecretHash,
+      accessSecretHashVersion: gameRuns.accessSecretHashVersion,
+      ownerUserId: gameRuns.ownerUserId,
+    })
     .from(gameRuns)
     .where(eq(gameRuns.id, runId))
     .limit(1);
@@ -388,7 +396,11 @@ export async function loadMonthlyTaxEvidenceForContext(
     throw new TypeError("tax context fingerprint must be canonical SHA-256");
   }
   const [run] = await db
-    .select()
+    .select({
+      accessSecretHash: gameRuns.accessSecretHash,
+      accessSecretHashVersion: gameRuns.accessSecretHashVersion,
+      ownerUserId: gameRuns.ownerUserId,
+    })
     .from(gameRuns)
     .where(eq(gameRuns.id, runId))
     .limit(1);

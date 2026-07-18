@@ -327,6 +327,7 @@ export function commandIntentForPlan(
     return {
       id: commandId,
       expectedRevision: run.revision,
+      effectiveMonth: run.strategy.effectiveMonth,
       type: "take_detailed_action",
       payload: { action: plan.command.action },
     };
@@ -337,6 +338,7 @@ export function commandIntentForPlan(
   return {
     id: commandId,
     expectedRevision: run.revision,
+    effectiveMonth: run.strategy.effectiveMonth,
     type: "set_recurring_strategy",
     payload: {
       strategy: {

@@ -1,0 +1,1 @@
+CREATE INDEX "monthly_turn_records_run_tax_trace_idx" ON "monthly_turn_records" USING btree ("run_id","tax_trace_id");

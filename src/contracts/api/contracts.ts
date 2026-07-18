@@ -131,6 +131,7 @@ export const commandIntentSchema = z
   .object({
     id: identifierSchema,
     expectedRevision: z.number().int().min(0),
+    effectiveMonth: monthSchema.optional(),
     type: z.enum([
       "set_recurring_strategy",
       "take_detailed_action",
@@ -167,14 +168,16 @@ export const commandResponseSchema = runViewResponseSchema
     result: z
       .object({
         idempotentReplay: z.boolean(),
-        monthlyRecord: z.unknown().nullable(),
       })
       .strict(),
   })
   .strict();
 
 export const sessionResponseSchema = z
-  .object({ session: runViewResponseSchema.nullable() })
+  .object({
+    account: z.object({ userId: z.string().uuid() }).strict().optional(),
+    session: runViewResponseSchema.nullable(),
+  })
   .strict();
 
 export type RunViewWire = z.infer<typeof runViewSchema>;

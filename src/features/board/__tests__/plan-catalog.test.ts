@@ -85,6 +85,7 @@ describe("board plan catalog", () => {
     expect(commandIntentForPlan(run, plan, "board.plan.1")).toEqual({
       id: "board.plan.1",
       expectedRevision: run.revision,
+      effectiveMonth: run.currentMonth,
       type: "set_recurring_strategy",
       payload: { strategy: { ...strategy, emergencyFundTargetMonthsPpm: 6_000_000 } },
     });

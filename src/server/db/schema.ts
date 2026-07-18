@@ -320,6 +320,10 @@ export const monthlyTurnRecords = pgTable(
       table.runId,
       table.resultingRevision,
     ),
+    index("monthly_turn_records_run_tax_trace_idx").on(
+      table.runId,
+      table.taxTraceId,
+    ),
     foreignKey({
       columns: [table.runId, table.commandId],
       foreignColumns: [acceptedCommands.runId, acceptedCommands.commandId],

@@ -297,6 +297,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       const response = await new LifeFinanceClient().submitCommand(latestRun.runId, {
         id: `board.month.recovery.${crypto.randomUUID()}`,
         expectedRevision: latestRun.revision,
+        effectiveMonth: latestRun.currentMonth,
         type: "process_month",
         payload: {},
       });
@@ -400,6 +401,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
         id: `board.${mode}.month.${crypto.randomUUID()}`,
         expectedRevision: run.revision,
+        effectiveMonth: run.currentMonth,
         type: "process_month",
         payload: {},
       });
@@ -420,6 +422,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
         id: `board.event.${crypto.randomUUID()}`,
         expectedRevision: run.revision,
+        effectiveMonth: run.currentMonth,
         type: "resolve_event_choice",
         payload: { eventId: run.pendingInteraction.eventId, choiceId },
       });
