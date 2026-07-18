@@ -257,15 +257,16 @@ function validateOnboardingInitializationV1(
       !values.every(isNonNegativeSafeInteger) ||
       BigInt(values[0] ?? -1) + BigInt(values[1] ?? -1) !==
         BigInt(values[2] ?? -1);
-    const openingStateDoesNotReconcile =
-      state.revision === 0 &&
-      values[2] !== state.finances.annualLivingCostCents;
-    if (evidenceDoesNotReconcile || openingStateDoesNotReconcile) {
+    // This evidence records the confirmed opening budget. The live annual
+    // living cost is intentionally allowed to diverge as inflation and player
+    // decisions are applied, including inside a revision-zero monthly
+    // transition before the command revision is finalized.
+    if (evidenceDoesNotReconcile) {
       violations.push(
         violation(
           "gameplay.initialization.declaredExpenses",
           "onboarding_expense_mismatch",
-          "confirmed expense components must reconcile internally and to the authoritative opening annual living cost",
+          "confirmed opening expense components must reconcile internally",
         ),
       );
     }
