@@ -14,15 +14,16 @@ describe("strategy board styles", () => {
   });
 
   it("styles result and event choices with readable direction details", () => {
-    expect(boardStyles).toContain(".board-month-result-dialog");
+    expect(boardStyles).toMatch(/\.board-month-result-dialog\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\);[\s\S]*?overflow:\s*auto;/);
     expect(boardStyles).toContain(".board-month-result-deltas");
     expect(boardStyles).toContain(".board-month-result-deltas dd");
+    expect(boardStyles).toMatch(/\.board-event-dialog\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\);[\s\S]*?overflow:\s*auto;/);
     expect(boardStyles).toContain(".board-event-dialog button span");
   });
 
   it("uses a compact bottom sheet and disables planning motion on narrow or reduced-motion screens", () => {
     expect(boardStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.board-planning-panel\s*\{[\s\S]*?top:\s*auto;[\s\S]*?bottom:\s*0\.65rem;/);
-    expect(boardStyles).toContain(".board-planning-commit");
+    expect(boardStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.board-planning-actions > button\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?bottom:\s*0;/);
     expect(boardStyles).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.board-plan-card/);
     expect(boardStyles).toContain(".board-month-result-dialog");
   });
