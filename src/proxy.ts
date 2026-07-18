@@ -6,6 +6,12 @@ import { publicSupabaseConfig } from "@/lib/supabase/config";
 const PROTECTED_PAGE = /^\/(start|profile|generating|board)(\/|$)/;
 
 export async function proxy(request: NextRequest) {
+  // Local Instant Demo is deliberately capability-based and in-memory. It must
+  // remain usable without Supabase credentials so contributors can test the
+  // complete game loop before configuring persistent infrastructure.
+  if (process.env.NODE_ENV === "development") {
+    return NextResponse.next({ request });
+  }
   const config = publicSupabaseConfig();
   let response = NextResponse.next({ request });
   const supabase = createServerClient(config.url, config.publishableKey, {

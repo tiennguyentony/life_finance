@@ -2,7 +2,7 @@ import {
   handleSubmitAccountCommand,
   handleSubmitCommand,
 } from "@/server/api/current-http";
-import { getRunGateway } from "@/server/api/runtime";
+import { getRunGateway, isLocalDemoRun } from "@/server/api/runtime";
 import { getAuthenticatedUser } from "@/server/auth/supabase-user";
 
 export const runtime = "nodejs";
@@ -13,6 +13,9 @@ export async function POST(
   context: { params: Promise<{ runId: string }> },
 ): Promise<Response> {
   const { runId } = await context.params;
+  if (isLocalDemoRun(runId)) {
+    return handleSubmitCommand(request, runId, getRunGateway());
+  }
   const user = await getAuthenticatedUser();
   if (user) {
     return handleSubmitAccountCommand(request, user, runId, getRunGateway());

@@ -15,8 +15,9 @@ export function publicSupabaseConfig(
     );
   }
   const parsed = new URL(url);
-  if (parsed.protocol !== "https:") {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL must use HTTPS");
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL must use HTTPS except on loopback");
   }
   return Object.freeze({ url: parsed.origin, publishableKey });
 }

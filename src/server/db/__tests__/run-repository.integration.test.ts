@@ -1,4 +1,4 @@
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type PostTransactionCommand } from "../../../core/commands";
@@ -35,6 +35,7 @@ import {
 } from "../../../data/scenario-catalog";
 import { getEventTemplate } from "../../../data/event-templates";
 import { RunSecretCodec } from "../../auth/run-secret";
+import { accountRunCredential } from "../../auth/account-run-credential";
 import { AiAuditCipher } from "../../ai/audit-crypto";
 import {
   AiAuditAdminAuthorizer,
@@ -211,7 +212,7 @@ function sparseStateV2(
     resolvedScenario,
     annualGrossSalaryCents: moneyCents(12_000_000),
     finances: {
-      cashCents: moneyCents(20_000_000),
+      cashCents: moneyCents(2_000_000),
       taxableBroadIndexCents: moneyCents(terminalAsset),
       taxableSectorCents: moneyCents(3_000_000),
       taxableSpeculativeCents: moneyCents(3_000_000),
@@ -465,6 +466,10 @@ databaseDescribe("Postgres run repository", () => {
     "10000000-0000-4000-8000-000000000030",
     "10000000-0000-4000-8000-000000000031",
     "10000000-0000-4000-8000-000000000032",
+    "10000000-0000-4000-8000-000000000033",
+    "10000000-0000-4000-8000-000000000034",
+    "10000000-0000-4000-8000-000000000035",
+    "10000000-0000-4000-8000-000000000036",
   ];
   let runIndex = 0;
 
@@ -483,6 +488,55 @@ databaseDescribe("Postgres run repository", () => {
 
   afterAll(async () => {
     await connection?.close();
+  });
+
+  it("maintains one active save per account and prevents cross-account claims", async () => {
+    const firstUserId = "20000000-0000-4000-8000-000000000001";
+    const secondUserId = "20000000-0000-4000-8000-000000000002";
+    await connection.db.execute(sql`
+      insert into auth.users (id, aud, role, email, created_at, updated_at)
+      values
+        (${firstUserId}::uuid, 'authenticated', 'authenticated', 'owner-one@example.test', now(), now()),
+        (${secondUserId}::uuid, 'authenticated', 'authenticated', 'owner-two@example.test', now(), now())
+    `);
+
+    const first = await repository.createRunV2(nativeStateV2, {
+      ownerUserId: firstUserId,
+    });
+    const second = await repository.createRunV2(nativeStateV2, {
+      ownerUserId: firstUserId,
+    });
+    expect(await repository.loadActiveOwnedRunId(firstUserId)).toBe(second.runId);
+    await expect(
+      repository.loadAuthorizedRunV2(
+        second.runId,
+        accountRunCredential(firstUserId),
+      ),
+    ).resolves.toMatchObject({ runId: second.runId });
+
+    const legacy = await repository.createRunV2(nativeStateV2);
+    await repository.claimRunV2(
+      firstUserId,
+      legacy.runId,
+      legacy.accessSecret,
+    );
+    expect(await repository.loadActiveOwnedRunId(firstUserId)).toBe(legacy.runId);
+    await expect(
+      repository.claimRunV2(secondUserId, legacy.runId, legacy.accessSecret),
+    ).rejects.toMatchObject({ code: "NOT_FOUND_OR_UNAUTHORIZED" });
+
+    const rows = await connection.db
+      .select({ id: gameRuns.id, saveStatus: gameRuns.saveStatus })
+      .from(gameRuns)
+      .where(eq(gameRuns.ownerUserId, firstUserId));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: first.runId, saveStatus: "archived" },
+        { id: second.runId, saveStatus: "archived" },
+        { id: legacy.runId, saveStatus: "active" },
+      ]),
+    );
+    await connection.db.execute(sql`delete from auth.users where id in (${firstUserId}::uuid, ${secondUserId}::uuid)`);
   });
 
   it("previews through the repository and exact reducer without any database write", async () => {
@@ -607,7 +661,6 @@ databaseDescribe("Postgres run repository", () => {
     expect(evidence.value).toBe(2);
     expect(records.value).toBe(2);
     expect(outbox.map(({ topic }) => topic).toSorted()).toEqual([
-      "run.v2.created",
       "run.v2.time_advanced",
     ]);
   });
@@ -1176,7 +1229,7 @@ databaseDescribe("Postgres run repository", () => {
     expect(recordCount.value).toBe(1);
     expect(commandCount.value).toBe(2);
     expect(snapshotCount.value).toBe(3);
-    expect(outboxCount.value).toBe(3);
+    expect(outboxCount.value).toBe(0);
 
     await connection.db
       .update(monthlyTaxEvidence)
@@ -1235,7 +1288,7 @@ databaseDescribe("Postgres run repository", () => {
     expect(replayed).toMatchObject({
       stateChecksum: processed.stateChecksum,
       idempotentReplay: true,
-      monthlyRecord: { financialKernelVersion: "legacy-4.1.0" },
+      monthlyRecord: { processedMonth: "2026-07", nextMonth: "2026-08" },
     });
     expect(calculate).not.toHaveBeenCalled();
     await expect(
@@ -1247,7 +1300,7 @@ databaseDescribe("Postgres run repository", () => {
     ).resolves.toEqual(legacyCommand);
   });
 
-  it("rolls back v2 state, evidence, record, and command when the outbox write fails", async () => {
+  it("does not couple v2 state transitions to the dormant outbox", async () => {
     const created = await repository.createRunV2(nativeStateV2);
     await repository.applyCommandV2(
       created.runId,
@@ -1267,7 +1320,7 @@ databaseDescribe("Postgres run repository", () => {
 
     await expect(
       repository.applyCommandV2(created.runId, created.accessSecret, command),
-    ).rejects.toBeTruthy();
+    ).resolves.toMatchObject({ idempotentReplay: false });
     const loaded = await repository.loadAuthorizedRunV2(
       created.runId,
       created.accessSecret,
@@ -1284,10 +1337,10 @@ databaseDescribe("Postgres run repository", () => {
       .select({ value: count() })
       .from(acceptedCommands)
       .where(eq(acceptedCommands.runId, created.runId));
-    expect(loaded).toMatchObject({ revision: 1, currentMonth: "2026-07" });
-    expect(evidenceCount.value).toBe(0);
-    expect(recordCount.value).toBe(0);
-    expect(commandCount.value).toBe(1);
+    expect(loaded).toMatchObject({ revision: 2, currentMonth: "2026-08" });
+    expect(evidenceCount.value).toBe(1);
+    expect(recordCount.value).toBe(1);
+    expect(commandCount.value).toBe(2);
   });
 
   it("serializes concurrent v2 commands at the same expected revision", async () => {
@@ -1398,10 +1451,10 @@ databaseDescribe("Postgres run repository", () => {
     });
   });
 
-  it("keeps ordinary months sparse and checkpoints the twelfth processed month", async () => {
+  it("keeps ordinary pre-event months sparse", async () => {
     const created = await repository.createRunV2(sparseStateV2);
     let state = created.state;
-    for (let month = 0; month < 11; month += 1) {
+    for (let month = 0; month < 10; month += 1) {
       state = (
         await repository.applyCommandV2(
           created.runId,
@@ -1422,26 +1475,6 @@ databaseDescribe("Postgres run repository", () => {
       .orderBy(asc(runStateSnapshots.revision));
     expect(firstRows).toEqual([{ revision: 0, snapshotKind: "run_start" }]);
 
-    state = (
-      await repository.applyCommandV2(
-        created.runId,
-        created.accessSecret,
-        sparseMonthCommandV2(state),
-      )
-    ).state;
-    const annualRows = await connection.db
-      .select({
-        revision: runStateSnapshots.revision,
-        snapshotKind: runStateSnapshots.snapshotKind,
-      })
-      .from(runStateSnapshots)
-      .where(eq(runStateSnapshots.runId, created.runId))
-      .orderBy(asc(runStateSnapshots.revision));
-    expect(state.revision).toBe(12);
-    expect(annualRows).toEqual([
-      { revision: 0, snapshotKind: "run_start" },
-      { revision: 12, snapshotKind: "checkpoint" },
-    ]);
   });
 
   it("replays an unsnapshotted retry and checkpoint start revision", async () => {

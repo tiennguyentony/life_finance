@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -16,7 +16,6 @@ function publicAuthMessage(error: unknown): string {
 
 export function LoginForm() {
   const router = useRouter();
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [step, setStep] = useState<LoginStep>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -29,7 +28,7 @@ export function LoginForm() {
     setBusy(true);
     setMessage(null);
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { error } = await createSupabaseBrowserClient().auth.signInWithOtp({
         email: email.trim(),
         options: { shouldCreateUser: true },
       });
@@ -49,7 +48,7 @@ export function LoginForm() {
     setBusy(true);
     setMessage(null);
     try {
-      const { error } = await supabase.auth.verifyOtp({
+      const { error } = await createSupabaseBrowserClient().auth.verifyOtp({
         email: email.trim(),
         token: code.trim(),
         type: "email",
