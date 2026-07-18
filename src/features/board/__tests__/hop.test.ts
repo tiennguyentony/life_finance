@@ -46,6 +46,28 @@ describe("hopPose", () => {
     expect(pose.scaleY).toBeLessThan(1);
   });
 
+  it("crouches on the ground before takeoff (anticipation)", () => {
+    const pose = hopPose(FROM, TO, 0.05);
+    expect(pose.y).toBe(0); // still grounded, hasn't left the island
+    expect(pose.x).toBe(FROM.x); // no horizontal travel yet
+    expect(pose.z).toBe(FROM.z);
+    expect(pose.scaleY).toBeLessThan(1); // compressed, loading the jump
+  });
+
+  it("settles on the ground after landing (follow-through)", () => {
+    const pose = hopPose(FROM, TO, 0.95);
+    expect(pose.y).toBe(0); // back on the ground at the destination
+    expect(pose.x).toBe(TO.x);
+    expect(pose.z).toBe(TO.z);
+    expect(pose.scaleY).toBeLessThan(1); // absorbing the impact
+  });
+
+  it("is airborne only between the crouch and the settle", () => {
+    expect(hopPose(FROM, TO, 0.05).y).toBe(0); // anticipation: grounded
+    expect(hopPose(FROM, TO, 0.5).y).toBeGreaterThan(0); // arc: in the air
+    expect(hopPose(FROM, TO, 0.95).y).toBe(0); // settle: grounded
+  });
+
   it("stretches during the fast rise, and is neutral at the weightless apex", () => {
     // Real squash-and-stretch tracks speed: a body stretches when moving
     // fast (rise/fall) and hangs neutral at the top where velocity is zero.
