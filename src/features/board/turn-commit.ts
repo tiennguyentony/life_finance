@@ -39,6 +39,7 @@ export function boardMonthRecoveryMessage(planApplied: boolean): string {
 export type BoardTurnRecoveryResult =
   | Readonly<{
       kind: "completed";
+      attribution: "selected_plan" | "external_update";
       opening: RunViewWire;
       run: RunViewWire;
     }>
@@ -50,6 +51,15 @@ export type BoardTurnRecoveryResult =
       error: unknown;
       refreshError: unknown;
     }>;
+
+export function boardRecoveryPlanLabel(
+  recovery: BoardTurnRecoveryResult,
+  selectedPlanLabel: string,
+): string {
+  return recovery.kind === "completed" && recovery.attribution === "external_update"
+    ? "Board refreshed"
+    : selectedPlanLabel;
+}
 
 type RecoverBoardTurnFailureInput = Readonly<{
   phase: BoardTurnFailurePhase;
@@ -97,7 +107,12 @@ export async function recoverBoardTurnFailure({
   }
 
   if (authoritative.currentMonth > opening.currentMonth) {
-    return { kind: "completed", opening, run: authoritative };
+    return {
+      kind: "completed",
+      attribution: phase === "plan" ? "external_update" : "selected_plan",
+      opening,
+      run: authoritative,
+    };
   }
   if (phase === "month") {
     return { kind: "finish_month", run: authoritative, error };
@@ -109,6 +124,56 @@ export async function recoverBoardTurnFailure({
     return { kind: "finish_month", run: authoritative, error };
   }
   return { kind: "planning", run: authoritative, error };
+}
+
+type FinishBoardMonthAfterRefreshInput = Readonly<{
+  client: TurnClient & Readonly<{
+    getSession: RecoverBoardTurnFailureInput["getSession"];
+  }>;
+  opening: RunViewWire;
+  failedRun: RunViewWire;
+  error: unknown;
+  commandId: string;
+}>;
+
+export async function finishBoardMonthAfterRefresh({
+  client,
+  opening,
+  failedRun,
+  error,
+  commandId,
+}: FinishBoardMonthAfterRefreshInput): Promise<BoardTurnRecoveryResult> {
+  const recovery = await recoverBoardTurnFailure({
+    phase: "month",
+    error,
+    opening,
+    failedRun,
+    getSession: () => client.getSession(),
+  });
+  if (recovery.kind !== "finish_month") return recovery;
+
+  try {
+    const response = await client.submitCommand(recovery.run.runId, {
+      id: commandId,
+      expectedRevision: recovery.run.revision,
+      type: "process_month",
+      payload: {},
+    });
+    return {
+      kind: "completed",
+      attribution: "selected_plan",
+      opening,
+      run: response.run,
+    };
+  } catch (monthError) {
+    return recoverBoardTurnFailure({
+      phase: "month",
+      error: monthError,
+      opening,
+      failedRun: recovery.run,
+      getSession: () => client.getSession(),
+    });
+  }
 }
 
 type CommitBoardTurnInput = Readonly<{

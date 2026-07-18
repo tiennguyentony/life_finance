@@ -11,7 +11,9 @@ import {
 import type { BoardPlan } from "../plan-catalog";
 import {
   boardMonthRecoveryMessage,
+  boardRecoveryPlanLabel,
   commitBoardTurn,
+  finishBoardMonthAfterRefresh,
   recoverBoardTurnFailure,
 } from "../turn-commit";
 
@@ -195,6 +197,32 @@ describe("recoverBoardTurnFailure", () => {
     expect(result).toMatchObject({ kind: "planning", run: authoritative });
   });
 
+  it("does not attribute an externally advanced month to a rejected stale plan", async () => {
+    const opening = openingRun();
+    const authoritative = {
+      ...opening,
+      currentMonth: "2026-08",
+      revision: opening.revision + 1,
+    };
+
+    const result = await recoverBoardTurnFailure({
+      phase: "plan",
+      error: { code: "STALE_REVISION", message: "Run changed" },
+      opening,
+      failedRun: opening,
+      getSession: async () => ({ session: { run: authoritative } }),
+    });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      attribution: "external_update",
+      opening,
+      run: authoritative,
+    });
+    expect(boardRecoveryPlanLabel(result, actionPlan.label)).toBe("Board refreshed");
+    expect(boardRecoveryPlanLabel(result, actionPlan.label)).not.toContain(actionPlan.label);
+  });
+
   it("continues month-only recovery from the refreshed revision after an accepted plan", async () => {
     const opening = openingRun();
     const planApplied = { ...opening, revision: opening.revision + 1 };
@@ -284,5 +312,46 @@ describe("recoverBoardTurnFailure", () => {
 
     expect(failedRefresh).toMatchObject({ kind: "refresh_failed", run: planApplied });
     expect(missingSession).toMatchObject({ kind: "refresh_failed", run: planApplied });
+  });
+});
+
+describe("finishBoardMonthAfterRefresh", () => {
+  it("refreshes and processes the month at the latest revision in one recovery action", async () => {
+    const opening = openingRun();
+    const planApplied = { ...opening, revision: opening.revision + 1 };
+    const authoritative = { ...planApplied, revision: planApplied.revision + 1 };
+    const completed = {
+      ...authoritative,
+      currentMonth: "2026-08",
+      revision: authoritative.revision + 1,
+    };
+    const calls: Array<{ type: string; expectedRevision?: number }> = [];
+
+    const result = await finishBoardMonthAfterRefresh({
+      client: {
+        getSession: async () => {
+          calls.push({ type: "getSession" });
+          return { session: { run: authoritative } };
+        },
+        submitCommand: async (_runId, command) => {
+          calls.push({
+            type: command.type,
+            expectedRevision: command.expectedRevision,
+          });
+          return response(completed);
+        },
+      },
+      opening,
+      failedRun: planApplied,
+      error: { code: "STALE_REVISION", message: "Run changed" },
+      commandId: "board.month.recovery",
+    });
+
+    expect(calls).toEqual([
+      { type: "getSession" },
+      { type: "process_month", expectedRevision: authoritative.revision },
+    ]);
+    expect(calls.some(({ type }) => type === "take_detailed_action")).toBe(false);
+    expect(result).toMatchObject({ kind: "completed", opening, run: completed });
   });
 });
