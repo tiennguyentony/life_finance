@@ -1,0 +1,27 @@
+{
+    "services": {
+        "frontend": {
+            "root": ".",
+            "framework": "nextjs"
+        },
+        "tax": {
+            "root": "services/tax"
+        }
+    },
+    "rewrites": [
+        {
+            "source": "/api/tax(/.*)?",
+            "destination": {
+                "type": "service",
+                "service": "tax"
+            }
+        },
+        {
+            "source": "/(.*)",
+            "destination": {
+                "type": "service",
+                "service": "frontend"
+            }
+        }
+    ]
+}
