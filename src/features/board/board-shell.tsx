@@ -88,6 +88,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   const [recoveryPlanApplied, setRecoveryPlanApplied] = useState(false);
   const [refreshRequired, setRefreshRequired] = useState(false);
   const [reactionToken, setReactionToken] = useState(0);
+  const [planningFocusTarget, setPlanningFocusTarget] = useState<HTMLElement | null>(null);
   const turnOpeningRef = useRef<RunViewWire | null>(null);
   const pendingFailureRef = useRef<PendingTurnFailure | null>(null);
   // The message persists through the exit transition; `visible` drives it.
@@ -146,7 +147,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     });
   };
 
-  const handleSelect = (islandId: string) => {
+  const handleSelect = (islandId: string, focusTarget?: HTMLElement) => {
     if (mode === "free") {
       startFreeHop(islandId);
       return;
@@ -168,6 +169,11 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     }
 
     const destinationId = islandId as BoardDestinationId;
+    setPlanningFocusTarget(
+      focusTarget ?? document.querySelector<HTMLElement>(
+        `[data-board-destination="${destinationId}"]`,
+      ),
+    );
     const firstEnabledPlan = plansForDestination(run, destinationId).find(
       (plan) => plan.disabledReason === null,
     );
@@ -500,6 +506,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         actionHint={view.pendingEvent ? "Resolve the event first" : "Advance one financial month"}
         actionLabel={busy ? "Saving..." : view.pendingEvent ? "Decision Required" : "Take Action"}
         busy={busy}
+        eventReturnFocusTarget={planningFocusTarget}
         eventVisible={eventVisible}
         mode={mode}
         monthResultDialog={
@@ -507,6 +514,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
             busy={busy}
             onContinue={() => setMonthResult(null)}
             result={monthResult}
+            returnFocusTarget={planningFocusTarget}
           />
         }
         onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
