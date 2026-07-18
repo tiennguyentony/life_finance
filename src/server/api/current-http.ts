@@ -83,6 +83,7 @@ function publicErrorStatus(error: unknown): number | null {
     if (
       error.code === "STALE_REVISION" ||
       error.code === "RUN_TERMINAL" ||
+      error.code === "RUN_NOT_ACTIVE" ||
       error.code === "PENDING_EVENT" ||
       error.code === "TAX_CONTEXT_MISMATCH"
     ) {
@@ -307,6 +308,60 @@ type OwnedRunSessionRepository = Readonly<{
   ): Promise<void>;
 }>;
 
+type OwnedRunSaveRepository = Readonly<{
+  listOwnedRunsV2(ownerUserId: string): Promise<readonly Readonly<{
+    runId: string;
+    saveStatus: "active" | "archived";
+    runStatus: "active" | "terminal";
+    currentMonth: string;
+    revision: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }>[]>;
+  activateOwnedRunV2(ownerUserId: string, runId: string): Promise<void>;
+}>;
+
+export async function handleListAccountRuns(
+  user: AuthenticatedUser,
+  repository: Pick<OwnedRunSaveRepository, "listOwnedRunsV2">,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    const saves = await repository.listOwnedRunsV2(user.userId);
+    return jsonResponse(
+      {
+        saves: saves.map((save) => ({
+          ...save,
+          createdAt: save.createdAt.toISOString(),
+          updatedAt: save.updatedAt.toISOString(),
+        })),
+      },
+      200,
+      requestId,
+    );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleActivateAccountRun(
+  request: Request,
+  user: AuthenticatedUser,
+  runId: string,
+  repository: Pick<OwnedRunSaveRepository, "activateOwnedRunV2">,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    await repository.activateOwnedRunV2(user.userId, runId);
+    return jsonResponse({ activeRunId: runId }, 200, requestId);
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
 export async function handleGetAccountSession(
   user: AuthenticatedUser,
   repository: Pick<OwnedRunSessionRepository, "loadActiveOwnedRunId">,
@@ -384,12 +439,19 @@ export async function handleSubmitAccountCommand(
   request: Request,
   user: AuthenticatedUser,
   runId: string,
+  repository: Pick<OwnedRunSessionRepository, "loadActiveOwnedRunId">,
   service: CommandRunner,
   requestIdFactory: RequestIdFactory = randomUUID,
 ): Promise<Response> {
   const requestId = requestIdFactory();
   try {
     assertSameOriginWrite(request);
+    if (await repository.loadActiveOwnedRunId(user.userId) !== runId) {
+      throw new RunApiV2Error(
+        "RUN_NOT_ACTIVE",
+        "activate this saved game before making changes",
+      );
+    }
     const intent = commandIntentSchema.parse(await readJson(request));
     return jsonResponse(
       await submitCommand(

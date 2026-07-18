@@ -3,6 +3,7 @@ export class RunApiV2Error extends Error {
     | "STALE_REVISION"
     | "INVALID_EFFECTIVE_MONTH"
     | "RUN_TERMINAL"
+    | "RUN_NOT_ACTIVE"
     | "PENDING_EVENT"
     | "TAX_CONTEXT_MISMATCH"
     | "TAX_RESULT_UNUSABLE";

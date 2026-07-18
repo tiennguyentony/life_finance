@@ -1,13 +1,16 @@
 import {
   apiErrorResponseSchema,
+  activateRunResponseSchema,
   commandIntentSchema,
   commandResponseSchema,
   runViewResponseSchema,
   sessionResponseSchema,
+  savedRunsResponseSchema,
   type CommandIntent,
   type CommandResponseWire,
   type RunViewResponseWire,
   type SessionResponse,
+  type SavedRunsResponse,
 } from "@/contracts/api/contracts";
 import {
   onboardingConfirmRequestV1Schema,
@@ -107,6 +110,22 @@ export class LifeFinanceClient {
       "/api/session",
       { method: "GET" },
       sessionResponseSchema,
+    );
+  }
+
+  listSavedRuns(): Promise<SavedRunsResponse> {
+    return this.#request(
+      "/api/runs",
+      { method: "GET" },
+      savedRunsResponseSchema,
+    );
+  }
+
+  async activateSavedRun(runId: string): Promise<void> {
+    await this.#request(
+      `/api/runs/${encodeURIComponent(runId)}/activate`,
+      { method: "POST" },
+      activateRunResponseSchema,
     );
   }
 
