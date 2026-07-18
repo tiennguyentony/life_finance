@@ -12,7 +12,11 @@ import {
   type PersonalEventTemplateV2,
 } from "../personal-event-v2";
 import {
+  ACTIVE_PERSONAL_EVENT_TEMPLATES_V2,
+  HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2,
   PERSONAL_EVENT_TEMPLATES_V2,
+  PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2,
+  getActivePersonalEventTemplateV2,
   getPersonalEventTemplateV2,
 } from "../../data/personal-event-templates-v2";
 import {
@@ -108,6 +112,27 @@ function alwaysTemplate(): PersonalEventTemplateV2 {
 }
 
 describe("declarative personal-event v2 catalog", () => {
+  it("separates exact replay, highest-version active, and gated production catalogs", () => {
+    expect(getPersonalEventTemplateV2("personal.medical_bill", 2).responses.map(({ id }) => id))
+      .toEqual(["pay_uninsured", "use_insurance"]);
+    expect(getPersonalEventTemplateV2("personal.transport_repair", 2).followUps)
+      .toEqual([{
+        templateId: "personal.transport_repair_followup",
+        templateVersion: 2,
+        delayMonths: 2,
+        whenResponseIds: ["defer_repair"],
+      }]);
+    expect(PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2)
+      .toEqual(HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2);
+    expect(new Set(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.map(({ id }) => id)).size)
+      .toBe(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.length);
+    expect(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.every((template) =>
+      getActivePersonalEventTemplateV2(template.id) === template,
+    )).toBe(true);
+    expect(Object.isFrozen(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2)).toBe(true);
+    expect(Object.isFrozen(PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2)).toBe(true);
+  });
+
   it("contains valid setbacks, traps, and at least two opportunities", () => {
     expect(validatePersonalEventCatalogV2(PERSONAL_EVENT_TEMPLATES_V2)).toEqual([]);
     expect(PERSONAL_EVENT_TEMPLATES_V2.some(({ classification }) => classification === "negative")).toBe(true);

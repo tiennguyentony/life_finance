@@ -1,13 +1,9 @@
 import {
   PERSONAL_EVENT_SCHEMA_V2,
   validatePersonalEventCatalogV2,
-  type PersonalEventMagnitudeV2,
   type PersonalEventTemplateV2,
 } from "../core/personal-event-v2";
-
-function parameter(parameterId: string, multiplierPpm = 1_000_000): PersonalEventMagnitudeV2 {
-  return { source: "parameter", parameterId, multiplierPpm };
-}
+import { deepFreeze, parameter } from "./personal-event-template-helpers";
 
 const templates: readonly PersonalEventTemplateV2[] = [
   {
@@ -739,22 +735,60 @@ const templates: readonly PersonalEventTemplateV2[] = [
   },
 ];
 
-function deepFreeze<T>(value: T): Readonly<T> {
-  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const nested of Object.values(value)) deepFreeze(nested);
-    Object.freeze(value);
-  }
-  return value;
-}
-
 const violations = validatePersonalEventCatalogV2(templates);
 if (violations.length > 0) {
   throw new Error(`invalid personal event v2 catalog: ${violations[0]!.path}:${violations[0]!.code}`);
 }
 
-export const PERSONAL_EVENT_TEMPLATES_V2: readonly PersonalEventTemplateV2[] = deepFreeze([
+export const HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2:
+  readonly PersonalEventTemplateV2[] = deepFreeze([
   ...templates,
 ]);
+
+export const PERSONAL_EVENT_TEMPLATES_V2: readonly PersonalEventTemplateV2[] =
+  HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2;
+
+function highestVersionByTemplateId(
+  catalog: readonly PersonalEventTemplateV2[],
+): readonly PersonalEventTemplateV2[] {
+  const highest = new Map<string, PersonalEventTemplateV2>();
+  for (const template of catalog) {
+    const current = highest.get(template.id);
+    if (current === undefined || template.version > current.version) {
+      highest.set(template.id, template);
+    }
+  }
+  return deepFreeze(
+    [...highest.values()].toSorted(
+      (left, right) => left.id.localeCompare(right.id) || left.version - right.version,
+    ),
+  );
+}
+
+export const ACTIVE_PERSONAL_EVENT_TEMPLATES_V2:
+  readonly PersonalEventTemplateV2[] = highestVersionByTemplateId(
+    PERSONAL_EVENT_TEMPLATES_V2,
+  );
+
+export type PersonalEventSchedulingSelectionV2 =
+  | "historical-v2"
+  | "highest-supported";
+
+export const PERSONAL_EVENT_SCHEDULING_SELECTION_V2:
+  PersonalEventSchedulingSelectionV2 = "historical-v2";
+
+function productionPersonalEventCatalogV2(
+  selection: PersonalEventSchedulingSelectionV2,
+): readonly PersonalEventTemplateV2[] {
+  return selection === "highest-supported"
+    ? ACTIVE_PERSONAL_EVENT_TEMPLATES_V2
+    : HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2;
+}
+
+export const PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2:
+  readonly PersonalEventTemplateV2[] = productionPersonalEventCatalogV2(
+    PERSONAL_EVENT_SCHEDULING_SELECTION_V2,
+  );
 
 export function getPersonalEventTemplateV2(
   templateId: string,
@@ -764,5 +798,17 @@ export function getPersonalEventTemplateV2(
     ({ id, version: candidateVersion }) => id === templateId && candidateVersion === version,
   );
   if (!template) throw new RangeError(`unknown personal event v2 template ${templateId}@${version}`);
+  return template;
+}
+
+export function getActivePersonalEventTemplateV2(
+  templateId: string,
+): PersonalEventTemplateV2 {
+  const template = ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.find(
+    ({ id }) => id === templateId,
+  );
+  if (template === undefined) {
+    throw new RangeError(`unknown active personal event template ${templateId}`);
+  }
   return template;
 }
