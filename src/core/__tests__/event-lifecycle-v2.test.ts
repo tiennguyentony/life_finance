@@ -494,6 +494,31 @@ describe("v2 event lifecycle", () => {
       schedule.event!,
     );
     expect(followUpQueued.gameplay.eventLifecycle.scheduledFollowUps).toEqual([]);
+    expect(followUpQueued.gameplay.eventLifecycle.pending).toMatchObject({
+      followUpSourceEventId: "evt.followup.source.v2",
+    });
+    const corruptSource = {
+      ...followUpQueued,
+      gameplay: {
+        ...followUpQueued.gameplay,
+        eventLifecycle: {
+          ...followUpQueued.gameplay.eventLifecycle,
+          pending: {
+            ...followUpQueued.gameplay.eventLifecycle.pending!,
+            followUpSourceEventId: "evt.missing.source",
+          },
+        },
+      },
+    };
+    expect(validateGameStateV2(corruptSource).map(({ code }) => code))
+      .toContain("invalid_followup_source_event");
+    const followUpResolved = resolveEventChoiceV2(
+      followUpQueued,
+      command(followUpQueued, "claim_rebate"),
+    );
+    expect(followUpResolved.gameplay.eventLifecycle.history.at(-1)).toMatchObject({
+      followUpSourceEventId: "evt.followup.source.v2",
+    });
   });
 
   it("round-trips current v2 event state while absent optional fields keep the historical checksum", () => {

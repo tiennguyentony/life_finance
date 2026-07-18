@@ -1,3 +1,5 @@
+import type { PersonalEventResponsePreviewV1 } from "@/application/game/personal-event-response-preview-v1";
+
 export type BoardStatTone = "lime" | "blue" | "coral";
 
 export type BoardStat = Readonly<{
@@ -16,6 +18,8 @@ export type BoardEvent = Readonly<{
     id: string;
     label: string;
     description: string;
+    enabled: boolean;
+    preview: PersonalEventResponsePreviewV1;
   }>[];
 }>;
 
@@ -72,6 +76,8 @@ export type BoardRunSource = Readonly<{
           id: string;
           label: string;
           description: string;
+          enabled: boolean;
+          preview: PersonalEventResponsePreviewV1;
         }>[];
         parameters: Readonly<Record<string, number>>;
         headline: string | null;

@@ -461,6 +461,24 @@ describe("time advance v2 contracts", () => {
       scheduledMonth: "2026-07",
       expiresMonth: "2026-08",
     };
+    const declarativePendingEvent = {
+      ...pendingEvent,
+      templateVersion: 2,
+      eventSchemaVersion: 2,
+      category: "health",
+      classification: "negative",
+      lessonTags: {
+        primary: "lesson.emergency_fund",
+        secondary: ["lesson.insurance"],
+      },
+      pressureCost: 3,
+      recoveryDurationMonths: 2,
+      fallbackNarrative: {
+        headline: "A medical bill arrives",
+        body: "Choose how to cover the cost.",
+      },
+      followUpSourceEventId: "event.contract.source",
+    };
     const pendingDecision = {
       kind: "life_milestone",
       milestones: [
@@ -521,6 +539,12 @@ describe("time advance v2 contracts", () => {
         endCondition,
       }),
     ).toMatchObject({ pendingEvent, pendingDecision, endCondition });
+    expect(
+      advanceTimeV2ResponseSchema.parse({
+        ...base,
+        pendingEvent: declarativePendingEvent,
+      }).pendingEvent,
+    ).toEqual(declarativePendingEvent);
     expect(
       advanceTimeV2ResponseSchema.parse({
         ...base,

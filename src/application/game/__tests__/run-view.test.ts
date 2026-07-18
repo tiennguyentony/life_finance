@@ -112,12 +112,18 @@ describe("projectRunView", () => {
         {
           id: "pay_uninsured",
           label: "Pay without coverage",
-          description: "Creates a temporary expense of $4,250.",
+          enabled: true,
+          description: "Pay $4,250.00 now.",
+          preview: {
+            status: "available",
+            immediateCashChangeCents: -425_000,
+          },
         },
         {
           id: "use_insurance",
           label: "Use health coverage",
-          description: "Coverage limits the bill according to the active policy.",
+          enabled: true,
+          preview: { status: "available" },
         },
       ],
     });
@@ -139,7 +145,12 @@ describe("projectRunView", () => {
     expect(projectRunView(state).pendingInteraction).toMatchObject({
       choices: [{
         id: "claim_rebate",
-        description: "Adds $425 of income in the next processed month.",
+        enabled: true,
+        description: "Receive $425.00 now.",
+        preview: {
+          status: "available",
+          immediateCashChangeCents: 42_500,
+        },
       }],
     });
   });
@@ -175,7 +186,12 @@ describe("projectRunView", () => {
     expect(projectRunView(state).pendingInteraction).toMatchObject({
       choices: [{
         id: "pay_cost",
-        description: "Adds $850 of expense in the next processed month.",
+        enabled: true,
+        description: "Pay $850.00 now.",
+        preview: {
+          status: "available",
+          immediateCashChangeCents: -85_000,
+        },
       }],
     });
   });
@@ -216,6 +232,29 @@ describe("projectRunView", () => {
     const template: PersonalEventTemplateV2 = {
       ...getPersonalEventTemplateV2("personal.medical_bill"),
       id: "personal.projection-summaries",
+      parameters: [
+        {
+          id: "obligation_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 120_000,
+          maximum: 120_000,
+        },
+        {
+          id: "recurring_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 30_000,
+          maximum: 30_000,
+        },
+        {
+          id: "income_cents",
+          kind: "money_cents",
+          distribution: "uniform_int",
+          minimum: 85_000,
+          maximum: 85_000,
+        },
+      ],
       responses: [
         {
           id: "increase_obligation",
@@ -291,15 +330,31 @@ describe("projectRunView", () => {
       choices: [
         {
           id: "increase_obligation",
-          description: "Required obligations change by $1,200.",
+          enabled: true,
+          preview: { status: "available" },
         },
         {
           id: "pay_recurring",
-          description: "Adds a recurring expense of $300 for 6 months.",
+          enabled: true,
+          description: "Pay $300.00 per month for 6 months ($1,800.00 total).",
+          preview: {
+            status: "available",
+            recurringCashFlows: [{
+              direction: "expense",
+              monthlyCents: 30_000,
+              durationMonths: 6,
+              totalCents: 180_000,
+            }],
+          },
         },
         {
           id: "receive_income",
-          description: "Adds temporary income of $850 for 1 month.",
+          enabled: true,
+          description: "Receive $850.00 now.",
+          preview: {
+            status: "available",
+            immediateCashChangeCents: 85_000,
+          },
         },
       ],
     });
