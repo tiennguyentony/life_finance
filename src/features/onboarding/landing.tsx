@@ -49,8 +49,6 @@ export function Landing({ demoEnabled = false }: LandingProps) {
 
       <nav aria-label="Landing navigation" className="landing-rail">
         <Link aria-current="page" href="/">Play</Link>
-        <Link href="/game">Goals</Link>
-        <Link href="/game">Stats</Link>
       </nav>
 
       <section aria-label="Sprout performing a celebration loop" className="landing-character-stage">

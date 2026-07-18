@@ -7,7 +7,12 @@ export const CURRENT_OPENAPI_DOCUMENT = Object.freeze({
       "Same-origin browser API. Run credentials are stored only in an HttpOnly cookie.",
   },
   paths: {
-    "/api/health": { get: { summary: "Service health" } },
+    "/api/health": { get: { summary: "Process liveness" } },
+    "/api/demo": {
+      post: {
+        summary: "Create an in-memory demo run (development only)",
+      },
+    },
     "/api/session": {
       get: { summary: "Restore the active run session" },
       delete: { summary: "Clear the active run session" },
