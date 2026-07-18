@@ -6,10 +6,12 @@ import {
   OrbitControls,
   useCursor,
 } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { PerspectiveCamera } from "three";
 import type { Group, Mesh, MeshStandardMaterial } from "three";
 
+import { verticalFovForAspect } from "./camera-fov";
 import { type BoardPoint } from "./hop";
 import {
   BOARD_ISLANDS,
@@ -372,6 +374,28 @@ function Water() {
   );
 }
 
+function ResponsiveStrategyCamera() {
+  const { get, invalidate, size } = useThree();
+
+  useLayoutEffect(() => {
+    const { camera } = get();
+    if (!(camera instanceof PerspectiveCamera)) return;
+
+    const previousFov = camera.fov;
+    camera.fov = verticalFovForAspect(size.width / size.height);
+    camera.updateProjectionMatrix();
+    invalidate();
+
+    return () => {
+      camera.fov = previousFov;
+      camera.updateProjectionMatrix();
+      invalidate();
+    };
+  }, [get, invalidate, size.height, size.width]);
+
+  return null;
+}
+
 export default function BoardScene({
   currentIslandId,
   hop,
@@ -398,6 +422,8 @@ export default function BoardScene({
       // (invalidated by interaction/state) instead of compositing 60fps forever.
       frameloop={reducedMotion ? "demand" : "always"}
     >
+      {mode === "strategy" ? <ResponsiveStrategyCamera /> : null}
+
       {/* Wheel-zoom only: the view stays locked (no rotate/pan) so the board
           keeps its fixed 3/4 look, but you can pull back to see every corner
           building or lean in on a stop. Target matches the old lookAt point. */}

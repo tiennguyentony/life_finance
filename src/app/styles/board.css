@@ -702,6 +702,7 @@
   border-radius: var(--radius, 26px);
   background: rgb(255 253 246 / 97%);
   box-shadow: 10px 12px 0 var(--ink), 0 30px 90px rgb(23 35 28 / 28%);
+  color: var(--ink);
   pointer-events: auto;
   transform: translate(-50%, -50%);
 }
