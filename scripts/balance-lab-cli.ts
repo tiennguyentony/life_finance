@@ -36,7 +36,7 @@ function parseOptions(argv: readonly string[]): CliOptions {
         !["--size", "--config", "--output", "--event-catalog"].includes(key)) {
       throw new OfflineBalanceLabV1Error(
         "INVALID_RUN_SPEC",
-        "Usage: run-balance-lab.mjs --size quick|medium|large [--config file] [--output directory] [--event-catalog file]",
+        "Usage: run-balance-lab.mjs --size beginner|quick|medium|large [--config file] [--output directory] [--event-catalog file]",
       );
     }
     if (values.has(key)) {
@@ -45,8 +45,8 @@ function parseOptions(argv: readonly string[]): CliOptions {
     values.set(key, value);
   }
   const size = values.get("--size");
-  if (!(size === "quick" || size === "medium" || size === "large")) {
-    throw new OfflineBalanceLabV1Error("INVALID_RUN_SPEC", "size must be quick, medium, or large");
+  if (!(size === "beginner" || size === "quick" || size === "medium" || size === "large")) {
+    throw new OfflineBalanceLabV1Error("INVALID_RUN_SPEC", "size must be beginner, quick, medium, or large");
   }
   return Object.freeze({
     size,
@@ -88,7 +88,7 @@ function main(): void {
     ? PERSONAL_EVENT_TEMPLATES_V2
     : JSON.parse(readFileSync(options.eventCatalogPath, "utf8"));
   const externalEvidencePath = process.env.BALANCE_LAB_TAX_EVIDENCE_PATH;
-  const taxEvidence = options.size === "quick"
+  const taxEvidence = options.size === "quick" || options.size === "beginner"
     ? createPinnedQuickTaxEvidenceSourceV1(JSON.parse(readFileSync(
         join(root, "src", "lab", "fixtures", "quick-tax-evidence-v1.json"),
         "utf8",

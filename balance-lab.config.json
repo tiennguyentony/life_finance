@@ -2,6 +2,13 @@
   "version": "balance-lab-config-v1",
   "seedNamespace": "life-finance-balance-v1",
   "tiers": {
+    "beginner": {
+      "personaIds": ["healthy-v1", "low-cash-v1", "debt-burdened-v1"],
+      "matchedSeedCount": 200,
+      "horizonMonths": 12,
+      "difficulty": "guided",
+      "runtimeBudgetMs": 300000
+    },
     "quick": {
       "personaIds": ["healthy-v1"],
       "matchedSeedCount": 3,
