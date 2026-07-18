@@ -126,14 +126,36 @@ function formatMoneyCents(value: number): string {
   return money.format(value / 100);
 }
 
+function formatDurationMonths(durationMonths: number): string {
+  return `${durationMonths} ${durationMonths === 1 ? "month" : "months"}`;
+}
+
 function describePersonalEventEffect(
   effect: PersonalEventEffectV2,
   parameters: Readonly<Record<string, number>>,
 ): string {
   switch (effect.type) {
+    case "required_obligation_delta": {
+      const amount = resolveMagnitude(effect.magnitude, parameters);
+      return amount === null
+        ? ""
+        : `Required obligations change by ${formatMoneyCents(amount)}.`;
+    }
     case "temporary_expense": {
       const amount = resolveMagnitude(effect.magnitude, parameters);
       return amount === null ? "" : `Creates a temporary expense of ${formatMoneyCents(amount)}.`;
+    }
+    case "recurring_expense": {
+      const amount = resolveMagnitude(effect.magnitude, parameters);
+      return amount === null
+        ? ""
+        : `Adds a recurring expense of ${formatMoneyCents(amount)} for ${formatDurationMonths(effect.durationMonths)}.`;
+    }
+    case "temporary_income": {
+      const amount = resolveMagnitude(effect.magnitude, parameters);
+      return amount === null
+        ? ""
+        : `Adds temporary income of ${formatMoneyCents(amount)} for ${formatDurationMonths(effect.durationMonths)}.`;
     }
     case "cash_delta": {
       const amount = resolveMagnitude(effect.magnitude, parameters);
