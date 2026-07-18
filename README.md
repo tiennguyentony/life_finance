@@ -5,7 +5,11 @@ Life Finance is a deterministic personal-finance simulation presented as a 3D bo
 1. Choose a persona and complete a short profile.
 2. The backend reviews the profile and creates an authoritative run.
 3. The browser receives an HttpOnly run-session cookie.
-4. The player moves around `/board`; moves and event choices are submitted to the backend.
+4. On `/board`, the player chooses a financial focus, reviews engine-backed plans, selects one plan, and chooses **Live this month**.
+5. The board submits that one plan, advances exactly one month, and shows the authoritative before-and-after result.
+6. Any life event is resolved before the next planning turn.
+
+The canonical `/board` is strategy-first. It has no die mechanic, tile traversal, or automatic hopping. `/board/free` remains a direct-travel variant for development and review.
 
 The 3D board is the canonical gameplay UI. There is no parallel mock or prototype game path.
 
@@ -40,13 +44,13 @@ Without a database, normal onboarding intentionally fails at run creation. It ne
 
 ## Main routes
 
-- `/` — landing page
-- `/start` and `/profile` — onboarding
-- `/generating` — backend run creation
-- `/board` — canonical board game
-- `/board/free` — direct-travel board variant for development
-- `/api/demo` — development-only local demo creation
-- `/api/openapi.json` — current browser API description
+- `/`: landing page
+- `/start` and `/profile`: onboarding
+- `/generating`: backend run creation
+- `/board`: canonical strategy-first board
+- `/board/free`: direct-travel board variant for development
+- `/api/demo`: development-only local demo creation
+- `/api/openapi.json`: current browser API description
 
 ## Verification
 
