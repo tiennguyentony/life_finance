@@ -8,8 +8,7 @@ This audit describes the account-save/performance branch based on `f808c44`. It 
 | --- | --- | --- | --- |
 | Persona onboarding | Implemented with checksum review | Yes | Yes, typed persona flow |
 | Custom profile fields | Contract supports rich drafts | Review/create routes exist | Form collects four fields, but only age reaches authoritative state |
-| Guest save identity | HttpOnly capability cookie | Yes | No account required |
-| Optional account authentication | Supabase passwordless email | Yes | Claims a guest save for cross-device access |
+| Account authentication | Supabase email/password with demo auto-confirm | Yes | Required for persistent saves and cross-device access |
 | Persistent runs | PostgreSQL/Drizzle, one active save per account | Yes | Yes |
 | Instant local demo | In-memory repository/tax adapter | Dev-only `/api/demo` | Dev-only button |
 | Monthly finance/tax/market | Implemented deterministically | `process_month` | Yes |
@@ -25,8 +24,8 @@ This audit describes the account-save/performance branch based on `f808c44`. It 
 
 ## What the player can do today
 
-- Start and auto-save a persistent persona run without creating an account.
-- Optionally sign in by secure email link to claim the guest save and resume it across browsers.
+- Create or sign in to an email/password account and resume its active save across browsers.
+- Start and auto-save a persistent persona run owned by that account.
 - Start a development-only in-memory demo.
 - See the canonical 3D board and authoritative financial summary.
 - Choose one of five destinations and one frontend-authored plan.
@@ -47,6 +46,7 @@ Events are selected without Groq, OpenAI, or Ollama. Deterministic code generate
 
 - Authoritative balances are never held only in React or localStorage.
 - Persistent run access derives from verified Supabase user claims and same-origin write checks.
+- Email ownership is not verified in this hackathon configuration; auto-confirm is a deliberate demo tradeoff, not a production recommendation.
 - Capability cookies remain only for pre-login save claiming and development Instant Demo.
 - Creating a new account save archives the previous active save atomically.
 - Exact revisions and command IDs provide optimistic concurrency and idempotency.

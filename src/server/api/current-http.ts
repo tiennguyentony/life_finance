@@ -23,6 +23,7 @@ import type { OnboardingDraftV1 } from "@/core/onboarding-v1-contracts";
 import {
   RunRepositoryError,
   type CreatedRunV2,
+  type OwnedRunSaveV2,
 } from "@/server/db/run-repository-contracts";
 import { projectRunView } from "@/application/game/run-view";
 import { ZodError } from "zod";
@@ -321,26 +322,7 @@ type OwnedRunSaveRepository = Readonly<{
   activateOwnedRunV2(ownerUserId: string, runId: string): Promise<void>;
 }>;
 
-type CapabilityRunSaveRepository = Readonly<{
-  loadAuthorizedRunSaveV2(
-    runId: string,
-    accessSecret: string,
-  ): Promise<{
-    runId: string;
-    saveStatus: "active" | "archived";
-    runStatus: "active" | "terminal";
-    currentMonth: string;
-    revision: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }>;
-}>;
-
-function savedRunResponse(
-  save: Awaited<
-    ReturnType<CapabilityRunSaveRepository["loadAuthorizedRunSaveV2"]>
-  >,
-) {
+function savedRunResponse(save: OwnedRunSaveV2) {
   return {
     ...save,
     createdAt: save.createdAt.toISOString(),
@@ -363,25 +345,6 @@ export async function handleListAccountRuns(
       200,
       requestId,
     );
-  } catch (error) {
-    return failure(error, requestId);
-  }
-}
-
-export async function handleListCapabilityRuns(
-  request: Request,
-  repository: CapabilityRunSaveRepository,
-  requestIdFactory: RequestIdFactory = randomUUID,
-): Promise<Response> {
-  const requestId = requestIdFactory();
-  try {
-    const session = parseRunSessionCookie(request.headers.get("cookie"));
-    if (!session) return jsonResponse({ saves: [] }, 200, requestId);
-    const save = await repository.loadAuthorizedRunSaveV2(
-      session.runId,
-      session.accessSecret,
-    );
-    return jsonResponse({ saves: [savedRunResponse(save)] }, 200, requestId);
   } catch (error) {
     return failure(error, requestId);
   }

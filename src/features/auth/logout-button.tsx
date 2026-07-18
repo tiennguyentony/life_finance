@@ -21,7 +21,7 @@ export function LogoutButton() {
             createSupabaseBrowserClient().auth.signOut(),
             new LifeFinanceClient().deleteSession(),
           ]);
-          router.replace("/");
+          router.replace("/login");
           router.refresh();
         } finally {
           setBusy(false);
@@ -29,7 +29,7 @@ export function LogoutButton() {
       }}
       type="button"
     >
-      {busy ? "Exiting…" : "Exit"}
+      {busy ? "Signing out…" : "Sign out"}
     </button>
   );
 }
