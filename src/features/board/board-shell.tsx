@@ -9,7 +9,7 @@ import { LifeFinanceClient } from "@/lib/api-client/client";
 import type { BoardMode } from "./board-scene";
 import { boardViewFromRun } from "./board-model";
 import { BoardHud } from "./hud";
-import { standPointForIsland, HOME_ISLAND_ID } from "./islands";
+import { islandById, standPointForIsland, HOME_ISLAND_ID } from "./islands";
 import type { HopRequest } from "./sprout-3d";
 import { TRACK, destinationLandmarkId, standPointAt } from "./track";
 
@@ -199,6 +199,12 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
 
   return (
     <div className="board-stage">
+      <h1 className="sr-only">Life Finance board</h1>
+      {/* Announces the character's location to screen readers as it moves,
+          since the 3D canvas itself conveys that only visually. */}
+      <p aria-live="polite" className="sr-only" role="status">
+        Sprout is at {islandById(currentIslandId).name}
+      </p>
       <div className="board-canvas">
         <BoardScene
           currentIslandId={currentIslandId}

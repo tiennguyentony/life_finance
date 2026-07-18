@@ -536,11 +536,13 @@ export default function BoardScene({
 
   return (
     <Canvas
+      aria-label="Financial life game board, viewed from above"
       camera={{ position: [0, 15.5, 19], fov: 30, near: 0.5, far: 110 }}
       dpr={[1, 2]}
       // With reduced motion every useFrame is static, so render on demand
       // (invalidated by interaction/state) instead of compositing 60fps forever.
       frameloop={reducedMotion ? "demand" : "always"}
+      role="img"
     >
       {/* Wheel-zoom only: the view stays locked (no rotate/pan) so the board
           keeps its fixed 3/4 look, but you can pull back to see every corner
