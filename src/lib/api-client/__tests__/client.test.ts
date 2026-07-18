@@ -8,6 +8,25 @@ import { prepareOnboardingReviewV1 } from "@/core/onboarding-v1";
 import { ApiClientError, LifeFinanceClient } from "../client";
 
 describe("LifeFinanceClient", () => {
+  it("preserves the fetch implementation receiver required by browsers", async () => {
+    const run = projectRunView(currentRunState());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = function receiverSensitiveFetch(this: unknown) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(
+        Response.json({ session: { run, stateChecksum: "a".repeat(64) } }),
+      );
+    } as typeof fetch;
+    try {
+      const client = new LifeFinanceClient();
+      await expect(client.getSession()).resolves.toMatchObject({
+        session: { run: { runId: "run.current" } },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("clears the HttpOnly session through the same-origin endpoint", async () => {
     let request: { input: string; init?: RequestInit } | null = null;
     const client = new LifeFinanceClient(async (input, init) => {
