@@ -43,7 +43,7 @@ export function Landing({ demoEnabled = false }: LandingProps) {
         </div>
         <div className="landing-account-actions">
           {demoEnabled ? <DemoLaunchButton /> : null}
-          <Link className="landing-start" href="/start">Start</Link>
+          <Link className="landing-start" href="/login">Start</Link>
         </div>
       </header>
 
@@ -72,7 +72,7 @@ export function Landing({ demoEnabled = false }: LandingProps) {
         ))}
       </section>
 
-      <Link className="landing-play-button" href="/start">
+      <Link className="landing-play-button" href="/login">
         Play
       </Link>
 
