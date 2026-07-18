@@ -23,7 +23,7 @@ describe("strategy board styles", () => {
 
   it("uses a compact bottom sheet and disables planning motion on narrow or reduced-motion screens", () => {
     expect(boardStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.board-planning-panel\s*\{[\s\S]*?top:\s*auto;[\s\S]*?bottom:\s*0\.65rem;/);
-    expect(boardStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.board-planning-actions > button\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?bottom:\s*0;/);
+    expect(boardStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.board-planning-actions\s*\{[^}]*position:\s*sticky;[^}]*bottom:\s*0;[^}]*background:\s*rgb\(255 253 246\);/);
     expect(boardStyles).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.board-plan-card/);
     expect(boardStyles).toContain(".board-month-result-dialog");
   });
