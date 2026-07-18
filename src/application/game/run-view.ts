@@ -160,8 +160,8 @@ function describePersonalEventEffect(
     case "cash_delta": {
       const amount = resolveMagnitude(effect.magnitude, parameters);
       if (amount === null) return "";
-      const direction = effect.direction === "add" ? "increases" : "decreases";
-      return `Cash ${direction} by ${formatMoneyCents(amount)}.`;
+      const kind = effect.direction === "add" ? "income" : "expense";
+      return `Adds ${formatMoneyCents(amount)} of ${kind} in the next processed month.`;
     }
     case "annual_living_cost_delta": {
       const amount = resolveMagnitude(effect.magnitude, parameters);

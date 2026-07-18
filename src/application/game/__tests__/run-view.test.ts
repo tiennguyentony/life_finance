@@ -85,6 +85,63 @@ describe("projectRunView", () => {
     });
   });
 
+  it("projects a deterministic utility rebate as next-month income", () => {
+    const template = getPersonalEventTemplateV2("personal.utility_rebate");
+    const state = queueScheduledDeclarativePersonalEventV2(currentRunState(), {
+      proposal: {
+        eventId: "event.utility-rebate.1",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { rebate_cents: 42_500 },
+      },
+      template,
+      targetedWeakness: UNRELATED_HAZARD_TARGET,
+    });
+
+    expect(projectRunView(state).pendingInteraction).toMatchObject({
+      choices: [{
+        id: "claim_rebate",
+        description: "Adds $425 of income in the next processed month.",
+      }],
+    });
+  });
+
+  it("projects a cash subtraction as next-month expense", () => {
+    const base = currentRunState();
+    const template: PersonalEventTemplateV2 = {
+      ...getPersonalEventTemplateV2("personal.utility_rebate"),
+      id: "personal.projection-cash-subtraction",
+      responses: [{
+        id: "pay_cost",
+        label: "Pay the cost",
+        requiresMitigationIds: [],
+        effects: [{
+          type: "cash_delta",
+          direction: "subtract",
+          magnitude: { source: "fixed", value: 85_000 },
+        }],
+      }],
+    };
+    const state = queueScheduledDeclarativePersonalEventV2(base, {
+      proposal: {
+        eventId: "event.cash-subtraction.1",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { rebate_cents: 42_500 },
+      },
+      template,
+      targetedWeakness: UNRELATED_HAZARD_TARGET,
+    }, { personalEventCatalog: [template] });
+    vi.mocked(getPersonalEventTemplateV2).mockImplementationOnce(() => template);
+
+    expect(projectRunView(state).pendingInteraction).toMatchObject({
+      choices: [{
+        id: "pay_cost",
+        description: "Adds $850 of expense in the next processed month.",
+      }],
+    });
+  });
+
   it("projects pending career programs without exposing engine state", () => {
     expect(projectRunView(currentRunState()).career).toEqual({
       pendingProgramIds: [],
