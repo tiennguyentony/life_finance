@@ -68,7 +68,7 @@ Provider keys are server-only. AI audit encryption/admin variables are needed on
 - Invalid/missing pepper: persistent session-secret hashing fails.
 - Unavailable tax service: a month needing fresh evidence fails without committing a new revision.
 - No AI provider: typed onboarding and board work; optional parse is unavailable.
-- No Supabase session in production: protected pages redirect to `/login`.
+- No Supabase account session: guest onboarding and play use the database-backed capability cookie; account-owned multi-device restore remains unavailable until sign-in.
 - A valid account with no active save: onboarding starts a new save.
 - A pre-auth capability save is claimed at first sign-in; a save owned by another account cannot be claimed.
 - Demo cookie after server restart: the in-memory run is gone; start another demo.

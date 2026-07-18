@@ -4,7 +4,7 @@ Life Finance is a deterministic US personal-finance simulation presented as a 3D
 
 1. Choose a persona and enter a short profile.
 2. The server reviews the persona-derived draft and creates an authoritative run.
-3. Supabase passwordless email links identify the player; the server owns one active auto-save per account.
+3. A high-entropy HttpOnly capability cookie identifies a guest save; optional Supabase sign-in claims it for cross-device account access.
 4. On `/board`, choose a destination and one financial plan.
 5. Submit the plan and advance exactly one month.
 6. Review authoritative cash, debt, net-worth, and financial-independence changes.
@@ -23,7 +23,7 @@ pnpm dev
 
 Open `http://localhost:3000` and choose **Instant demo**. The demo uses the real HTTP, cookie, application, and deterministic-engine boundaries, but keeps state in server memory and uses a simplified deterministic tax adapter. A browser refresh preserves the run; restarting Next.js clears it. `/api/demo` returns 404 in production.
 
-For persistent onboarding, copy `.env.example` to `.env.local` and configure Supabase Auth, PostgreSQL, the run-secret pepper, and the tax service. Then run:
+For persistent onboarding, copy `.env.example` to `.env.local` and configure PostgreSQL, the run-secret pepper, the tax service, and Supabase public values used by optional account sync. Then run:
 
 ```bash
 pnpm db:migrate

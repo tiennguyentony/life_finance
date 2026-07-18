@@ -3,8 +3,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { publicSupabaseConfig } from "@/lib/supabase/config";
 
-const PROTECTED_PAGE = /^\/(start|profile|generating|board|saves)(\/|$)/;
-
 export async function proxy(request: NextRequest) {
   // Local Instant Demo is deliberately capability-based and in-memory. It must
   // remain usable without Supabase credentials so contributors can test the
@@ -26,13 +24,7 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  const { data } = await supabase.auth.getClaims();
-  if (!data?.claims?.sub && PROTECTED_PAGE.test(request.nextUrl.pathname)) {
-    const login = request.nextUrl.clone();
-    login.pathname = "/login";
-    login.search = "";
-    return NextResponse.redirect(login);
-  }
+  await supabase.auth.getClaims();
   return response;
 }
 

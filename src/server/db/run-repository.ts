@@ -619,6 +619,33 @@ export class RunRepository {
     return Object.freeze(rows.map((row) => Object.freeze(row)));
   }
 
+  async loadAuthorizedRunSaveV2(
+    runId: string,
+    accessSecret: string,
+  ): Promise<OwnedRunSaveV2> {
+    await this.loadAuthorizedRunV2(runId, accessSecret);
+    const [row] = await this.#db
+      .select({
+        runId: gameRuns.id,
+        saveStatus: gameRuns.saveStatus,
+        runStatus: gameRuns.status,
+        currentMonth: gameRuns.currentMonth,
+        revision: gameRuns.currentRevision,
+        createdAt: gameRuns.createdAt,
+        updatedAt: gameRuns.updatedAt,
+      })
+      .from(gameRuns)
+      .where(eq(gameRuns.id, runId))
+      .limit(1);
+    if (!row) {
+      throw new RunRepositoryError(
+        "NOT_FOUND_OR_UNAUTHORIZED",
+        "save was not found or the capability is invalid",
+      );
+    }
+    return Object.freeze(row);
+  }
+
   async activateOwnedRunV2(ownerUserId: string, runId: string): Promise<void> {
     assertUuid(ownerUserId);
     assertUuid(runId);
