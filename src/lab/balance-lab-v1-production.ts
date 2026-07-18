@@ -375,7 +375,10 @@ export function createBalanceLabProductionOwnersV1(
             },
           ],
         },
-        { personalEventCatalog },
+        {
+          personalEventCatalog,
+          activePersonalEventCatalog: personalEventCatalog,
+        },
       );
       const record = advanced.records[0];
       const evidence = record?.worldRandomEvidence;
