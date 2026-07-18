@@ -191,8 +191,9 @@ export class InMemoryRunRepository implements V2Repository {
   async loadCheckpointEvidenceV2(
     runId: string,
     accessSecret: string,
-    _fromRevision: number,
+    fromRevision: number,
   ): Promise<never> {
+    void fromRevision;
     this.#authorize(runId, accessSecret);
     throw new Error("checkpoint evidence is unavailable for local demo runs");
   }
