@@ -3,8 +3,13 @@ import { describe, expect, it } from "vitest";
 import { verticalFovForAspect } from "../camera-fov";
 
 describe("strategy board camera FOV", () => {
-  it("preserves the 16:9 camera's horizontal field of view", () => {
-    expect(verticalFovForAspect(16 / 9)).toBeCloseTo(30, 10);
+  it("keeps the baseline vertical FOV at 16:9 and wider", () => {
+    expect(verticalFovForAspect(16 / 9)).toBe(30);
+    expect(verticalFovForAspect(21 / 9)).toBe(30);
+    expect(verticalFovForAspect(32 / 9)).toBe(30);
+  });
+
+  it("preserves the 16:9 camera's horizontal field of view on narrow screens", () => {
     expect(verticalFovForAspect(415 / 800)).toBeCloseTo(85.120838458, 9);
 
     const portraitVerticalFov = verticalFovForAspect(415 / 800);
