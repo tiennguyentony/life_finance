@@ -4,7 +4,7 @@ Life Finance is a deterministic US personal-finance simulation presented as a 3D
 
 1. Choose a persona and enter a short profile.
 2. The server reviews the persona-derived draft and creates an authoritative run.
-3. A high-entropy HttpOnly capability cookie identifies a guest save; optional Supabase sign-in claims it for cross-device account access.
+3. A Supabase email/password account identifies the player; the server owns one active auto-save per account and supports cross-device restore.
 4. On `/board`, choose a destination and one financial plan.
 5. Submit the plan and advance exactly one month.
 6. Review authoritative cash, debt, net-worth, and financial-independence changes.
@@ -23,7 +23,7 @@ pnpm dev
 
 Open `http://localhost:3000` and choose **Instant demo**. The demo uses the real HTTP, cookie, application, and deterministic-engine boundaries, but keeps state in server memory and uses a simplified deterministic tax adapter. A browser refresh preserves the run; restarting Next.js clears it. `/api/demo` returns 404 in production.
 
-For persistent onboarding, copy `.env.example` to `.env.local` and configure PostgreSQL, the run-secret pepper, the tax service, and Supabase public values used by optional account sync. Then run:
+For persistent onboarding, copy `.env.example` to `.env.local` and configure Supabase Auth, PostgreSQL, the run-secret pepper, and the tax service. This hackathon build uses email/password signup with email confirmation disabled, so a new account receives a session immediately and no confirmation message is sent. Then run:
 
 ```bash
 pnpm db:migrate
@@ -31,6 +31,8 @@ pnpm dev
 ```
 
 The required variables are `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `RUN_SECRET_PEPPER_BASE64URL`, `TAX_SERVICE_URL`, and `TAX_SERVICE_TOKEN`. AI credentials are optional for the current typed onboarding and board loop. A Vercel access token alone is not runtime configuration and is not enough to run the persistent path.
+
+The auto-confirm setting is intentionally demo-only. It provides real account ownership and cross-device saves, but does not verify that an email address belongs to the registrant and this project does not offer a dependable password-recovery flow. Enable email confirmation and production SMTP before treating the app as production authentication.
 
 See [`docs/operations/local-development.md`](docs/operations/local-development.md) for exact setup and shared-environment safety notes.
 

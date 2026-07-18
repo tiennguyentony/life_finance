@@ -16,12 +16,12 @@ describe("Landing", () => {
     expect(markup).toContain('data-action="lucky-finale"');
   });
 
-  it("starts guest onboarding without exposing a direct board shortcut", () => {
+  it("requires account sign-in before onboarding", () => {
     const markup = renderToStaticMarkup(<Landing />);
 
     expect(markup).not.toContain("Log in");
-    expect(markup).toContain('href="/start"');
-    expect(markup).not.toContain('href="/login"');
+    expect(markup).toContain('href="/login"');
+    expect(markup).not.toContain('href="/start"');
     expect(markup).not.toContain('href="/board"');
   });
 

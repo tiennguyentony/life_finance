@@ -47,7 +47,7 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 - Monthly response measured about 1.63 KB versus the audited old average of about 5.25 KB.
 - Production build passed with syntactically valid public Supabase build values.
 - Local Supabase migrations `0000` through `0008` applied successfully.
-- Local passwordless email produced a secure link and verified to a Supabase user/session through `/auth/callback`.
+- Supabase email/password signup is auto-confirmed for the hackathon demo, creates a real account session immediately, and restores the account-owned save without sending email.
 - PostgreSQL repository tests include account ownership, archive, resume, and cross-account claim rejection.
 - The latest locally generated account run was loaded and projected successfully through the read-only gateway.
 - A persisted start-to-retirement profile processed 480 months plus 11 event choices in 53.1 seconds. Command latency was 111 ms at p50, 179 ms at p95, and 226 ms maximum on the local machine.
@@ -69,6 +69,6 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 1. Finish the full verification gate and database integration suite.
 2. Apply migrations `0007` and `0008` to a reviewed non-production target first.
 3. Configure Vercel runtime variables; a Vercel token by itself is insufficient.
-4. Configure Supabase Site URL and redirect allow-list for `/auth/callback`; custom templates are optional when the provider's default confirmation links are retained.
-5. Test two browsers with the same email, new-save archival, and a different-account claim rejection.
+4. Enable Supabase email/password signup and disable email confirmation for the hackathon demo; verify that signup returns a session without sending mail.
+5. Test two browsers with the same account credentials, new-save archival, and a different-account claim rejection.
 6. Only after acceptance, merge/push the individual commits to `main` and deploy.

@@ -33,9 +33,9 @@ This path still exercises the real same-origin API, HttpOnly cookie, use cases, 
 
 3. Install packages: `pnpm install --frozen-lockfile`.
 4. Run `pnpm db:migrate` against a database you are authorized to modify.
-5. In Supabase Auth, allow `${APP_ORIGIN}/auth/callback` redirects. The checked-in local confirmation and magic-link template is `supabase/templates/email-link.html` and uses `{{ .ConfirmationURL }}`.
+5. Enable Supabase email/password signup and disable **Confirm email**. The checked-in local Supabase configuration already sets `auth.email.enable_confirmations = false`.
 6. Configure and start the tax service using `services/tax/README.md`.
-7. Run `pnpm dev`, sign in by email code, and use the normal **Start** onboarding path.
+7. Run `pnpm dev`, create an account with an email and password of at least eight characters, and use the normal **Start** onboarding path. No confirmation email is sent.
 
 For a disposable full local Supabase stack:
 
@@ -68,11 +68,13 @@ Provider keys are server-only. AI audit encryption/admin variables are needed on
 - Invalid/missing pepper: persistent session-secret hashing fails.
 - Unavailable tax service: a month needing fresh evidence fails without committing a new revision.
 - No AI provider: typed onboarding and board work; optional parse is unavailable.
-- No Supabase account session: guest onboarding and play use the database-backed capability cookie; account-owned multi-device restore remains unavailable until sign-in.
+- No Supabase account session in production: protected pages redirect to `/login`.
 - A valid account with no active save: onboarding starts a new save.
 - A pre-auth capability save is claimed at first sign-in; a save owned by another account cannot be claimed.
 - Demo cookie after server restart: the in-memory run is gone; start another demo.
 - Stale `.next` route types after switching branches/architectures: run `pnpm exec next typegen`, then `pnpm typecheck`.
+
+This authentication mode is suitable for the hackathon demo, not a public production service: email ownership is not verified and the app does not expose a reliable password-recovery flow. Production deployment requires verified email (or another trusted provider), custom SMTP, abuse controls, and password recovery.
 
 ## Verification matrix
 

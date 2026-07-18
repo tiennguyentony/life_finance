@@ -7,19 +7,11 @@ import { getAuthenticatedUser } from "@/server/auth/supabase-user";
 export const metadata: Metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
+export default async function LoginPage() {
   if (await getAuthenticatedUser()) redirect("/start");
-  const error = (await searchParams).error;
-  const initialMessage = error
-    ? "That sign-in link is invalid or expired. Request a new link and try again."
-    : undefined;
   return (
     <div className="screen auth-screen">
-      <LoginForm initialMessage={initialMessage} />
+      <LoginForm />
     </div>
   );
 }
