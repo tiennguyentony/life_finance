@@ -4,7 +4,7 @@ import { getAiRoleClient } from "../ai/runtime";
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { RunRepository } from "../db/run-repository";
 import { getDatabaseConnection } from "../db/runtime";
-import { createTaxClientFromEnvironment } from "../tax/client";
+import { createTaxCalculatorFromEnvironment } from "../tax/runtime";
 import { getLocalDemoRuntime } from "../demo/runtime";
 import { OnboardingService } from "./onboarding-service";
 import { RunService } from "./run-service";
@@ -32,7 +32,7 @@ export function getRunService(): RunService {
   if (!runService) {
     runService = new RunService(
       getRunRepository(),
-      createTaxClientFromEnvironment(),
+      createTaxCalculatorFromEnvironment(),
     );
   }
   return runService;

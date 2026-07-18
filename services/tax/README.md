@@ -50,6 +50,14 @@ multi-service configuration, deploying `services/tax` as a separate Vercel
 project is a supported operational alternative, but its URL must then be set on
 the frontend explicitly.
 
+If a serverless host cannot start the scientific Python bundle, the frontend
+also supports the explicit `TAX_CALCULATOR_MODE=deterministic` deployment mode.
+That mode uses the same simplified educational calculator as the local demo; it
+does not claim PolicyEngine accuracy and should be replaced by this service on a
+container host before production tax accuracy is evaluated. There is no silent
+fallback: an unset mode continues to require the pinned service and fails
+closed when its configuration is missing.
+
 The endpoint is computationally expensive on a cold start. Keep the service warm
 during judging and check `/healthz` before a demo. Do not log request bodies;
 household data can be sensitive.
