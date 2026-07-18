@@ -4,7 +4,7 @@ Life Finance is a deterministic US personal-finance simulation presented as a 3D
 
 1. Choose a persona and enter a short profile.
 2. The server reviews the persona-derived draft and creates an authoritative run.
-3. Supabase email OTP identifies the player; the server owns one active auto-save per account.
+3. Supabase passwordless email links identify the player; the server owns one active auto-save per account.
 4. On `/board`, choose a destination and one financial plan.
 5. Submit the plan and advance exactly one month.
 6. Review authoritative cash, debt, net-worth, and financial-independence changes.

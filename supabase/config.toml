@@ -234,12 +234,12 @@ otp_length = 6
 otp_expiry = 3600
 
 [auth.email.template.confirmation]
-subject = "Your Life Finance sign-in code"
-content_path = "./supabase/templates/email-code.html"
+subject = "Sign in to Life Finance"
+content_path = "./supabase/templates/email-link.html"
 
 [auth.email.template.magic_link]
-subject = "Your Life Finance sign-in code"
-content_path = "./supabase/templates/email-code.html"
+subject = "Sign in to Life Finance"
+content_path = "./supabase/templates/email-link.html"
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]

@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-
-type LoginStep = "email" | "code";
 
 function publicAuthMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
@@ -14,15 +11,13 @@ function publicAuthMessage(error: unknown): string {
   return "Authentication could not be completed. Please try again.";
 }
 
-export function LoginForm() {
-  const router = useRouter();
-  const [step, setStep] = useState<LoginStep>("email");
+export function LoginForm({ initialMessage }: { initialMessage?: string }) {
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [message, setMessage] = useState<string | null>(initialMessage ?? null);
 
-  async function requestCode(event: FormEvent<HTMLFormElement>) {
+  async function requestLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
     setBusy(true);
@@ -30,39 +25,14 @@ export function LoginForm() {
     try {
       const { error } = await createSupabaseBrowserClient().auth.signInWithOtp({
         email: email.trim(),
-        options: { shouldCreateUser: true },
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/auth/complete`,
+        },
       });
       if (error) throw error;
-      setStep("code");
-      setMessage("Check your email for a six-digit sign-in code.");
-    } catch (error) {
-      setMessage(publicAuthMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verifyCode(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const { error } = await createSupabaseBrowserClient().auth.verifyOtp({
-        email: email.trim(),
-        token: code.trim(),
-        type: "email",
-      });
-      if (error) throw error;
-      const claimResponse = await fetch("/api/session/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!claimResponse.ok) {
-        throw new Error("Signed in, but the existing save could not be attached to this account.");
-      }
-      router.replace("/start");
-      router.refresh();
+      setSent(true);
+      setMessage("Check your email and open the secure sign-in link.");
     } catch (error) {
       setMessage(publicAuthMessage(error));
     } finally {
@@ -78,8 +48,8 @@ export function LoginForm() {
         Your game auto-saves after every decision. Use the same email to
         continue on another browser or device.
       </p>
-      {step === "email" ? (
-        <form className="auth-form" onSubmit={requestCode}>
+      {!sent ? (
+        <form className="auth-form" onSubmit={requestLink}>
           <label htmlFor="login-email">Email address</label>
           <input
             autoComplete="email"
@@ -90,39 +60,27 @@ export function LoginForm() {
             value={email}
           />
           <button className="button button-primary" disabled={busy} type="submit">
-            {busy ? "Sending…" : "Send sign-in code"}
+            {busy ? "Sending…" : "Send sign-in link"}
           </button>
         </form>
       ) : (
-        <form className="auth-form" onSubmit={verifyCode}>
-          <label htmlFor="login-code">Six-digit code</label>
-          <input
-            autoComplete="one-time-code"
-            id="login-code"
-            inputMode="numeric"
-            maxLength={6}
-            minLength={6}
-            onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
-            pattern="[0-9]{6}"
-            required
-            value={code}
-          />
-          <button className="button button-primary" disabled={busy} type="submit">
-            {busy ? "Checking…" : "Continue"}
-          </button>
+        <div className="auth-form">
+          <p>
+            We sent a secure link to <strong>{email.trim()}</strong>. Open it in
+            this browser to finish signing in.
+          </p>
           <button
             className="button button-secondary"
             disabled={busy}
             onClick={() => {
-              setCode("");
               setMessage(null);
-              setStep("email");
+              setSent(false);
             }}
             type="button"
           >
-            Use another email
+            Use another email or resend
           </button>
-        </form>
+        </div>
       )}
       {message ? <p className="auth-message" role="status">{message}</p> : null}
     </section>

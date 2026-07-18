@@ -8,7 +8,7 @@ This audit describes the account-save/performance branch based on `f808c44`. It 
 | --- | --- | --- | --- |
 | Persona onboarding | Implemented with checksum review | Yes | Yes, typed persona flow |
 | Custom profile fields | Contract supports rich drafts | Review/create routes exist | Form collects four fields, but only age reaches authoritative state |
-| Account authentication | Supabase email OTP | Yes | Six-digit code login |
+| Account authentication | Supabase passwordless email | Yes | Secure email-link login |
 | Persistent runs | PostgreSQL/Drizzle, one active save per account | Yes | Yes |
 | Instant local demo | In-memory repository/tax adapter | Dev-only `/api/demo` | Dev-only button |
 | Monthly finance/tax/market | Implemented deterministically | `process_month` | Yes |
@@ -24,7 +24,7 @@ This audit describes the account-save/performance branch based on `f808c44`. It 
 
 ## What the player can do today
 
-- Sign in by email OTP and resume the account’s active save across browsers.
+- Sign in by secure email link and resume the account’s active save across browsers.
 - Start a persistent persona run or a development-only in-memory demo.
 - See the canonical 3D board and authoritative financial summary.
 - Choose one of five destinations and one frontend-authored plan.
