@@ -1,29 +1,4 @@
 {
-  "services": {
-    "frontend": {
-      "root": ".",
-      "framework": "nextjs",
-      "buildCommand": "node scripts/vercel-build.mjs"
-    },
-    "tax": {
-      "root": "services/tax",
-      "entrypoint": "api/index.py"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/tax(/.*)?",
-      "destination": {
-        "type": "service",
-        "service": "tax"
-      }
-    },
-    {
-      "source": "/(.*)",
-      "destination": {
-        "type": "service",
-        "service": "frontend"
-      }
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/vercel-build.mjs"
 }
