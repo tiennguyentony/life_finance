@@ -7,6 +7,9 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 function publicAuthMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
+    if (error.message.toLowerCase().includes("invalid login credentials")) {
+      return "That email and password do not match. Enter the exact password used when the account was created.";
+    }
     return error.message.slice(0, 240);
   }
   return "Authentication could not be completed. Please try again.";
@@ -19,6 +22,8 @@ export function LoginForm() {
   const [mode, setMode] = useState<AuthMode>("sign_up");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -27,6 +32,9 @@ export function LoginForm() {
     setBusy(true);
     setMessage(null);
     try {
+      if (mode === "sign_up" && password !== passwordConfirmation) {
+        throw new Error("The two passwords do not match.");
+      }
       const supabase = createSupabaseBrowserClient();
       const credentials = { email: email.trim(), password };
       const { data, error } =
@@ -87,9 +95,31 @@ export function LoginForm() {
           minLength={8}
           onChange={(event) => setPassword(event.target.value)}
           required
-          type="password"
+          type={showPassword ? "text" : "password"}
           value={password}
         />
+        {mode === "sign_up" ? (
+          <>
+            <label htmlFor="login-password-confirmation">Confirm password</label>
+            <input
+              autoComplete="new-password"
+              id="login-password-confirmation"
+              minLength={8}
+              onChange={(event) => setPasswordConfirmation(event.target.value)}
+              required
+              type={showPassword ? "text" : "password"}
+              value={passwordConfirmation}
+            />
+          </>
+        ) : null}
+        <button
+          className="button button-secondary"
+          disabled={busy}
+          onClick={() => setShowPassword((current) => !current)}
+          type="button"
+        >
+          {showPassword ? "Hide password" : "Show password"}
+        </button>
         <button
           className="button button-primary"
           disabled={busy}
@@ -110,6 +140,9 @@ export function LoginForm() {
             setMode((current) =>
               current === "sign_up" ? "sign_in" : "sign_up",
             );
+            setPassword("");
+            setPasswordConfirmation("");
+            setShowPassword(false);
             setMessage(null);
           }}
           type="button"
