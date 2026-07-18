@@ -41,7 +41,7 @@ function response(run: RunViewWire): CommandResponseWire {
   return {
     run,
     stateChecksum: "a".repeat(64),
-    result: { idempotentReplay: false, monthlyRecord: null },
+      result: { idempotentReplay: false },
   };
 }
 
@@ -109,6 +109,7 @@ describe("commitBoardTurn", () => {
     expect(calls).toEqual([{
       id: "turn.month",
       expectedRevision: opening.revision,
+      effectiveMonth: opening.currentMonth,
       type: "process_month",
       payload: {},
     }]);

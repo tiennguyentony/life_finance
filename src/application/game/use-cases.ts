@@ -51,16 +51,17 @@ export async function submitCommand(
     Readonly<{
       result: Readonly<{
         idempotentReplay: boolean;
-        monthlyRecord: CommandV2Response["monthlyRecord"];
       }>;
     }>
 > {
   const intent = commandIntentSchema.parse(input);
-  const current = await service.getRun(runId, accessSecret);
+  const current = intent.effectiveMonth
+    ? null
+    : await service.getRun(runId, accessSecret);
   const command = gameCommandV2PublicSchema.parse({
     ...intent,
     schemaVersion: 2,
-    effectiveMonth: current.state.currentMonth,
+    effectiveMonth: intent.effectiveMonth ?? current?.state.currentMonth,
   });
   const applied = await service.submitCommand(runId, accessSecret, command);
   return Object.freeze({
@@ -68,7 +69,6 @@ export async function submitCommand(
     stateChecksum: applied.stateChecksum,
     result: Object.freeze({
       idempotentReplay: applied.idempotentReplay,
-      monthlyRecord: applied.monthlyRecord,
     }),
   });
 }
