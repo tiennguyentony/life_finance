@@ -76,8 +76,13 @@ describe("fair v2 personal-event scheduling", () => {
       "personal.lifestyle_upgrade",
       "personal.utility_rebate",
     ]));
+    expect(new Set(result.eligibleTemplateIds).size).toBe(result.eligibleTemplateIds.length);
+    expect(result.eligibleTemplateIds).not.toContain("personal.subscription_archaeology");
     expect(result.nextRandom).not.toEqual(opening.random);
-    if (result.event) expect(result.event.template.schemaVersion).toBe(2);
+    if (result.event) {
+      expect(result.event.template.schemaVersion).toBe(2);
+      expect(result.event.template.version).toBe(2);
+    }
 
     expect(schedulePersonalEventV2(opening, ALWAYS)).toEqual(
       schedulePersonalEventV2(opening, ALWAYS),
