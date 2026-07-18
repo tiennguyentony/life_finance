@@ -12,8 +12,10 @@ describe("LoginForm", () => {
     const markup = renderToStaticMarkup(<LoginForm />);
 
     expect(markup).toContain('type="email"');
-    expect(markup).toContain('type="password"');
+    expect(markup.match(/type="password"/g)).toHaveLength(2);
     expect(markup).toContain('minLength="8"');
+    expect(markup).toContain("Confirm password");
+    expect(markup).toContain("Show password");
     expect(markup).toContain("Create account");
     expect(markup).toContain("Already have an account? Sign in");
     expect(markup).not.toContain("Google");
