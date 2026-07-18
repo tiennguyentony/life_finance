@@ -43,14 +43,14 @@ export function MonthResultDialog({ busy, onContinue, result }: MonthResultDialo
       aria-labelledby="board-month-result-title"
       aria-modal="true"
       className="board-month-result-dialog"
+      onCancel={(event) => event.preventDefault()}
       ref={dialogRef}
       role="dialog"
     >
       <section>
         <header>
-          <p>{formatMonth(result.toMonth)}</p>
           <h2 id="board-month-result-title">
-            {result.hasPendingEvent ? "Review life decision" : "Month complete"}
+            {formatMonth(result.toMonth)}: {result.hasPendingEvent ? "Review life decision" : "Month complete"}
           </h2>
           <p>Plan: {result.planLabel}</p>
         </header>
