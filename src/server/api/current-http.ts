@@ -321,6 +321,33 @@ type OwnedRunSaveRepository = Readonly<{
   activateOwnedRunV2(ownerUserId: string, runId: string): Promise<void>;
 }>;
 
+type CapabilityRunSaveRepository = Readonly<{
+  loadAuthorizedRunSaveV2(
+    runId: string,
+    accessSecret: string,
+  ): Promise<{
+    runId: string;
+    saveStatus: "active" | "archived";
+    runStatus: "active" | "terminal";
+    currentMonth: string;
+    revision: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+}>;
+
+function savedRunResponse(
+  save: Awaited<
+    ReturnType<CapabilityRunSaveRepository["loadAuthorizedRunSaveV2"]>
+  >,
+) {
+  return {
+    ...save,
+    createdAt: save.createdAt.toISOString(),
+    updatedAt: save.updatedAt.toISOString(),
+  };
+}
+
 export async function handleListAccountRuns(
   user: AuthenticatedUser,
   repository: Pick<OwnedRunSaveRepository, "listOwnedRunsV2">,
@@ -331,15 +358,30 @@ export async function handleListAccountRuns(
     const saves = await repository.listOwnedRunsV2(user.userId);
     return jsonResponse(
       {
-        saves: saves.map((save) => ({
-          ...save,
-          createdAt: save.createdAt.toISOString(),
-          updatedAt: save.updatedAt.toISOString(),
-        })),
+        saves: saves.map(savedRunResponse),
       },
       200,
       requestId,
     );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleListCapabilityRuns(
+  request: Request,
+  repository: CapabilityRunSaveRepository,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    const session = parseRunSessionCookie(request.headers.get("cookie"));
+    if (!session) return jsonResponse({ saves: [] }, 200, requestId);
+    const save = await repository.loadAuthorizedRunSaveV2(
+      session.runId,
+      session.accessSecret,
+    );
+    return jsonResponse({ saves: [savedRunResponse(save)] }, 200, requestId);
   } catch (error) {
     return failure(error, requestId);
   }

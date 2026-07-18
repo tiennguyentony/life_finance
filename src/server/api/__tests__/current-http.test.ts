@@ -15,6 +15,7 @@ import {
   handleGetSession,
   handleGetRun,
   handleListAccountRuns,
+  handleListCapabilityRuns,
   handleParseOnboarding,
   handleReviewOnboarding,
   handleSubmitCommand,
@@ -57,6 +58,34 @@ describe("current frontend HTTP API", () => {
         createdAt: "2026-07-18T20:00:00.000Z",
         updatedAt: "2026-07-18T21:00:00.000Z",
       }],
+    });
+  });
+
+  it("lists the single cookie-capability save without an account", async () => {
+    const loadAuthorizedRunSaveV2 = vi.fn(async () => ({
+      runId: SESSION.runId,
+      saveStatus: "active" as const,
+      runStatus: "active" as const,
+      currentMonth: "2027-03",
+      revision: 10,
+      createdAt: new Date("2026-07-18T20:00:00.000Z"),
+      updatedAt: new Date("2026-07-18T21:00:00.000Z"),
+    }));
+    const response = await handleListCapabilityRuns(
+      new Request("https://game.test/api/runs", {
+        headers: { Cookie: COOKIE },
+      }),
+      { loadAuthorizedRunSaveV2 },
+      () => "request.capability-saves",
+    );
+
+    expect(response.status).toBe(200);
+    expect(loadAuthorizedRunSaveV2).toHaveBeenCalledWith(
+      SESSION.runId,
+      SESSION.accessSecret,
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      saves: [{ runId: SESSION.runId, revision: 10 }],
     });
   });
 
