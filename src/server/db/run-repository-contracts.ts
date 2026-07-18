@@ -31,6 +31,16 @@ export type CreatedRunV2 = Readonly<{
   stateChecksum: string;
 }>;
 
+export type OwnedRunSaveV2 = Readonly<{
+  runId: string;
+  saveStatus: "active" | "archived";
+  runStatus: "active" | "terminal";
+  currentMonth: string;
+  revision: number;
+  createdAt: Date;
+  updatedAt: Date;
+}>;
+
 export type AppliedCommand = Readonly<{
   state: GameState;
   stateChecksum: string;

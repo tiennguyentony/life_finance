@@ -9,10 +9,12 @@ import {
   handleCreateDemoRun,
   handleCreateRun,
   handleClaimAccountSession,
+  handleActivateAccountRun,
   handleDeleteSession,
   handleGetAccountSession,
   handleGetSession,
   handleGetRun,
+  handleListAccountRuns,
   handleParseOnboarding,
   handleReviewOnboarding,
   handleSubmitCommand,
@@ -27,6 +29,54 @@ const COOKIE = serializeRunSessionCookie(SESSION, { secure: false }).split(
 )[0]!;
 
 describe("current frontend HTTP API", () => {
+  it("lists account saves without exposing persisted state", async () => {
+    const response = await handleListAccountRuns(
+      { userId: SESSION.runId },
+      {
+        listOwnedRunsV2: async () => [{
+          runId: SESSION.runId,
+          saveStatus: "active",
+          runStatus: "active",
+          currentMonth: "2027-03",
+          revision: 10,
+          createdAt: new Date("2026-07-18T20:00:00.000Z"),
+          updatedAt: new Date("2026-07-18T21:00:00.000Z"),
+        }],
+      },
+      () => "request.saves",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      saves: [{
+        runId: SESSION.runId,
+        saveStatus: "active",
+        runStatus: "active",
+        currentMonth: "2027-03",
+        revision: 10,
+        createdAt: "2026-07-18T20:00:00.000Z",
+        updatedAt: "2026-07-18T21:00:00.000Z",
+      }],
+    });
+  });
+
+  it("activates only through a same-origin account request", async () => {
+    const activateOwnedRunV2 = vi.fn(async () => undefined);
+    const response = await handleActivateAccountRun(
+      new Request(`https://game.test/api/runs/${SESSION.runId}/activate`, {
+        method: "POST",
+        headers: { Origin: "https://game.test" },
+      }),
+      { userId: SESSION.runId },
+      SESSION.runId,
+      { activateOwnedRunV2 },
+      () => "request.activate",
+    );
+
+    expect(response.status).toBe(200);
+    expect(activateOwnedRunV2).toHaveBeenCalledWith(SESSION.runId, SESSION.runId);
+  });
+
   it("creates a development demo and keeps its secret in the existing cookie", async () => {
     const state = currentRunState();
     const createRun = vi.fn(async () => ({

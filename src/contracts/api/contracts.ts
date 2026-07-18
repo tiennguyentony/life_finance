@@ -180,9 +180,31 @@ export const sessionResponseSchema = z
   })
   .strict();
 
+export const savedRunSchema = z
+  .object({
+    runId: z.string().uuid(),
+    saveStatus: z.enum(["active", "archived"]),
+    runStatus: z.enum(["active", "terminal"]),
+    currentMonth: monthSchema,
+    revision: z.number().int().min(0),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const savedRunsResponseSchema = z
+  .object({ saves: z.array(savedRunSchema).max(50) })
+  .strict();
+
+export const activateRunResponseSchema = z
+  .object({ activeRunId: z.string().uuid() })
+  .strict();
+
 export type RunViewWire = z.infer<typeof runViewSchema>;
 export type CommandIntent = z.infer<typeof commandIntentSchema>;
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
 export type RunViewResponseWire = z.infer<typeof runViewResponseSchema>;
 export type CommandResponseWire = z.infer<typeof commandResponseSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
+export type SavedRunWire = z.infer<typeof savedRunSchema>;
+export type SavedRunsResponse = z.infer<typeof savedRunsResponseSchema>;

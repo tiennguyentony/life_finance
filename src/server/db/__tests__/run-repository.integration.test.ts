@@ -536,6 +536,17 @@ databaseDescribe("Postgres run repository", () => {
         { id: legacy.runId, saveStatus: "active" },
       ]),
     );
+    expect(await repository.listOwnedRunsV2(firstUserId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ runId: second.runId, saveStatus: "archived" }),
+        expect.objectContaining({ runId: legacy.runId, saveStatus: "active" }),
+      ]),
+    );
+    await repository.activateOwnedRunV2(firstUserId, second.runId);
+    expect(await repository.loadActiveOwnedRunId(firstUserId)).toBe(second.runId);
+    await expect(
+      repository.activateOwnedRunV2(secondUserId, second.runId),
+    ).rejects.toMatchObject({ code: "NOT_FOUND_OR_UNAUTHORIZED" });
     await connection.db.execute(sql`delete from auth.users where id in (${firstUserId}::uuid, ${secondUserId}::uuid)`);
   });
 

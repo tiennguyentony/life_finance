@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, gt, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte } from "drizzle-orm";
 
 import { canonicalJson, sha256Canonical } from "../../core/canonical";
 import {
@@ -74,6 +74,7 @@ import {
   type CreatedRunV2,
   type GameCommandV2,
   type MigratedRun,
+  type OwnedRunSaveV2,
   type PreparedTimeAdvanceV2,
   type TimeAdvanceRequestV2,
   RunRepositoryError,
@@ -597,6 +598,60 @@ export class RunRepository {
       )
       .limit(1);
     return row?.id ?? null;
+  }
+
+  async listOwnedRunsV2(ownerUserId: string): Promise<readonly OwnedRunSaveV2[]> {
+    assertUuid(ownerUserId);
+    const rows = await this.#db
+      .select({
+        runId: gameRuns.id,
+        saveStatus: gameRuns.saveStatus,
+        runStatus: gameRuns.status,
+        currentMonth: gameRuns.currentMonth,
+        revision: gameRuns.currentRevision,
+        createdAt: gameRuns.createdAt,
+        updatedAt: gameRuns.updatedAt,
+      })
+      .from(gameRuns)
+      .where(eq(gameRuns.ownerUserId, ownerUserId))
+      .orderBy(desc(gameRuns.updatedAt), desc(gameRuns.createdAt))
+      .limit(50);
+    return Object.freeze(rows.map((row) => Object.freeze(row)));
+  }
+
+  async activateOwnedRunV2(ownerUserId: string, runId: string): Promise<void> {
+    assertUuid(ownerUserId);
+    assertUuid(runId);
+    const now = this.#clock();
+    await this.#db.transaction(async (tx) => {
+      const [target] = await tx
+        .select({ id: gameRuns.id })
+        .from(gameRuns)
+        .where(
+          and(eq(gameRuns.id, runId), eq(gameRuns.ownerUserId, ownerUserId)),
+        )
+        .for("update")
+        .limit(1);
+      if (!target) {
+        throw new RunRepositoryError(
+          "NOT_FOUND_OR_UNAUTHORIZED",
+          "save was not found or does not belong to this account",
+        );
+      }
+      await tx
+        .update(gameRuns)
+        .set({ saveStatus: "archived", updatedAt: now })
+        .where(
+          and(
+            eq(gameRuns.ownerUserId, ownerUserId),
+            eq(gameRuns.saveStatus, "active"),
+          ),
+        );
+      await tx
+        .update(gameRuns)
+        .set({ saveStatus: "active", updatedAt: now })
+        .where(eq(gameRuns.id, runId));
+    });
   }
 
   async claimRunV2(
