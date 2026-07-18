@@ -206,6 +206,46 @@ describe("current frontend HTTP API", () => {
     expect(JSON.stringify(body)).not.toContain("lf_run_");
   });
 
+  it("keeps unexpected persistence failures inside a safe API envelope", async () => {
+    const leakedQuery = `Failed query: insert into run_state_snapshots ${"private-state ".repeat(80)}`;
+    const failures = [
+      new Error(leakedQuery),
+      Object.assign(new Error(leakedQuery), { code: "XX000" }),
+    ];
+
+    for (const persistenceError of failures) {
+      const response = await handleCreateRun(
+        new Request("https://game.test/api/runs", {
+          method: "POST",
+          headers: {
+            Origin: "https://game.test",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            draft: { version: "onboarding-v1", sourceMode: "typed" },
+            reviewChecksum: "a".repeat(64),
+          }),
+        }),
+        {
+          confirm: async () => Promise.reject(persistenceError),
+        },
+        {
+          secureCookies: false,
+          requestIdFactory: () => "request.persistence",
+        },
+      );
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The server could not complete the request.",
+          requestId: "request.persistence",
+        },
+      });
+    }
+  });
+
   it("returns an explicit empty session when no cookie exists", async () => {
     const response = await handleGetSession(
       new Request("https://game.test/api/session"),

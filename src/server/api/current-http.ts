@@ -7,6 +7,11 @@ import {
   type RunReader,
 } from "@/application/game/use-cases";
 import { commandIntentSchema } from "@/contracts/api/contracts";
+import { GameCommandError } from "@/core/commands";
+import { DetailedFinanceError } from "@/core/detailed-actions-v2-contracts";
+import { EventLifecycleV2Error } from "@/core/event-lifecycle-v2";
+import { LifeMilestoneV2Error } from "@/core/life-milestones-v2";
+import { RecurringStrategyError } from "@/core/recurring-strategy-v2";
 import {
   assertSameOriginWrite,
   clearRunSessionCookie,
@@ -15,7 +20,10 @@ import {
   serializeRunSessionCookie,
 } from "@/server/auth/run-session";
 import type { OnboardingDraftV1 } from "@/core/onboarding-v1-contracts";
-import type { CreatedRunV2 } from "@/server/db/run-repository-contracts";
+import {
+  RunRepositoryError,
+  type CreatedRunV2,
+} from "@/server/db/run-repository-contracts";
 import { projectRunView } from "@/application/game/run-view";
 import { ZodError } from "zod";
 
@@ -26,7 +34,8 @@ import {
   onboardingReviewRequestV1Schema,
   onboardingReviewResponseV1Schema,
 } from "@/contracts/api/onboarding";
-import type { OnboardingService } from "./onboarding-service";
+import { RunApiV2Error } from "./errors";
+import { OnboardingError, type OnboardingService } from "./onboarding-service";
 import type { OnboardingAiServiceV1 } from "@/server/ai/onboarding-service-v1";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -48,6 +57,52 @@ function jsonResponse(
       ...Object.fromEntries(new Headers(extraHeaders)),
     },
   });
+}
+
+function publicErrorStatus(error: unknown): number | null {
+  if (error instanceof RunRepositoryError) {
+    if (error.code === "NOT_FOUND_OR_UNAUTHORIZED") return 401;
+    if (
+      error.code === "OPTIMISTIC_CONFLICT" ||
+      error.code === "IDEMPOTENCY_MISMATCH"
+    ) {
+      return 409;
+    }
+    if (error.code === "INVALID_RUN_ID" || error.code === "INVALID_RANGE") {
+      return 400;
+    }
+    return null;
+  }
+  if (error instanceof OnboardingError) {
+    return error.code === "STALE_REVIEW" ? 409 : 400;
+  }
+  if (error instanceof RunApiV2Error) {
+    if (error.code === "TAX_RESULT_UNUSABLE") return 502;
+    if (
+      error.code === "STALE_REVISION" ||
+      error.code === "RUN_TERMINAL" ||
+      error.code === "PENDING_EVENT" ||
+      error.code === "TAX_CONTEXT_MISMATCH"
+    ) {
+      return 409;
+    }
+    return 400;
+  }
+  if (
+    error instanceof GameCommandError ||
+    error instanceof DetailedFinanceError ||
+    error instanceof EventLifecycleV2Error ||
+    error instanceof LifeMilestoneV2Error ||
+    error instanceof RecurringStrategyError
+  ) {
+    return error.code === "STALE_REVISION" ||
+      error.code === "DUPLICATE_COMMAND" ||
+      error.code === "RUN_TERMINAL" ||
+      error.code === "PENDING_EVENT_UNRESOLVED"
+      ? 409
+      : 400;
+  }
+  return null;
 }
 
 function failure(error: unknown, requestId: string): Response {
@@ -97,21 +152,26 @@ function failure(error: unknown, requestId: string): Response {
       requestId,
     );
   }
-  const code =
-    error instanceof Error && "code" in error && typeof error.code === "string"
-      ? error.code
-      : "REQUEST_FAILED";
-  const status =
-    code === "OPTIMISTIC_CONFLICT"
-      ? 409
-      : code === "NOT_FOUND_OR_UNAUTHORIZED"
-        ? 401
-        : 400;
+  const status = publicErrorStatus(error);
+  if (status === null) {
+    return jsonResponse(
+      {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The server could not complete the request.",
+          requestId,
+        },
+      },
+      500,
+      requestId,
+    );
+  }
+  const publicError = error as Error & { readonly code: string };
   return jsonResponse(
     {
       error: {
-        code,
-        message: error instanceof Error ? error.message : "request failed",
+        code: publicError.code,
+        message: publicError.message.trim().slice(0, 500) || "request failed",
         requestId,
       },
     },

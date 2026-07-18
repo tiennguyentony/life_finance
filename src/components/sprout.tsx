@@ -34,6 +34,7 @@ export function Sprout({
         loading="eager"
         sizes={size === "large" ? "(max-width: 800px) 90vw, 620px" : "320px"}
         src={`/assets/characters/sprout/reference/sprout-${variant}.png`}
+        unoptimized
       />
     </div>
   );

@@ -74,6 +74,7 @@ export function BoardHud({
               fill
               sizes="52px"
               src={view.player.avatarSrc}
+              unoptimized
             />
           </span>
           <div className="board-player-meta">
