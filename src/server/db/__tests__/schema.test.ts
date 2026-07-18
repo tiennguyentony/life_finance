@@ -79,6 +79,8 @@ describe("authoritative persistence schema", () => {
     expect(columnNames).not.toContain("access_secret");
     expect(columnNames).toEqual(
       expect.arrayContaining([
+        "owner_user_id",
+        "save_status",
         "current_state",
         "current_state_checksum",
         "current_revision",

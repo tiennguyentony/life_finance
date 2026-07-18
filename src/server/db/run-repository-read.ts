@@ -55,6 +55,7 @@ export async function loadAuthorizedRun(
       accessSecret,
       row.accessSecretHash,
       row.accessSecretHashVersion,
+      row.ownerUserId,
     )
   ) {
     throw new RunRepositoryError(
@@ -94,6 +95,7 @@ export async function loadAuthorizedRunV2(
       accessSecret,
       row.accessSecretHash,
       row.accessSecretHashVersion,
+      row.ownerUserId,
     )
   ) {
     throw new RunRepositoryError(
@@ -230,6 +232,7 @@ async function findAcceptedMonthlyCommandV2(
       accessSecret,
       run.accessSecretHash,
       run.accessSecretHashVersion,
+      run.ownerUserId,
     )
   ) {
     throw new RunRepositoryError(
@@ -304,6 +307,7 @@ export async function loadAcceptedCommandV2(
       accessSecret,
       run.accessSecretHash,
       run.accessSecretHashVersion,
+      run.ownerUserId,
     )
   ) {
     throw new RunRepositoryError(
@@ -395,6 +399,7 @@ export async function loadMonthlyTaxEvidenceForContext(
       accessSecret,
       run.accessSecretHash,
       run.accessSecretHashVersion,
+      run.ownerUserId,
     )
   ) {
     throw new RunRepositoryError(

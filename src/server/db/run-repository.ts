@@ -496,6 +496,7 @@ export class RunRepository {
 
   async createRunV2(
     initialStateFactory: (runId: string) => GameStateV2,
+    options: Readonly<{ ownerUserId?: string }> = {},
   ): Promise<CreatedRunV2> {
     const runId = this.#runIdFactory();
     assertUuid(runId);
@@ -522,8 +523,22 @@ export class RunRepository {
     const now = this.#clock();
 
     await this.#db.transaction(async (tx) => {
+      if (options.ownerUserId) {
+        assertUuid(options.ownerUserId);
+        await tx
+          .update(gameRuns)
+          .set({ saveStatus: "archived", updatedAt: now })
+          .where(
+            and(
+              eq(gameRuns.ownerUserId, options.ownerUserId),
+              eq(gameRuns.saveStatus, "active"),
+            ),
+          );
+      }
       await tx.insert(gameRuns).values({
         id: runId,
+        ownerUserId: options.ownerUserId ?? null,
+        saveStatus: "active",
         accessSecretHash: credential.secretHash,
         accessSecretHashVersion: credential.secretHashVersion,
         stateSchemaVersion: state.schemaVersion,
@@ -559,21 +574,6 @@ export class RunRepository {
         await tx.insert(ledgerTransactions).values(ledgerRows.transactions);
         await tx.insert(ledgerPostings).values(ledgerRows.postings);
       }
-      await tx.insert(transactionalOutbox).values({
-        runId,
-        topic: "run.v2.created",
-        idempotencyKey: `${runId}:v2:created`,
-        payload: {
-          runId,
-          revision: 0,
-          stateChecksum: checksum,
-          catalogVersion: catalogSnapshot.catalog.version,
-          catalogSnapshotChecksum: catalogChecksum,
-        },
-        status: "pending",
-        availableAt: now,
-        createdAt: now,
-      });
     });
 
     return Object.freeze({
@@ -581,6 +581,72 @@ export class RunRepository {
       accessSecret: credential.secret,
       state,
       stateChecksum: checksum,
+    });
+  }
+
+  async loadActiveOwnedRunId(ownerUserId: string): Promise<string | null> {
+    assertUuid(ownerUserId);
+    const [row] = await this.#db
+      .select({ id: gameRuns.id })
+      .from(gameRuns)
+      .where(
+        and(
+          eq(gameRuns.ownerUserId, ownerUserId),
+          eq(gameRuns.saveStatus, "active"),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  }
+
+  async claimRunV2(
+    ownerUserId: string,
+    runId: string,
+    accessSecret: string,
+  ): Promise<void> {
+    assertUuid(ownerUserId);
+    assertUuid(runId);
+    const now = this.#clock();
+    await this.#db.transaction(async (tx) => {
+      const [run] = await tx
+        .select({
+          id: gameRuns.id,
+          ownerUserId: gameRuns.ownerUserId,
+          secretHash: gameRuns.accessSecretHash,
+          secretHashVersion: gameRuns.accessSecretHashVersion,
+        })
+        .from(gameRuns)
+        .where(eq(gameRuns.id, runId))
+        .for("update")
+        .limit(1);
+      if (
+        !run ||
+        !isAuthorized(
+          this.#secretCodec,
+          accessSecret,
+          run.secretHash,
+          run.secretHashVersion,
+        ) ||
+        (run.ownerUserId !== null && run.ownerUserId !== ownerUserId)
+      ) {
+        throw new RunRepositoryError(
+          "NOT_FOUND_OR_UNAUTHORIZED",
+          "run was not found, already belongs to another account, or the credential is invalid",
+        );
+      }
+      await tx
+        .update(gameRuns)
+        .set({ saveStatus: "archived", updatedAt: now })
+        .where(
+          and(
+            eq(gameRuns.ownerUserId, ownerUserId),
+            eq(gameRuns.saveStatus, "active"),
+          ),
+        );
+      await tx
+        .update(gameRuns)
+        .set({ ownerUserId, saveStatus: "active", updatedAt: now })
+        .where(eq(gameRuns.id, runId));
     });
   }
 
@@ -781,6 +847,7 @@ export class RunRepository {
           accessSecret,
           run.accessSecretHash,
           run.accessSecretHashVersion,
+          run.ownerUserId,
         )
       ) {
         throw new RunRepositoryError(
@@ -963,6 +1030,7 @@ export class RunRepository {
           accessSecret,
           run.accessSecretHash,
           run.accessSecretHashVersion,
+          run.ownerUserId,
         )
       ) {
         throw new RunRepositoryError(
@@ -1214,6 +1282,7 @@ export class RunRepository {
           accessSecret,
           run.accessSecretHash,
           run.accessSecretHashVersion,
+          run.ownerUserId,
         )
       ) {
         throw new RunRepositoryError(
@@ -1494,6 +1563,7 @@ export class RunRepository {
           accessSecret,
           run.accessSecretHash,
           run.accessSecretHashVersion,
+          run.ownerUserId,
         )
       ) {
         throw new RunRepositoryError(

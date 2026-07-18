@@ -14,12 +14,14 @@ import type { CreatedRunV2 } from "../db/run-repository-contracts";
 export type OnboardingCreateRepositoryV1 = Readonly<{
   createRunV2(
     initialStateFactory: (runId: string) => GameStateV2,
+    options?: Readonly<{ ownerUserId?: string }>,
   ): Promise<CreatedRunV2>;
 }>;
 
 export type ConfirmOnboardingRequestV1 = Readonly<{
   draft: OnboardingDraftV1;
   reviewChecksum: string;
+  ownerUserId?: string;
 }>;
 
 export class OnboardingError extends Error {
@@ -63,8 +65,8 @@ export class OnboardingService {
       );
     }
     const playerId = this.#playerIdFactory();
-    return this.#repository.createRunV2((runId) =>
-      constructOnboardedGameStateV1(
+    return this.#repository.createRunV2(
+      (runId) => constructOnboardedGameStateV1(
         {
           confirmed: true,
           review,
@@ -72,6 +74,7 @@ export class OnboardingService {
         },
         { runId, playerId },
       ).state,
+      request.ownerUserId ? { ownerUserId: request.ownerUserId } : undefined,
     );
   }
 }
