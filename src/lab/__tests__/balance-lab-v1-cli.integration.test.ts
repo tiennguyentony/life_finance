@@ -97,6 +97,45 @@ describe("offline balance lab CLI pipeline", () => {
     expect(stdout).toContain(report.result.deterministicResultFingerprint);
   }, 65_000);
 
+  it("runs the guided beginner cohort through the CLI", () => {
+    const root = temporaryDirectory();
+    const output = join(root, "artifacts");
+    const configPath = join(root, "config.json");
+    writeFileSync(configPath, JSON.stringify({
+      ...rawConfig,
+      acceptance: [],
+      tiers: {
+        ...rawConfig.tiers,
+        beginner: {
+          ...rawConfig.tiers.quick,
+          personaIds: ["healthy-v1"],
+          matchedSeedCount: 1,
+          horizonMonths: 1,
+          difficulty: "guided",
+          runtimeBudgetMs: 30_000,
+        },
+      },
+    }));
+
+    const stdout = execFileSync(
+      process.execPath,
+      [
+        "scripts/run-balance-lab.mjs",
+        "--size", "beginner",
+        "--config", configPath,
+        "--output", output,
+      ],
+      { cwd: process.cwd(), encoding: "utf8", timeout: 60_000 },
+    );
+
+    const report = decodeBalanceLabReportV1(
+      JSON.parse(readFileSync(join(output, "beginner.report.json"), "utf8")),
+    );
+    expect(report.result.spec.difficulty).toBe("guided");
+    expect(report.result.runs).toHaveLength(6);
+    expect(stdout).toContain(report.result.deterministicResultFingerprint);
+  }, 65_000);
+
   it("exits 2 on invalid event config and leaves no partial artifact directory", () => {
     const root = temporaryDirectory();
     const output = join(root, "artifacts");

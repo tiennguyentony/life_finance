@@ -51,12 +51,20 @@ const run = {
 };
 
 describe("balance lab config, acceptance, and reports", () => {
-  it("strictly resolves documented quick/medium/large production-month tiers", () => {
+  it("strictly resolves documented beginner/quick/medium/large production-month tiers", () => {
     const config = decodeBalanceLabConfigV1(rawConfig);
+    const beginner = resolveBalanceLabBatchV1(config, "beginner", "beginner-first-run");
     const quick = resolveBalanceLabBatchV1(config, "quick", "quick-ci");
     const medium = resolveBalanceLabBatchV1(config, "medium", "medium-local");
     const large = resolveBalanceLabBatchV1(config, "large", "large-scheduled");
 
+    expect(beginner.spec.horizonMonths).toBe(12);
+    expect(beginner.spec.difficulty).toBe("guided");
+    expect(beginner.spec.personaIds).toEqual([
+      "healthy-v1",
+      "low-cash-v1",
+      "debt-burdened-v1",
+    ]);
     expect(quick.spec.matchedSeeds).toHaveLength(3);
     expect(quick.spec.horizonMonths).toBe(24);
     expect(medium.spec.matchedSeeds).toHaveLength(25);
@@ -162,6 +170,10 @@ describe("balance lab config, acceptance, and reports", () => {
     const failed = [{ id: "broken", status: "fail" }] as never;
 
     expect(balanceLabGateDecisionV1("quick", insufficient)).toEqual({
+      status: "pass_with_insufficient_samples",
+      blockingRuleIds: [],
+    });
+    expect(balanceLabGateDecisionV1("beginner", insufficient)).toEqual({
       status: "pass_with_insufficient_samples",
       blockingRuleIds: [],
     });

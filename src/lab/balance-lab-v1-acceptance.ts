@@ -33,7 +33,7 @@ export function balanceLabGateDecisionV1(
     .map(({ id }) => id);
   const blockingRuleIds = [
     ...failed,
-    ...(size === "quick" ? [] : insufficient),
+    ...(size === "quick" || size === "beginner" ? [] : insufficient),
   ].toSorted();
   return Object.freeze({
     status: blockingRuleIds.length > 0

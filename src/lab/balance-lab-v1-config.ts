@@ -6,7 +6,7 @@ import {
   type BalanceLabRunSpecV1,
 } from "./balance-lab-v1-contracts";
 
-export type BalanceLabBatchSizeV1 = "quick" | "medium" | "large";
+export type BalanceLabBatchSizeV1 = "beginner" | "quick" | "medium" | "large";
 export type BalanceLabComparatorV1 = "at_least" | "at_most" | "equals";
 
 export type BalanceLabAcceptanceRuleV1 = Readonly<{
@@ -79,10 +79,10 @@ export function decodeBalanceLabConfigV1(value: unknown): BalanceLabConfigV1 {
   if (
     tiers === null ||
     typeof tiers !== "object" ||
-    Object.keys(tiers).sort().join("|") !== "large|medium|quick"
-  ) return invalid("config must define exact quick, medium, and large tiers");
+    Object.keys(tiers).sort().join("|") !== "beginner|large|medium|quick"
+  ) return invalid("config must define exact beginner, quick, medium, and large tiers");
   const decodedTiers = Object.fromEntries(
-    (["quick", "medium", "large"] as const).map((size) => {
+    (["beginner", "quick", "medium", "large"] as const).map((size) => {
       const tier = tiers[size] as Record<string, unknown> | null;
       if (
         tier === null ||
