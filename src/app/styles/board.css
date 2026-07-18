@@ -559,7 +559,6 @@
   text-align: center;
 }
 
-.board-planning-commit,
 .board-planning-actions > button {
   min-height: 44px;
   padding: 0.7rem 1rem;
@@ -582,7 +581,9 @@
 
 .board-month-result-dialog {
   width: min(92vw, 31rem);
+  max-height: calc(100dvh - 2rem);
   margin: auto;
+  overflow: auto;
   padding: 0;
   border: 3px solid var(--ink);
   border-radius: 24px;
@@ -693,7 +694,9 @@
   z-index: 20;
   display: grid;
   width: min(92vw, 34rem);
+  max-height: calc(100dvh - 2rem);
   gap: 0.8rem;
+  overflow: auto;
   padding: clamp(1.4rem, 3vw, 2.2rem);
   border: 3px solid var(--ink);
   border-radius: var(--radius, 26px);
@@ -924,7 +927,6 @@
     box-shadow: 2px 3px 0 var(--ink);
   }
 
-  .board-planning-commit,
   .board-planning-actions > button {
     position: sticky;
     bottom: 0;
