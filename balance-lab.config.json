@@ -237,6 +237,14 @@
       "tierIds": ["beginner"]
     },
     {
+      "id": "beginner-zero-extreme-challenges",
+      "metric": "beginner_extreme_approved_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
       "id": "beginner-objective-domination",
       "metric": "maximum_strategy_objective_lead_share_ppm",
       "comparator": "at_most",

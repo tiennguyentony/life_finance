@@ -763,6 +763,13 @@ export function summarizeBalanceLabRunsV1(
         beginnerChapter.meaningfulOrCrisisApprovedRate.numerator,
         beginnerChapter.meaningfulOrCrisisApprovedRate.denominator,
       ),
+      beginner_extreme_approved_rate_ppm: evidence(
+        balanceShadow.approvedChallengeBands.extreme,
+        Object.values(balanceShadow.approvedChallengeBands).reduce(
+          (total, count) => total + count,
+          0,
+        ),
+      ),
       beginner_median_decision_event_count: Object.freeze({
         numerator: beginnerChapter.medianDecisionEventCount ?? 0,
         denominator: beginnerChapter.assessmentCount,

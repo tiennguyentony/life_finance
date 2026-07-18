@@ -410,6 +410,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "stable_resilient_bankruptcy_rate_ppm",
     "beginner_nonfatal_recovery_within_six_months_rate_ppm",
     "beginner_meaningful_or_crisis_approved_rate_ppm",
+    "beginner_extreme_approved_rate_ppm",
     "beginner_median_decision_event_count",
   ];
   if (!hasExactKeys(value.acceptanceEvidence, acceptanceMetricKeys)) {

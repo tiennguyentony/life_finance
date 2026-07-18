@@ -82,6 +82,7 @@ describe("balance lab config, acceptance, and reports", () => {
         "beginner_chapter_completion_rate_ppm",
         "beginner_nonfatal_recovery_within_six_months_rate_ppm",
         "beginner_meaningful_or_crisis_approved_rate_ppm",
+        "beginner_extreme_approved_rate_ppm",
         "beginner_median_decision_event_count",
       ]),
     );
@@ -358,7 +359,7 @@ describe("balance lab config, acceptance, and reports", () => {
     );
     expect(markdown).toContain("f".repeat(64));
     expect(sha256Canonical({ json, runsCsv, matchedCsv, markdown })).toBe(
-      "2d07f9ffe3683280b279f03f29b792aa11181edc0cfa1fddfdddc96540e95c59",
+      "8b284180793934da11689c7713121eb4a5b27801f404ca612aff6b9686260042",
     );
   });
 });
