@@ -1,17 +1,24 @@
 "use client";
 
 import Image from "next/image";
+import type { ReactNode } from "react";
 
 import {
   type BoardView,
-  formatBoardChoice,
   formatBoardMoney,
 } from "./board-model";
+import type { BoardMode } from "./board-scene";
+import { useModalDialog } from "./use-modal-dialog";
 
 type BoardHudProps = Readonly<{
   actionLabel: string;
   actionHint: string;
   busy: boolean;
+  eventReturnFocusTarget: HTMLElement | null;
+  eventVisible: boolean;
+  mode: BoardMode;
+  monthResultDialog: ReactNode;
+  planningPanel: ReactNode;
   view: BoardView;
   onTakeAction: () => void;
   onResolveEvent: (choiceId: string) => void;
@@ -32,6 +39,11 @@ export function BoardHud({
   actionLabel,
   actionHint,
   busy,
+  eventReturnFocusTarget,
+  eventVisible,
+  mode,
+  monthResultDialog,
+  planningPanel,
   view,
   onTakeAction,
   onResolveEvent,
@@ -39,14 +51,21 @@ export function BoardHud({
   toastMessage,
   toastVisible,
 }: BoardHudProps) {
+  const eventDialogRef = useModalDialog(eventVisible, {
+    returnFocusTarget: eventReturnFocusTarget,
+  });
   const goalPercent = Math.min(
     100,
     Math.round((view.goal.current / Math.max(1, view.goal.target)) * 100),
   );
   const [goals, events, journal] = view.sidePanels;
+  const eventAmount = view.pendingEvent
+    ? Object.entries(view.pendingEvent.parameters).find(([key]) => key.endsWith("_cents"))?.[1]
+    : undefined;
 
   return (
     <div className="board-hud">
+      {monthResultDialog}
       <header className="board-hud-top">
         <div className="board-player-card">
           <span className="board-avatar">
@@ -82,37 +101,43 @@ export function BoardHud({
           ))}
         </dl>
 
-        <div className="board-top-right">
-          <span className="board-trophies">Trophies {view.trophies}</span>
-          <button className="board-icon-button" onClick={() => onStub("Menu")} type="button">
-            Menu
-          </button>
-        </div>
+        {mode !== "strategy" ? (
+          <div className="board-top-right">
+            <span className="board-trophies">Trophies {view.trophies}</span>
+            <button className="board-icon-button" onClick={() => onStub("Menu")} type="button">
+              Menu
+            </button>
+          </div>
+        ) : null}
       </header>
 
-      <nav aria-label="Board panels" className="board-side board-side-left">
-        {[goals!, events!].map((panel) => (
+      {mode !== "strategy" ? (
+        <nav aria-label="Board panels" className="board-side board-side-left">
+          {[goals!, events!].map((panel) => (
+            <button
+              className="board-side-button"
+              key={panel.id}
+              onClick={() => onStub(panel.label)}
+              type="button"
+            >
+              {panel.label}
+              <PanelBadge count={panel.badge} />
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      {mode !== "strategy" ? (
+        <nav aria-label="Board journal" className="board-side board-side-right">
           <button
             className="board-side-button"
-            key={panel.id}
-            onClick={() => onStub(panel.label)}
+            onClick={() => onStub(journal!.label)}
             type="button"
           >
-            {panel.label}
-            <PanelBadge count={panel.badge} />
+            {journal!.label}
+            <PanelBadge count={journal!.badge} />
           </button>
-        ))}
-      </nav>
-      <nav aria-label="Board journal" className="board-side board-side-right">
-        <button
-          className="board-side-button"
-          onClick={() => onStub(journal!.label)}
-          type="button"
-        >
-          {journal!.label}
-          <PanelBadge count={journal!.badge} />
-        </button>
-      </nav>
+        </nav>
+      ) : null}
 
       <footer className="board-hud-bottom">
         <div className="board-calendar">
@@ -137,40 +162,56 @@ export function BoardHud({
           </span>
         </div>
 
-        <button
-          className="board-take-action"
-          disabled={busy || view.pendingEvent !== null}
-          onClick={onTakeAction}
-          type="button"
-        >
-          {actionLabel}
-          <small>{actionHint}</small>
-        </button>
+        {mode === "strategy" ? (
+          planningPanel ? null : (
+            <p className="board-strategy-prompt">Choose your focus for this month</p>
+          )
+        ) : (
+          <button
+            className="board-take-action"
+            disabled={busy || view.pendingEvent !== null}
+            onClick={onTakeAction}
+            type="button"
+          >
+            {actionLabel}
+            <small>{actionHint}</small>
+          </button>
+        )}
       </footer>
 
+      {mode === "strategy" ? planningPanel : null}
+
       {view.pendingEvent ? (
-        <section
+        <dialog
           aria-labelledby="board-event-title"
           aria-modal="true"
           className="board-event-dialog"
+          hidden={!eventVisible}
+          onCancel={(event) => event.preventDefault()}
+          ref={eventDialogRef}
           role="dialog"
+          style={eventVisible ? undefined : { display: "none" }}
         >
           <span>Decision required</span>
           <h2 id="board-event-title">{view.pendingEvent.headline}</h2>
           <p>{view.pendingEvent.body}</p>
+          {eventAmount !== undefined ? (
+            <p className="board-event-amount">Amount {formatBoardMoney(eventAmount / 100)}</p>
+          ) : null}
           <div>
-            {view.pendingEvent.choiceIds.map((choiceId) => (
+            {view.pendingEvent.choices.map((choice) => (
               <button
                 disabled={busy}
-                key={choiceId}
-                onClick={() => onResolveEvent(choiceId)}
+                key={choice.id}
+                onClick={() => onResolveEvent(choice.id)}
                 type="button"
               >
-                {formatBoardChoice(choiceId)}
+                <strong>{choice.label}</strong>
+                <span>{choice.description}</span>
               </button>
             ))}
           </div>
-        </section>
+        </dialog>
       ) : null}
 
       {/* Always mounted so the live region reliably announces on text change;

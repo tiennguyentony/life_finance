@@ -7,11 +7,27 @@ import type { RunViewWire } from "@/contracts/api/contracts";
 import { LifeFinanceClient } from "@/lib/api-client/client";
 
 import { INITIAL_NAV_STATE, boardNavReducer } from "./board-nav";
+import { boardMonthResult, boardViewFromRun, type BoardMonthResult } from "./board-model";
 import type { BoardMode } from "./board-scene";
-import { boardViewFromRun } from "./board-model";
 import { BoardHud } from "./hud";
-import { islandById, standPointForIsland } from "./islands";
+import { HOME_ISLAND_ID, islandById, standPointForIsland } from "./islands";
+import { MonthResultDialog } from "./month-result-dialog";
+import {
+  plansForDestination,
+  type BoardDestinationId,
+  type BoardPlan,
+} from "./plan-catalog";
+import { PlanningPanel } from "./planning-panel";
 import { destinationLandmarkId, standPointAt } from "./track";
+import {
+  boardMonthRecoveryMessage,
+  boardRecoveryPlanLabel,
+  commitBoardTurn,
+  finishBoardMonthAfterRefresh,
+  recoverBoardTurnFailure,
+  type BoardTurnFailurePhase,
+  type BoardTurnRecoveryResult,
+} from "./turn-commit";
 
 const BoardScene = dynamic(() => import("./board-scene"), {
   ssr: false,
@@ -25,6 +41,15 @@ const BoardScene = dynamic(() => import("./board-scene"), {
 // Long enough that a screen reader can finish announcing before it hides.
 const TOAST_MS = 4000;
 
+type PendingTurnFailure = Readonly<{
+  phase: BoardTurnFailurePhase;
+  error: unknown;
+  opening: RunViewWire;
+  failedRun: RunViewWire;
+  plan: BoardPlan;
+  planApplied: boolean;
+}>;
+
 function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -37,20 +62,35 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
+function errorMessage(reason: unknown, fallback: string): string {
+  return reason instanceof Error && reason.message ? reason.message : fallback;
+}
+
 type BoardShellProps = Readonly<{
-  /** "free": click any island to travel. "loop": one Move button, fixed order. */
   mode?: BoardMode;
 }>;
 
-export function BoardShell({ mode = "free" }: BoardShellProps) {
+export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   const router = useRouter();
   const [run, setRun] = useState<RunViewWire | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [nav, dispatch] = useReducer(boardNavReducer, INITIAL_NAV_STATE);
+  const [selectedDestinationId, setSelectedDestinationId] =
+    useState<BoardDestinationId | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [monthResult, setMonthResult] = useState<BoardMonthResult | null>(null);
+  const [planningError, setPlanningError] = useState<string | null>(null);
+  const [finishMonthOnly, setFinishMonthOnly] = useState(false);
+  const [recoveryPlan, setRecoveryPlan] = useState<BoardPlan | null>(null);
+  const [recoveryPlanApplied, setRecoveryPlanApplied] = useState(false);
+  const [refreshRequired, setRefreshRequired] = useState(false);
+  const [reactionToken, setReactionToken] = useState(0);
+  const [planningFocusTarget, setPlanningFocusTarget] = useState<HTMLElement | null>(null);
+  const turnOpeningRef = useRef<RunViewWire | null>(null);
+  const pendingFailureRef = useRef<PendingTurnFailure | null>(null);
   // The message persists through the exit transition; `visible` drives it.
-  // Kept mounted (not conditionally rendered) so the aria-live region is
-  // already in the DOM when its text changes and reliably announces.
+  // Kept mounted so the aria-live region is present before its text changes.
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({
     message: "",
     visible: false,
@@ -91,32 +131,274 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
     setToast({ message, visible: true });
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(
-      () => setToast((prev) => ({ ...prev, visible: false })),
+      () => setToast((previous) => ({ ...previous, visible: false })),
       TOAST_MS,
     );
   };
 
-  const handleSelect = (islandId: string) => {
+  const handleSelect = (islandId: string, focusTarget?: HTMLElement) => {
+    if (mode === "free") {
+      dispatch({ type: "free-select", islandId });
+      return;
+    }
     if (mode === "loop") {
-      // The loop removes navigation choices: islands are stops, not links.
       if (islandId !== nav.currentIslandId) {
         showToast("Sprout only moves forward. Press Move.");
       } else {
-        dispatch({ type: "loop-bounce" }); // bounce in place as feedback
+        dispatch({ type: "loop-bounce" });
       }
       return;
     }
-    dispatch({ type: "free-select", islandId });
+    if (
+      !run ||
+      !run.capabilities.canAct ||
+      run.pendingInteraction.kind === "event"
+    ) {
+      return;
+    }
+    if (
+      busy ||
+      monthResult ||
+      finishMonthOnly ||
+      refreshRequired
+    ) {
+      return;
+    }
+
+    const destinationId = islandId as BoardDestinationId;
+    setPlanningFocusTarget(
+      focusTarget ?? document.querySelector<HTMLElement>(
+        `[data-board-destination="${destinationId}"]`,
+      ),
+    );
+    const firstEnabledPlan = plansForDestination(run, destinationId).find(
+      (plan) => plan.disabledReason === null,
+    );
+    setSelectedDestinationId(destinationId);
+    setSelectedPlanId(firstEnabledPlan?.id ?? null);
+    setPlanningError(null);
+    setRecoveryPlan(null);
+    setRecoveryPlanApplied(false);
   };
 
-  const handleHopEnd = () => dispatch({ type: "hop-end", mode });
+  const handleHopEnd = () => {
+    if (mode !== "strategy") dispatch({ type: "hop-end", mode });
+  };
+
+  const completeMonth = (
+    opening: RunViewWire,
+    ending: RunViewWire,
+    plan: BoardPlan,
+    planLabel = plan.label,
+  ) => {
+    setRun(ending);
+    setMonthResult(boardMonthResult(opening, ending, planLabel));
+    setSelectedDestinationId(null);
+    setSelectedPlanId(null);
+    setPlanningError(null);
+    setFinishMonthOnly(false);
+    setRecoveryPlan(null);
+    setRecoveryPlanApplied(false);
+    setRefreshRequired(false);
+    turnOpeningRef.current = null;
+    pendingFailureRef.current = null;
+    setReactionToken((token) => token + 1);
+  };
+
+  const adoptRecovery = (
+    outcome: BoardTurnRecoveryResult,
+    failure: PendingTurnFailure,
+  ) => {
+    if (outcome.kind === "completed") {
+      completeMonth(
+        outcome.opening,
+        outcome.run,
+        failure.plan,
+        boardRecoveryPlanLabel(outcome, failure.plan.label),
+      );
+      return;
+    }
+
+    setRun(outcome.run);
+    if (outcome.kind === "planning") {
+      setFinishMonthOnly(false);
+      setRecoveryPlan(null);
+      setRecoveryPlanApplied(false);
+      setRefreshRequired(false);
+      turnOpeningRef.current = null;
+      pendingFailureRef.current = null;
+      setPlanningError(errorMessage(failure.error, "The plan could not be saved."));
+      return;
+    }
+
+    setRecoveryPlan(failure.plan);
+    setRecoveryPlanApplied(failure.planApplied);
+    turnOpeningRef.current = failure.opening;
+    if (outcome.kind === "finish_month") {
+      setFinishMonthOnly(true);
+      setRefreshRequired(false);
+      pendingFailureRef.current = null;
+      setPlanningError(
+        failure.phase === "plan"
+          ? "The run changed while saving. To avoid repeating a plan that may already be saved, finish this month only."
+          : boardMonthRecoveryMessage(failure.planApplied),
+      );
+      return;
+    }
+
+    setFinishMonthOnly(failure.phase === "month");
+    setRefreshRequired(true);
+    pendingFailureRef.current = failure;
+    setPlanningError(
+      failure.phase === "month"
+        ? "The latest run could not be refreshed. Finish this month will refresh it again before advancing."
+        : "The latest run could not be refreshed. Refresh the board before trying this plan again.",
+    );
+  };
+
+  const recoverFailure = (failure: PendingTurnFailure) =>
+    recoverBoardTurnFailure({
+      phase: failure.phase,
+      error: failure.error,
+      opening: failure.opening,
+      failedRun: failure.failedRun,
+      getSession: () => new LifeFinanceClient().getSession(),
+    });
+
+  const finishSavedMonth = async (plan: BoardPlan) => {
+    if (!run) return;
+    const recoveryOpening = turnOpeningRef.current ?? run;
+    const latestRun = run;
+    setBusy(true);
+    setPlanningError(null);
+    try {
+      const pendingFailure = pendingFailureRef.current;
+      if (refreshRequired && pendingFailure) {
+        const client = new LifeFinanceClient();
+        const outcome = await finishBoardMonthAfterRefresh({
+          client,
+          opening: recoveryOpening,
+          failedRun: pendingFailure.failedRun,
+          error: pendingFailure.error,
+          commandId: `board.month.recovery.${crypto.randomUUID()}`,
+        });
+        const nextFailure = outcome.kind === "completed"
+          ? pendingFailure
+          : {
+              ...pendingFailure,
+              phase: "month" as const,
+              error: outcome.error,
+              failedRun: outcome.run,
+            };
+        adoptRecovery(outcome, nextFailure);
+        return;
+      }
+
+      const response = await new LifeFinanceClient().submitCommand(latestRun.runId, {
+        id: `board.month.recovery.${crypto.randomUUID()}`,
+        expectedRevision: latestRun.revision,
+        type: "process_month",
+        payload: {},
+      });
+      completeMonth(recoveryOpening, response.run, plan);
+    } catch (reason) {
+      const failure: PendingTurnFailure = {
+        phase: "month",
+        error: reason,
+        opening: recoveryOpening,
+        failedRun: latestRun,
+        plan,
+        planApplied: recoveryPlanApplied,
+      };
+      pendingFailureRef.current = failure;
+      adoptRecovery(await recoverFailure(failure), failure);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCommitPlan = async () => {
+    if (
+      !run ||
+      busy ||
+      !selectedDestinationId ||
+      !selectedPlanId ||
+      run.pendingInteraction.kind === "event"
+    ) {
+      return;
+    }
+    const plan = finishMonthOnly
+      ? recoveryPlan
+      : plansForDestination(run, selectedDestinationId).find(
+          (candidate) => candidate.id === selectedPlanId,
+        );
+    if (!plan || plan.disabledReason !== null) return;
+
+    if (finishMonthOnly) {
+      await finishSavedMonth(plan);
+      return;
+    }
+
+    if (refreshRequired) {
+      const pendingFailure = pendingFailureRef.current;
+      if (!pendingFailure) return;
+      setBusy(true);
+      setPlanningError(null);
+      try {
+        adoptRecovery(await recoverFailure(pendingFailure), pendingFailure);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    const opening = run;
+    turnOpeningRef.current = opening;
+    setBusy(true);
+    setPlanningError(null);
+    try {
+      const result = await commitBoardTurn({
+        client: new LifeFinanceClient(),
+        opening,
+        plan,
+        createId: (phase) => `board.turn.${phase}.${crypto.randomUUID()}`,
+      });
+      if (result.kind === "completed") {
+        completeMonth(result.opening, result.run, plan);
+      } else if (result.kind === "plan_failed") {
+        const failure: PendingTurnFailure = {
+          phase: "plan",
+          error: result.error,
+          opening,
+          failedRun: result.run,
+          plan,
+          planApplied: false,
+        };
+        pendingFailureRef.current = failure;
+        adoptRecovery(await recoverFailure(failure), failure);
+      } else {
+        const failure: PendingTurnFailure = {
+          phase: "month",
+          error: result.error,
+          opening,
+          failedRun: result.run,
+          plan,
+          planApplied: result.planApplied,
+        };
+        pendingFailureRef.current = failure;
+        adoptRecovery(await recoverFailure(failure), failure);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleTakeAction = async () => {
-    if (!run || busy || nav.hop || !run.capabilities.canAdvance) return;
+    if (mode === "strategy" || !run || busy || nav.hop || !run.capabilities.canAdvance) return;
     setBusy(true);
     try {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
-        id: `board.month.${crypto.randomUUID()}`,
+        id: `board.${mode}.month.${crypto.randomUUID()}`,
         expectedRevision: run.revision,
         type: "process_month",
         payload: {},
@@ -125,14 +407,14 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
       showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
       dispatch(mode === "loop" ? { type: "loop-advance" } : { type: "free-bounce" });
     } catch (reason) {
-      showToast(reason instanceof Error ? reason.message : "The turn could not advance.");
+      showToast(errorMessage(reason, "The turn could not advance."));
     } finally {
       setBusy(false);
     }
   };
 
   const handleResolveEvent = async (choiceId: string) => {
-    if (!run || busy || run.pendingInteraction.kind !== "event") return;
+    if (!run || busy || monthResult || run.pendingInteraction.kind !== "event") return;
     setBusy(true);
     try {
       const response = await new LifeFinanceClient().submitCommand(run.runId, {
@@ -142,9 +424,13 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
         payload: { eventId: run.pendingInteraction.eventId, choiceId },
       });
       setRun(response.run);
-      showToast("Decision applied. Your board is ready to move again.");
+      showToast(
+        mode === "strategy"
+          ? "Decision applied. Your board is ready for a new focus."
+          : "Decision applied. Your board is ready to travel again.",
+      );
     } catch (reason) {
-      showToast(reason instanceof Error ? reason.message : "The decision could not be applied.");
+      showToast(errorMessage(reason, "The decision could not be applied."));
     } finally {
       setBusy(false);
     }
@@ -159,6 +445,38 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
   }
 
   const view = boardViewFromRun(run);
+  const plans = selectedDestinationId
+    ? finishMonthOnly && recoveryPlan
+      ? plansForDestination(run, selectedDestinationId).map((plan) =>
+          plan.id === recoveryPlan.id ? recoveryPlan : plan,
+        )
+      : plansForDestination(run, selectedDestinationId)
+    : [];
+  const planningPanel = selectedDestinationId ? (
+    <PlanningPanel
+      busy={busy}
+      commitVariant={finishMonthOnly ? "finish_month" : refreshRequired ? "refresh" : "plan"}
+      destinationId={selectedDestinationId}
+      errorMessage={planningError}
+      onClose={() => {
+        if (finishMonthOnly || refreshRequired) return;
+        setSelectedDestinationId(null);
+        setSelectedPlanId(null);
+        setPlanningError(null);
+        setRecoveryPlan(null);
+        setRecoveryPlanApplied(false);
+      }}
+      onCommit={() => void handleCommitPlan()}
+      onSelectPlan={(planId) => {
+        if (finishMonthOnly || refreshRequired) return;
+        setSelectedPlanId(planId);
+        setPlanningError(null);
+      }}
+      plans={plans}
+      selectedPlanId={selectedPlanId}
+    />
+  ) : null;
+  const eventVisible = view.pendingEvent !== null && monthResult === null;
 
   return (
     <div className="board-stage">
@@ -172,15 +490,19 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
         <BoardScene
           currentIslandId={nav.currentIslandId}
           flagIslandId={mode === "loop" ? destinationLandmarkId(nav.trackIndex) : null}
-          hop={nav.hop}
+          hop={mode === "strategy" ? null : nav.hop}
           mode={mode}
           onHopEnd={handleHopEnd}
           onSelect={handleSelect}
+          reactionToken={reactionToken}
           reducedMotion={reducedMotion}
+          selectedIslandId={mode === "strategy" ? selectedDestinationId : null}
           standingAt={
-            mode === "loop"
-              ? standPointAt(nav.trackIndex)
-              : standPointForIsland(nav.currentIslandId)
+            mode === "strategy"
+              ? standPointForIsland(HOME_ISLAND_ID)
+              : mode === "loop"
+                ? standPointAt(nav.trackIndex)
+                : standPointForIsland(nav.currentIslandId)
           }
         />
       </div>
@@ -192,11 +514,31 @@ export function BoardShell({ mode = "free" }: BoardShellProps) {
               ? "Advance one month and hop"
               : "Advance one financial month"
         }
-        actionLabel={busy ? "Saving..." : view.pendingEvent ? "Decision Required" : mode === "loop" ? "Move" : "Take Action"}
+        actionLabel={
+          busy
+            ? "Saving..."
+            : view.pendingEvent
+              ? "Decision Required"
+              : mode === "loop"
+                ? "Move"
+                : "Take Action"
+        }
         busy={busy}
+        eventReturnFocusTarget={planningFocusTarget}
+        eventVisible={eventVisible}
+        mode={mode}
+        monthResultDialog={
+          <MonthResultDialog
+            busy={busy}
+            onContinue={() => setMonthResult(null)}
+            result={monthResult}
+            returnFocusTarget={planningFocusTarget}
+          />
+        }
+        onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
         onTakeAction={handleTakeAction}
-        onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
+        planningPanel={planningPanel}
         toastMessage={toast.message}
         toastVisible={toast.visible}
         view={view}

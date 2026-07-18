@@ -23,35 +23,35 @@ export const BOARD_ISLANDS: readonly BoardIsland[] = [
   {
     id: HOME_ISLAND_ID,
     name: "Home",
-    tagline: "Rest and recharge",
+    tagline: "Budget & lifestyle",
     accent: "#78cbd1", // --blue
     position: { x: 0, z: 0 },
   },
   {
     id: "financial",
     name: "Financial District",
-    tagline: "High earnings",
+    tagline: "Invest & grow",
     accent: "#4f8ac9",
     position: { x: -5.2, z: -3.4 },
   },
   {
     id: "bank",
     name: "Bank",
-    tagline: "Manage money",
+    tagline: "Debt & credit",
     accent: "#f3c74f", // --gold
     position: { x: 5.2, z: -3.4 },
   },
   {
     id: "hospital",
     name: "Hospital",
-    tagline: "Health is wealth",
+    tagline: "Safety buffer",
     accent: "#ff7754", // --coral
     position: { x: -5.4, z: 3.6 },
   },
   {
     id: "startup",
     name: "Startup Hub",
-    tagline: "Build your dream",
+    tagline: "Career & skills",
     accent: "#c9a0e0",
     position: { x: 5.4, z: 3.6 },
   },

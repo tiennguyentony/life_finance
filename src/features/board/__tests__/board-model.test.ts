@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
 import { projectRunView } from "@/application/game/run-view";
 
-import { boardViewFromRun } from "../board-model";
+import { boardMonthResult, boardViewFromRun } from "../board-model";
 
 describe("board view model", () => {
   it("projects backend-owned finances and progress into the board HUD", () => {
@@ -20,5 +20,62 @@ describe("board view model", () => {
       target: 1_625_000,
     });
     expect(view.pendingEvent).toBeNull();
+  });
+
+  it("calculates authoritative before-and-after turn deltas", () => {
+    const opening = projectRunView(currentRunState());
+    const ending = {
+      ...opening,
+      currentMonth: "2026-08",
+      finances: {
+        ...opening.finances,
+        cashCents: opening.finances.cashCents + 125_000,
+        netWorthCents: opening.finances.netWorthCents + 150_000,
+        creditUsedCents: opening.finances.creditUsedCents - 25_000,
+      },
+      goal: { ...opening.goal, progressPpm: opening.goal.progressPpm + 4_000 },
+    };
+
+    expect(boardMonthResult(opening, ending, "Pay down credit")).toMatchObject({
+      fromMonth: "2026-07",
+      toMonth: "2026-08",
+      planLabel: "Pay down credit",
+      cashChangeCents: 125_000,
+      netWorthChangeCents: 150_000,
+      debtChangeCents: -25_000,
+      goalProgressChangePpm: 4_000,
+    });
+  });
+
+  it("uses event choices and parameters from the authoritative run projection", () => {
+    const run = {
+      ...projectRunView(currentRunState()),
+      pendingInteraction: {
+        kind: "event" as const,
+        eventId: "event.unexpected-expense",
+        templateId: "event.unexpected-expense",
+        choiceIds: ["pay-now"],
+        choices: [{
+          id: "pay-now",
+          label: "Pay it now",
+          description: "Use cash to resolve the expense.",
+        }],
+        parameters: { expenseCents: 125_000 },
+        headline: "An unexpected expense",
+        body: "A repair bill arrived.",
+      },
+    };
+
+    expect(boardViewFromRun(run).pendingEvent).toEqual({
+      eventId: "event.unexpected-expense",
+      headline: "An unexpected expense",
+      body: "A repair bill arrived.",
+      parameters: { expenseCents: 125_000 },
+      choices: [{
+        id: "pay-now",
+        label: "Pay it now",
+        description: "Use cash to resolve the expense.",
+      }],
+    });
   });
 });

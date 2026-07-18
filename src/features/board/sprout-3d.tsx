@@ -20,15 +20,25 @@ type SproutProps = Readonly<{
   standingAt: BoardPoint;
   hop: HopRequest | null;
   onHopEnd: () => void;
+  reactionToken: number;
   reducedMotion: boolean;
 }>;
 
-export function Sprout3d({ standingAt, hop, onHopEnd, reducedMotion }: SproutProps) {
+export function Sprout3d({
+  standingAt,
+  hop,
+  onHopEnd,
+  reactionToken,
+  reducedMotion,
+}: SproutProps) {
   const { scene } = useGLTF(SPROUT_URL);
   const groupRef = useRef<Group>(null);
   const squashRef = useRef<Group>(null);
   const hopStartRef = useRef<number | null>(null);
   const hopEndedRef = useRef(false);
+  const reactionStartRef = useRef<number | null>(null);
+  const reactionActiveRef = useRef(false);
+  const previousReactionTokenRef = useRef(reactionToken);
 
   // A new hop request restarts the timeline; its start time is stamped on
   // the first animation frame so timing always follows the r3f clock.
@@ -36,6 +46,13 @@ export function Sprout3d({ standingAt, hop, onHopEnd, reducedMotion }: SproutPro
     hopStartRef.current = null;
     hopEndedRef.current = false;
   }, [hop]);
+
+  useEffect(() => {
+    if (reactionToken === previousReactionTokenRef.current) return;
+    previousReactionTokenRef.current = reactionToken;
+    reactionStartRef.current = null;
+    reactionActiveRef.current = true;
+  }, [reactionToken]);
 
   useFrame(({ clock }) => {
     const group = groupRef.current;
@@ -56,6 +73,22 @@ export function Sprout3d({ standingAt, hop, onHopEnd, reducedMotion }: SproutPro
         hopEndedRef.current = true;
         onHopEnd();
       }
+      return;
+    }
+
+    if (reactionActiveRef.current) {
+      if (reactionStartRef.current === null) reactionStartRef.current = elapsed;
+      const reactionProgress = reducedMotion
+        ? 1
+        : Math.min(1, (elapsed - reactionStartRef.current) / 0.48);
+      const reactionY = reducedMotion ? 0 : Math.sin(Math.PI * reactionProgress) * 0.22;
+      group.position.set(
+        standingAt.x,
+        PLATFORM_TOP_Y + 0.04 + reactionY,
+        standingAt.z,
+      );
+      squash.scale.set(1, 1, 1);
+      if (reactionProgress >= 1) reactionActiveRef.current = false;
       return;
     }
 

@@ -3,12 +3,21 @@ import { z } from "zod";
 const monthSchema = z.string().regex(/^[0-9]{4}-(0[1-9]|1[0-2])$/);
 const centsSchema = z.number().int().safe();
 const rateSchema = z.number().int().min(0).max(1_000_000);
+const emergencyFundMonthsSchema = z.number().int().min(0).max(24_000_000);
 const identifierSchema = z.string().trim().min(1).max(160);
+
+const eventChoiceSchema = z
+  .object({
+    id: identifierSchema,
+    label: z.string().trim().min(1).max(120),
+    description: z.string().max(500),
+  })
+  .strict();
 
 const recurringStrategySchema = z
   .object({
     effectiveMonth: monthSchema,
-    emergencyFundTargetMonthsPpm: rateSchema.optional(),
+    emergencyFundTargetMonthsPpm: emergencyFundMonthsSchema.optional(),
     insuranceCoverageIds: z.array(identifierSchema).max(16).optional(),
     preTax401kSalaryRatePpm: rateSchema,
     preTaxHsaSalaryRatePpm: rateSchema,
@@ -28,6 +37,8 @@ const pendingInteractionSchema = z.discriminatedUnion("kind", [
       eventId: identifierSchema,
       templateId: identifierSchema,
       choiceIds: z.array(identifierSchema),
+      choices: z.array(eventChoiceSchema),
+      parameters: z.record(z.string(), z.number().int().safe()),
       headline: z.string().nullable(),
       body: z.string().nullable(),
     })
@@ -100,6 +111,9 @@ export const runViewSchema = z
         regime: z.enum(["expansion", "inflation", "recession", "recovery"]),
         modelVersion: z.enum(["regime-v1", "regime-v2"]),
       })
+      .strict(),
+    career: z
+      .object({ pendingProgramIds: z.array(identifierSchema) })
       .strict(),
     pendingInteraction: pendingInteractionSchema,
     outcome: z.unknown().nullable(),

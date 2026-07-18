@@ -11,7 +11,12 @@ export type BoardEvent = Readonly<{
   eventId: string;
   headline: string;
   body: string;
-  choiceIds: readonly string[];
+  parameters: Readonly<Record<string, number>>;
+  choices: readonly Readonly<{
+    id: string;
+    label: string;
+    description: string;
+  }>[];
 }>;
 
 export type BoardView = Readonly<{
@@ -34,7 +39,7 @@ export type BoardView = Readonly<{
   pendingEvent: BoardEvent | null;
 }>;
 
-type BoardRunSource = Readonly<{
+export type BoardRunSource = Readonly<{
   revision: number;
   currentMonth: string;
   status: "active" | "completed";
@@ -52,6 +57,12 @@ type BoardRunSource = Readonly<{
         kind: "event";
         eventId: string;
         choiceIds: readonly string[];
+        choices: readonly Readonly<{
+          id: string;
+          label: string;
+          description: string;
+        }>[];
+        parameters: Readonly<Record<string, number>>;
         headline: string | null;
         body: string | null;
       }>;
@@ -74,7 +85,10 @@ export function boardViewFromRun(run: BoardRunSource): BoardView {
         body:
           run.pendingInteraction.body ??
           "Choose how Sprout should respond before moving again.",
-        choiceIds: run.pendingInteraction.choiceIds,
+        parameters: Object.freeze({ ...run.pendingInteraction.parameters }),
+        choices: Object.freeze(
+          run.pendingInteraction.choices.map((choice) => Object.freeze({ ...choice })),
+        ),
       }
     : null;
   const debtCents =
@@ -125,9 +139,35 @@ export function formatBoardMoney(amount: number): string {
   return money.format(amount);
 }
 
-export function formatBoardChoice(choiceId: string): string {
-  const leaf = choiceId.split(".").at(-1) ?? choiceId;
-  return leaf
-    .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+export type BoardMonthResult = Readonly<{
+  fromMonth: string;
+  toMonth: string;
+  planLabel: string;
+  cashChangeCents: number;
+  netWorthChangeCents: number;
+  debtChangeCents: number;
+  goalProgressChangePpm: number;
+  hasPendingEvent: boolean;
+}>;
+
+export function boardMonthResult(
+  opening: BoardRunSource,
+  ending: BoardRunSource,
+  planLabel: string,
+): BoardMonthResult {
+  const openingDebt =
+    opening.finances.nonCreditLiabilitiesCents + opening.finances.creditUsedCents;
+  const endingDebt =
+    ending.finances.nonCreditLiabilitiesCents + ending.finances.creditUsedCents;
+
+  return Object.freeze({
+    fromMonth: opening.currentMonth,
+    toMonth: ending.currentMonth,
+    planLabel,
+    cashChangeCents: ending.finances.cashCents - opening.finances.cashCents,
+    netWorthChangeCents: ending.finances.netWorthCents - opening.finances.netWorthCents,
+    debtChangeCents: endingDebt - openingDebt,
+    goalProgressChangePpm: ending.goal.progressPpm - opening.goal.progressPpm,
+    hasPendingEvent: ending.pendingInteraction.kind === "event",
+  });
 }
