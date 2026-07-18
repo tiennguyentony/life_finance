@@ -549,7 +549,7 @@ export default function BoardScene({
     <Canvas
       aria-label="Financial life game board, viewed from above"
       camera={{ position: [0, 15.5, 19], fov: 30, near: 0.5, far: 110 }}
-      dpr={[1, 2]}
+      dpr={[1, 1.5]}
       // With reduced motion every useFrame is static, so render on demand
       // (invalidated by interaction/state) instead of compositing 60fps forever.
       frameloop={reducedMotion ? "demand" : "always"}
@@ -593,7 +593,7 @@ export default function BoardScene({
         far={7}
         opacity={0.55}
         position={[0, -0.86, 0]}
-        resolution={1024}
+        resolution={512}
         scale={46}
       />
       {mode === "loop" ? (

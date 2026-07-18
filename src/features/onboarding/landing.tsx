@@ -24,7 +24,7 @@ export function Landing({ demoEnabled = false }: LandingProps) {
         fill
         priority
         sizes="100vw"
-        src="/assets/game/landing-background.png"
+        src="/assets/game/landing-background.webp"
         unoptimized
       />
 
@@ -35,7 +35,7 @@ export function Landing({ demoEnabled = false }: LandingProps) {
               alt=""
               fill
               sizes="72px"
-              src="/assets/characters/sprout/reference/sprout-landing-3.png"
+              src="/assets/characters/sprout/reference/sprout-landing-3.webp"
               unoptimized
             />
           </span>
@@ -63,9 +63,9 @@ export function Landing({ demoEnabled = false }: LandingProps) {
               aria-hidden={index === 0 ? undefined : true}
               className={`landing-sprout-art landing-sprout-art-${frame}`}
               fill
-              loading="eager"
+              loading={index === 0 ? "eager" : "lazy"}
               sizes="(max-width: 820px) 96vw, 900px"
-              src={`/assets/characters/sprout/reference/sprout-landing-${frame}.png`}
+              src={`/assets/characters/sprout/reference/sprout-landing-${frame}.webp`}
               unoptimized
             />
           </span>
