@@ -145,9 +145,13 @@ describe("board planning surfaces", () => {
     const markup = renderToStaticMarkup(
       <MonthResultDialog
         busy={false}
-        onContinue={() => undefined}
+        onPrimary={() => undefined}
+        onSecondary={() => undefined}
+        primaryLabel="Review decision"
         result={result}
         returnFocusTarget={null}
+        secondaryLabel={null}
+        summary="A life decision is waiting before the next month."
       />,
     );
 
@@ -176,13 +180,56 @@ describe("board planning surfaces", () => {
     const markup = renderToStaticMarkup(
       <MonthResultDialog
         busy={false}
-        onContinue={() => undefined}
+        onPrimary={() => undefined}
+        onSecondary={() => undefined}
+        primaryLabel="Continue one month"
         result={result}
         returnFocusTarget={null}
+        secondaryLabel="Choose a different plan"
+        summary="Your previous plan was applied once."
       />,
     );
 
-    expect(markup).toContain(">Continue to August 2026</button>");
+    expect(markup).toContain("Your previous plan was applied once.");
+    expect(markup).toContain(">Continue one month</button>");
+    expect(markup).toContain(">Choose a different plan</button>");
     expect(markup).not.toContain("Review decision");
+  });
+
+  it("renders a contextual repeated transaction and checkpoint evidence", () => {
+    const opening = projectRunView(currentRunState());
+    const ending = {
+      ...opening,
+      currentMonth: "2027-07",
+      beginnerCheckpoint: {
+        version: "beginner-chapter-v1" as const,
+        checkpointMonth: "2027-07" as const,
+        outcome: "developing" as const,
+        completed: true,
+        scorePpm: 420_000,
+        preparednessBand: "exposed" as const,
+        weakestComponent: "debt" as const,
+        lessonKey: "lesson.debt_management",
+      },
+    };
+    const result = boardMonthResult(opening, ending, "Pay revolving credit");
+    const markup = renderToStaticMarkup(
+      <MonthResultDialog
+        busy={false}
+        onPrimary={() => undefined}
+        onSecondary={() => undefined}
+        primaryLabel="Pay another $320"
+        result={result}
+        returnFocusTarget={null}
+        secondaryLabel="Choose a different plan"
+        summary="Your payment remains available next month."
+      />,
+    );
+
+    expect(markup).toContain("12-month checkpoint: Developing");
+    expect(markup).toContain("Preparedness score 42%");
+    expect(markup).toContain("Focus next: Debt management");
+    expect(markup).toContain("Pay another $320");
+    expect(markup).toContain("Choose a different plan");
   });
 });

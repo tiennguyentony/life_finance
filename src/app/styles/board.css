@@ -667,6 +667,25 @@
   font-weight: 800;
 }
 
+.board-month-result-highlight {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.72rem;
+  border: 2px solid var(--blue);
+  border-radius: 14px;
+  background: rgb(120 203 209 / 12%);
+}
+
+.board-month-result-highlight h3,
+.board-month-result-highlight p {
+  margin: 0;
+}
+
+.board-month-result-highlight h3 {
+  font-family: "Arial Rounded MT Bold", "Avenir Next", sans-serif;
+  font-size: 1rem;
+}
+
 .board-month-result-deltas {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -710,6 +729,16 @@
 .board-month-result-dialog button:disabled {
   cursor: wait;
   opacity: 0.62;
+}
+
+.board-month-result-actions {
+  display: grid;
+  gap: 0.58rem;
+}
+
+.board-month-result-actions button + button {
+  background: var(--paper-deep);
+  box-shadow: 3px 4px 0 var(--ink);
 }
 
 @keyframes board-result-enter {

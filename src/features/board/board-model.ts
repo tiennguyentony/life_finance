@@ -51,6 +51,17 @@ export type BoardRunSource = Readonly<{
     investableAssetsCents: number;
   }>;
   goal: Readonly<{ targetCents: number; progressPpm: number }>;
+  career?: Readonly<{ pendingProgramIds: readonly string[] }>;
+  beginnerCheckpoint?: Readonly<{
+    version: "beginner-chapter-v1";
+    checkpointMonth: string;
+    outcome: "bankrupt" | "fragile" | "developing" | "strong";
+    completed: boolean;
+    scorePpm: number;
+    preparednessBand: "critical" | "exposed" | "stable" | "resilient";
+    weakestComponent: "liquidity" | "cash_flow" | "debt" | "insurance" | "diversification";
+    lessonKey: string;
+  }> | null;
   pendingInteraction:
     | Readonly<{ kind: "none" }>
     | Readonly<{
@@ -148,6 +159,8 @@ export type BoardMonthResult = Readonly<{
   debtChangeCents: number;
   goalProgressChangePpm: number;
   hasPendingEvent: boolean;
+  completedProgramIds: readonly string[];
+  beginnerCheckpoint: NonNullable<BoardRunSource["beginnerCheckpoint"]> | null;
 }>;
 
 export function boardMonthResult(
@@ -159,6 +172,9 @@ export function boardMonthResult(
     opening.finances.nonCreditLiabilitiesCents + opening.finances.creditUsedCents;
   const endingDebt =
     ending.finances.nonCreditLiabilitiesCents + ending.finances.creditUsedCents;
+  const endingPrograms = new Set(ending.career?.pendingProgramIds ?? []);
+  const completedProgramIds = (opening.career?.pendingProgramIds ?? [])
+    .filter((id) => !endingPrograms.has(id));
 
   return Object.freeze({
     fromMonth: opening.currentMonth,
@@ -169,5 +185,7 @@ export function boardMonthResult(
     debtChangeCents: endingDebt - openingDebt,
     goalProgressChangePpm: ending.goal.progressPpm - opening.goal.progressPpm,
     hasPendingEvent: ending.pendingInteraction.kind === "event",
+    completedProgramIds: Object.freeze(completedProgramIds),
+    beginnerCheckpoint: ending.beginnerCheckpoint ?? null,
   });
 }

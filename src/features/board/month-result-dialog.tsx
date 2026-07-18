@@ -5,9 +5,13 @@ import { useModalDialog } from "./use-modal-dialog";
 
 type MonthResultDialogProps = Readonly<{
   busy: boolean;
-  onContinue: () => void;
+  onPrimary: () => void;
+  onSecondary: () => void;
+  primaryLabel: string;
   result: BoardMonthResult | null;
   returnFocusTarget: HTMLElement | null;
+  secondaryLabel: string | null;
+  summary: string | null;
 }>;
 
 function formatMonth(month: string): string {
@@ -29,9 +33,13 @@ function formatProgressDelta(ppm: number): string {
 
 export function MonthResultDialog({
   busy,
-  onContinue,
+  onPrimary,
+  onSecondary,
+  primaryLabel,
   result,
   returnFocusTarget,
+  secondaryLabel,
+  summary,
 }: MonthResultDialogProps) {
   const restoreFocus = result ? !result.hasPendingEvent : true;
   const dialogRef = useModalDialog(result !== null, { restoreFocus, returnFocusTarget });
@@ -44,6 +52,19 @@ export function MonthResultDialog({
     ["Debt", formatMoneyDelta(result.debtChangeCents)],
     ["Goal progress", formatProgressDelta(result.goalProgressChangePpm)],
   ] as const;
+  const checkpoint = result.beginnerCheckpoint;
+  const checkpointOutcome = checkpoint === null
+    ? null
+    : checkpoint.outcome.charAt(0).toUpperCase() + checkpoint.outcome.slice(1);
+  const focusLabel = checkpoint === null
+    ? null
+    : {
+        liquidity: "Emergency fund",
+        cash_flow: "Cash flow",
+        debt: "Debt management",
+        insurance: "Insurance",
+        diversification: "Diversification",
+      }[checkpoint.weakestComponent];
 
   return (
     <dialog
@@ -62,10 +83,25 @@ export function MonthResultDialog({
           <p>Plan: {result.planLabel}</p>
         </header>
 
-        {result.hasPendingEvent ? (
+        {summary !== null || result.hasPendingEvent ? (
           <p aria-live="assertive" role="status">
-            A life decision is waiting before the next month.
+            {summary ?? "A life decision is waiting before the next month."}
           </p>
+        ) : null}
+
+        {result.completedProgramIds.length > 0 ? (
+          <section className="board-month-result-highlight">
+            <h3>Course completed</h3>
+            <p>{result.completedProgramIds.join(", ")}</p>
+          </section>
+        ) : null}
+
+        {checkpoint !== null ? (
+          <section className="board-month-result-highlight">
+            <h3>12-month checkpoint: {checkpointOutcome}</h3>
+            <p>Preparedness score {Math.round(checkpoint.scorePpm / 10_000)}%</p>
+            <p>Focus next: {focusLabel}</p>
+          </section>
         ) : null}
 
         <dl className="board-month-result-deltas">
@@ -77,13 +113,16 @@ export function MonthResultDialog({
           ))}
         </dl>
 
-        <button disabled={busy} onClick={onContinue} type="button">
-          {busy
-            ? "Continuing..."
-            : result.hasPendingEvent
-              ? "Review decision"
-              : `Continue to ${formatMonth(result.toMonth)}`}
-        </button>
+        <div className="board-month-result-actions">
+          <button disabled={busy} onClick={onPrimary} type="button">
+            {busy ? "Continuing..." : primaryLabel}
+          </button>
+          {secondaryLabel === null ? null : (
+            <button disabled={busy} onClick={onSecondary} type="button">
+              {secondaryLabel}
+            </button>
+          )}
+        </div>
       </section>
     </dialog>
   );
