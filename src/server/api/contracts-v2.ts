@@ -775,11 +775,12 @@ const financialKernelMonthlyRecordSummarySchema =
               "catastrophe_limit",
               "parameter_out_of_bounds",
               "impact_above_band",
+              "FUNNY_ROOT_ABOVE_MEANINGFUL",
               "unavoidable_failure",
               "no_reasonable_response",
               "estimator_error",
             ]))
-            .max(14),
+            .max(15),
           warningCodes: z
             .array(z.enum([
               "impact_score_near_limit",

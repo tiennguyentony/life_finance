@@ -1,4 +1,5 @@
 import { canonicalJson, sha256Canonical } from "./canonical";
+import { PERSONAL_EVENT_PRESENTATIONS_V1 } from "../data/personal-event-presentation-v1";
 import { NumericDomainError } from "./domain/integer";
 import type { RatePpm } from "./domain/money";
 import { monthsBetween } from "./domain/month";
@@ -40,6 +41,7 @@ import {
   type RuntimeBalanceRejectionCodeV2,
   type RuntimeBalanceStateV2,
 } from "./runtime-balance-state-v2";
+import { assessRuntimeBalanceChallengeV1 } from "./runtime-balance-challenge-v1";
 import {
   rankScenarioCandidatesV2,
   validateScenarioDirectorPermutationV2,
@@ -52,6 +54,20 @@ export type RuntimeBalanceCandidateV2 = Readonly<{
   targetedWeakness: EventTargetV2;
   followUpSourceEventId?: string;
 }>;
+
+function isHumorousRootCandidateV2(
+  candidate: RuntimeBalanceCandidateV2,
+): boolean {
+  if (candidate.followUpSourceEventId !== undefined) return false;
+  const presentation = PERSONAL_EVENT_PRESENTATIONS_V1.find(
+    ({ templateId, templateVersion }) =>
+      templateId === candidate.template.id &&
+      templateVersion === candidate.template.version,
+  );
+  return presentation !== undefined &&
+    presentation.cadenceRole !== "follow_up" &&
+    presentation.tone !== "serious";
+}
 
 export type RuntimeBalanceCandidateDecisionV2 = Readonly<{
   templateId: string;
@@ -751,6 +767,15 @@ export function chooseBalancedEventV2(
     const impactBand = assessRuntimeBalanceImpactV2(balance.difficulty, impact);
     item.warningCodes.push(...impactBand.warningCodes);
     item.rejectionCodes.push(...impactBand.rejectionCodes);
+    if (isHumorousRootCandidateV2(candidate)) {
+      const guidedChallenge = assessRuntimeBalanceChallengeV1(
+        impact,
+        runtimeBalanceDifficultyPolicyV2("guided"),
+      );
+      if (["crisis", "extreme", "above_limit"].includes(guidedChallenge.band)) {
+        item.rejectionCodes.push("FUNNY_ROOT_ABOVE_MEANINGFUL");
+      }
+    }
     if (
       policy.rejectImmediateUnavoidableFailure &&
       (impact.immediateBankruptcyRisk || impact.reasonableResponseIds.length === 0)

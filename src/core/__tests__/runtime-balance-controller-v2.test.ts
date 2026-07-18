@@ -209,6 +209,37 @@ describe("Runtime Balance controller v2", () => {
     });
   });
 
+  it("rejects humorous roots above the guided meaningful challenge ceiling", () => {
+    const source = getPersonalEventTemplateV2("personal.raccoon_sanitation", 2);
+    const dangerousComedy: PersonalEventTemplateV2 = {
+      ...source,
+      parameters: [{
+        ...source.parameters[0]!,
+        minimum: 20_000_000,
+        maximum: 20_000_000,
+      }],
+      responses: source.responses.map((response) => ({
+        ...response,
+        effects: [{
+          type: "temporary_expense" as const,
+          magnitude: {
+            source: "parameter" as const,
+            parameterId: "cleanup_cost_cents",
+            multiplierPpm: 1_000_000,
+          },
+          durationMonths: 1,
+        }],
+      })),
+    };
+    const state = withBalance(baseState("hard"), { pressureUnits: 10 });
+    const result = choose(state, [candidate(dangerousComedy)]);
+
+    expect(result.event).toBeNull();
+    expect(result.decision.candidates[0]!.rejectionCodes).toContain(
+      "FUNNY_ROOT_ABOVE_MEANINGFUL",
+    );
+  });
+
   it("enforces event/category/lesson/tier cooldowns, recovery, and catastrophe limits", () => {
     const catastrophic = cloneTemplate("personal.catastrophe", {
       severityTier: "catastrophe",

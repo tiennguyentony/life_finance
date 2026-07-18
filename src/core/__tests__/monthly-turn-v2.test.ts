@@ -55,7 +55,12 @@ import {
 import { decodePersistedGameCommandV2 } from "../../server/db/persisted-command-v2";
 import { reduceGameCommandV2 } from "../../server/db/run-repository-support";
 import { decodePersistedGameState } from "../persisted-game-state";
-import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
+import {
+  HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2,
+  PERSONAL_EVENT_TEMPLATES_V2,
+  getActivePersonalEventTemplateV2,
+} from "../../data/personal-event-templates-v2";
+import { BEGINNER_EVENT_CADENCE_V1_VERSION } from "../beginner-event-cadence-v1";
 import {
   initializeNamedWorldRandomV1,
   WORLD_RANDOM_VERSION_V1,
@@ -232,6 +237,55 @@ describe("named world random monthly routing", () => {
     ).toThrowError(/invalid event configuration/);
     expect(sha256Canonical(opening)).toBe(checksum);
     expect(opening.worldRandom).toBeUndefined();
+  });
+
+  it("separates complete replay templates from active root scheduling templates", () => {
+    const opening = configuredState();
+    const source = getActivePersonalEventTemplateV2(
+      "personal.subscription_archaeology",
+    );
+    const guaranteed = {
+      ...source,
+      hazard: {
+        ...source.hazard,
+        baseChancePpm: 1_000_000,
+        minimumChancePpm: 1_000_000,
+        maximumChancePpm: 1_000_000,
+      },
+    };
+    const completeCatalog = PERSONAL_EVENT_TEMPLATES_V2.map((template) =>
+      template.id === guaranteed.id && template.version === guaranteed.version
+        ? guaranteed
+        : template
+    );
+    const result = processMonthlyTurnV2(opening, namedCommand(opening), {
+      personalEventCatalog: completeCatalog,
+      activePersonalEventCatalog: [guaranteed],
+      beginnerEventCadenceVersion: BEGINNER_EVENT_CADENCE_V1_VERSION,
+    });
+
+    expect(result.record.runtimeBalanceCandidateSet).toEqual({
+      eligibleTemplateIds: [guaranteed.id],
+      candidateTemplateIds: [guaranteed.id],
+    });
+    expect(result.record.beginnerEventCadence).toMatchObject({
+      assessment: { mode: "engagement_due", chapterMonth: 2 },
+      inputCandidateIds: [guaranteed.id],
+      outputCandidateIds: [guaranteed.id],
+    });
+  });
+
+  it("keeps the uncalibrated production root catalog historical", () => {
+    const opening = configuredState();
+    const result = processMonthlyTurnV2(opening, namedCommand(opening));
+    const historicalIds = new Set(
+      HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2.map(({ id }) => id),
+    );
+
+    expect(result.record.runtimeBalanceCandidateSet?.eligibleTemplateIds.every(
+      (id) => historicalIds.has(id),
+    )).toBe(true);
+    expect(result.record.beginnerEventCadence).toBeUndefined();
   });
 });
 
