@@ -1,0 +1,164 @@
+import { describe, expect, it } from "vitest";
+
+import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
+import { projectRunView } from "@/application/game/run-view";
+import { onboardingDraftForPersonaV1 } from "@/core/onboarding-personas-v1";
+import { prepareOnboardingReviewV1 } from "@/core/onboarding-v1";
+
+import { ApiClientError, LifeFinanceClient } from "../client";
+
+describe("LifeFinanceClient", () => {
+  it("clears the HttpOnly session through the same-origin endpoint", async () => {
+    let request: { input: string; init?: RequestInit } | null = null;
+    const client = new LifeFinanceClient(async (input, init) => {
+      request = { input: String(input), init };
+      return new Response(null, { status: 204 });
+    });
+
+    await expect(client.deleteSession()).resolves.toBeUndefined();
+    expect(request).toEqual({
+      input: "/api/session",
+      init: { method: "DELETE", credentials: "same-origin" },
+    });
+  });
+
+  it("reviews onboarding without exposing engine versions to the caller", async () => {
+    const draft = onboardingDraftForPersonaV1("software", "client-review-seed");
+    const review = prepareOnboardingReviewV1(draft);
+    let path = "";
+    const client = new LifeFinanceClient(async (input) => {
+      path = String(input);
+      return Response.json(review);
+    });
+
+    await expect(client.reviewOnboarding({ draft })).resolves.toMatchObject({
+      status: "ready",
+      reviewChecksum: review.reviewChecksum,
+    });
+    expect(path).toBe("/api/onboarding/review");
+  });
+
+  it("submits a browser command intent through the active cookie session", async () => {
+    const run = projectRunView(currentRunState());
+    let request: { input: string; init?: RequestInit } | null = null;
+    const client = new LifeFinanceClient(async (input, init) => {
+      request = { input: String(input), init };
+      return Response.json({
+        run,
+        stateChecksum: "a".repeat(64),
+        result: { idempotentReplay: false, monthlyRecord: null },
+      });
+    });
+
+    await expect(
+      client.submitCommand("run.current", {
+        id: "ui.month.1",
+        expectedRevision: 0,
+        type: "process_month",
+        payload: {},
+      }),
+    ).resolves.toMatchObject({ run: { revision: 0 } });
+    expect(request).toMatchObject({
+      input: "/api/runs/run.current/commands",
+      init: { method: "POST", credentials: "same-origin" },
+    });
+  });
+
+  it("creates a run through the unversioned cookie-authenticated endpoint", async () => {
+    const run = projectRunView(currentRunState());
+    let request: { input: string; init?: RequestInit } | null = null;
+    const client = new LifeFinanceClient(async (input, init) => {
+      request = { input: String(input), init };
+      return Response.json({ run, stateChecksum: "a".repeat(64) }, { status: 201 });
+    });
+
+    await expect(
+      client.createRun({
+        draft: { version: "onboarding-v1", sourceMode: "typed" },
+        reviewChecksum: "a".repeat(64),
+      }),
+    ).resolves.toMatchObject({ run: { runId: "run.current" } });
+    expect(request).toMatchObject({
+      input: "/api/runs",
+      init: {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+      },
+    });
+  });
+
+  it("starts a local demo through the credential-free development endpoint", async () => {
+    const run = projectRunView(currentRunState());
+    let request: { input: string; init?: RequestInit } | null = null;
+    const client = new LifeFinanceClient(async (input, init) => {
+      request = { input: String(input), init };
+      return Response.json({ run, stateChecksum: "a".repeat(64) }, { status: 201 });
+    });
+
+    await expect(client.createDemoRun()).resolves.toMatchObject({
+      run: { runId: "run.current" },
+    });
+    expect(request).toEqual({
+      input: "/api/demo",
+      init: { method: "POST", credentials: "same-origin" },
+    });
+  });
+
+  it("restores and validates the current same-origin session", async () => {
+    const run = projectRunView(currentRunState());
+    const calls: Array<{ input: string; init?: RequestInit }> = [];
+    const client = new LifeFinanceClient(async (input, init) => {
+      calls.push({ input: String(input), init });
+      return Response.json({
+        session: { run, stateChecksum: "a".repeat(64) },
+      });
+    });
+
+    await expect(client.getSession()).resolves.toMatchObject({
+      session: { run: { runId: "run.current" } },
+    });
+    expect(calls).toEqual([
+      {
+        input: "/api/session",
+        init: { method: "GET", credentials: "same-origin" },
+      },
+    ]);
+  });
+
+  it("rejects a successful response that violates the contract", async () => {
+    const client = new LifeFinanceClient(async () =>
+      Response.json({ session: { run: {} } }),
+    );
+
+    await expect(client.getSession()).rejects.toEqual(
+      expect.objectContaining<Partial<ApiClientError>>({
+        code: "INVALID_RESPONSE",
+        status: 502,
+      }),
+    );
+  });
+
+  it("normalizes the standard API error envelope", async () => {
+    const client = new LifeFinanceClient(async () =>
+      Response.json(
+        {
+          error: {
+            code: "OPTIMISTIC_CONFLICT",
+            message: "reload",
+            requestId: "request.conflict",
+          },
+        },
+        { status: 409 },
+      ),
+    );
+
+    await expect(client.getSession()).rejects.toEqual(
+      expect.objectContaining<Partial<ApiClientError>>({
+        code: "OPTIMISTIC_CONFLICT",
+        status: 409,
+        requestId: "request.conflict",
+      }),
+    );
+  });
+});

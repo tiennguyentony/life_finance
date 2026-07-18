@@ -16,12 +16,19 @@ describe("Landing", () => {
     expect(markup).toContain('data-action="lucky-finale"');
   });
 
-  it("starts the game at the board without presenting a login step", () => {
+  it("starts onboarding before opening the board", () => {
     const markup = renderToStaticMarkup(<Landing />);
 
     expect(markup).not.toContain("Log in");
-    // Play and Start both lead straight into the board game.
-    expect(markup).toContain('href="/board"');
-    expect(markup).not.toContain('href="/start"');
+    expect(markup).toContain('href="/start"');
+    expect(markup).not.toContain('href="/board"');
+  });
+
+  it("shows the backend demo launcher only when local demo mode is enabled", () => {
+    const normalMarkup = renderToStaticMarkup(<Landing />);
+    const developmentMarkup = renderToStaticMarkup(<Landing demoEnabled />);
+
+    expect(normalMarkup).not.toContain("Instant demo");
+    expect(developmentMarkup).toContain("Instant demo");
   });
 });

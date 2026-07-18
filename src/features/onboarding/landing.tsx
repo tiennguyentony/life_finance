@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { DemoLaunchButton } from "./demo-launch-button";
+
 const landingPerformance = [
   { action: "money-burst", frame: 1 },
   { action: "victory-bounce", frame: 2 },
@@ -8,7 +10,11 @@ const landingPerformance = [
   { action: "lucky-finale", frame: 4 },
 ] as const;
 
-export function Landing() {
+type LandingProps = Readonly<{
+  demoEnabled?: boolean;
+}>;
+
+export function Landing({ demoEnabled = false }: LandingProps) {
   return (
     <div className="splash-screen">
       <Image
@@ -35,7 +41,8 @@ export function Landing() {
           <strong>Life<br />Finance</strong>
         </div>
         <div className="landing-account-actions">
-          <Link className="landing-start" href="/board">Start</Link>
+          {demoEnabled ? <DemoLaunchButton /> : null}
+          <Link className="landing-start" href="/start">Start</Link>
         </div>
       </header>
 
@@ -66,7 +73,7 @@ export function Landing() {
         ))}
       </section>
 
-      <Link className="landing-play-button" href="/board">
+      <Link className="landing-play-button" href="/start">
         Play
       </Link>
 
