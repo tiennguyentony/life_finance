@@ -3,9 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 type VercelConfig = Readonly<{
-  services?: Readonly<{
-    frontend?: Readonly<{ buildCommand?: string }>;
-  }>;
+  buildCommand?: string;
+  services?: unknown;
 }>;
 
 describe("production database deployment", () => {
@@ -14,9 +13,8 @@ describe("production database deployment", () => {
       readFileSync(new URL("../../../../vercel.json", import.meta.url), "utf8"),
     ) as VercelConfig;
 
-    expect(config.services?.frontend?.buildCommand).toBe(
-      "node scripts/vercel-build.mjs",
-    );
+    expect(config.buildCommand).toBe("node scripts/vercel-build.mjs");
+    expect(config.services).toBeUndefined();
     const buildScript = readFileSync(
       new URL("../../../../scripts/vercel-build.mjs", import.meta.url),
       "utf8",

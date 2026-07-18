@@ -33,7 +33,7 @@ This path still exercises the real same-origin API, HttpOnly cookie, use cases, 
 
 3. Install packages: `pnpm install --frozen-lockfile`.
 4. Run `pnpm db:migrate` against a database you are authorized to modify.
-5. In Supabase Auth, use a six-digit email OTP template containing `{{ .Token }}`. The checked-in local template is `supabase/templates/email-code.html`.
+5. In Supabase Auth, allow `${APP_ORIGIN}/auth/callback` redirects. The checked-in local confirmation and magic-link template is `supabase/templates/email-link.html` and uses `{{ .ConfirmationURL }}`.
 6. Configure and start the tax service using `services/tax/README.md`.
 7. Run `pnpm dev`, sign in by email code, and use the normal **Start** onboarding path.
 
