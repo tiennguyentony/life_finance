@@ -57,6 +57,29 @@ event/other income and expense, required cash, debt interest/payment, insurance
 claim cost, market movement, and inflation. These values come from the persisted
 monthly record; the browser does not recalculate them.
 
+## Local verification on 2026-07-18
+
+The final local cohort for commit `a7dd8ab` executed 3,600 matched runs and
+43,187 production months. Its deterministic production fingerprint was
+`6e3729121f4a165228c09c3d6065e420f01f15f359269f1b382244db13dd0019`.
+
+The checks confirmed:
+
+- all 25 active events and their response effects pass the static signed-impact
+  matrix;
+- prepared choices reduce event impact and matched strategy comparison passes;
+- no major-event pacing, extreme-challenge, adjacent-absurd, root-event-streak,
+  or prepared unavoidable-failure violations occurred;
+- six-month nonfatal recovery was 93.21%, above its 75% target; and
+- the runtime was 91.18 seconds, below the 300-second budget.
+
+The complete beginner acceptance suite remains blocked. Bankruptcy was 0.39%
+against its configured 5–15% band, meaningful/crisis prompts were 33.44%
+against the 40–60% band, and the median was seven prompts against the configured
+eight-to-ten range. These are whole-game cadence and difficulty calibration
+gaps; they are not hidden by lowering acceptance thresholds or by increasing
+event amounts without evidence.
+
 ## Remaining modeling boundary
 
 Temporary event income is currently recorded as resolved other income by the
