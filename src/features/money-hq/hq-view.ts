@@ -142,9 +142,9 @@ export function hqViewFromRun(run: RunViewWire): HqView {
     monthLabel: formatMonthLabel(run.currentMonth),
     shortMonthLabel: formatShortMonthLabel(run.currentMonth),
     monthNumber: monthIndex(run.startMonth, run.currentMonth),
-    // Must use the same owner value as goal.progressPpm. Subtracting debt here
-    // made the displayed numerator disagree with the backend-owned percentage.
-    goalCurrentCents: run.finances.investableAssetsCents,
+    // This is net of liabilities and is the exact numerator the backend goal
+    // projection used for progressPpm.
+    goalCurrentCents: run.goal.currentCents,
     goalTargetCents: run.goal.targetCents,
     goalProgressPpm: run.goal.progressPpm,
     preparednessPpm: run.preparedness.scorePpm,

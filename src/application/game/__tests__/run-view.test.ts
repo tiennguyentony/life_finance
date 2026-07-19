@@ -212,6 +212,25 @@ describe("projectRunView", () => {
     });
   });
 
+  it("projects the debt-adjusted FI numerator used by goal progress", () => {
+    const base = currentRunState();
+    const view = projectRunView({
+      ...base,
+      finances: {
+        ...base.finances,
+        nonCreditLiabilitiesCents: moneyCents(250_000),
+        creditUsedCents: moneyCents(100_000),
+      },
+    });
+
+    expect(view.goal.currentCents).toBe(
+      Math.max(0, view.finances.investableAssetsCents - 350_000),
+    );
+    expect(view.goal.progressPpm).toBe(
+      Math.floor((view.goal.currentCents * 1_000_000) / view.goal.targetCents),
+    );
+  });
+
   it("projects pending career program IDs", () => {
     const base = currentRunState();
     const state: GameStateV2 = {

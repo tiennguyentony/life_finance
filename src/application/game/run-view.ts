@@ -70,6 +70,8 @@ export type RunView = Readonly<{
     desiredAnnualSpendingCents: number;
     safeWithdrawalRatePpm: number;
     targetAgeYears: number;
+    /** Investable assets net of current liabilities, owned by goal projection. */
+    currentCents: number;
     targetCents: number;
     progressPpm: number;
   }>;
@@ -377,6 +379,7 @@ export function projectRunView(state: GameStateV2): RunView {
         financialGoal.goal.desiredAnnualSpendingCents,
       safeWithdrawalRatePpm: financialGoal.goal.safeWithdrawalRatePpm,
       targetAgeYears: financialGoal.goal.targetAgeYears,
+      currentCents: financialGoal.investableAssetsCents,
       targetCents: financialGoal.targetCents,
       progressPpm: financialGoal.progressPpm,
     }),

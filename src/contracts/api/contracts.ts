@@ -233,6 +233,7 @@ export const runViewSchema = z
         desiredAnnualSpendingCents: centsSchema,
         safeWithdrawalRatePpm: rateSchema,
         targetAgeYears: z.number().int().min(18).max(120),
+        currentCents: centsSchema.nonnegative(),
         targetCents: centsSchema,
         progressPpm: rateSchema,
       })
