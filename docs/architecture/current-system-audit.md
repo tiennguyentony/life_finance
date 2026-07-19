@@ -1,6 +1,6 @@
 # Current system audit
 
-This audit describes the account-save/performance branch based on `f808c44`. It is the quickest answer to “what exists now?”
+This audit describes local `main` after the account-save, balance, beginner-cadence, and monthly AI integration work. It is the quickest answer to “what exists now?”
 
 ## Status at a glance
 
@@ -15,12 +15,12 @@ This audit describes the account-save/performance branch based on `f808c44`. It 
 | Detailed financial actions | Broad internal/public intent support | Yes | Small fixed board subset |
 | Recurring strategy | Implemented | Yes | Only emergency-buffer target exposed by board plans |
 | Declarative events | Four active templates | Resolve command | Yes, after monthly result |
-| Risk + Scenario Director + fairness | Deterministic implementations | Part of month processing | Summary/event result only |
+| Risk + Scenario Director + fairness | Deterministic authority plus optional validated AI ranking | Part of month processing | Event result plus AI evidence when sampled |
 | Multi-month time control | Implemented internally | No active route | No |
 | Checkpoint/history/counterfactual | Implemented internally | No active route | No |
 | Teaching/debrief | Core and server services/panels exist | No active route | Not mounted |
 | AI onboarding extraction | Provider service exists | `/api/onboarding/parse` | Not called by current form |
-| AI world direction | Service and audit contracts exist | No active route | No |
+| AI monthly direction | Off/shadow/active ranking with deterministic fallback | Existing monthly command | Evidence in month result when sampled |
 
 ## What the player can do today
 
@@ -38,9 +38,9 @@ The free-travel variant shares the same state. Its extra Goals/Events/Journal/Me
 
 ## What “AI-powered” means in this version
 
-Provider adapters, structured prompting, audit encryption, onboarding extraction, education/debrief, and world-director modules are present and tested in isolation. They are not connected to the playable monthly loop. The only active AI-capable endpoint is onboarding parse, and the shipped form does not call it.
+Provider adapters, structured prompting, audit encryption, onboarding extraction, education/debrief, and world-director modules are present. The constrained Scenario Director adapter is connected to the playable monthly loop when `AI_GAMEPLAY_MODE` is `shadow` or `active`; it remains off by default.
 
-Events are selected without Groq, OpenAI, or Ollama. Deterministic code generates eligible candidates, ranks them, applies fairness, and persists exact effects. This is efficient and replayable, but it means current gameplay does not yet demonstrate deep runtime AI integration.
+Deterministic code still generates eligible candidates, owns all mechanics, and applies fairness. On sampled eligible months, Groq, OpenAI, or local Ollama may reorder the exact candidate permutation. Invalid, late, missing, duplicated, or tampered output is ignored. Active rankings and compact comparison evidence are persisted, so replay does not call the model. The month-result UI shows the provider outcome without exposing raw prompt/output.
 
 ## Important correctness properties
 
@@ -65,7 +65,7 @@ Events are selected without Groq, OpenAI, or Ollama. Deterministic code generate
 4. Production events cover only medical bill, lifestyle upgrade, performance bonus, and utility rebate.
 5. Tax is calculated in the engine but no player-facing tax statement or concept lesson is mounted.
 6. 401(k), HSA, insurance, debt, and counterfactual teaching systems are not surfaced in the current board.
-7. AI does not currently direct monthly events or teach in the playable UI.
+7. AI teaching is not mounted; monthly AI affects candidate order only and does not generate event mechanics or educational prose.
 8. Level/XP are UI derivations; journal/menu surfaces are incomplete.
 9. `/api/health` does not establish dependency readiness.
 10. The OpenAPI object is a route inventory, not a full request/response specification.
@@ -96,6 +96,6 @@ These tracked artifacts were not removed by this audit because they may be inten
 3. Expand and test the declarative event catalog by life domain before adding AI narration.
 4. Expose deterministic preview and teaching/counterfactual endpoints through the unversioned API.
 5. Mount education/debrief UI into the canonical board.
-6. Integrate AI only as a constrained ranker/narrator over allowed candidates and evidence, with deterministic fallback and audit—not as the calculator of record.
+6. Extend the now-connected constrained ranker with player-visible teaching/narration over immutable evidence; keep deterministic fallback and never make AI the calculator of record.
 
 This sequence preserves replay, cost control, and correctness while making the hackathon’s education and AI value visible.

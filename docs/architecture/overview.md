@@ -10,6 +10,7 @@ flowchart LR
   H --> A[Application use cases]
   A --> S[Onboarding and Run services]
   S --> E[Deterministic schema-2 engine]
+  S -. optional bounded ranking .-> AI[Groq / OpenAI / local Ollama]
   S --> T[Tax adapter]
   S --> R[Run repository]
   R --> P[(PostgreSQL)]
@@ -26,7 +27,7 @@ The development-only demo replaces PostgreSQL with an in-memory repository and P
 - `RunService` orchestrates tax evidence, deterministic reduction, market/event policy, persistence, and projection.
 - The core owns exact-cent financial math, event effects, outcomes, replay, and state invariants.
 - PostgreSQL owns the current state, revisions, idempotency records, evidence, snapshots, ledger, and outbox.
-- AI is optional infrastructure. Today the public API exposes optional onboarding text extraction; the current typed onboarding UI and playable board do not perform AI inference.
+- AI is optional infrastructure. The monthly command can invoke a privacy-minimized, schema-constrained candidate ranker in shadow or active mode. The deterministic engine and Runtime Balance remain authoritative, and the board exposes only compact validation evidence.
 
 ## Monthly command flow
 
@@ -36,6 +37,7 @@ sequenceDiagram
   participant API as Same-origin API
   participant RS as RunService
   participant TAX as Tax adapter
+  participant AI as Optional AI ranker
   participant CORE as Deterministic core
   participant DB as Repository
   UI->>API: plan intent (optional)
@@ -47,6 +49,11 @@ sequenceDiagram
   RS->>TAX: cached or fresh annual-context evidence
   RS->>CORE: monthly kernel + market + outcomes
   RS->>CORE: event candidates, ranking, fairness
+  opt sampled AI enabled and at least two candidates
+    RS->>CORE: capture verified ranking input
+    RS->>AI: privacy-minimized candidate facts
+    AI-->>RS: exact permutation or fallback
+  end
   RS->>DB: state + evidence + ledger + outbox
   RS-->>UI: projected RunView
 ```
@@ -67,7 +74,7 @@ The board deliberately issues the plan and month as two revisioned commands. Its
 | `src/server/auth` | Cookie session and same-origin write protection |
 | `src/server/db` | Drizzle/PostgreSQL persistence, snapshots, replay, and history |
 | `src/server/tax` | Tax-service client, caching context, and adapters |
-| `src/server/ai`, `src/server/teaching` | Implemented optional services, mostly not publicly routed |
+| `src/server/ai`, `src/server/teaching` | Monthly AI orchestration plus optional/unmounted teaching services |
 | `src/core` | Pure deterministic domain engine |
 
 ## Adding player-visible behavior
