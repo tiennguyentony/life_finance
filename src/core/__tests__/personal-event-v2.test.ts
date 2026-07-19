@@ -381,7 +381,16 @@ describe("declarative personal-event v2 catalog", () => {
     });
     const reducedHours = getPersonalEventTemplateV2("personal.reduced_work_hours");
     expect(reducedHours).toMatchObject({
-      hazard: { baseChancePpm: 80_000 },
+      hazard: {
+        baseChancePpm: 30_000,
+        maximumChancePpm: 200_000,
+        modifiers: [{
+          type: "wellbeing_threshold",
+          field: "burnoutPpm",
+          thresholdPpm: 400_000,
+          deltaPpm: 170_000,
+        }],
+      },
       parameters: [{ minimum: 300_000, maximum: 700_000 }],
       recovery: { durationMonths: 9 },
     });
@@ -759,6 +768,32 @@ describe("declarative personal-event v2 scheduling", () => {
     const expansion = state();
     expect(scheduleDeclarativePersonalEventV2(expansion, [template]).event).not.toBeNull();
     expect(scheduleDeclarativePersonalEventV2({ ...expansion, marketRegime: "recession" }, [template]).event).toBeNull();
+  });
+
+  it("applies an explicit wellbeing threshold without inferring financial vulnerability", () => {
+    const base = alwaysTemplate();
+    const template: PersonalEventTemplateV2 = {
+      ...base,
+      hazard: {
+        ...base.hazard,
+        baseChancePpm: 0,
+        modifiers: [{
+          type: "wellbeing_threshold",
+          field: "burnoutPpm",
+          comparator: "at_least",
+          thresholdPpm: 400_000,
+          deltaPpm: 1_000_000,
+        }],
+      },
+    };
+    const rested = state();
+    const burnedOut = {
+      ...rested,
+      wellbeing: { ...rested.wellbeing, burnoutPpm: ratePpm(400_000) },
+    };
+
+    expect(scheduleDeclarativePersonalEventV2(rested, [template]).event).toBeNull();
+    expect(scheduleDeclarativePersonalEventV2(burnedOut, [template]).event).not.toBeNull();
   });
 
   it("sorts equal event ids by version before consuming RNG", () => {

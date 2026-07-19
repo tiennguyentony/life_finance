@@ -1179,7 +1179,7 @@ describe("atomic v2 monthly turn", () => {
       "de37add20665a53f9de5f2f8080b22195a5a2a148d77c18e812603c9fd552200",
     );
     expect(sha256Canonical(left.record)).toBe(
-      "3f8499e6d045b3eba3c514b841471c91e0136317df1214c9c5381f73b81ecca6",
+      "a4af418c8929b8bd8e9c30dc335364585007e242fb73b3b8317d3f87b944781a",
     );
     expect(sha256Canonical(left.record)).toBe(sha256Canonical(right.record));
   });
