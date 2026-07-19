@@ -1,11 +1,12 @@
-# Account save and performance handoff
+# Current implementation handoff
 
 This file is the durable continuation context for the current implementation branch. It contains no credentials.
 
-## Branch and commits
+## Mainline status
 
-- Branch: `feature/auth-save-performance`
-- Base: `f808c44`
+- Branch: `main`
+- Current audited head: `11a16c9cec866868c922d199bf10a437c84c82df`
+- The account-save/performance sequence below is now part of `main`.
 - `e291629` — Supabase email OTP authentication foundation
 - `542884f` — account-owned persistent saves and legacy-save claim
 - `455a27d` — reduced command traffic, dormant outbox writes, and missing FK index
@@ -21,7 +22,7 @@ This file is the durable continuation context for the current implementation bra
 - `6b389b7` — keep current-game management on `/saves`
 - `5cacde9` — allow confirmed custom living costs to evolve after onboarding
 
-Nothing in this sequence has been pushed to `main`. Continue testing locally and obtain player acceptance before merge/push.
+The later equation-balance, repeatable beginner-loop, and funny-event-rhythm work is also present on `main`. Its candidate event catalog and beginner cadence remain calibration-only: production continues to use the historical V2 scheduling catalog until the documented activation gates pass.
 
 ## Implemented invariants
 
@@ -64,11 +65,11 @@ Nothing in this sequence has been pushed to `main`. Continue testing locally and
 - PolicyEngine is cached by annual tax context. The first uncached calculation can be much slower than later monthly commands; do not call the tax service again for an unchanged annual context.
 - Custom expense evidence is an immutable record of the confirmed opening budget. The live annual living cost is mutable because inflation and player choices change it; conflating those fields previously broke the first month of a custom-expense run.
 
-## Before deployment
+## Before the next deployment
 
-1. Finish the full verification gate and database integration suite.
+1. Finish the full verification gate and any environment-enabled database integration suites.
 2. Apply migrations `0007` and `0008` to a reviewed non-production target first.
 3. Configure Vercel runtime variables; a Vercel token by itself is insufficient.
 4. Enable Supabase email/password signup and disable email confirmation for the hackathon demo; verify that signup returns a session without sending mail.
 5. Test two browsers with the same account credentials, new-save archival, and a different-account claim rejection.
-6. Only after acceptance, merge/push the individual commits to `main` and deploy.
+6. Keep candidate balance policies disabled until their acceptance gates pass, then deploy only after local player acceptance.
