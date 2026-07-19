@@ -6,10 +6,15 @@ import { useRouter } from "next/navigation";
 import { LoadingState } from "@/components/async-state";
 import { useOnboarding } from "./onboarding-provider";
 import { Sprout } from "@/components/sprout";
-import { getPersonas } from "@/services/player.service";
+import { getPersonas, PROFILE_LOCATIONS } from "@/services/player.service";
 import type { Persona, ProfileInput } from "@/types/game";
 
 const STEP_LABELS = ["You", "Where", "Why"] as const;
+const PERSONA_LOCATION_ID: Readonly<Record<Persona["id"], string>> = {
+  "junior-developer": "location.seattle",
+  educator: "location.chicago",
+  "city-survivor": "location.seattle",
+};
 
 export function ProfileWizard() {
   const router = useRouter();
@@ -17,10 +22,10 @@ export function ProfileWizard() {
   const [personas, setPersonas] = useState<readonly Persona[]>([]);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Omit<ProfileInput, "personaId">>({
-    name: "",
     age: "",
-    location: "",
-    goal: "",
+    locationId: "",
+    desiredAnnualSpendingDollars: "60000",
+    targetAgeYears: "50",
   });
 
   useEffect(() => {
@@ -53,12 +58,27 @@ export function ProfileWizard() {
     }
 
     choosePersona(persona.id);
-    queueProfile({ ...form, personaId: persona.id });
+    queueProfile({
+      ...form,
+      locationId: form.locationId || PERSONA_LOCATION_ID[persona.id],
+      personaId: persona.id,
+    });
     router.push("/generating");
   }
 
+  const parsedAge = form.age === "" ? persona.age : Number(form.age);
+  const effectiveLocationId =
+    form.locationId || PERSONA_LOCATION_ID[persona.id];
   const canContinue =
-    step === 0 ? form.name.trim().length > 0 : step === 1 ? true : form.goal.trim().length > 0;
+    step === 0
+      ? Number.isInteger(parsedAge) && parsedAge >= 18 && parsedAge <= 80
+      : step === 1
+        ? PROFILE_LOCATIONS.some(({ id }) => id === effectiveLocationId)
+        : Number.isSafeInteger(Number(form.desiredAnnualSpendingDollars)) &&
+          Number(form.desiredAnnualSpendingDollars) > 0 &&
+          Number.isSafeInteger(Number(form.targetAgeYears)) &&
+          Number(form.targetAgeYears) >= 18 &&
+          Number(form.targetAgeYears) <= 80;
 
   return (
     <div className="screen wizard-screen">
@@ -75,25 +95,23 @@ export function ProfileWizard() {
         <form onSubmit={(event) => { event.preventDefault(); handleContinue(); }}>
           {step === 0 ? (
             <fieldset className="wizard-fieldset" key="identity">
-              <legend>Who are we financially endangering?</legend>
-              <label>
-                Your name
-                <input
-                  autoFocus
-                  onChange={(event) => updateField("name", event.target.value)}
-                  placeholder="Mina"
-                  value={form.name}
-                />
-              </label>
+              <legend>When does Sprout start this financial life?</legend>
               <label>
                 Age
                 <input
+                  autoFocus
                   inputMode="numeric"
+                  max={80}
+                  min={18}
                   onChange={(event) => updateField("age", event.target.value)}
                   placeholder={String(persona.age)}
+                  type="number"
                   value={form.age}
                 />
               </label>
+              <p className="hq-note">
+                Leave it blank to use this life&rsquo;s suggested age of {persona.age}.
+              </p>
             </fieldset>
           ) : null}
 
@@ -101,37 +119,57 @@ export function ProfileWizard() {
             <fieldset className="wizard-fieldset" key="location">
               <legend>Where does your money disappear?</legend>
               <label className="field-wide">
-                City
-                <input
+                Metro area
+                <select
                   autoFocus
-                  onChange={(event) => updateField("location", event.target.value)}
-                  placeholder={persona.location}
-                  value={form.location}
-                />
+                  onChange={(event) => updateField("locationId", event.target.value)}
+                  value={effectiveLocationId}
+                >
+                  {PROFILE_LOCATIONS.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.label}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <button
-                className="suggestion-chip"
-                onClick={() => updateField("location", persona.location)}
-                type="button"
-              >
-                Use {persona.location}
-              </button>
+              <p className="hq-note">
+                This changes state taxes and the catalog-owned cost of living.
+              </p>
             </fieldset>
           ) : null}
 
           {step === 2 ? (
             <fieldset className="wizard-fieldset" key="goal">
-              <legend>What would feel like winning?</legend>
+              <legend>Define financial independence</legend>
               <label className="field-wide">
-                Your main quest
-                <textarea
+                Desired annual spending in retirement (USD)
+                <input
                   autoFocus
-                  onChange={(event) => updateField("goal", event.target.value)}
-                  placeholder="Build enough safety to stop panicking at every email..."
-                  rows={4}
-                  value={form.goal}
+                  inputMode="numeric"
+                  min={1}
+                  onChange={(event) =>
+                    updateField("desiredAnnualSpendingDollars", event.target.value)
+                  }
+                  step={1000}
+                  type="number"
+                  value={form.desiredAnnualSpendingDollars}
                 />
               </label>
+              <label>
+                Target age
+                <input
+                  inputMode="numeric"
+                  max={80}
+                  min={18}
+                  onChange={(event) => updateField("targetAgeYears", event.target.value)}
+                  type="number"
+                  value={form.targetAgeYears}
+                />
+              </label>
+              <p className="hq-note">
+                The game uses a 4% safe-withdrawal assumption, so this goal sets
+                the exact FI target shown in Money HQ.
+              </p>
             </fieldset>
           ) : null}
 

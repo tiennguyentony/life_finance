@@ -5,6 +5,16 @@ import { LifeFinanceClient } from "@/lib/api-client/client";
 import type { RunViewWire } from "@/contracts/api/contracts";
 import type { Persona, ProfileInput } from "@/types/game";
 
+export const PROFILE_LOCATIONS = Object.freeze([
+  { id: "location.seattle", label: "Seattle–Tacoma–Bellevue, WA" },
+  { id: "location.austin", label: "Austin–Round Rock–San Marcos, TX" },
+  { id: "location.atlanta", label: "Atlanta–Sandy Springs–Roswell, GA" },
+  { id: "location.chicago", label: "Chicago–Naperville–Elgin, IL" },
+  { id: "location.new_york", label: "New York–Newark–Jersey City, NY–NJ" },
+] as const);
+
+const DEFAULT_SAFE_WITHDRAWAL_RATE_PPM = 40_000;
+
 const BACKEND_PERSONA: Readonly<
   Record<ProfileInput["personaId"], OnboardingPersonaIdV1>
 > = {
@@ -27,6 +37,26 @@ function birthMonth(age: string, fallbackAge: number): string {
   return `${2026 - resolved}-07`;
 }
 
+function dollarsToCents(value: string): number {
+  const dollars = Number(value);
+  if (!Number.isSafeInteger(dollars) || dollars <= 0) {
+    throw new Error("Annual FI spending must be a positive whole-dollar amount.");
+  }
+  const cents = dollars * 100;
+  if (!Number.isSafeInteger(cents)) {
+    throw new Error("Annual FI spending is too large.");
+  }
+  return cents;
+}
+
+function targetAge(value: string): number {
+  const age = Number(value);
+  if (!Number.isSafeInteger(age) || age < 18 || age > 80) {
+    throw new Error("FI target age must be a whole number from 18 through 80.");
+  }
+  return age;
+}
+
 export async function getPersonas(): Promise<readonly Persona[]> {
   return PERSONAS;
 }
@@ -39,6 +69,16 @@ export async function createRunFromProfile(
   const draft = {
     ...onboardingDraftForPersonaV1(BACKEND_PERSONA[input.personaId], seed()),
     birthMonth: birthMonth(input.age, persona.age),
+    locationId: input.locationId,
+    financialGoal: {
+      version: "financial-goal-v1" as const,
+      desiredAnnualSpendingCents: dollarsToCents(
+        input.desiredAnnualSpendingDollars,
+      ),
+      safeWithdrawalRatePpm: DEFAULT_SAFE_WITHDRAWAL_RATE_PPM,
+      targetAgeYears: targetAge(input.targetAgeYears),
+      source: "player_selected" as const,
+    },
   };
   const client = api();
   const review = await client.reviewOnboarding({ draft });

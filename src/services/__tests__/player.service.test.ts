@@ -32,13 +32,43 @@ describe("player service", () => {
 
     const result = await createRunFromProfile({
       personaId: "junior-developer",
-      name: "Mina",
       age: "27",
-      location: "Seattle, WA",
-      goal: "Build a six-month safety net",
+      locationId: "location.austin",
+      desiredAnnualSpendingDollars: "72000",
+      targetAgeYears: "52",
     });
 
     expect(paths).toEqual(["/api/onboarding/review", "/api/runs"]);
     expect(result).toMatchObject({ runId: "run.current" });
+    const reviewCall = vi.mocked(fetch).mock.calls[0]!;
+    const reviewBody = JSON.parse(String(reviewCall[1]?.body)) as {
+      draft: Record<string, unknown>;
+    };
+    expect(reviewBody.draft).toMatchObject({
+      birthMonth: "1999-07",
+      locationId: "location.austin",
+      financialGoal: {
+        desiredAnnualSpendingCents: 7_200_000,
+        safeWithdrawalRatePpm: 40_000,
+        targetAgeYears: 52,
+        source: "player_selected",
+      },
+    });
+  });
+
+  it("rejects invalid structured FI inputs before making a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createRunFromProfile({
+        personaId: "educator",
+        age: "28",
+        locationId: "location.chicago",
+        desiredAnnualSpendingDollars: "0",
+        targetAgeYears: "50",
+      }),
+    ).rejects.toThrow("Annual FI spending");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
