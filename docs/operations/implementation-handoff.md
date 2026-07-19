@@ -5,7 +5,8 @@ This file is the durable continuation context for the current implementation bra
 ## Mainline status
 
 - Branch: `main`
-- Current audited head: `11a16c9cec866868c922d199bf10a437c84c82df`
+- Current audited code head: `5d50de9fdbc390b1319fa80c1deb2cb23b5a85df`
+- Local `main` contains commits not present on `origin/main`; do not claim these changes are pushed.
 - The account-save/performance sequence below is now part of `main`.
 - `e291629` — Supabase email OTP authentication foundation
 - `542884f` — account-owned persistent saves and legacy-save claim
@@ -23,6 +24,17 @@ This file is the durable continuation context for the current implementation bra
 - `5cacde9` — allow confirmed custom living costs to evolve after onboarding
 
 The later equation-balance, repeatable beginner-loop, and funny-event-rhythm work is also present on `main`. Its candidate event catalog and beginner cadence remain calibration-only: production continues to use the historical V2 scheduling catalog until the documented activation gates pass.
+
+## Pending beginner calibration work
+
+- Balance Lab now derives exactly one highest active version per template ID from an exact replay catalog. The previous owner incorrectly scheduled both V2 and V3 when both were present.
+- Mandatory cadence beats can supplement hazard candidates from eligible active templates, while exact historical follow-ups remain replayable.
+- A due follow-up is attempted before exogenous roots; an unsafe follow-up no longer has to erase all alternatives from the candidate set.
+- Chapter challenge targets are cumulative (1/2/3/4 by months 3/6/9/12), so safety, recovery, or follow-up priority postpones rather than permanently deletes a challenge beat.
+- A challenge beat accepts only a state-specific `meaningful` or `crisis` impact estimate. Static event labels do not override Runtime Balance safety.
+- The V3 transport-repair follow-up maximum was reduced from $15,000 to $13,500; historical V2 replay data was not mutated.
+- The final 3,600-run local cohort is documented in `docs/superpowers/results/2026-07-18-beginner-cadence-iteration-2.md`.
+- Activation remains blocked. Do not change `ACTIVE_BEGINNER_EVENT_CADENCE_VERSION` or `PERSONAL_EVENT_SCHEDULING_SELECTION_V2` until every configured gate passes on a clean committed tree.
 
 ## Implemented invariants
 
