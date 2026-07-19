@@ -40,6 +40,10 @@ export type MonthlyDebtServicePlan = Readonly<{
   totalScheduledPaymentCents: MoneyCents;
 }>;
 
+export type LegacyMonthlyDebtServicePlan = Readonly<
+  Omit<MonthlyDebtServicePlan, "revolving">
+>;
+
 export class DebtServiceV2Error extends Error {
   readonly code: "INVALID_DEBT" | "INSUFFICIENT_CASH" | "INVALID_COMMAND_ID";
 
@@ -132,9 +136,9 @@ export function applyDebtPaymentV2(
   return Object.freeze({ debt: nextDebt, appliedPaymentCents });
 }
 
-export function planMonthlyDebtService(
+export function planLegacyMonthlyDebtService(
   state: GameStateV2,
-): MonthlyDebtServicePlan {
+): LegacyMonthlyDebtServicePlan {
   const lines = state.gameplay.debts.termDebts
     .filter(({ principalCents }) => principalCents > 0)
     .map((debt): DebtServiceLine => {
@@ -180,25 +184,36 @@ export function planMonthlyDebtService(
           closingPrincipalCents === 0 ? 0 : debt.remainingTermMonths - 1,
       });
     });
+  return Object.freeze({
+    lines: Object.freeze(lines),
+    totalInterestCents: sumMoney(
+      lines.map(({ interestCents }) => interestCents),
+      "monthly total debt interest",
+    ),
+    totalScheduledPaymentCents: sumMoney(
+      lines.map(({ scheduledPaymentCents }) => scheduledPaymentCents),
+      "monthly total debt payments",
+    ),
+  });
+}
+
+export function planMonthlyDebtService(
+  state: GameStateV2,
+): MonthlyDebtServicePlan {
+  const term = planLegacyMonthlyDebtService(state);
   const revolving = planRevolvingCreditMonthV2(
     state.gameplay.debts.revolvingCreditUsedCents,
   );
   return Object.freeze({
-    lines: Object.freeze(lines),
+    lines: term.lines,
     revolving,
-    totalInterestCents: sumMoney(
-      [
-        ...lines.map(({ interestCents }) => interestCents),
-        revolving.interestCents,
-      ],
-      "monthly total debt interest",
+    totalInterestCents: addMoney(
+      term.totalInterestCents,
+      revolving.interestCents,
     ),
-    totalScheduledPaymentCents: sumMoney(
-      [
-        ...lines.map(({ scheduledPaymentCents }) => scheduledPaymentCents),
-        revolving.scheduledPaymentCents,
-      ],
-      "monthly total debt payments",
+    totalScheduledPaymentCents: addMoney(
+      term.totalScheduledPaymentCents,
+      revolving.scheduledPaymentCents,
     ),
   });
 }
@@ -369,4 +384,19 @@ export function settleMonthlyDebtService(
     },
   }, validationOptions);
   return Object.freeze({ state: nextState, plan });
+}
+
+/** Preserve commands recorded before revolving-credit servicing was versioned. */
+export function settleLegacyMonthlyDebtService(
+  state: GameStateV2,
+  commandId: string,
+  validationOptions: GameStateV2ValidationOptions = {},
+): Readonly<{ state: GameStateV2; plan: LegacyMonthlyDebtServicePlan }> {
+  const plan = planLegacyMonthlyDebtService(state);
+  const zeroRevolving = planRevolvingCreditMonthV2(moneyCents(0));
+  const settled = settleMonthlyDebtService(state, commandId, validationOptions, {
+    ...plan,
+    revolving: zeroRevolving,
+  });
+  return Object.freeze({ state: settled.state, plan });
 }

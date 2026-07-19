@@ -73,6 +73,37 @@ export function calculateRevolvingCreditMinimumPaymentV2(
   );
 }
 
+/**
+ * Calculate the statement minimum without materializing the full statement
+ * balance as MoneyCents. Risk analysis deliberately accepts safe-integer
+ * boundary fixtures whose balance plus interest is not itself representable.
+ */
+export function calculateRevolvingCreditScheduledPaymentV2(
+  openingPrincipalCents: MoneyCents,
+): MoneyCents {
+  if (openingPrincipalCents === 0) return moneyCents(0);
+  const statementBalance =
+    BigInt(openingPrincipalCents) +
+    BigInt(calculateRevolvingCreditInterestV2(openingPrincipalCents));
+  const percentage = divideRoundHalfAwayFromZero(
+    statementBalance *
+      BigInt(REVOLVING_CREDIT_POLICY_V2.minimumPaymentRatePpm),
+    BigInt(1_000_000),
+  );
+  const floorOrPercentage =
+    percentage > BigInt(REVOLVING_CREDIT_POLICY_V2.minimumPaymentFloorCents)
+      ? percentage
+      : BigInt(REVOLVING_CREDIT_POLICY_V2.minimumPaymentFloorCents);
+  return moneyCents(
+    safeBigIntToNumber(
+      statementBalance < floorOrPercentage
+        ? statementBalance
+        : floorOrPercentage,
+      "monthly revolving-credit scheduled payment",
+    ),
+  );
+}
+
 export function planRevolvingCreditMonthV2(
   openingPrincipalCents: MoneyCents,
 ): RevolvingCreditMonthPlanV2 {
@@ -83,7 +114,7 @@ export function planRevolvingCreditMonthV2(
     openingPrincipalCents + interestCents,
   );
   const scheduledPaymentCents =
-    calculateRevolvingCreditMinimumPaymentV2(principalAfterInterestCents);
+    calculateRevolvingCreditScheduledPaymentV2(openingPrincipalCents);
   return Object.freeze({
     version: REVOLVING_CREDIT_POLICY_V2_VERSION,
     openingPrincipalCents,

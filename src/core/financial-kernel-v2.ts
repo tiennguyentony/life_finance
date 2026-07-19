@@ -12,8 +12,11 @@ import { addMonths, type SimulationMonth } from "./domain/month";
 import {
   applyDebtPaymentV2,
   calculateStoredMinimumDebtObligationV2,
+  planLegacyMonthlyDebtService,
   planMonthlyDebtService,
+  settleLegacyMonthlyDebtService,
   settleMonthlyDebtService,
+  type LegacyMonthlyDebtServicePlan,
   type MonthlyDebtServicePlan,
 } from "./debt-service-v2";
 import { resetAnnualFinancialAccumulatorsV2 } from "./financial-year-v2";
@@ -90,6 +93,8 @@ export type FinancialMonthInputV2 = Readonly<{
   taxableLiquidationCostRatePpm: RatePpm;
   insuranceClaim?: MonthlyInsuranceClaimV2;
   resolvedCashFlows?: readonly ResolvedCashFlowV2[];
+  /** False only when replaying a command accepted before this sub-policy. */
+  serviceRevolvingCredit?: boolean;
   validationOptions?: GameStateV2ValidationOptions;
 }>;
 
@@ -124,7 +129,7 @@ export type FinancialMonthRecordV2 = Readonly<{
   insurancePlayerCostCents: MoneyCents;
   baseNonDebtObligationsCents: MoneyCents;
   nonDebtObligationsPaidCents: MoneyCents;
-  debtService: MonthlyDebtServicePlan;
+  debtService: MonthlyDebtServicePlan | LegacyMonthlyDebtServicePlan;
   requiredCashCents: MoneyCents;
   fundingPlan: V2ObligationFundingPlan;
   funding: V2FundingRecord | null;
@@ -883,7 +888,10 @@ export function simulateFinancialMonthV2(
     flows.filter((flow) => !isIncome(flow)).map(({ amountCents }) => amountCents),
     "financial kernel resolved expense",
   );
-  const debtService = planMonthlyDebtService(working);
+  const serviceRevolvingCredit = input.serviceRevolvingCredit !== false;
+  const debtService = serviceRevolvingCredit
+    ? planMonthlyDebtService(working)
+    : planLegacyMonthlyDebtService(working);
   const baseNonDebtObligationsCents = subtractMoney(
     working.finances.requiredObligationsCents,
     calculateStoredMinimumDebtObligationV2(
@@ -983,12 +991,18 @@ export function simulateFinancialMonthV2(
     nonDebtObligations,
     validationOptions,
   );
-  working = settleMonthlyDebtService(
-    working,
-    input.commandId,
-    validationOptions,
-    debtService,
-  ).state;
+  working = serviceRevolvingCredit
+    ? settleMonthlyDebtService(
+        working,
+        input.commandId,
+        validationOptions,
+        debtService as MonthlyDebtServicePlan,
+      ).state
+    : settleLegacyMonthlyDebtService(
+        working,
+        input.commandId,
+        validationOptions,
+      ).state;
   const postObligationIncomeCents = moneyCents(
     Math.max(
       0,

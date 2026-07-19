@@ -13,7 +13,7 @@ import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
 import { projectFinancialGoal } from "./financial-goals-v2";
 import {
   calculateRevolvingCreditInterestV2,
-  planRevolvingCreditMonthV2,
+  calculateRevolvingCreditScheduledPaymentV2,
 } from "./revolving-credit-v2";
 import {
   RISK_ANALYZER_V1_VERSION,
@@ -127,9 +127,9 @@ function totalMinimumDebtPayment(state: GameStateV2): number {
   const termMinimums = calculateTotalMinimumDebtPaymentV2(
     state.gameplay.debts.termDebts,
   );
-  const revolvingMinimum = planRevolvingCreditMonthV2(
+  const revolvingMinimum = calculateRevolvingCreditScheduledPaymentV2(
     state.gameplay.debts.revolvingCreditUsedCents,
-  ).scheduledPaymentCents;
+  );
   return sum([termMinimums, revolvingMinimum], "minimum debt service");
 }
 
@@ -249,9 +249,9 @@ function recentPlayerEventCosts(state: GameStateV2): number {
 
 function calculateMetricInputs(state: GameStateV2): Record<RiskMetricId, MetricInput> {
   const income = monthlyIncome(state);
-  const revolvingMinimum = planRevolvingCreditMonthV2(
+  const revolvingMinimum = calculateRevolvingCreditScheduledPaymentV2(
     state.gameplay.debts.revolvingCreditUsedCents,
-  ).scheduledPaymentCents;
+  );
   const required = Math.max(
     0,
     state.finances.requiredObligationsCents + revolvingMinimum,

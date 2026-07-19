@@ -19,8 +19,9 @@ import {
 import { sha256Canonical } from "./canonical";
 import {
   applyDebtPaymentV2,
+  planLegacyMonthlyDebtService,
   planMonthlyDebtService,
-  settleMonthlyDebtService,
+  settleLegacyMonthlyDebtService,
 } from "./debt-service-v2";
 import type { FinancialSnapshot, GameState } from "./game-state";
 import type { AiContentSource } from "./ai-source";
@@ -235,7 +236,9 @@ export type MonthlyTurnV2Record = Readonly<{
   insurancePlayerCostCents: MoneyCents;
   requiredCashCents: MoneyCents;
   nonDebtObligationsPaidCents: MoneyCents;
-  debtService: ReturnType<typeof planMonthlyDebtService>;
+  debtService:
+    | ReturnType<typeof planMonthlyDebtService>
+    | ReturnType<typeof planLegacyMonthlyDebtService>;
   funding: V2FundingRecord | null;
   recurringAllocations: RecurringAllocationPlan | null;
   scheduledEvent: PendingEventV2 | null;
@@ -1136,6 +1139,8 @@ function processMonthlyTurnV2Kernel200(
         ...(command.payload.resolvedCashFlows ?? []),
         ...eventCashFlows,
       ],
+      serviceRevolvingCredit:
+        outcomePolicyVersion === OUTCOME_POLICY_V1_VERSION,
       validationOptions,
     });
     const consumedCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
@@ -1716,7 +1721,7 @@ function processMonthlyTurnV2Legacy410(
       command.payload.taxEvidence,
     );
     working = payroll.state;
-    const debtPlan = planMonthlyDebtService(working);
+    const debtPlan = planLegacyMonthlyDebtService(working);
     const oldMinimumDebt = minimumDebtTotal(working);
     const baseNonDebt = subtractMoney(
       working.finances.requiredObligationsCents,
@@ -1789,7 +1794,7 @@ function processMonthlyTurnV2Legacy410(
       command.id,
       nonDebtObligations,
     );
-    working = settleMonthlyDebtService(working, command.id).state;
+    working = settleLegacyMonthlyDebtService(working, command.id).state;
     const discretionaryPay = moneyCents(
       Math.max(
         0,
