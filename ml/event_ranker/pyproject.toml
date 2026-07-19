@@ -1,0 +1,14 @@
+[project]
+name = "life-finance-event-ranker"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
