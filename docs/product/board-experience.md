@@ -37,6 +37,12 @@ and closing it returns control to planning (or reveals the pending event). If th
 first command succeeds but month processing fails, recovery refreshes the run and
 retries only the month instead of repeating the plan.
 
+For ordinary successful turns, the result also shows backend-owned monthly
+evidence: gross income, tax/withholding, after-tax cash, event income/expense,
+required cash, debt interest/payment, insurance cost, market movement, and
+inflation. Recovery paths that can only reconstruct the final run continue to
+show authoritative before/after totals but may omit this record-level breakdown.
+
 ## Exact current plan menu
 
 | Destination | Player choices |
