@@ -110,5 +110,8 @@ export function summarizeMonthlyRecord(record: MonthlyTurnV2Record) {
               record.scenarioDirectorDecision.ranked[0]?.templateId ?? null,
           },
         }),
+    ...(record.scenarioDirectorAiEvidence === undefined
+      ? {}
+      : { scenarioDirectorAiEvidence: record.scenarioDirectorAiEvidence }),
   };
 }

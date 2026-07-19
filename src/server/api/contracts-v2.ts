@@ -825,6 +825,22 @@ const financialKernelMonthlyRecordSummarySchema =
         })
         .strict()
         .optional(),
+      scenarioDirectorAiEvidence: z
+        .object({
+          mode: z.enum(["shadow", "active"]),
+          source: z.enum([
+            "openai",
+            "hosted_oss",
+            "local_oss",
+            "deterministic_fallback",
+          ]),
+          status: z.enum(["validated", "fallback"]),
+          latencyMs: z.int().min(0).max(30000),
+          candidateCount: z.int().min(0).max(64),
+          topCandidateAgreement: z.boolean().nullable(),
+        })
+        .strict()
+        .optional(),
     })
     .strict();
 

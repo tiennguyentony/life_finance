@@ -443,6 +443,22 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
             })
             .strict()
             .optional(),
+          scenarioDirectorAiEvidence: z
+            .object({
+              mode: z.enum(["shadow", "active"]),
+              source: z.enum([
+                "openai",
+                "hosted_oss",
+                "local_oss",
+                "deterministic_fallback",
+              ]),
+              status: z.enum(["validated", "fallback"]),
+              latencyMs: z.int().min(0).max(30000),
+              candidateCount: z.int().min(0).max(64),
+              topCandidateAgreement: z.boolean().nullable(),
+            })
+            .strict()
+            .optional(),
           worldRandomVersion: z.literal("named-world-rng-v1").optional(),
           marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
           macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),

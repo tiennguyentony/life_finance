@@ -400,7 +400,23 @@ describe("annual tax context cache", () => {
         };
       }),
     };
-    const service = new RunApiServiceV2(repository, { calculate });
+    const rank = vi.fn(async () => ({
+      evidence: {
+        mode: "shadow" as const,
+        source: "hosted_oss" as const,
+        status: "validated" as const,
+        latencyMs: 18,
+        candidateCount: 2,
+        topCandidateAgreement: false,
+      },
+    }));
+    const service = new RunApiServiceV2(
+      repository,
+      { calculate },
+      undefined,
+      {},
+      { rank },
+    );
 
     const response = await service.submitCommand("run-id", "secret", {
       schemaVersion: 2,
@@ -412,6 +428,7 @@ describe("annual tax context cache", () => {
     });
 
     expect(calculate).not.toHaveBeenCalled();
+    expect(rank).toHaveBeenCalledOnce();
     expect(response.state.revision).toBe(2);
     expect(response.monthlyRecord).toMatchObject({
       financialKernelVersion: "2.0.0",
@@ -422,6 +439,14 @@ describe("annual tax context cache", () => {
         status: expect.stringMatching(/^(approved|none)$/),
         pressureBeforeUnits: expect.any(Number),
         pressureAfterUnits: expect.any(Number),
+      },
+      scenarioDirectorAiEvidence: {
+        mode: "shadow",
+        source: "hosted_oss",
+        status: "validated",
+        latencyMs: 18,
+        candidateCount: 2,
+        topCandidateAgreement: false,
       },
       taxTraceId: `tax.cache.${commandId}`,
       openingNetWorthCents: expect.any(Number),
