@@ -197,6 +197,50 @@ describe("named world random monthly routing", () => {
     );
   });
 
+  it("uses the trained local ranker after exact impacts and remains replayable", () => {
+    const opening = configuredState();
+    const templates = [
+      getActivePersonalEventTemplateV2("personal.performance_bonus"),
+      getActivePersonalEventTemplateV2("personal.utility_rebate"),
+    ].map((template) => ({
+      ...template,
+      hazard: {
+        ...template.hazard,
+        baseChancePpm: 1_000_000,
+        minimumChancePpm: 1_000_000,
+        maximumChancePpm: 1_000_000,
+      },
+    }));
+    const dependencies = {
+      personalEventCatalog: templates,
+      activePersonalEventCatalog: templates,
+    };
+    const first = processMonthlyTurnV2(
+      opening,
+      namedCommand(opening),
+      dependencies,
+    );
+    const replay = processMonthlyTurnV2(
+      opening,
+      namedCommand(opening),
+      dependencies,
+    );
+
+    expect(replay).toEqual(first);
+    expect(first.record.scenarioDirectorDecision?.rankingSource).toBe(
+      "operational_ml_ranking",
+    );
+    expect(first.record.operationalEventRankerEvidence).toMatchObject({
+      version: "operational-event-ranker-v1",
+      status: "ranked",
+      candidateCount: 2,
+      artifactChecksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+      featureSetChecksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(first.record.runtimeBalanceDecision?.scenarioDirector?.rankingSource)
+      .toBe("operational_ml_ranking");
+  });
+
   it("locks the accepted-command named-world replay checksum", () => {
     const opening = configuredState();
     const accepted = decodePersistedGameCommandV2(

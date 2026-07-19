@@ -428,7 +428,7 @@ describe("annual tax context cache", () => {
     });
 
     expect(calculate).not.toHaveBeenCalled();
-    expect(rank).toHaveBeenCalledOnce();
+    expect(rank).not.toHaveBeenCalled();
     expect(response.state.revision).toBe(2);
     expect(response.monthlyRecord).toMatchObject({
       financialKernelVersion: "2.0.0",
@@ -440,13 +440,12 @@ describe("annual tax context cache", () => {
         pressureBeforeUnits: expect.any(Number),
         pressureAfterUnits: expect.any(Number),
       },
-      scenarioDirectorAiEvidence: {
-        mode: "shadow",
-        source: "hosted_oss",
-        status: "validated",
-        latencyMs: 18,
-        candidateCount: 2,
-        topCandidateAgreement: false,
+      operationalEventRankerEvidence: {
+        version: "operational-event-ranker-v1",
+        status: expect.stringMatching(/^(ranked|fallback)$/),
+        artifactChecksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        featureSetChecksum: expect.stringMatching(/^[a-f0-9]{64}$/),
+        candidateCount: expect.any(Number),
       },
       taxTraceId: `tax.cache.${commandId}`,
       openingNetWorthCents: expect.any(Number),

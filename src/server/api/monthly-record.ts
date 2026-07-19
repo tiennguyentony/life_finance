@@ -113,5 +113,11 @@ export function summarizeMonthlyRecord(record: MonthlyTurnV2Record) {
     ...(record.scenarioDirectorAiEvidence === undefined
       ? {}
       : { scenarioDirectorAiEvidence: record.scenarioDirectorAiEvidence }),
+    ...(record.operationalEventRankerEvidence === undefined
+      ? {}
+      : {
+          operationalEventRankerEvidence:
+            record.operationalEventRankerEvidence,
+        }),
   };
 }
