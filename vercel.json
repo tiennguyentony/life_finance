@@ -1,17 +1,36 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "experimentalServices": {
+  "services": {
     "web": {
-      "entrypoint": ".",
-      "routePrefix": "/",
+      "root": ".",
       "framework": "nextjs",
-      "buildCommand": "node scripts/vercel-build.mjs"
+      "buildCommand": "node scripts/vercel-build.mjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "tax_service",
+          "format": "url",
+          "env": "TAX_SERVICE_URL"
+        }
+      ]
     },
     "tax_service": {
-      "entrypoint": "services/tax/api/index.py",
-      "routePrefix": "/svc/tax",
+      "root": "services/tax",
+      "entrypoint": "api/index.py",
       "framework": "fastapi",
-      "maxDuration": 300
+      "functions": {
+        "api/index.py": {
+          "maxDuration": 300
+        }
+      }
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ]
 }
