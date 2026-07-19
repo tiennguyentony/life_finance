@@ -44,7 +44,7 @@ export function GeneratingScreen() {
     const firstTimer = window.setTimeout(() => setActiveStep(1), 520);
     const secondTimer = window.setTimeout(() => setActiveStep(2), 1080);
     generateGame()
-      .then(() => window.setTimeout(() => router.replace("/board"), 350))
+      .then(() => window.setTimeout(() => router.replace("/hq"), 350))
       .catch(() => undefined);
 
     return () => {

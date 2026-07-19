@@ -22,7 +22,7 @@ describe("DemoLaunchButton", () => {
     await launchLocalDemo({ createDemoRun }, navigate);
 
     expect(createDemoRun).toHaveBeenCalledOnce();
-    expect(navigate).toHaveBeenCalledWith("/board");
+    expect(navigate).toHaveBeenCalledWith("/hq");
   });
 
   it("does not navigate when demo creation fails", async () => {

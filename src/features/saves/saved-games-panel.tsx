@@ -46,7 +46,7 @@ export function SavedGamesPanel() {
       if (save.saveStatus === "archived") {
         await new LifeFinanceClient().activateSavedRun(save.runId);
       }
-      router.push("/board");
+      router.push("/hq");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The saved game could not be restored.");
       setBusyRunId(null);
