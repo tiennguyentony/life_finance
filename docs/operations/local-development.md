@@ -55,8 +55,9 @@ Do not run migrations casually against a shared or production Supabase database.
 ## Monthly operational ML
 
 No model setup is required. Instant Demo and persistent play both load the
-committed self-trained artifact and rank safe candidates in-process. The result
-dialog shows `Operational ML: ranked` or a deterministic `fallback`; no API key,
+committed self-trained artifact and rank safe candidates in-process. Ranking
+evidence remains available in command responses and persisted audit records but
+is intentionally omitted from the player-facing result dialog. No API key,
 Ollama process, or network model call is involved.
 
 To reproduce the artifact:

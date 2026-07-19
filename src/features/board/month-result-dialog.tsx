@@ -2,10 +2,8 @@
 
 import { formatBoardMoney, type BoardMonthResult } from "./board-model";
 import { useModalDialog } from "./use-modal-dialog";
-import type { CommandResponseAiDirector } from "@/application/game/use-cases";
 
 type MonthResultDialogProps = Readonly<{
-  aiDirector?: CommandResponseAiDirector;
   busy: boolean;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -34,7 +32,6 @@ function formatProgressDelta(ppm: number): string {
 }
 
 export function MonthResultDialog({
-  aiDirector = null,
   busy,
   onPrimary,
   onSecondary,
@@ -104,30 +101,6 @@ export function MonthResultDialog({
             <h3>12-month checkpoint: {checkpointOutcome}</h3>
             <p>Preparedness score {Math.round(checkpoint.scorePpm / 10_000)}%</p>
             <p>Focus next: {focusLabel}</p>
-          </section>
-        ) : null}
-
-        {aiDirector !== null ? (
-          <section className="board-month-result-highlight" data-testid="ai-director-evidence">
-            {aiDirector.mode === "operational" ? (
-              <>
-                <h3>Operational ML: {aiDirector.status}</h3>
-                <p>self-trained local ranker · {aiDirector.candidateCount} safe candidates</p>
-                <p>Artifact {aiDirector.artifactChecksum.slice(0, 12)}</p>
-              </>
-            ) : (
-              <>
-                <h3>AI Director: {aiDirector.status}</h3>
-                <p>
-                  {aiDirector.mode} · {aiDirector.source} · {aiDirector.candidateCount} candidates · {aiDirector.latencyMs} ms
-                </p>
-                {aiDirector.topCandidateAgreement === null ? null : (
-                  <p>
-                    Deterministic top choice: {aiDirector.topCandidateAgreement ? "same" : "different"}
-                  </p>
-                )}
-              </>
-            )}
           </section>
         ) : null}
 

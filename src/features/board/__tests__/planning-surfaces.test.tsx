@@ -162,14 +162,6 @@ describe("board planning surfaces", () => {
     const result = boardMonthResult(opening, ending, "Invest in broad index");
     const markup = renderToStaticMarkup(
       <MonthResultDialog
-        aiDirector={{
-          mode: "active",
-          source: "hosted_oss",
-          status: "validated",
-          latencyMs: 417,
-          candidateCount: 4,
-          topCandidateAgreement: false,
-        }}
         busy={false}
         onPrimary={() => undefined}
         onSecondary={() => undefined}
@@ -196,35 +188,9 @@ describe("board planning surfaces", () => {
     expect(markup).toContain("0.4 percentage points");
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("A life decision is waiting before the next month.");
-    expect(markup).toContain("AI Director: validated");
-    expect(markup).toContain("active · hosted_oss · 4 candidates · 417 ms");
-    expect(markup).toContain("Deterministic top choice: different");
+    expect(markup).not.toContain("AI Director");
+    expect(markup).not.toContain("Operational ML");
     expect(markup).toContain(">Review decision</button>");
-
-    const operationalMarkup = renderToStaticMarkup(
-      <MonthResultDialog
-        aiDirector={{
-          mode: "operational",
-          source: "self_trained_local",
-          status: "ranked",
-          candidateCount: 3,
-          artifactChecksum: "a".repeat(64),
-          topCandidateId: "personal.performance_bonus",
-          fallbackReason: null,
-        }}
-        busy={false}
-        onPrimary={() => undefined}
-        onSecondary={() => undefined}
-        primaryLabel="Review decision"
-        result={result}
-        returnFocusTarget={null}
-        secondaryLabel={null}
-        summary={null}
-      />,
-    );
-    expect(operationalMarkup).toContain("Operational ML: ranked");
-    expect(operationalMarkup).toContain("self-trained local ranker · 3 safe candidates");
-    expect(operationalMarkup).toContain("Artifact aaaaaaaaaaaa");
   });
 
   it("renders monthly, total, follow-up, and disabled preview evidence", () => {
