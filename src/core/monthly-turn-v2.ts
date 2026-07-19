@@ -63,6 +63,7 @@ import {
   BEGINNER_EVENT_CADENCE_V1_VERSION,
   applyBeginnerEventCadenceV1,
   assessBeginnerEventCadenceV1,
+  beginnerEventCadenceFallbackCandidatesV1,
   type BeginnerEventCadenceEvidenceV1,
 } from "./beginner-event-cadence-v1";
 import {
@@ -1271,6 +1272,12 @@ function processMonthlyTurnV2Kernel200(
           : applyBeginnerEventCadenceV1(
               cadenceAssessment,
               generatedCandidates.candidates,
+              undefined,
+              beginnerEventCadenceFallbackCandidatesV1(
+                nextState,
+                activeEventCatalog,
+                eventCatalog,
+              ),
             );
         const candidates = cadenceResult === null
           ? generatedCandidates
@@ -1407,6 +1414,9 @@ function processMonthlyTurnV2Kernel200(
                       `${template.id}@${template.version}`,
                     )!,
                 }),
+            ...(cadenceAssessment?.mode === "challenge_due"
+              ? { preferredChallengeBands: ["meaningful", "crisis"] as const }
+              : {}),
           },
         );
         runtimeBalanceDecision = choice.decision;
@@ -1414,6 +1424,8 @@ function processMonthlyTurnV2Kernel200(
           const dueMode = [
             "follow_up_due",
             "positive_due",
+            "absurd_due",
+            "challenge_due",
             "engagement_due",
           ].includes(beginnerEventCadence.assessment.mode);
           beginnerEventCadence = Object.freeze({

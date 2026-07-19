@@ -4,8 +4,15 @@ import {
   type PersonalEventPresentationV1,
 } from "../data/personal-event-presentation-v1";
 import { addMonths, compareMonths, monthsBetween } from "./domain/month";
+import { UNRELATED_HAZARD_TARGET } from "./events";
 import type { GameStateV2, ResolvedEventEvidenceV2 } from "./game-state-v2";
-import type { DeclarativePersonalEventCandidateV2 } from "./personal-event-v2";
+import {
+  personalEventEligibilityReasonsV2,
+  personalEventHistoryAvailabilityReasonsV2,
+  validatePersonalEventTemplateV2,
+  type DeclarativePersonalEventCandidateV2,
+  type PersonalEventTemplateV2,
+} from "./personal-event-v2";
 
 export const BEGINNER_EVENT_CADENCE_V1_VERSION =
   "beginner-event-cadence-v1" as const;
@@ -18,6 +25,8 @@ export type BeginnerEventCadenceModeV1 =
   | "pending_or_terminal"
   | "follow_up_due"
   | "positive_due"
+  | "absurd_due"
+  | "challenge_due"
   | "engagement_due"
   | "open"
   | "recovery_preferred";
@@ -149,6 +158,16 @@ export function assessBeginnerEventCadenceV1(
   const positiveObserved = history.some(
     ({ classification }) => classification === "positive",
   );
+  const absurdRootObserved = history.some(
+    (event) =>
+      !isFollowUpHistory(event, lookup) &&
+      presentationForHistory(event, lookup)?.tone === "absurd_comedy",
+  );
+  const challengeRootCount = history.filter(
+    (event) =>
+      !isFollowUpHistory(event, lookup) &&
+      presentationForHistory(event, lookup)?.cadenceRole === "challenge",
+  ).length;
   const previousRoot = latestRoot(history, lookup);
   const previousRootTone = previousRoot === undefined
     ? null
@@ -200,6 +219,21 @@ export function assessBeginnerEventCadenceV1(
       reasonCodes: ["positive_beat_missing_after_month_8"],
     });
   }
+  const requiredChallengeRoots = Math.floor(chapterMonth / 3);
+  if (challengeRootCount < requiredChallengeRoots) {
+    return frozenAssessment({
+      ...base,
+      mode: "challenge_due",
+      reasonCodes: ["financial_challenge_quota_due"],
+    });
+  }
+  if (chapterMonth >= 7 && !absurdRootObserved) {
+    return frozenAssessment({
+      ...base,
+      mode: "absurd_due",
+      reasonCodes: ["absurd_comedy_beat_missing_after_month_6"],
+    });
+  }
   if (quietStreak >= 1) {
     return frozenAssessment({
       ...base,
@@ -229,22 +263,64 @@ function isFollowUpCandidate(
     presentationForCandidate(candidate, lookup)?.cadenceRole === "follow_up";
 }
 
+export function beginnerEventCadenceFallbackCandidatesV1(
+  state: GameStateV2,
+  activeCatalog: readonly PersonalEventTemplateV2[],
+  exactCatalog: readonly PersonalEventTemplateV2[] = activeCatalog,
+): readonly DeclarativePersonalEventCandidateV2[] {
+  if (state.outcome !== null || state.gameplay.eventLifecycle.pending !== null) {
+    return Object.freeze([]);
+  }
+  return Object.freeze(
+    activeCatalog
+      .filter((template) => validatePersonalEventTemplateV2(template).length === 0)
+      .filter((template) => personalEventEligibilityReasonsV2(template, state).length === 0)
+      .filter((template) =>
+        personalEventHistoryAvailabilityReasonsV2(template, state, exactCatalog).length === 0
+      )
+      .toSorted(
+        (left, right) =>
+          left.id.localeCompare(right.id) || left.version - right.version,
+      )
+      .map((template) => Object.freeze({
+        template,
+        targetedWeakness: UNRELATED_HAZARD_TARGET,
+      })),
+  );
+}
+
 export function applyBeginnerEventCadenceV1(
   assessment: BeginnerEventCadenceAssessmentV1,
   candidates: readonly DeclarativePersonalEventCandidateV2[],
   presentations: readonly PersonalEventPresentationV1[] =
     PERSONAL_EVENT_PRESENTATIONS_V1,
+  fallbackCandidates: readonly DeclarativePersonalEventCandidateV2[] = [],
 ): Readonly<{
   candidates: readonly DeclarativePersonalEventCandidateV2[];
   preferredCandidateIds: readonly string[];
 }> {
   const lookup = presentationLookup(presentations);
-  const withoutAdjacentAbsurd = candidates.filter((candidate) => {
+  const filterAdjacentAbsurd = (
+    source: readonly DeclarativePersonalEventCandidateV2[],
+  ) => source.filter((candidate) => {
     const presentation = presentationForCandidate(candidate, lookup);
     return assessment.previousRootTone !== "absurd_comedy" ||
       isFollowUpCandidate(candidate, lookup) ||
       presentation?.tone !== "absurd_comedy";
   });
+  const withoutAdjacentAbsurd = filterAdjacentAbsurd(candidates);
+  const candidateIdentities = new Set(
+    candidates.map(({ template }) => identity(template.id, template.version)),
+  );
+  const eligibleFallbacks = filterAdjacentAbsurd(fallbackCandidates).filter(
+    ({ template }) => !candidateIdentities.has(identity(template.id, template.version)),
+  );
+  const dueCandidates = (
+    predicate: (candidate: DeclarativePersonalEventCandidateV2) => boolean,
+  ): readonly DeclarativePersonalEventCandidateV2[] => {
+    const available = withoutAdjacentAbsurd.filter(predicate);
+    return available.length > 0 ? available : eligibleFallbacks.filter(predicate);
+  };
   let filtered: readonly DeclarativePersonalEventCandidateV2[];
   let preferred: readonly DeclarativePersonalEventCandidateV2[] = [];
 
@@ -254,10 +330,15 @@ export function applyBeginnerEventCadenceV1(
       filtered = [];
       break;
     case "follow_up_due":
-      filtered = withoutAdjacentAbsurd.filter((candidate) =>
+      preferred = withoutAdjacentAbsurd.filter((candidate) =>
         isFollowUpCandidate(candidate, lookup)
       );
-      preferred = filtered;
+      filtered = [
+        ...preferred,
+        ...eligibleFallbacks.filter((candidate) =>
+          !isFollowUpCandidate(candidate, lookup)
+        ),
+      ];
       break;
     case "recovery_preferred":
       filtered = withoutAdjacentAbsurd.filter((candidate) =>
@@ -265,15 +346,38 @@ export function applyBeginnerEventCadenceV1(
       );
       break;
     case "positive_due": {
-      const positive = withoutAdjacentAbsurd.filter(
-        ({ template }) => template.classification === "positive",
+      const positive = dueCandidates(
+        (candidate) =>
+          !isFollowUpCandidate(candidate, lookup) &&
+          candidate.template.classification === "positive",
       );
       filtered = positive.length > 0 ? positive : withoutAdjacentAbsurd;
       preferred = positive;
       break;
     }
+    case "absurd_due": {
+      const absurd = dueCandidates((candidate) => {
+        const presentation = presentationForCandidate(candidate, lookup);
+        return !isFollowUpCandidate(candidate, lookup) &&
+          presentation?.tone === "absurd_comedy";
+      });
+      filtered = absurd.length > 0 ? absurd : withoutAdjacentAbsurd;
+      preferred = absurd;
+      break;
+    }
+    case "challenge_due": {
+      const challenges = dueCandidates((candidate) => {
+        const presentation = presentationForCandidate(candidate, lookup);
+        return !isFollowUpCandidate(candidate, lookup) &&
+          presentation?.cadenceRole === "challenge" &&
+          candidate.template.severityTier !== "micro";
+      });
+      filtered = challenges.length > 0 ? challenges : withoutAdjacentAbsurd;
+      preferred = challenges;
+      break;
+    }
     case "engagement_due": {
-      const engaging = withoutAdjacentAbsurd.filter((candidate) => {
+      const engaging = dueCandidates((candidate) => {
         const presentation = presentationForCandidate(candidate, lookup);
         return !isFollowUpCandidate(candidate, lookup) &&
           presentation?.cadenceRole === "engagement" &&

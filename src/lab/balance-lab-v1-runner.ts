@@ -337,7 +337,7 @@ function validateMetrics(
       cadence.assessment.version !== "beginner-event-cadence-v1" ||
       ![
         "inactive", "pending_or_terminal", "follow_up_due", "positive_due",
-        "engagement_due", "open", "recovery_preferred",
+        "absurd_due", "challenge_due", "engagement_due", "open", "recovery_preferred",
       ].includes(cadence.assessment.mode) ||
       !Number.isSafeInteger(cadence.assessment.chapterMonth) ||
       !Number.isSafeInteger(cadence.assessment.quietEligibleStreak) ||
