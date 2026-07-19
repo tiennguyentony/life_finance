@@ -56,6 +56,34 @@ export function HqMonthResultDialog({ onDismiss, result }: Props) {
       value: pointsDelta(result.preparednessScoreChangePpm),
       tone: result.preparednessScoreChangePpm >= 0 ? "positive" : "negative",
     },
+    ...(result.taxableInvestmentsChangeCents === 0
+      ? []
+      : [{
+          label: "Taxable investments",
+          value: formatSignedCents(result.taxableInvestmentsChangeCents),
+          tone: result.taxableInvestmentsChangeCents >= 0 ? "positive" as const : "negative" as const,
+        }]),
+    ...(result.annualLivingCostChangeCents === 0
+      ? []
+      : [{
+          label: "Annual living cost",
+          value: `${formatSignedCents(result.annualLivingCostChangeCents)}/yr`,
+          tone: result.annualLivingCostChangeCents <= 0 ? "positive" as const : "negative" as const,
+        }]),
+    ...(result.requiredObligationsChangeCents === 0
+      ? []
+      : [{
+          label: "Required monthly obligations",
+          value: `${formatSignedCents(result.requiredObligationsChangeCents)}/mo`,
+          tone: result.requiredObligationsChangeCents <= 0 ? "positive" as const : "negative" as const,
+        }]),
+    ...(result.annualGrossSalaryChangeCents === 0
+      ? []
+      : [{
+          label: "Annual gross salary",
+          value: `${formatSignedCents(result.annualGrossSalaryChangeCents)}/yr`,
+          tone: result.annualGrossSalaryChangeCents >= 0 ? "positive" as const : "negative" as const,
+        }]),
   ];
 
   // Every line below is a field the engine returned for the processed month.
@@ -82,11 +110,27 @@ export function HqMonthResultDialog({ onDismiss, result }: Props) {
           value: formatSignedCents(-explanation.requiredCashCents),
           tone: "negative",
         },
-        {
-          label: "Insurance cost",
-          value: formatSignedCents(-explanation.insurancePlayerCostCents),
-          tone: "negative",
-        },
+        ...(explanation.resolvedIncomeCents === 0
+          ? []
+          : [{
+              label: "Event and other income",
+              value: formatSignedCents(explanation.resolvedIncomeCents),
+              tone: "positive" as const,
+            }]),
+        ...(explanation.resolvedExpenseCents === 0
+          ? []
+          : [{
+              label: "Event and other expenses",
+              value: formatSignedCents(-explanation.resolvedExpenseCents),
+              tone: "negative" as const,
+            }]),
+        ...(explanation.insurancePlayerCostCents === 0
+          ? []
+          : [{
+              label: "Insurance claim cost",
+              value: formatSignedCents(-explanation.insurancePlayerCostCents),
+              tone: "negative" as const,
+            }]),
         {
           label: "Debt interest included",
           value: formatSignedCents(-explanation.debtInterestCents),
