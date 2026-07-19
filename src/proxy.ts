@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { publicSupabaseConfig } from "@/lib/supabase/config";
 
-const PROTECTED_PAGE = /^\/(start|profile|generating|board|saves)(\/|$)/;
+const PROTECTED_PAGE = /^\/(start|profile|generating|board|hq|saves)(\/|$)/;
 
 export async function proxy(request: NextRequest) {
   // Local Instant Demo is deliberately capability-based and in-memory. It must
