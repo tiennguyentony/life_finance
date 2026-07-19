@@ -4,6 +4,8 @@ import {
   calculateInvestableAssets,
   calculateNetWorth,
 } from "@/core/game-state";
+import { allocateMoney } from "@/core/domain/money";
+import { calculateTotalMinimumDebtPaymentV2 } from "@/core/debt-service-v2";
 import { projectFinancialGoal } from "@/core/financial-goals-v2";
 import { analyzeRiskV1 } from "@/core/risk-v1";
 import {
@@ -12,6 +14,8 @@ import {
 } from "@/core/preparedness-assessment-v1";
 import { getEventTemplate } from "@/data/event-templates";
 import { getPersonalEventTemplateV2 } from "@/data/personal-event-templates-v2";
+import { activeInsuranceCoveragesV2 } from "@/core/insurance-selection-v2";
+import { planRevolvingCreditMonthV2 } from "@/core/revolving-credit-v2";
 import {
   projectPersonalEventResponsePreviewV1,
   type PersonalEventResponsePreviewV1,
@@ -42,6 +46,15 @@ export type RunView = Readonly<{
     creditUsedCents: number;
     annualLivingCostCents: number;
     requiredObligationsCents: number;
+    monthlyObligations: Readonly<{
+      livingCostCents: number;
+      healthPremiumCents: number;
+      additionalInsurancePremiumsCents: number;
+      termDebtMinimumsCents: number;
+      revolvingCreditMinimumCents: number;
+      otherRequiredCents: number;
+      totalRequiredCashCents: number;
+    }>;
     investableAssetsCents: number;
     netWorthCents: number;
   }>;
@@ -149,7 +162,8 @@ export type RunView = Readonly<{
 function projectBenefits(state: GameStateV2): RunView["benefits"] {
   const snapshot = state.gameplay.catalogSnapshot;
   if (snapshot === null) return null;
-  const { healthPlan, retirementPlan, insuranceCoverages, household } = snapshot.selected;
+  const { healthPlan, retirementPlan, household } = snapshot.selected;
+  const insuranceCoverages = activeInsuranceCoveragesV2(state);
   const family = household.healthCoverageTier === "family";
 
   return Object.freeze({
@@ -187,6 +201,46 @@ function projectBenefits(state: GameStateV2): RunView["benefits"] {
         }),
       ),
     ),
+  });
+}
+
+function projectMonthlyObligations(
+  state: GameStateV2,
+): RunView["finances"]["monthlyObligations"] {
+  const livingCostCents = allocateMoney(
+    state.finances.annualLivingCostCents,
+    1,
+    12,
+  );
+  const healthPremiumCents =
+    state.gameplay.catalogSnapshot?.derived.monthlyHealthPremiumCents ?? 0;
+  const additionalInsurancePremiumsCents = activeInsuranceCoveragesV2(state)
+    .reduce((total, coverage) => total + coverage.monthlyPremiumCents, 0);
+  const termDebtMinimumsCents = calculateTotalMinimumDebtPaymentV2(
+    state.gameplay.debts.termDebts,
+  );
+  const revolvingCreditMinimumCents = planRevolvingCreditMonthV2(
+    state.finances.creditUsedCents,
+  ).scheduledPaymentCents;
+  const knownStoredObligations =
+    livingCostCents +
+    healthPremiumCents +
+    additionalInsurancePremiumsCents +
+    termDebtMinimumsCents;
+  const otherRequiredCents = Math.max(
+    0,
+    state.finances.requiredObligationsCents - knownStoredObligations,
+  );
+
+  return Object.freeze({
+    livingCostCents,
+    healthPremiumCents,
+    additionalInsurancePremiumsCents,
+    termDebtMinimumsCents,
+    revolvingCreditMinimumCents,
+    otherRequiredCents,
+    totalRequiredCashCents:
+      state.finances.requiredObligationsCents + revolvingCreditMinimumCents,
   });
 }
 
@@ -306,6 +360,7 @@ export function projectRunView(state: GameStateV2): RunView {
       creditUsedCents: state.finances.creditUsedCents,
       annualLivingCostCents: state.finances.annualLivingCostCents,
       requiredObligationsCents: state.finances.requiredObligationsCents,
+      monthlyObligations: projectMonthlyObligations(state),
       investableAssetsCents: calculateInvestableAssets(state.finances),
       netWorthCents: calculateNetWorth(state.finances),
     }),

@@ -206,6 +206,17 @@ export const runViewSchema = z
         creditUsedCents: centsSchema,
         annualLivingCostCents: centsSchema,
         requiredObligationsCents: centsSchema,
+        monthlyObligations: z
+          .object({
+            livingCostCents: centsSchema.nonnegative(),
+            healthPremiumCents: centsSchema.nonnegative(),
+            additionalInsurancePremiumsCents: centsSchema.nonnegative(),
+            termDebtMinimumsCents: centsSchema.nonnegative(),
+            revolvingCreditMinimumCents: centsSchema.nonnegative(),
+            otherRequiredCents: centsSchema.nonnegative(),
+            totalRequiredCashCents: centsSchema.nonnegative(),
+          })
+          .strict(),
         investableAssetsCents: centsSchema,
         netWorthCents: centsSchema,
       })
