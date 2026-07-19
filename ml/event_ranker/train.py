@@ -92,6 +92,7 @@ def monotonic_directions(feature_names: list[str]) -> list[int]:
     positive = {
         "candidate.novelty",
         "candidate.target_severity_interaction",
+        "candidate.lesson_risk_relevance",
         "impact.challenge_fit",
         "impact.reasonable_response_count",
         "impact.choice_separation",
@@ -107,6 +108,8 @@ def monotonic_directions(feature_names: list[str]) -> list[int]:
         "impact.liquidation_share",
         "impact.credit_use_share",
         "impact.bankruptcy_possible",
+        "impact.liquidity_stress_interaction",
+        "impact.credit_fragility_interaction",
     }
     return [1 if name in positive else -1 if name in negative else 0 for name in feature_names]
 

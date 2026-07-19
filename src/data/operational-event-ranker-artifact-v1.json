@@ -4,7 +4,7 @@
   "rewardPolicyVersion": "operational-event-reward-v1",
   "modelKind": "pairwise_linear_int_v1",
   "trainedAt": "2026-07-18T00:00:00.000Z",
-  "trainingDatasetChecksum": "d19d7e5d768180c5a2179b33905fb6ab620c69e33f4dab062d11b98db6dfd952",
+  "trainingDatasetChecksum": "5931cd57bd75d8f5ad3c4657c6941452ec75f7a241ed468ca744afed332ac72e",
   "featureNames": [
     "risk.emergency_fund_months",
     "risk.monthly_free_cash_flow",
@@ -50,6 +50,7 @@
     "candidate.recent_target_count",
     "candidate.novelty",
     "candidate.target_severity_interaction",
+    "candidate.lesson_risk_relevance",
     "impact.score",
     "impact.challenge_fit",
     "impact.burn_months",
@@ -58,6 +59,8 @@
     "impact.uncovered_cost_share",
     "impact.liquidation_share",
     "impact.credit_use_share",
+    "impact.liquidity_stress_interaction",
+    "impact.credit_fragility_interaction",
     "impact.reasonable_response_count",
     "impact.choice_separation",
     "impact.bankruptcy_possible"
@@ -107,23 +110,26 @@
     0,
     0,
     0,
-    -7327,
+    35134,
+    -9922,
     0,
-    -4661,
-    -5971,
-    -9241,
-    -11713,
-    -9692,
-    -364,
-    22801,
-    29110,
-    -42714
+    -9823,
+    -5714,
+    -3310,
+    -24281,
+    -10184,
+    -455,
+    -22798,
+    -8,
+    14012,
+    24987,
+    -43398
   ],
   "intercept": 0,
   "validation": {
     "queryCount": 162,
     "pairCount": 1605,
-    "pairwiseAccuracyPpm": 963863,
-    "topOneAgreementPpm": 895062
+    "pairwiseAccuracyPpm": 958255,
+    "topOneAgreementPpm": 907407
   }
 }

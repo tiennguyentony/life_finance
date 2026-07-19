@@ -1,6 +1,7 @@
 import { sha256Canonical } from "./canonical";
 import type { RuntimeBalancePreparedCandidateV2 } from "./runtime-balance-controller-v2";
 import type { ScenarioDirectorInputV2 } from "./scenario-director-v2";
+import { SCENARIO_DIRECTOR_POLICY_V1 } from "./scenario-director-policy-v2";
 
 export const OPERATIONAL_EVENT_RANKER_V1_VERSION =
   "operational-event-ranker-v1" as const;
@@ -54,6 +55,7 @@ export const OPERATIONAL_EVENT_FEATURE_NAMES_V1 = Object.freeze([
   "candidate.recent_target_count",
   "candidate.novelty",
   "candidate.target_severity_interaction",
+  "candidate.lesson_risk_relevance",
   "impact.score",
   "impact.challenge_fit",
   "impact.burn_months",
@@ -62,6 +64,8 @@ export const OPERATIONAL_EVENT_FEATURE_NAMES_V1 = Object.freeze([
   "impact.uncovered_cost_share",
   "impact.liquidation_share",
   "impact.credit_use_share",
+  "impact.liquidity_stress_interaction",
+  "impact.credit_fragility_interaction",
   "impact.reasonable_response_count",
   "impact.choice_separation",
   "impact.bankruptcy_possible",
@@ -168,6 +172,37 @@ function challengeFitPpm(
   return clampPpm(PPM - Math.abs(impactScorePpm - ideal) * 2);
 }
 
+function lessonRiskRelevancePpm(
+  input: ScenarioDirectorInputV2,
+  prepared: RuntimeBalancePreparedCandidateV2,
+): number {
+  const lessons = new Set([
+    prepared.candidate.template.lessonTags.primary,
+    ...prepared.candidate.template.lessonTags.secondary,
+  ]);
+  let relevance = 0;
+  for (const [metricId, mapping] of Object.entries(
+    SCENARIO_DIRECTOR_POLICY_V1.riskMetricMappings,
+  ) as Array<
+    [
+      keyof typeof SCENARIO_DIRECTOR_POLICY_V1.riskMetricMappings,
+      (typeof SCENARIO_DIRECTOR_POLICY_V1.riskMetricMappings)[keyof typeof SCENARIO_DIRECTOR_POLICY_V1.riskMetricMappings],
+    ]
+  >) {
+    if (mapping.lessonTags.some((lesson) => lessons.has(lesson))) {
+      relevance = Math.max(
+        relevance,
+        input.riskSnapshot.metrics[metricId].severityPpm,
+      );
+    }
+  }
+  return relevance;
+}
+
+function interactionPpm(leftPpm: number, rightPpm: number): number {
+  return clampPpm((leftPpm * rightPpm) / PPM);
+}
+
 export function extractOperationalEventFeaturesV1(
   input: ScenarioDirectorInputV2,
   prepared: RuntimeBalancePreparedCandidateV2,
@@ -195,6 +230,26 @@ export function extractOperationalEventFeaturesV1(
       Math.max(1, firstMonthRequiredCashCents),
     ),
   );
+  const uncoveredCostShare = ratioPpm(
+    impact.minimumUncoveredCostCents,
+    monthlyResourceCents,
+  );
+  const liquidationShare = ratioPpm(
+    impact.likelyLiquidationCents,
+    monthlyResourceCents,
+  );
+  const creditUseShare = ratioPpm(
+    impact.likelyCreditUseCents,
+    monthlyResourceCents,
+  );
+  const liquiditySeverity = Math.max(
+    input.riskSnapshot.metrics.emergency_fund_months.severityPpm,
+    input.riskSnapshot.metrics.liquid_resource_coverage.severityPpm,
+  );
+  const creditFragility = Math.max(
+    input.riskSnapshot.metrics.high_interest_debt_burden.severityPpm,
+    input.riskSnapshot.metrics.interest_burden.severityPpm,
+  );
   const values = [
     ...RISK_FEATURES.map((id) => input.riskSnapshot.metrics[id].severityPpm),
     input.riskSnapshot.aggregateSeverityPpm,
@@ -216,14 +271,17 @@ export function extractOperationalEventFeaturesV1(
         (candidate.targetedWeakness === "unrelated_hazard" ? 0 : PPM)) /
         PPM,
     ),
+    lessonRiskRelevancePpm(input, prepared),
     impact.impactScorePpm,
     challengeFitPpm(input.difficulty, impact.impactScorePpm),
     impact.burnMonthsPpm,
     Math.min(MAX_FEATURE_VALUE, impact.negativeCashFlowDurationMonths * PPM),
     Math.min(MAX_FEATURE_VALUE, impact.recoveryTimeMonths * PPM),
-    ratioPpm(impact.minimumUncoveredCostCents, monthlyResourceCents),
-    ratioPpm(impact.likelyLiquidationCents, monthlyResourceCents),
-    ratioPpm(impact.likelyCreditUseCents, monthlyResourceCents),
+    uncoveredCostShare,
+    liquidationShare,
+    creditUseShare,
+    interactionPpm(uncoveredCostShare, liquiditySeverity),
+    interactionPpm(creditUseShare, creditFragility),
     Math.min(MAX_FEATURE_VALUE, impact.reasonableResponseIds.length * PPM),
     choiceSeparationPpm(prepared),
     impact.bankruptcyRisk === "possible" ? PPM : 0,
@@ -257,6 +315,7 @@ export function scoreOperationalEventTrainingLabelV1(
     value("impact.challenge_fit") * 5 +
     value("impact.choice_separation") * 4 +
     value("candidate.target_severity_interaction") * 3 +
+    value("candidate.lesson_risk_relevance") * 3 +
     value("candidate.novelty") * 2 +
     Math.min(PPM * 4, value("impact.reasonable_response_count")) -
     value("candidate.recent_template_count") * 4 -
@@ -264,6 +323,8 @@ export function scoreOperationalEventTrainingLabelV1(
     value("candidate.recent_target_count") -
     value("impact.bankruptcy_possible") * 8 -
     value("impact.credit_use_share") * 2 -
+    value("impact.liquidity_stress_interaction") * 3 -
+    value("impact.credit_fragility_interaction") * 3 -
     value("impact.liquidation_share") -
     value("impact.uncovered_cost_share") -
     value("impact.burn_months") -
