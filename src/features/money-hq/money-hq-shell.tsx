@@ -188,7 +188,8 @@ export function MoneyHqShell() {
   };
 
   const handleCommit = () => {
-    void turn.commit(selectedPlan).then(() => {
+    void turn.commit(selectedPlan).then((completed) => {
+      if (!completed) return;
       // A committed plan belongs to the month that just ended; clearing the
       // draft lets the dials fall back to the engine's saved strategy.
       setSelectedPlanIds({});

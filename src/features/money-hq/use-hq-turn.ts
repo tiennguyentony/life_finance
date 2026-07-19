@@ -40,7 +40,8 @@ export type HqTurn = Readonly<{
   error: string | null;
   commitMode: HqCommitMode;
   monthResult: BoardMonthResult | null;
-  commit: (plan: BoardPlan | null) => Promise<void>;
+  /** True only when the authoritative run advanced to the next month. */
+  commit: (plan: BoardPlan | null) => Promise<boolean>;
   dismissResult: () => void;
   clearError: () => void;
 }>;
@@ -89,19 +90,20 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
     setRecoveryPlanApplied(false);
     openingRef.current = null;
     failureRef.current = null;
+    return true;
   };
 
   const adoptRecovery = (
     outcome: BoardTurnRecoveryResult,
     failure: PendingFailure,
-  ) => {
+  ): boolean => {
     if (outcome.kind === "completed") {
       completeMonth(
         outcome.opening,
         outcome.run,
         boardRecoveryPlanLabel(outcome, failure.plan.label),
       );
-      return;
+      return true;
     }
 
     onRun(outcome.run);
@@ -113,7 +115,7 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
       openingRef.current = null;
       failureRef.current = null;
       setError(errorMessage(failure.error, "The plan could not be saved."));
-      return;
+      return false;
     }
 
     setRecoveryPlan(failure.plan);
@@ -128,7 +130,7 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
           ? "The run changed while saving. To avoid repeating a plan that may already be saved, finish this month only."
           : boardMonthRecoveryMessage(failure.planApplied),
       );
-      return;
+      return false;
     }
 
     setCommitMode("refresh");
@@ -138,6 +140,7 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
         ? "The latest run could not be refreshed. Finishing the month will refresh it again before advancing."
         : "The latest run could not be refreshed. Refresh before trying this plan again.",
     );
+    return false;
   };
 
   const recoverFailure = (failure: PendingFailure) =>
@@ -149,7 +152,10 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
       getSession: () => new LifeFinanceClient().getSession(),
     });
 
-  const finishSavedMonth = async (current: RunViewWire, plan: BoardPlan) => {
+  const finishSavedMonth = async (
+    current: RunViewWire,
+    plan: BoardPlan,
+  ): Promise<boolean> => {
     const opening = openingRef.current ?? current;
     setBusy(true);
     setError(null);
@@ -163,13 +169,12 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
           error: pending.error,
           commandId: `hq.month.recovery.${crypto.randomUUID()}`,
         });
-        adoptRecovery(
+        return adoptRecovery(
           outcome,
           outcome.kind === "completed"
             ? pending
             : { ...pending, phase: "month", error: outcome.error, failedRun: outcome.run },
         );
-        return;
       }
 
       const response = await new LifeFinanceClient().submitCommand(current.runId, {
@@ -179,7 +184,7 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
         type: "process_month",
         payload: {},
       });
-      completeMonth(
+      return completeMonth(
         opening,
         response.run,
         plan.label,
@@ -195,35 +200,33 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
         planApplied: recoveryPlanApplied,
       };
       failureRef.current = failure;
-      adoptRecovery(await recoverFailure(failure), failure);
+      return adoptRecovery(await recoverFailure(failure), failure);
     } finally {
       setBusy(false);
     }
   };
 
-  const commit = async (plan: BoardPlan | null) => {
-    if (!run || busy || run.pendingInteraction.kind === "event") return;
+  const commit = async (plan: BoardPlan | null): Promise<boolean> => {
+    if (!run || busy || run.pendingInteraction.kind === "event") return false;
 
     if (commitMode === "finish_month") {
-      await finishSavedMonth(run, recoveryPlan ?? STAY_PLAN);
-      return;
+      return finishSavedMonth(run, recoveryPlan ?? STAY_PLAN);
     }
 
     if (commitMode === "refresh") {
       const pending = failureRef.current;
-      if (!pending) return;
+      if (!pending) return false;
       setBusy(true);
       setError(null);
       try {
-        adoptRecovery(await recoverFailure(pending), pending);
+        return adoptRecovery(await recoverFailure(pending), pending);
       } finally {
         setBusy(false);
       }
-      return;
     }
 
     const chosen = plan ?? STAY_PLAN;
-    if (chosen.disabledReason !== null) return;
+    if (chosen.disabledReason !== null) return false;
 
     const opening = run;
     openingRef.current = opening;
@@ -238,13 +241,12 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
       });
 
       if (result.kind === "completed") {
-        completeMonth(
+        return completeMonth(
           result.opening,
           result.run,
           chosen.label,
           result.monthlyExplanation,
         );
-        return;
       }
 
       const failure: PendingFailure = {
@@ -256,7 +258,7 @@ export function useHqTurn({ run, onRun }: UseHqTurnInput): HqTurn {
         planApplied: result.kind === "month_failed" ? result.planApplied : false,
       };
       failureRef.current = failure;
-      adoptRecovery(await recoverFailure(failure), failure);
+      return adoptRecovery(await recoverFailure(failure), failure);
     } finally {
       setBusy(false);
     }
