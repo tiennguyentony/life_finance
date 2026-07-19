@@ -35,16 +35,24 @@ integer cents; floating-point currency never crosses the HTTP boundary.
 
 ## Vercel deployment
 
-The repository root deploys only the Next.js frontend. Deploy this directory as
-an independent service whose project root is `services/tax`; its Vercel
-entrypoint is `api/index.py`. Enable Fluid Compute because PolicyEngine's
-scientific Python dependencies exceed a standard small function bundle. The
-Python 3.12 pin and locked production requirements provide the deployment
-environment; do not deploy the development dependency group.
+The repository deploys this FastAPI application and the Next.js frontend as two
+services in one Vercel project. The root [`vercel.json`](../../vercel.json)
+keeps this service private and injects its internal URL into the frontend as
+`TAX_SERVICE_URL`. See
+[`docs/operations/vercel-services.md`](../../docs/operations/vercel-services.md)
+for the project settings and rollback procedure.
 
-Configure the same high-entropy `TAX_SERVICE_TOKEN` for both services. Configure
-the frontend `TAX_SERVICE_URL` to the independent service origin; never expose
-either value to browser code.
+Configure a high-entropy `TAX_SERVICE_TOKEN` as a project environment variable;
+both services receive it. Do not configure `TAX_SERVICE_URL` in Vercel because
+the service binding generates it. Never expose either value to browser code.
+
+Enable Fluid Compute because PolicyEngine's scientific Python dependencies
+exceed a standard small function bundle. The Python 3.12 pin and locked
+production requirements provide the deployment environment; do not deploy the
+development dependency group.
+
+The directory-level `vercel.json` remains available if the tax service must be
+split back into an independent Vercel project later.
 
 If a serverless host cannot start the scientific Python bundle, the frontend
 also supports the explicit `TAX_CALCULATOR_MODE=deterministic` deployment mode.

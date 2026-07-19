@@ -1,4 +1,40 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node scripts/vercel-build.mjs"
+  "services": {
+    "web": {
+      "root": "./",
+      "framework": "nextjs",
+      "buildCommand": "node scripts/vercel-build.mjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "tax",
+          "format": "url",
+          "env": "TAX_SERVICE_URL"
+        }
+      ]
+    },
+    "tax": {
+      "root": "services/tax/",
+      "functions": {
+        "api/index.py": {
+          "maxDuration": 300
+        }
+      },
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/api/index"
+        }
+      ]
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ]
 }

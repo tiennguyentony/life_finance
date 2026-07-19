@@ -30,7 +30,9 @@ pnpm db:migrate
 pnpm dev
 ```
 
-The required persistent variables are `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `RUN_SECRET_PEPPER_BASE64URL`, `TAX_SERVICE_URL`, and `TAX_SERVICE_TOKEN`. Monthly event ranking uses the bundled self-trained operational-ML artifact; it needs no API key, model server, or network call. A Vercel access token alone is not runtime configuration and is not enough to run the persistent path.
+The required persistent variables are `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `RUN_SECRET_PEPPER_BASE64URL`, and `TAX_SERVICE_TOKEN`. Local development also requires `TAX_SERVICE_URL`. Monthly event ranking uses the bundled self-trained operational-ML artifact; it needs no API key, model server, or network call. A Vercel access token alone is not runtime configuration and is not enough to run the persistent path.
+
+`TAX_SERVICE_URL` is required locally only. On Vercel the tax service is deployed as a service inside this same project, and its URL is injected by the service binding declared in [`vercel.json`](vercel.json). See [`docs/operations/vercel-services.md`](docs/operations/vercel-services.md).
 
 The auto-confirm setting is intentionally demo-only. It provides real account ownership and cross-device saves, but does not verify that an email address belongs to the registrant and this project does not offer a dependable password-recovery flow. Enable email confirmation and production SMTP before treating the app as production authentication.
 
