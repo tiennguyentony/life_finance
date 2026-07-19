@@ -16,6 +16,8 @@ type VercelConfig = Readonly<{
     }>;
     tax?: Readonly<{
       root?: string;
+      framework?: string;
+      entrypoint?: string;
       functions?: Readonly<Record<string, Readonly<{ maxDuration?: number }>>>;
       rewrites?: readonly Readonly<{ source?: string; destination?: string }>[];
     }>;
@@ -62,10 +64,12 @@ describe("production database deployment", () => {
     });
     expect(config.services?.tax).toMatchObject({
       root: "services/tax/",
+      framework: "fastapi",
+      entrypoint: "tax_service.app:app",
       functions: {
-        "api/index.py": { maxDuration: 300 },
+        "tax_service/app.py": { maxDuration: 300 },
       },
-      rewrites: [{ source: "/(.*)", destination: "/api/index" }],
     });
+    expect(config.services?.tax?.rewrites).toBeUndefined();
   });
 });
