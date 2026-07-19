@@ -220,8 +220,7 @@ describe("Runtime Balance controller v2", () => {
         topOneAgreementPpm: 1_000_000,
       },
     };
-    const ranking = rankPreparedEventsOperationallyV1(
-      {
+    const input = {
         version: SCENARIO_DIRECTOR_V2_VERSION,
         month: state.currentMonth,
         riskSnapshot: analyzeRiskV1(state),
@@ -239,7 +238,9 @@ describe("Runtime Balance controller v2", () => {
         recentEvents: [],
         lessonExposureCounts: [],
         difficulty: "normal",
-      },
+      } as const;
+    const ranking = rankPreparedEventsOperationallyV1(
+      input,
       prepared,
       artifact,
     );
@@ -250,6 +251,12 @@ describe("Runtime Balance controller v2", () => {
       first.id,
     ]);
     expect(ranking.latencyMicros).toBeLessThan(10_000);
+
+    const latencySamples = Array.from({ length: 500 }, () =>
+      rankPreparedEventsOperationallyV1(input, prepared, artifact).latencyMicros
+    ).toSorted((left, right) => left - right);
+    const p95 = latencySamples[Math.floor(latencySamples.length * 0.95)]!;
+    expect(p95).toBeLessThan(3_000);
   });
 
   it("approves deterministically, samples hard bounds, and spends without calm regeneration", () => {
