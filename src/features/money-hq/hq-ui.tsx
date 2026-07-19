@@ -52,6 +52,7 @@ export function HqSpeech({
       className="hq-character"
       height={104}
       src={characterSrc}
+      unoptimized
       width={104}
     />
   );
