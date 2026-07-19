@@ -3,6 +3,7 @@ import { onboardingDraftForPersonaV1 } from "@/core/onboarding-personas-v1";
 import type { CreatedRunV2 } from "@/server/db/run-repository-contracts";
 import { OnboardingService } from "@/server/api/onboarding-service";
 import { RunService } from "@/server/api/run-service";
+import type { GameplayDirector } from "@/server/ai/gameplay-director-service";
 
 import { InMemoryRunRepository } from "./in-memory-run-repository";
 import { OfflineDemoTaxCalculator } from "./offline-tax-calculator";
@@ -13,7 +14,7 @@ type PersistentRunReaderFactory = () => RunReader;
 export class LocalDemoRuntime {
   readonly #repository: InMemoryRunRepository;
   readonly #onboardingService: OnboardingService;
-  readonly #runService: RunService;
+  #runService: RunService;
 
   constructor(
     repository: InMemoryRunRepository = new InMemoryRunRepository(),
@@ -28,6 +29,16 @@ export class LocalDemoRuntime {
 
   hasRun(runId: string): boolean {
     return this.#repository.hasRun(runId);
+  }
+
+  configureGameplayDirector(gameplayDirector: GameplayDirector | null): void {
+    this.#runService = new RunService(
+      this.#repository,
+      new OfflineDemoTaxCalculator(),
+      undefined,
+      {},
+      gameplayDirector,
+    );
   }
 
   async createRun(): Promise<CreatedRunV2> {
