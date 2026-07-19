@@ -717,6 +717,28 @@ const legacyMonthlyRecordSummarySchema = z
     grossIncomeCents: nonNegativeCentsSchema,
     totalTaxCents: signedCentsSchema,
     afterTaxCashIncomeCents: nonNegativeCentsSchema,
+    taxBreakdown: z
+      .object({
+        version: z.literal("monthly-tax-breakdown-v1"),
+        monthlyFederalIncomeTaxCents: signedCentsSchema,
+        monthlyStateIncomeTaxCents: signedCentsSchema,
+        monthlyEmployeePayrollTaxCents: signedCentsSchema,
+        monthlySelfEmploymentTaxCents: signedCentsSchema,
+        annualGrossIncomeCents: signedCentsSchema,
+        annualTaxableIncomeCents: signedCentsSchema.nullable(),
+        annualFederalIncomeTaxCents: signedCentsSchema,
+        annualStateIncomeTaxCents: signedCentsSchema,
+        annualEmployeePayrollTaxCents: signedCentsSchema,
+        annualSelfEmploymentTaxCents: signedCentsSchema,
+        annualTotalTaxCents: signedCentsSchema,
+        annualAfterTaxIncomeCents: signedCentsSchema,
+        effectiveTaxRatePpm: z.int().min(-1_000_000).max(100_000_000),
+        disclaimer: z.literal(
+          "Educational estimate only; not tax, legal, or financial advice.",
+        ),
+      })
+      .strict()
+      .optional(),
     market: monthlyMarketEvidenceSchema,
     marketValueChangeCents: signedCentsSchema,
     annualInflationIncreaseCents: signedCentsSchema,

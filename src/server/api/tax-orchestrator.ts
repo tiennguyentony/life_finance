@@ -7,7 +7,10 @@ import {
 import { monthsBetween } from "../../core/domain/month";
 import { resetAnnualFinancialAccumulatorsV2 } from "../../core/financial-year-v2";
 import { currentCumulativePriceIndexPpmV2 } from "../../core/inflation-v2";
-import type { MonthlyTaxEvidence } from "../../core/payroll-v2";
+import type {
+  MonthlyTaxBreakdownV1,
+  MonthlyTaxEvidence,
+} from "../../core/payroll-v2";
 import { planRecurringAllocations } from "../../core/recurring-strategy-v2";
 import type { TaxCalculator } from "../tax/client";
 import {
@@ -204,6 +207,45 @@ export type MonthlyTaxEvidenceSourceV1 =
   | Readonly<{ kind: "calculated"; result: TaxCalculationResult }>
   | Readonly<{ kind: "cached"; evidence: MonthlyTaxEvidence }>;
 
+function monthlyTaxBreakdown(
+  result: TaxCalculationResult,
+  monthlyTotalTaxCents: number,
+): MonthlyTaxBreakdownV1 {
+  const monthlyState = allocateMoney(moneyCents(result.stateIncomeTaxCents), 1, 12);
+  const monthlyPayroll = allocateMoney(
+    moneyCents(result.employeePayrollTaxCents),
+    1,
+    12,
+  );
+  const monthlySelfEmployment = allocateMoney(
+    moneyCents(result.selfEmploymentTaxCents),
+    1,
+    12,
+  );
+  // Put the at-most-few-cent component rounding residual into federal tax so
+  // the visible paycheck always reconciles exactly to the posted total.
+  const monthlyFederal =
+    monthlyTotalTaxCents - monthlyState - monthlyPayroll - monthlySelfEmployment;
+  return Object.freeze({
+    version: "monthly-tax-breakdown-v1" as const,
+    monthlyFederalIncomeTaxCents: monthlyFederal,
+    monthlyStateIncomeTaxCents: monthlyState,
+    monthlyEmployeePayrollTaxCents: monthlyPayroll,
+    monthlySelfEmploymentTaxCents: monthlySelfEmployment,
+    annualGrossIncomeCents: result.annualGrossIncomeCents,
+    annualTaxableIncomeCents:
+      result.componentsCents.taxable_income ?? null,
+    annualFederalIncomeTaxCents: result.federalIncomeTaxCents,
+    annualStateIncomeTaxCents: result.stateIncomeTaxCents,
+    annualEmployeePayrollTaxCents: result.employeePayrollTaxCents,
+    annualSelfEmploymentTaxCents: result.selfEmploymentTaxCents,
+    annualTotalTaxCents: result.totalTaxCents,
+    annualAfterTaxIncomeCents: result.afterTaxIncomeCents,
+    effectiveTaxRatePpm: result.effectiveTaxRatePpm,
+    disclaimer: result.disclaimer,
+  });
+}
+
 /** One production-owned conversion shared by the web service and offline lab. */
 export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
   state: AuthorizedV2State,
@@ -228,6 +270,7 @@ export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
   );
   let metadata: TaxMetadata;
   let monthlyTax: number;
+  let breakdown: MonthlyTaxBreakdownV1 | undefined;
   if (source.kind === "cached") {
     assertCachedContext(
       source.evidence,
@@ -248,6 +291,7 @@ export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
       projectedFromFrozenPolicy: source.evidence.projectedFromFrozenPolicy,
     };
     monthlyTax = source.evidence.totalTaxCents;
+    breakdown = source.evidence.breakdown;
   } else {
     const result = source.result;
     if (
@@ -275,6 +319,7 @@ export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
       projectedFromFrozenPolicy: result.model.projectedFromFrozenPolicy,
     };
     monthlyTax = allocateMoney(moneyCents(result.totalTaxCents), 1, 12);
+    breakdown = monthlyTaxBreakdown(result, monthlyTax);
   }
   const afterTaxCash = safeBigIntToNumber(
     BigInt(monthlyGross) -
@@ -298,6 +343,7 @@ export function buildMonthlyTaxEvidenceFromPolicyEngineV1(
     employeeHsaContributionCents: monthlyPlan.preTax.hsaCents,
     totalTaxCents: monthlyTax,
     afterTaxCashIncomeCents: moneyCents(afterTaxCash),
+    ...(breakdown === undefined ? {} : { breakdown }),
   };
 }
 

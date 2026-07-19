@@ -6,11 +6,13 @@ import {
   runViewResponseSchema,
   sessionResponseSchema,
   savedRunsResponseSchema,
+  taxSummaryResponseSchema,
   type CommandIntent,
   type CommandResponseWire,
   type RunViewResponseWire,
   type SessionResponse,
   type SavedRunsResponse,
+  type TaxSummaryResponse,
 } from "@/contracts/api/contracts";
 import {
   onboardingConfirmRequestV1Schema,
@@ -118,6 +120,14 @@ export class LifeFinanceClient {
       "/api/runs",
       { method: "GET" },
       savedRunsResponseSchema,
+    );
+  }
+
+  getTaxSummary(runId: string): Promise<TaxSummaryResponse> {
+    return this.#request(
+      `/api/runs/${encodeURIComponent(runId)}/tax`,
+      { method: "GET" },
+      taxSummaryResponseSchema,
     );
   }
 

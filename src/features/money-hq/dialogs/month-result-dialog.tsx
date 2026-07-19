@@ -22,6 +22,7 @@ function pointsDelta(ppm: number): string {
 export function HqMonthResultDialog({ onDismiss, result }: Props) {
   const dialogRef = useModalDialog(true, { restoreFocus: !result.hasPendingEvent });
   const explanation = result.monthlyExplanation;
+  const taxBreakdown = explanation?.taxBreakdown ?? null;
 
   const outcomes: readonly LedgerEntry[] = [
     {
@@ -95,11 +96,43 @@ export function HqMonthResultDialog({ onDismiss, result }: Props) {
           value: formatSignedCents(explanation.grossIncomeCents),
           tone: "positive",
         },
-        {
-          label: "Taxes and withholding",
-          value: formatSignedCents(-explanation.totalTaxCents),
-          tone: "negative",
-        },
+        ...(taxBreakdown === null
+          ? [{
+              label: "Taxes and withholding",
+              value: formatSignedCents(-explanation.totalTaxCents),
+              tone: "negative" as const,
+              total: true,
+            }]
+          : [
+              {
+                label: "Federal income tax",
+                value: formatSignedCents(-taxBreakdown.monthlyFederalIncomeTaxCents),
+                tone: "negative" as const,
+              },
+              {
+                label: "State income tax",
+                value: formatSignedCents(-taxBreakdown.monthlyStateIncomeTaxCents),
+                tone: taxBreakdown.monthlyStateIncomeTaxCents === 0 ? "neutral" as const : "negative" as const,
+              },
+              {
+                label: "Social Security + Medicare",
+                value: formatSignedCents(-taxBreakdown.monthlyEmployeePayrollTaxCents),
+                tone: "negative" as const,
+              },
+              ...(taxBreakdown.monthlySelfEmploymentTaxCents === 0
+                ? []
+                : [{
+                    label: "Self-employment tax",
+                    value: formatSignedCents(-taxBreakdown.monthlySelfEmploymentTaxCents),
+                    tone: "negative" as const,
+                  }]),
+              {
+                label: "Total taxes and withholding",
+                value: formatSignedCents(-explanation.totalTaxCents),
+                tone: "negative" as const,
+                total: true,
+              },
+            ]),
         {
           label: "After-tax cash income",
           value: formatSignedCents(explanation.afterTaxCashIncomeCents),

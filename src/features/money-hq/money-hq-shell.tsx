@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { RunViewWire } from "@/contracts/api/contracts";
+import type {
+  RunViewWire,
+  TaxSummaryResponse,
+} from "@/contracts/api/contracts";
 import {
   plansForDestination,
   type BoardPlan,
@@ -32,6 +35,7 @@ import { GlossaryScreen } from "./screens/glossary-screen";
 import { InvestScreen, type InvestLayout } from "./screens/invest-screen";
 import { OverviewScreen } from "./screens/overview-screen";
 import { SafetyScreen } from "./screens/safety-screen";
+import { TaxScreen, type TaxLoadState } from "./screens/tax-screen";
 import {
   appendTrailPoint,
   loadTrail,
@@ -61,6 +65,10 @@ export function MoneyHqShell() {
   const [investDraft, setInvestDraft] = useState<InvestDraft | null>(null);
   const [investLayout, setInvestLayout] = useState<InvestLayout>("buckets");
   const [report, setReport] = useState<HqReport>(null);
+  const [taxLoadState, setTaxLoadState] = useState<TaxLoadState>({
+    status: "idle",
+  });
+  const [taxRetry, setTaxRetry] = useState(0);
   const [trail, setTrail] = useState<readonly TrailPoint[]>([]);
   const [resolvingEvent, setResolvingEvent] = useState(false);
   const [toast, setToast] = useState({ message: "", visible: false });
@@ -105,6 +113,34 @@ export function MoneyHqShell() {
       active = false;
     };
   }, [router, recordRun]);
+
+  // Tax is intentionally lazy: opening Money HQ stays fast, while the Tax tab
+  // always uses the current authoritative run revision and server tax engine.
+  useEffect(() => {
+    if (activeTab !== "tax" || run === null) return;
+    let active = true;
+    Promise.resolve()
+      .then(() => {
+        if (active) setTaxLoadState({ status: "loading" });
+        return new LifeFinanceClient().getTaxSummary(run.runId);
+      })
+      .then((summary: TaxSummaryResponse) => {
+        if (active) setTaxLoadState({ status: "ready", summary });
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setTaxLoadState({
+          status: "error",
+          message:
+            reason instanceof Error && reason.message
+              ? reason.message
+              : "The tax estimate could not be loaded.",
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeTab, run, taxRetry]);
 
   useEffect(() => {
     return () => {
@@ -303,6 +339,8 @@ export function MoneyHqShell() {
                 run={run}
                 selectedPlanId={selectedPlanId}
                 trail={trail}
+                taxLoadState={taxLoadState}
+                onRetryTax={() => setTaxRetry((value) => value + 1)}
                 view={view}
               />
 
@@ -382,10 +420,12 @@ type ScreenProps = Readonly<{
   onInvestLayout: (layout: InvestLayout) => void;
   onSelectPlan: (planId: string) => void;
   onSelectTab: (tab: HqTabId) => void;
+  onRetryTax: () => void;
   plans: readonly BoardPlan[];
   run: RunViewWire;
   selectedPlanId: string | null;
   trail: readonly TrailPoint[];
+  taxLoadState: TaxLoadState;
   view: ReturnType<typeof hqViewFromRun>;
 }>;
 
@@ -398,10 +438,12 @@ function HqScreen({
   onInvestLayout,
   onSelectPlan,
   onSelectTab,
+  onRetryTax,
   plans,
   run,
   selectedPlanId,
   trail,
+  taxLoadState,
   view,
 }: ScreenProps) {
   const shared = { busy, onSelectPlan, plans, run, selectedPlanId, view };
@@ -418,6 +460,14 @@ function HqScreen({
       );
     case "budget":
       return <BudgetScreen {...shared} />;
+    case "tax":
+      return (
+        <TaxScreen
+          loadState={taxLoadState}
+          onRetry={onRetryTax}
+          onSelectTab={onSelectTab}
+        />
+      );
     case "debt":
       return <DebtScreen {...shared} />;
     case "invest":

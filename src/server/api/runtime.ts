@@ -11,6 +11,7 @@ import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { RunRepository } from "../db/run-repository";
 import { getDatabaseConnection } from "../db/runtime";
 import { createTaxCalculatorFromEnvironment } from "../tax/runtime";
+import { TaxSummaryService, type TaxSummaryReader } from "../tax/summary";
 import { getLocalDemoRuntime } from "../demo/runtime";
 import { OnboardingService } from "./onboarding-service";
 import { RunService } from "./run-service";
@@ -23,6 +24,8 @@ let runGateway: CommandRunner | undefined;
 let runReaderGateway: RunReader | undefined;
 let runRepository: RunRepository | undefined;
 let gameplayDirector: GameplayDirector | null | undefined;
+let taxSummaryReader: TaxSummaryReader | undefined;
+let demoTaxSummaryReader: TaxSummaryReader | undefined;
 
 function getGameplayDirector(): GameplayDirector | null {
   if (gameplayDirector !== undefined) return gameplayDirector;
@@ -97,6 +100,21 @@ export function getRunReaderGateway(): RunReader {
 
 export function isLocalDemoRun(runId: string): boolean {
   return getLocalDemoRuntime().hasRun(runId);
+}
+
+export function getTaxSummaryReader(): TaxSummaryReader {
+  if (!taxSummaryReader) {
+    taxSummaryReader = new TaxSummaryService(
+      getRunRepository(),
+      createTaxCalculatorFromEnvironment(),
+    );
+  }
+  return taxSummaryReader;
+}
+
+export function getDemoTaxSummaryReader(): TaxSummaryReader {
+  demoTaxSummaryReader ??= getLocalDemoRuntime().createTaxSummaryReader();
+  return demoTaxSummaryReader;
 }
 
 export function getOnboardingService(): OnboardingService {

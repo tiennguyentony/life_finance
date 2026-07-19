@@ -169,6 +169,7 @@ export class OfflineDemoTaxCalculator implements TaxCalculator {
       afterTaxIncomeCents,
       effectiveTaxRatePpm,
       componentsCents: {
+        taxable_income: taxableIncomeCents,
         federal_income_tax: federalIncomeTaxCents,
         state_income_tax: stateIncomeTaxCents,
         employee_payroll_tax: employeePayrollTaxCents,

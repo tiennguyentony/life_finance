@@ -119,6 +119,7 @@ export type FinancialMonthRecordV2 = Readonly<{
   grossIncomeCents: MoneyCents;
   totalTaxCents: MoneyCents;
   afterTaxCashIncomeCents: MoneyCents;
+  taxBreakdown?: MonthlyTaxEvidence["breakdown"];
   resolvedIncomeCents: MoneyCents;
   resolvedExpenseCents: MoneyCents;
   market: SupportedMarketMonth;
@@ -946,6 +947,9 @@ export function simulateFinancialMonthV2(
       grossIncomeCents: input.taxEvidence.grossIncomeCents,
       totalTaxCents: moneyCents(input.taxEvidence.totalTaxCents),
       afterTaxCashIncomeCents: input.taxEvidence.afterTaxCashIncomeCents,
+      ...(input.taxEvidence.breakdown === undefined
+        ? {}
+        : { taxBreakdown: input.taxEvidence.breakdown }),
       resolvedIncomeCents,
       resolvedExpenseCents,
       market: market.month,
@@ -1046,6 +1050,9 @@ export function simulateFinancialMonthV2(
     grossIncomeCents: input.taxEvidence.grossIncomeCents,
     totalTaxCents: moneyCents(input.taxEvidence.totalTaxCents),
     afterTaxCashIncomeCents: input.taxEvidence.afterTaxCashIncomeCents,
+    ...(input.taxEvidence.breakdown === undefined
+      ? {}
+      : { taxBreakdown: input.taxEvidence.breakdown }),
     resolvedIncomeCents,
     resolvedExpenseCents,
     market: market.month,

@@ -40,6 +40,7 @@ import { OnboardingError, type OnboardingService } from "./onboarding-service";
 import type { OnboardingAiServiceV1 } from "@/server/ai/onboarding-service-v1";
 import { accountRunCredential } from "@/server/auth/account-run-credential";
 import type { AuthenticatedUser } from "@/server/auth/supabase-user";
+import type { TaxSummaryReader } from "@/server/tax/summary";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
@@ -440,6 +441,24 @@ export async function handleGetAccountRun(
   }
 }
 
+export async function handleGetAccountTaxSummary(
+  user: AuthenticatedUser,
+  runId: string,
+  service: TaxSummaryReader,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    return jsonResponse(
+      await service.getSummary(runId, accountRunCredential(user.userId)),
+      200,
+      requestId,
+    );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
 export async function handleSubmitAccountCommand(
   request: Request,
   user: AuthenticatedUser,
@@ -564,6 +583,38 @@ export async function handleGetRun(
   try {
     return jsonResponse(
       await getRun(service, runId, session.accessSecret),
+      200,
+      requestId,
+    );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleGetTaxSummary(
+  request: Request,
+  runId: string,
+  service: TaxSummaryReader,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  const session = parseRunSessionCookie(request.headers.get("cookie"));
+  if (!session || session.runId !== runId) {
+    return jsonResponse(
+      {
+        error: {
+          code: "SESSION_REQUIRED",
+          message: "an active run session is required",
+          requestId,
+        },
+      },
+      401,
+      requestId,
+    );
+  }
+  try {
+    return jsonResponse(
+      await service.getSummary(runId, session.accessSecret),
       200,
       requestId,
     );

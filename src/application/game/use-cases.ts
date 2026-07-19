@@ -94,6 +94,7 @@ export async function submitCommand(
           totalTaxCents: applied.monthlyRecord.totalTaxCents,
           afterTaxCashIncomeCents:
             applied.monthlyRecord.afterTaxCashIncomeCents,
+          taxBreakdown: applied.monthlyRecord.taxBreakdown ?? null,
           resolvedIncomeCents:
             "resolvedIncomeCents" in applied.monthlyRecord
               ? applied.monthlyRecord.resolvedIncomeCents
@@ -130,6 +131,7 @@ export type CommandResponseMonthlyExplanation = Readonly<{
   grossIncomeCents: number;
   totalTaxCents: number;
   afterTaxCashIncomeCents: number;
+  taxBreakdown: import("@/core/payroll-v2").MonthlyTaxBreakdownV1 | null;
   resolvedIncomeCents: number;
   resolvedExpenseCents: number;
   marketValueChangeCents: number;

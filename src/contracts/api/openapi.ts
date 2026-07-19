@@ -29,6 +29,9 @@ export const CURRENT_OPENAPI_DOCUMENT = Object.freeze({
     "/api/runs/{runId}": {
       get: { summary: "Read the active run as a RunView" },
     },
+    "/api/runs/{runId}/tax": {
+      get: { summary: "Read the run's current tax estimate and YTD totals" },
+    },
     "/api/runs/{runId}/commands": {
       post: {
         summary: "Submit a versionless command intent for the active run",

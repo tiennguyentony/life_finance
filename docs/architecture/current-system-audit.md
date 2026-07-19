@@ -12,6 +12,7 @@ This audit describes local `main` after account saves, beginner cadence, equatio
 | Persistent runs | PostgreSQL/Drizzle, one active save per account | Yes | Yes |
 | Instant local demo | In-memory repository/tax adapter | Dev-only `/api/demo` | Dev-only button |
 | Monthly finance/tax/market | Implemented deterministically | `process_month` | Yes |
+| Tax education and statement | Component evidence + ledger-backed YTD summary | `GET /api/runs/{runId}/tax` | Money HQ Tax tab + month result |
 | Detailed financial actions | Broad internal/public intent support | Yes | Small fixed board subset |
 | Recurring strategy | Implemented | Yes | Only emergency-buffer target exposed by board plans |
 | Declarative events | 4 production templates; 21 highest-supported templates in calibration/training catalog | Resolve command | Yes, after monthly result |
@@ -31,6 +32,9 @@ This audit describes local `main` after account saves, beginner cadence, equatio
 - Choose one of five destinations and one frontend-authored plan.
 - Apply lifestyle, revolving-credit, taxable-investment, upskill, or emergency-target changes from that menu.
 - Advance one deterministic month and see before/after financial deltas.
+- Inspect a current paycheck estimate, annual federal/state/payroll breakdown,
+  completed-payroll YTD totals, filing context, and the tax components posted
+  when a month closes.
 - Encounter one of four currently activated production event templates and resolve its listed choices.
 - Continue until a deterministic terminal outcome is reached.
 
@@ -63,8 +67,11 @@ The v1 artifact is trained offline from 648 grouped queries/3,240 candidates spa
 2. “Big City Survivor” maps to the same backend software persona as Junior Developer.
 3. Board plan previews are static client calculations, not the internal engine preview service.
 4. Production still activates only four historical templates; the 21-template highest-supported catalog remains behind calibration gates. The v1 ranker's labels are versioned weak supervision rather than live-player behavior.
-5. Tax is calculated in the engine but no player-facing tax statement or concept lesson is mounted.
-6. 401(k), HSA, insurance, debt, and counterfactual teaching systems are not surfaced in the current board.
+5. The Tax Center is educational, not a filed return: investment tax, itemized
+   deductions, spouse earnings, local tax, and true refund/amount-due settlement
+   are not modeled yet.
+6. 401(k) and HSA tax effects are now explained in Tax and Invest; insurance,
+   debt, and counterfactual teaching remain incomplete.
 7. AI teaching is not mounted; operational ML affects candidate order only and does not generate mechanics or educational prose.
 8. Level/XP are UI derivations; journal/menu surfaces are incomplete.
 9. `/api/health` does not establish dependency readiness.
@@ -92,7 +99,8 @@ These tracked artifacts were not removed by this audit because they may be inten
 ## Recommended next product sequence
 
 1. Make onboarding fields authoritative, including an explicit editable FI target and optional benefits/insurance/debt choices.
-2. Add player-visible tax/payroll and financial-concept explanations from deterministic evidence.
+2. Extend the new Tax Center only when versioned inputs exist for investment
+   tax, deductions, spouse earnings, and real withholding-vs-liability settlement.
 3. Expand and test the declarative event catalog by life domain before adding AI narration.
 4. Expose deterministic preview and teaching/counterfactual endpoints through the unversioned API.
 5. Mount education/debrief UI into the canonical board.

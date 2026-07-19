@@ -31,6 +31,26 @@ export type MonthlyTaxEvidence = Readonly<{
   employeeHsaContributionCents: MoneyCents;
   totalTaxCents: number;
   afterTaxCashIncomeCents: MoneyCents;
+  /** Added after the original evidence contract. Absent on historical rows. */
+  breakdown?: MonthlyTaxBreakdownV1;
+}>;
+
+export type MonthlyTaxBreakdownV1 = Readonly<{
+  version: "monthly-tax-breakdown-v1";
+  monthlyFederalIncomeTaxCents: number;
+  monthlyStateIncomeTaxCents: number;
+  monthlyEmployeePayrollTaxCents: number;
+  monthlySelfEmploymentTaxCents: number;
+  annualGrossIncomeCents: number;
+  annualTaxableIncomeCents: number | null;
+  annualFederalIncomeTaxCents: number;
+  annualStateIncomeTaxCents: number;
+  annualEmployeePayrollTaxCents: number;
+  annualSelfEmploymentTaxCents: number;
+  annualTotalTaxCents: number;
+  annualAfterTaxIncomeCents: number;
+  effectiveTaxRatePpm: number;
+  disclaimer: "Educational estimate only; not tax, legal, or financial advice.";
 }>;
 
 export type MonthlyPayrollResult = Readonly<{
@@ -88,6 +108,37 @@ function validateEvidenceShape(evidence: MonthlyTaxEvidence): void {
       "INVALID_TAX_EVIDENCE",
       "monthly tax evidence violates its versioned shape",
     );
+  }
+  const breakdown = evidence.breakdown;
+  if (breakdown !== undefined) {
+    const integers = Object.entries(breakdown)
+      .filter(([, value]) => typeof value === "number")
+      .map(([, value]) => value as number);
+    const monthlyTotal =
+      breakdown.monthlyFederalIncomeTaxCents +
+      breakdown.monthlyStateIncomeTaxCents +
+      breakdown.monthlyEmployeePayrollTaxCents +
+      breakdown.monthlySelfEmploymentTaxCents;
+    const annualTotal =
+      breakdown.annualFederalIncomeTaxCents +
+      breakdown.annualStateIncomeTaxCents +
+      breakdown.annualEmployeePayrollTaxCents +
+      breakdown.annualSelfEmploymentTaxCents;
+    if (
+      breakdown.version !== "monthly-tax-breakdown-v1" ||
+      integers.some((value) => !Number.isSafeInteger(value)) ||
+      breakdown.effectiveTaxRatePpm < -1_000_000 ||
+      breakdown.effectiveTaxRatePpm > 100_000_000 ||
+      monthlyTotal !== evidence.totalTaxCents ||
+      annualTotal !== breakdown.annualTotalTaxCents ||
+      breakdown.annualGrossIncomeCents - breakdown.annualTotalTaxCents !==
+        breakdown.annualAfterTaxIncomeCents
+    ) {
+      throw new PayrollV2Error(
+        "INVALID_TAX_EVIDENCE",
+        "monthly tax breakdown does not reconcile to its evidence",
+      );
+    }
   }
   const expectedCash =
     BigInt(evidence.grossIncomeCents) -

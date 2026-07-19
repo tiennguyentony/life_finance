@@ -3,6 +3,7 @@ import type { BoardDestinationId } from "@/features/board/plan-catalog";
 export type HqTabId =
   | "overview"
   | "budget"
+  | "tax"
   | "debt"
   | "invest"
   | "career"
@@ -44,6 +45,15 @@ export const HQ_TABS: readonly HqTab[] = Object.freeze([
     characterName: "Inflato",
     iconTint: "#ffe9e6",
     destinationId: "home" as const,
+  }),
+  Object.freeze({
+    id: "tax" as const,
+    label: "Tax",
+    hint: "paycheck & YTD",
+    characterSrc: `${CHARACTERS}/luckycat/luckycat-tax.png`,
+    characterName: "Lucky Cat",
+    iconTint: "#fff1c9",
+    destinationId: null,
   }),
   Object.freeze({
     id: "debt" as const,
