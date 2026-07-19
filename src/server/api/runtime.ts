@@ -1,6 +1,11 @@
 import { OnboardingAiServiceV1 } from "../ai/onboarding-service-v1";
 import type { CommandRunner, RunReader } from "../../application/game/use-cases";
 import { getAiRoleClient } from "../ai/runtime";
+import {
+  GameplayDirectorService,
+  gameplayDirectorConfigFromEnvironment,
+  type GameplayDirector,
+} from "../ai/gameplay-director-service";
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { RunRepository } from "../db/run-repository";
 import { getDatabaseConnection } from "../db/runtime";
@@ -16,6 +21,25 @@ let onboardingAiService: OnboardingAiServiceV1 | undefined;
 let runGateway: CommandRunner | undefined;
 let runReaderGateway: RunReader | undefined;
 let runRepository: RunRepository | undefined;
+let gameplayDirector: GameplayDirector | null | undefined;
+
+function getGameplayDirector(): GameplayDirector | null {
+  if (gameplayDirector !== undefined) return gameplayDirector;
+  const config = gameplayDirectorConfigFromEnvironment();
+  if (config.mode === "off") return (gameplayDirector = null);
+  try {
+    gameplayDirector = new GameplayDirectorService((runId) => {
+      const client = getAiRoleClient(runId);
+      return {
+        generate: (request) => client.generate<"scenario_director">(request),
+        responseSource: () => client.responseSource(),
+      };
+    }, config);
+  } catch {
+    gameplayDirector = null;
+  }
+  return gameplayDirector;
+}
 
 export function getRunRepository(): RunRepository {
   if (!runRepository) {
@@ -33,6 +57,9 @@ export function getRunService(): RunService {
     runService = new RunService(
       getRunRepository(),
       createTaxCalculatorFromEnvironment(),
+      undefined,
+      {},
+      getGameplayDirector(),
     );
   }
   return runService;

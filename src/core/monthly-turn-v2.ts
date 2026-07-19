@@ -23,6 +23,7 @@ import {
   settleMonthlyDebtService,
 } from "./debt-service-v2";
 import type { FinancialSnapshot, GameState } from "./game-state";
+import type { AiContentSource } from "./ai-source";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
   simulateFinancialMonthV2,
@@ -173,6 +174,15 @@ export type OutcomePolicyVersionV2 =
   | typeof LEGACY_UNVERSIONED_OUTCOME_POLICY
   | typeof OUTCOME_POLICY_V1_VERSION;
 
+export type ScenarioDirectorAiEvidenceV2 = Readonly<{
+  mode: "shadow" | "active";
+  source: AiContentSource;
+  status: "validated" | "fallback";
+  latencyMs: number;
+  candidateCount: number;
+  topCandidateAgreement: boolean | null;
+}>;
+
 export type ProcessMonthV2Command = Readonly<{
   schemaVersion: 2;
   id: string;
@@ -189,6 +199,7 @@ export type ProcessMonthV2Command = Readonly<{
       typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
     scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
     scenarioDirectorRankingOverride?: ScenarioDirectorRankingOverrideV2;
+    scenarioDirectorAiEvidence?: ScenarioDirectorAiEvidenceV2;
     worldRandomVersion?: typeof WORLD_RANDOM_VERSION_V1;
     marketModelVersion?:
       | typeof MARKET_MODEL_VERSION
@@ -227,6 +238,7 @@ export type MonthlyTurnV2Record = Readonly<{
   runtimeBalanceDecision?: RuntimeBalanceDecisionV2;
   scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
   scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
+  scenarioDirectorAiEvidence?: ScenarioDirectorAiEvidenceV2;
   runtimeBalanceCandidateSet?: Readonly<{
     eligibleTemplateIds: readonly string[];
     candidateTemplateIds: readonly string[];
@@ -1529,6 +1541,12 @@ function processMonthlyTurnV2Kernel200(
       ...(scenarioDirectorDecision === undefined
         ? {}
         : { scenarioDirectorDecision }),
+      ...(command.payload.scenarioDirectorAiEvidence === undefined
+        ? {}
+        : {
+            scenarioDirectorAiEvidence:
+              command.payload.scenarioDirectorAiEvidence,
+          }),
       ...(runtimeBalanceCandidateSet === undefined
         ? {}
         : { runtimeBalanceCandidateSet }),

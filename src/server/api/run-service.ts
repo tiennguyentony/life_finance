@@ -11,8 +11,10 @@ import type { GameStateV2 } from "../../core/game-state-v2";
 import { MACRO_MARKET_MODEL_V2_VERSION } from "../../core/market";
 import {
   FINANCIAL_KERNEL_V2_VERSION,
+  processMonthlyTurnV2,
   type ProcessMonthV2Command,
 } from "../../core/monthly-turn-v2";
+import type { ScenarioDirectorInputV2 } from "../../core/scenario-director-v2";
 import { createNativeGameStateV2 } from "../../core/native-game-state-v2";
 import { OUTCOME_POLICY_V1_VERSION } from "../../core/outcome-policy-v2";
 import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../../core/runtime-balance-policy-v2";
@@ -62,6 +64,7 @@ import { summarizeMonthlyRecord } from "./monthly-record";
 import type { V2Repository } from "./run-repository-port";
 import { buildTaxRequest, resolveMonthlyTaxEvidence } from "./tax-orchestrator";
 import { fingerprintAnnualTaxContext } from "../tax/context-cache";
+import type { GameplayDirector } from "../ai/gameplay-director-service";
 
 const AUTOMATIC_LIQUIDATION_COST_RATE_PPM = ratePpm(10_000);
 
@@ -78,17 +81,20 @@ export class RunService {
   readonly #taxCalculator: TaxCalculator;
   readonly #playerIdFactory: () => string;
   readonly #timeControllerDependencies: TimeControllerV2Dependencies;
+  readonly #gameplayDirector: GameplayDirector | null;
 
   constructor(
     repository: V2Repository,
     taxCalculator: TaxCalculator,
     playerIdFactory: () => string = () => `player_${randomUUID()}`,
     timeControllerDependencies: TimeControllerV2Dependencies = {},
+    gameplayDirector: GameplayDirector | null = null,
   ) {
     this.#repository = repository;
     this.#taxCalculator = taxCalculator;
     this.#playerIdFactory = playerIdFactory;
     this.#timeControllerDependencies = timeControllerDependencies;
+    this.#gameplayDirector = gameplayDirector;
   }
 
   async advanceTime(
@@ -554,6 +560,29 @@ export class RunService {
           resolvedCashFlows: [],
         },
       };
+      if (this.#gameplayDirector !== null) {
+        let directorInput: ScenarioDirectorInputV2 | undefined;
+        processMonthlyTurnV2(current, internal, {
+          scenarioDirectorInputObserver: (input) => {
+            directorInput = input;
+          },
+        });
+        if (directorInput !== undefined) {
+          const ai = await this.#gameplayDirector.rank(runId, directorInput);
+          if (ai !== null) {
+            internal = {
+              ...internal,
+              payload: {
+                ...internal.payload,
+                scenarioDirectorAiEvidence: ai.evidence,
+                ...(ai.rankingOverride === undefined
+                  ? {}
+                  : { scenarioDirectorRankingOverride: ai.rankingOverride }),
+              },
+            };
+          }
+        }
+      }
     }
     const applied = await this.#repository.applyCommandV2(
       runId,
