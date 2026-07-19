@@ -1,4 +1,9 @@
 import type { CommandIntent } from "@/contracts/api/contracts";
+import { moneyCents } from "@/core/domain/money";
+import {
+  planRevolvingCreditMonthV2,
+  REVOLVING_CREDIT_POLICY_V2,
+} from "@/core/revolving-credit-v2";
 import { UPSKILL_PROGRAMS, type UpskillProgram } from "@/data/upskill-programs";
 
 export type BoardDestinationId =
@@ -144,6 +149,18 @@ function bankPlans(run: BoardPlanRun): readonly BoardPlan[] {
     DEMO_ACTION_CENTS,
     run.finances.creditLimitCents - run.finances.creditUsedCents,
   );
+  const paymentClosingBalanceCents = Math.max(
+    0,
+    run.finances.creditUsedCents - paymentCents,
+  );
+  const drawClosingBalanceCents = run.finances.creditUsedCents + drawCents;
+  const paymentMinimumCents = planRevolvingCreditMonthV2(
+    moneyCents(paymentClosingBalanceCents),
+  ).scheduledPaymentCents;
+  const drawMinimumCents = planRevolvingCreditMonthV2(
+    moneyCents(drawClosingBalanceCents),
+  ).scheduledPaymentCents;
+  const apr = `${REVOLVING_CREDIT_POLICY_V2.annualInterestRatePpm / 10_000}% APR`;
 
   return [
     {
@@ -154,6 +171,12 @@ function bankPlans(run: BoardPlanRun): readonly BoardPlan[] {
       effects: [
         exactEffect("Cash", `-${formatPlanMoney(paymentCents)}`, "negative"),
         exactEffect("Revolving debt", `-${formatPlanMoney(paymentCents)}`, "positive"),
+        exactEffect("Scenario credit policy", apr, "neutral"),
+        directionalEffect(
+          "Next minimum at this balance",
+          formatPlanMoney(paymentMinimumCents),
+          "positive",
+        ),
         exactEffect("Net worth", "No immediate change", "neutral"),
       ],
       disabledReason: paymentCents <= 0
@@ -174,7 +197,12 @@ function bankPlans(run: BoardPlanRun): readonly BoardPlan[] {
       effects: [
         exactEffect("Cash", `+${formatPlanMoney(drawCents)}`, "positive"),
         exactEffect("Revolving debt", `+${formatPlanMoney(drawCents)}`, "negative"),
-        directionalEffect("Future interest cost", "Higher", "negative"),
+        exactEffect("Scenario credit policy", apr, "negative"),
+        directionalEffect(
+          "Next minimum at this balance",
+          formatPlanMoney(drawMinimumCents),
+          "negative",
+        ),
       ],
       disabledReason: drawCents <= 0
         ? "No revolving credit is available to draw."

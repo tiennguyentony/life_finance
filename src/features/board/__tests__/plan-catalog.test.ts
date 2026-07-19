@@ -170,6 +170,17 @@ describe("board plan catalog", () => {
       plansForDestination(constrained, "bank").find(({ id }) => id === "bank.draw-credit")!,
       "board.plan.draw",
     )).toMatchObject({ payload: { action: { amountCents: 40_000 } } });
+
+    const draw = plansForDestination(constrained, "bank").find(
+      ({ id }) => id === "bank.draw-credit",
+    )!;
+    expect(draw.effects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Scenario credit policy", value: "24% APR" }),
+      expect.objectContaining({
+        label: "Next minimum at this balance",
+        value: "$25",
+      }),
+    ]));
   });
 
   it("does not submit a command for a stay-the-course plan", () => {
