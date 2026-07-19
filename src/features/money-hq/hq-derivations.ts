@@ -10,7 +10,9 @@ import { UPSKILL_PROGRAMS, type UpskillProgram } from "@/data/upskill-programs";
  * ledger-backed. Everything here is therefore derived from wire state and the
  * engine's own policy constants — never from illustrative design values. When a
  * figure cannot be derived it is returned as null so the screen can omit the
- * panel rather than invent a total.
+ * panel rather than invent a total. Contribution buckets are explicitly
+ * rendered as rate illustrations: their real after-tax base does not exist
+ * until payroll, bills, and safety retention have run for the month.
  */
 
 const MONTHS_PER_YEAR = 12;
