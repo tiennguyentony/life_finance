@@ -5,7 +5,7 @@ This file is the durable continuation context for the current implementation bra
 ## Mainline status
 
 - Branch: `main`
-- Current audited code head: `5d50de9fdbc390b1319fa80c1deb2cb23b5a85df`
+- Current audited local sequence ends with the monthly AI integration commits listed below; use `git log -1` for the exact moving head.
 - Local `main` contains commits not present on `origin/main`; do not claim these changes are pushed.
 - The account-save/performance sequence below is now part of `main`.
 - `e291629` — Supabase email OTP authentication foundation
@@ -22,6 +22,9 @@ This file is the durable continuation context for the current implementation bra
 - `115beef` — saved-game navigation and restore UI
 - `6b389b7` — keep current-game management on `/saves`
 - `5cacde9` — allow confirmed custom living costs to evolve after onboarding
+- `b5568d3` — persisted, replay-safe validated AI candidate rankings
+- `6e0aeec` — off/shadow/active monthly AI orchestration and evidence
+- `2991f41` — local Ollama demo wiring and board-visible AI evidence
 
 The later equation-balance, repeatable beginner-loop, and funny-event-rhythm work is also present on `main`. Its candidate event catalog and beginner cadence remain calibration-only: production continues to use the historical V2 scheduling catalog until the documented activation gates pass.
 
@@ -53,6 +56,8 @@ The later equation-balance, repeatable beginner-loop, and funny-event-rhythm wor
 13. Three.js is pinned to r182 until React Three Fiber replaces its deprecated `THREE.Clock` dependency; do not widen the version range without checking the browser console and board render.
 14. `/start` is dedicated to new-game persona selection; the header links to `/saves`, which lists up to 50 account-owned games. Restoring an archived game atomically archives the previous active game without deleting either.
 15. Account commands are accepted only for the currently active save; archived saves are read-only until restored.
+16. AI can reorder only an exact checksum-bound candidate permutation. Event identity, mechanics, amounts, lessons, scores, and safety remain engine-owned.
+17. Accepted AI rankings are stored in the monthly command. Idempotent replay returns the same result without another provider call.
 
 ## Local verification performed
 
@@ -68,6 +73,8 @@ The later equation-balance, repeatable beginner-loop, and funny-event-rhythm wor
 - Heap samples across the persistent run fluctuated with garbage collection instead of increasing monotonically. RSS ended near 345 MB in the Vitest process.
 - The optimized production Next.js server idled near 157 MB RSS. The development compiler reached roughly 1.5 GB after extended use, so dev RSS must not be treated as deployment memory.
 - A cold development command spent about 950 ms compiling and 25 ms in application code; the next command completed in 16 ms total and 11 ms in application code.
+- A real Instant Demo run invoked local Ollama `gpt-oss:20b` on a three-candidate month. The validated active ranking completed in 28.7 seconds and scheduled through Runtime Balance; replay returned the stored AI evidence with `idempotentReplay=true` and no second model call.
+- The complete `pnpm verify` gate passed after monthly AI integration: 156 normal test files passed (4 skipped), 3 long-run files passed, and the production build completed.
 
 ## Performance interpretation
 
@@ -76,6 +83,7 @@ The later equation-balance, repeatable beginner-loop, and funny-event-rhythm wor
 - The authoritative state intentionally retains an append-only ledger and accepted command IDs for audit and deterministic replay. It grows linearly with game age, but remains below the current 1 MB long-run budget. Do not remove this evidence merely to reduce JSON size without first replacing replay and integrity guarantees.
 - PolicyEngine is cached by annual tax context. The first uncached calculation can be much slower than later monthly commands; do not call the tax service again for an unchanged annual context.
 - Custom expense evidence is an immutable record of the confirmed opening budget. The live annual living cost is mutable because inflation and player choices change it; conflating those fields previously broke the first month of a custom-expense run.
+- Local `gpt-oss:20b` inference is intentionally sampled because a cold 20B call can take tens of seconds. Ordinary months remain deterministic and fast; three consecutive failures open a one-minute circuit breaker.
 
 ## Before the next deployment
 
