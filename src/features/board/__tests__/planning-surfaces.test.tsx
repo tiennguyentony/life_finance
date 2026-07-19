@@ -261,7 +261,9 @@ describe("board planning surfaces", () => {
         eventVisible
         mode="strategy"
         monthResultDialog={null}
+        onNewGame={() => undefined}
         onResolveEvent={() => undefined}
+        onSavedGames={() => undefined}
         onStub={() => undefined}
         onTakeAction={() => undefined}
         planningPanel={null}
