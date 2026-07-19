@@ -245,8 +245,8 @@ export const commandResponseSchema = runViewResponseSchema
     result: z
       .object({
         idempotentReplay: z.boolean(),
-        aiDirector: z
-          .object({
+        aiDirector: z.union([
+          z.object({
             mode: z.enum(["shadow", "active"]),
             source: z.enum([
               "openai",
@@ -259,7 +259,17 @@ export const commandResponseSchema = runViewResponseSchema
             candidateCount: z.number().int().min(0).max(64),
             topCandidateAgreement: z.boolean().nullable(),
           })
-          .strict()
+          .strict(),
+          z.object({
+            mode: z.literal("operational"),
+            source: z.literal("self_trained_local"),
+            status: z.enum(["ranked", "fallback"]),
+            candidateCount: z.number().int().min(0).max(64),
+            artifactChecksum: z.string().regex(/^[a-f0-9]{64}$/),
+            topCandidateId: z.string().nullable(),
+            fallbackReason: z.string().nullable(),
+          }).strict(),
+        ])
           .nullable()
           .optional(),
       })

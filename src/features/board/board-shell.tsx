@@ -427,7 +427,9 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       const director = response.result.aiDirector ?? null;
       if (director !== null) {
         showToast(
-          `AI Director ${director.mode}: ${director.status} via ${director.source} (${director.latencyMs} ms).`,
+          director.mode === "operational"
+            ? `Operational ML ${director.status}: ${director.candidateCount} safe candidates ranked locally.`
+            : `AI Director ${director.mode}: ${director.status} via ${director.source} (${director.latencyMs} ms).`,
         );
       } else {
         showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
