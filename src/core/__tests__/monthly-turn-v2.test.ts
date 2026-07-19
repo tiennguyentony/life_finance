@@ -55,7 +55,12 @@ import {
 import { decodePersistedGameCommandV2 } from "../../server/db/persisted-command-v2";
 import { reduceGameCommandV2 } from "../../server/db/run-repository-support";
 import { decodePersistedGameState } from "../persisted-game-state";
-import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
+import {
+  HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2,
+  PERSONAL_EVENT_TEMPLATES_V2,
+  getActivePersonalEventTemplateV2,
+} from "../../data/personal-event-templates-v2";
+import { BEGINNER_EVENT_CADENCE_V1_VERSION } from "../beginner-event-cadence-v1";
 import {
   initializeNamedWorldRandomV1,
   WORLD_RANDOM_VERSION_V1,
@@ -232,6 +237,55 @@ describe("named world random monthly routing", () => {
     ).toThrowError(/invalid event configuration/);
     expect(sha256Canonical(opening)).toBe(checksum);
     expect(opening.worldRandom).toBeUndefined();
+  });
+
+  it("separates complete replay templates from active root scheduling templates", () => {
+    const opening = configuredState();
+    const source = getActivePersonalEventTemplateV2(
+      "personal.subscription_archaeology",
+    );
+    const guaranteed = {
+      ...source,
+      hazard: {
+        ...source.hazard,
+        baseChancePpm: 1_000_000,
+        minimumChancePpm: 1_000_000,
+        maximumChancePpm: 1_000_000,
+      },
+    };
+    const completeCatalog = PERSONAL_EVENT_TEMPLATES_V2.map((template) =>
+      template.id === guaranteed.id && template.version === guaranteed.version
+        ? guaranteed
+        : template
+    );
+    const result = processMonthlyTurnV2(opening, namedCommand(opening), {
+      personalEventCatalog: completeCatalog,
+      activePersonalEventCatalog: [guaranteed],
+      beginnerEventCadenceVersion: BEGINNER_EVENT_CADENCE_V1_VERSION,
+    });
+
+    expect(result.record.runtimeBalanceCandidateSet).toEqual({
+      eligibleTemplateIds: [guaranteed.id],
+      candidateTemplateIds: [guaranteed.id],
+    });
+    expect(result.record.beginnerEventCadence).toMatchObject({
+      assessment: { mode: "engagement_due", chapterMonth: 2 },
+      inputCandidateIds: [guaranteed.id],
+      outputCandidateIds: [guaranteed.id],
+    });
+  });
+
+  it("keeps the uncalibrated production root catalog historical", () => {
+    const opening = configuredState();
+    const result = processMonthlyTurnV2(opening, namedCommand(opening));
+    const historicalIds = new Set(
+      HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2.map(({ id }) => id),
+    );
+
+    expect(result.record.runtimeBalanceCandidateSet?.eligibleTemplateIds.every(
+      (id) => historicalIds.has(id),
+    )).toBe(true);
+    expect(result.record.beginnerEventCadence).toBeUndefined();
   });
 });
 
@@ -648,14 +702,14 @@ describe("atomic v2 monthly turn", () => {
       approvedCandidate:
         first.record.runtimeBalanceDecision?.approved?.templateId ?? null,
     }).toEqual({
-      stateChecksum: "986abcc6cc2ba10e9aa31a6c0652a1d31c8e522b14790463f33ebebad93bc9b7",
-      randomValue: 2_643_935_435,
+      stateChecksum: "8cbe67a510e1da8a8aa62e9b69e5fe2c9d1a8846408dff3f18adea6ff86955bd",
+      randomValue: 2_579_994_238,
       candidateSetChecksum:
-        "3acb64aa2450184824091ffa309af84d07e971b470d1b9937ae36a62e93e4455",
+        "3af4ea6d7042ad8fc85fcb56a0f78315a7745a41a43e464db8c87c1c08eafc8d",
       rankingInputChecksum:
-        "58a2a8e03833deccf6bab3c658a449e510dad8899ac25a078e5f3b79565243c8",
-      topCandidate: "personal.utility_rebate",
-      approvedCandidate: "personal.utility_rebate",
+        "ba4440f908a637cb4cfd3548b0547561bb05f64455e385fc156555beafdec8f8",
+      topCandidate: "personal.performance_bonus",
+      approvedCandidate: "personal.performance_bonus",
     });
   });
 
@@ -724,9 +778,9 @@ describe("atomic v2 monthly turn", () => {
       approvedEventId:
         observed.record.runtimeBalanceDecision?.approved?.eventId,
     }).toEqual({
-      checksum: "9b92b81d2fcb316432c04d11b0e678d2c6860a2cecfedc177943fc04b8a77c15",
-      randomValue: 2_643_935_435,
-      approvedEventId: "evt.2026-08.personal.utility_rebate.v2",
+      checksum: "e3ab92c6783cd9ab1702a40fca80f15b805298f177ae096c7ce86b2258d25c69",
+      randomValue: 2_579_994_238,
+      approvedEventId: "evt.2026-08.personal.performance_bonus.v2",
     });
   });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { randomState } from "../../core/domain/rng";
 import { initializeNamedWorldRandomV1 } from "../../core/world-random-v1";
+import { ACTIVE_PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
 import {
   BALANCE_LAB_BOTS_V1,
   chooseBalanceLabEventResponseV1,
@@ -53,6 +54,9 @@ describe("offline balance lab v1 bots", () => {
   });
 
   it("publishes explicit monthly intents and event response maps for review", () => {
+    const activeTemplateIds = ACTIVE_PERSONAL_EVENT_TEMPLATES_V2
+      .map(({ id }) => id)
+      .toSorted();
     for (const bot of BALANCE_LAB_BOTS_V1) {
       expect(bot.monthlyIntent.id).toMatch(/^intent\./);
       expect(bot.monthlyIntent.command).toMatch(
@@ -65,14 +69,54 @@ describe("offline balance lab v1 bots", () => {
         if (bot.eventResponses.kind !== "mapped") {
           throw new Error("non-random bot must publish mapped event responses");
         }
-        expect(Object.keys(bot.eventResponses.byTemplateId).toSorted()).toEqual([
-          "personal.lifestyle_upgrade",
-          "personal.medical_bill",
-          "personal.performance_bonus",
-          "personal.utility_rebate",
-        ]);
+        expect(Object.keys(bot.eventResponses.byTemplateId).toSorted()).toEqual(
+          activeTemplateIds,
+        );
+        for (const template of ACTIVE_PERSONAL_EVENT_TEMPLATES_V2) {
+          const preferences = bot.eventResponses.byTemplateId[template.id];
+          expect(Array.isArray(preferences)).toBe(true);
+          expect(preferences?.some((id) =>
+            template.responses.some((response) => response.id === id)
+          )).toBe(true);
+        }
       }
     }
+  });
+
+  it("uses safer tradeoffs for prepared bots and costly tradeoffs for reckless bots", () => {
+    const prepared = BALANCE_LAB_BOTS_V1.find((bot) => bot.id === "disciplined-v1");
+    const reckless = BALANCE_LAB_BOTS_V1.find((bot) => bot.id === "debt-heavy-lifestyle-v1");
+
+    expect(prepared?.eventResponses).toMatchObject({
+      kind: "mapped",
+      byTemplateId: {
+        "personal.transport_repair": ["pay_now"],
+        "personal.rent_renewal": ["move_to_cheaper_home"],
+        "personal.family_care_request": ["split_cost_and_time"],
+        "personal.work_device_replacement": ["buy_basic"],
+        "personal.reduced_work_hours": ["trim_spending"],
+        "personal.social_commitment": ["decline_commitment"],
+      },
+    });
+    expect(reckless?.eventResponses).toMatchObject({
+      kind: "mapped",
+      byTemplateId: {
+        "personal.transport_repair": ["defer_repair"],
+        "personal.rent_renewal": ["accept_increase"],
+        "personal.family_care_request": ["cover_full_cost"],
+        "personal.work_device_replacement": ["device_payment_plan"],
+        "personal.reduced_work_hours": ["spread_income_gap"],
+        "personal.social_commitment": ["spread_commitment_cost"],
+      },
+    });
+  });
+
+  it("gives the average beginner a distinct response policy", () => {
+    const prepared = BALANCE_LAB_BOTS_V1.find((bot) => bot.id === "disciplined-v1")!;
+    const average = BALANCE_LAB_BOTS_V1.find((bot) => bot.id === "average-beginner-v1")!;
+
+    expect(average.eventResponses).not.toBe(prepared.eventResponses);
+    expect(average.eventResponses).not.toEqual(prepared.eventResponses);
   });
 
   it("resolves mapped and random event choices without touching world randomness", () => {
@@ -104,5 +148,16 @@ describe("offline balance lab v1 bots", () => {
     expect(mapped.nextBotRandom).toBeUndefined();
     expect(first).toEqual(second);
     expect(first.nextBotRandom).not.toEqual(random);
+  });
+
+  it("uses the next mapped preference when a mitigation-dependent choice is unavailable", () => {
+    const mapped = chooseBalanceLabEventResponseV1({
+      policy: BALANCE_LAB_BOTS_V1[0]!,
+      templateId: "personal.medical_bill",
+      validChoiceIds: ["pay_uninsured", "negotiate_bill"],
+      botRandom: undefined,
+    });
+
+    expect(mapped.choiceId).toBe("negotiate_bill");
   });
 });

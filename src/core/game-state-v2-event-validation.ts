@@ -404,6 +404,24 @@ export function validateEventAndCareerStateV2(
     }
   }
   const eventIds = lifecycle.history.map(({ eventId }) => eventId);
+  if (pending?.followUpSourceEventId !== undefined) {
+    const source = lifecycle.history.find(
+      ({ eventId }) => eventId === pending.followUpSourceEventId,
+    );
+    if (
+      pending.followUpSourceEventId.length === 0 ||
+      source === undefined ||
+      compareMonths(source.resolvedMonth, pending.scheduledMonth) > 0
+    ) {
+      violations.push(
+        violation(
+          "gameplay.eventLifecycle.pending.followUpSourceEventId",
+          "invalid_followup_source_event",
+          "pending follow-up provenance must reference an earlier resolved event",
+        ),
+      );
+    }
+  }
   const canonicalCashFlows = new Map<
     string,
     ScheduledPersonalEventCashFlowV2 & Readonly<{ sourceEventId: string }>
@@ -422,6 +440,26 @@ export function validateEventAndCareerStateV2(
   }
   lifecycle.history.forEach((event, index) => {
     const eventRecord = event as unknown as Readonly<Record<string, unknown>>;
+    if (event.followUpSourceEventId !== undefined) {
+      const sourceIndex = lifecycle.history.findIndex(
+        ({ eventId }) => eventId === event.followUpSourceEventId,
+      );
+      const source = sourceIndex < 0 ? undefined : lifecycle.history[sourceIndex];
+      if (
+        event.followUpSourceEventId.length === 0 ||
+        source === undefined ||
+        sourceIndex >= index ||
+        compareMonths(source.resolvedMonth, event.scheduledMonth) > 0
+      ) {
+        violations.push(
+          violation(
+            `gameplay.eventLifecycle.history.${index}.followUpSourceEventId`,
+            "invalid_followup_source_event",
+            "resolved follow-up provenance must reference an earlier resolved event",
+          ),
+        );
+      }
+    }
     try {
       simulationMonth(event.scheduledMonth);
       simulationMonth(event.resolvedMonth);

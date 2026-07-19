@@ -1,20 +1,26 @@
 import type { GameStateV2 } from "@/core/game-state-v2";
+import { assessBeginnerChapterV1, type BeginnerChapterAssessmentV1 } from "@/core/beginner-chapter-v1";
 import {
   calculateInvestableAssets,
   calculateNetWorth,
 } from "@/core/game-state";
 import { projectFinancialGoal } from "@/core/financial-goals-v2";
 import { analyzeRiskV1 } from "@/core/risk-v1";
-import type {
-  PersonalEventEffectV2,
-  PersonalEventMagnitudeV2,
-} from "@/core/personal-event-v2";
+import {
+  assessPreparednessV1,
+  type PreparednessAssessmentV1,
+} from "@/core/preparedness-assessment-v1";
 import { getEventTemplate } from "@/data/event-templates";
 import { getPersonalEventTemplateV2 } from "@/data/personal-event-templates-v2";
+import {
+  projectPersonalEventResponsePreviewV1,
+  type PersonalEventResponsePreviewV1,
+} from "./personal-event-response-preview-v1";
 
 export type RunView = Readonly<{
   runId: string;
   revision: number;
+  startMonth: string;
   currentMonth: string;
   status: "active" | "completed";
   player: Readonly<{
@@ -58,6 +64,8 @@ export type RunView = Readonly<{
     aggregateSeverityPpm: number;
     weaknessTags: readonly string[];
   }>;
+  preparedness: PreparednessAssessmentV1;
+  beginnerCheckpoint: BeginnerChapterAssessmentV1 | null;
   strategy: Readonly<{
     effectiveMonth: string;
     emergencyFundTargetMonthsPpm?: number;
@@ -88,6 +96,8 @@ export type RunView = Readonly<{
           id: string;
           label: string;
           description: string;
+          enabled: boolean;
+          preview: PersonalEventResponsePreviewV1;
         }>[];
         parameters: Readonly<Record<string, number>>;
         headline: string | null;
@@ -101,99 +111,35 @@ export type RunView = Readonly<{
   }>;
 }>;
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
 function titleCaseIdentifier(id: string): string {
   return id.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function resolveMagnitude(
-  magnitude: PersonalEventMagnitudeV2,
-  parameters: Readonly<Record<string, number>>,
-): number | null {
-  if (magnitude.source === "fixed") return magnitude.value;
-  const value = parameters[magnitude.parameterId];
-  return value === undefined
-    ? null
-    : Math.round((value * magnitude.multiplierPpm) / 1_000_000);
-}
-
-function formatMoneyCents(value: number): string {
-  return money.format(value / 100);
-}
-
-function formatDurationMonths(durationMonths: number): string {
-  return `${durationMonths} ${durationMonths === 1 ? "month" : "months"}`;
-}
-
-function describePersonalEventEffect(
-  effect: PersonalEventEffectV2,
-  parameters: Readonly<Record<string, number>>,
-): string {
-  switch (effect.type) {
-    case "required_obligation_delta": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      return amount === null
-        ? ""
-        : `Required obligations change by ${formatMoneyCents(amount)}.`;
-    }
-    case "temporary_expense": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      return amount === null ? "" : `Creates a temporary expense of ${formatMoneyCents(amount)}.`;
-    }
-    case "recurring_expense": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      return amount === null
-        ? ""
-        : `Adds a recurring expense of ${formatMoneyCents(amount)} for ${formatDurationMonths(effect.durationMonths)}.`;
-    }
-    case "temporary_income": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      return amount === null
-        ? ""
-        : `Adds temporary income of ${formatMoneyCents(amount)} for ${formatDurationMonths(effect.durationMonths)}.`;
-    }
-    case "cash_delta": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      if (amount === null) return "";
-      const kind = effect.direction === "add" ? "income" : "expense";
-      return `Adds ${formatMoneyCents(amount)} of ${kind} in the next processed month.`;
-    }
-    case "annual_living_cost_delta": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      return amount === null ? "" : `Annual spending changes by ${formatMoneyCents(amount)}.`;
-    }
-    case "insurance_claim":
-      return "Coverage limits the bill according to the active policy.";
-    case "wellbeing_delta": {
-      const amount = resolveMagnitude(effect.magnitude, parameters);
-      if (amount === null) return "";
-      const field = effect.field === "burnoutPpm" ? "Burnout" : "Happiness";
-      const direction = amount < 0 ? "decreases" : amount > 0 ? "increases" : "stays the same";
-      return `${field} ${direction}.`;
-    }
-    default:
-      return "";
-  }
-}
-
-function describePersonalEventResponse(
-  response: Readonly<{ effects: readonly PersonalEventEffectV2[] }>,
-  parameters: Readonly<Record<string, number>>,
-): string {
-  return response.effects
-    .map((effect) => describePersonalEventEffect(effect, parameters))
-    .filter((description) => description.length > 0)
-    .join(" ");
+function legacyChoicePreview(summary: string): PersonalEventResponsePreviewV1 {
+  return Object.freeze({
+    version: "personal-event-response-preview-v1",
+    status: "available",
+    immediateCashChangeCents: 0,
+    recurringCashFlows: Object.freeze([]),
+    annualLivingCostChangeCents: 0,
+    wellbeingChangesPpm: Object.freeze({ happiness: 0, burnout: 0 }),
+    followUps: Object.freeze([]),
+    netOutcomeCents: null,
+    unavailableReason: null,
+    summary,
+  });
 }
 
 function projectEventChoices(
+  state: GameStateV2,
   pending: NonNullable<GameStateV2["gameplay"]["eventLifecycle"]["pending"]>,
-): readonly Readonly<{ id: string; label: string; description: string }>[] {
+): readonly Readonly<{
+  id: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  preview: PersonalEventResponsePreviewV1;
+}>[] {
   try {
     if (pending.eventSchemaVersion === 2) {
       const template = getPersonalEventTemplateV2(
@@ -202,13 +148,15 @@ function projectEventChoices(
       );
       return Object.freeze(pending.choiceIds.map((id) => {
         const response = template.responses.find((candidate) => candidate.id === id);
+        const preview = response === undefined
+          ? legacyChoicePreview("")
+          : projectPersonalEventResponsePreviewV1(state, pending, template, id);
         return Object.freeze({
           id,
           label: response?.label ?? titleCaseIdentifier(id),
-          description:
-            response === undefined
-              ? ""
-              : describePersonalEventResponse(response, pending.parameters),
+          description: preview.summary,
+          enabled: response !== undefined && preview.status === "available",
+          preview,
         });
       }));
     }
@@ -219,6 +167,8 @@ function projectEventChoices(
         id,
         label: titleCaseIdentifier(id),
         description: choice?.principle ?? "",
+        enabled: choice !== undefined,
+        preview: legacyChoicePreview(choice?.principle ?? ""),
       });
     }));
   } catch {
@@ -226,6 +176,12 @@ function projectEventChoices(
       id,
       label: titleCaseIdentifier(id),
       description: "",
+      enabled: false,
+      preview: Object.freeze({
+        ...legacyChoicePreview("Response preview is unavailable"),
+        status: "error" as const,
+        unavailableReason: "Response preview is unavailable",
+      }),
     })));
   }
 }
@@ -236,12 +192,20 @@ export function projectRunView(state: GameStateV2): RunView {
     state.gameplay.financialGoal,
   );
   const risk = analyzeRiskV1(state);
+  const preparedness = assessPreparednessV1(risk);
+  const beginnerCheckpoint = assessBeginnerChapterV1({
+    startMonth: state.startMonth,
+    currentMonth: state.currentMonth,
+    preparedness,
+    outcome: state.outcome,
+  });
   const pending = state.gameplay.eventLifecycle.pending;
   const active = state.outcome === null;
 
   return Object.freeze({
     runId: state.runId,
     revision: state.revision,
+    startMonth: state.startMonth,
     currentMonth: state.currentMonth,
     status: active ? "active" : "completed",
     player: Object.freeze({
@@ -286,6 +250,8 @@ export function projectRunView(state: GameStateV2): RunView {
       aggregateSeverityPpm: risk.aggregateSeverityPpm,
       weaknessTags: risk.weaknessTags,
     }),
+    preparedness,
+    beginnerCheckpoint,
     strategy: state.gameplay.recurringStrategy,
     market: Object.freeze({
       regime: state.marketRegime,
@@ -304,7 +270,7 @@ export function projectRunView(state: GameStateV2): RunView {
             eventId: pending.eventId,
             templateId: pending.templateId,
             choiceIds: pending.choiceIds,
-            choices: projectEventChoices(pending),
+            choices: projectEventChoices(state, pending),
             parameters: Object.freeze({ ...pending.parameters }),
             headline:
               pending.aiNarrative?.headline ??

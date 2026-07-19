@@ -14,7 +14,10 @@ import {
   type ScenarioDirectorInputV2,
 } from "../../core/scenario-director-v2";
 import { SCENARIO_DIRECTOR_V2_VERSION } from "../../core/scenario-director-policy-v2";
-import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
+import {
+  PERSONAL_EVENT_TEMPLATES_V2,
+  PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2,
+} from "../../data/personal-event-templates-v2";
 import type { V2Repository } from "../api/run-repository-port";
 import type { AiRoleClient } from "./client";
 import {
@@ -44,9 +47,12 @@ type ClientFactory = (runId: string) => Pick<AiRoleClient, "generate"> &
 function directorInputForState(state: GameStateV2): ScenarioDirectorInputV2 {
   const generated = generateDeclarativePersonalEventCandidatesV2(
     state,
+    PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2,
     PERSONAL_EVENT_TEMPLATES_V2,
   );
-  const context = projectScenarioDirectorStateContextV2(state);
+  const context = projectScenarioDirectorStateContextV2(state, {
+    personalEventCatalog: PERSONAL_EVENT_TEMPLATES_V2,
+  });
   return {
     version: SCENARIO_DIRECTOR_V2_VERSION,
     month: state.currentMonth,

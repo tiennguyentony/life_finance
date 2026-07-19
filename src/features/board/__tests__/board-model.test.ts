@@ -59,6 +59,19 @@ describe("board view model", () => {
           id: "pay-now",
           label: "Pay it now",
           description: "Use cash to resolve the expense.",
+          enabled: true,
+          preview: {
+            version: "personal-event-response-preview-v1" as const,
+            status: "available" as const,
+            immediateCashChangeCents: -125_000,
+            recurringCashFlows: [],
+            annualLivingCostChangeCents: 0,
+            wellbeingChangesPpm: { happiness: 0, burnout: 0 },
+            followUps: [],
+            netOutcomeCents: null,
+            unavailableReason: null,
+            summary: "Pay $1,250.00 now.",
+          },
         }],
         parameters: { expenseCents: 125_000 },
         headline: "An unexpected expense",
@@ -75,6 +88,11 @@ describe("board view model", () => {
         id: "pay-now",
         label: "Pay it now",
         description: "Use cash to resolve the expense.",
+        enabled: true,
+        preview: expect.objectContaining({
+          status: "available",
+          immediateCashChangeCents: -125_000,
+        }),
       }],
     });
   });

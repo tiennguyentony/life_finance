@@ -6,6 +6,14 @@ const boardSceneSource = readFileSync(new URL("../board-scene.tsx", import.meta.
 const hudSource = readFileSync(new URL("../hud.tsx", import.meta.url), "utf8");
 
 describe("board mode integration", () => {
+  it("connects contextual one-month continuation to the authoritative turn executor", () => {
+    expect(boardShellSource).toContain("evaluateBoardContinuationV1");
+    expect(boardShellSource).toContain("continueBoardTurn");
+    expect(boardShellSource).toContain("handleContinueMonth");
+    expect(boardShellSource).toContain("onPrimary");
+    expect(boardShellSource).toContain("onSecondary");
+  });
+
   it("keeps the three board modes and their distinct selection paths", () => {
     expect(boardSceneSource).toMatch(/export type BoardMode = "strategy" \| "free" \| "loop"/);
     expect(boardShellSource).toMatch(

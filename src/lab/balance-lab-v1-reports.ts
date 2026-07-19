@@ -113,11 +113,83 @@ const METRIC_KEYS = [
   "recoveryObservations", "lessonIds", "noEventMonths", "unavoidableFailure",
   "bankruptcyResidualShortfallCents", "eventImpactSamples",
   "majorEventPacingViolationCount", "majorEventPacingSampleCount", "objectiveValues",
+  "eventDecisionEvidence", "beginnerEventCadenceEvidence",
 ] as const;
+
+const PREPAREDNESS_BANDS = ["critical", "exposed", "stable", "resilient"] as const;
+const CHALLENGE_BANDS = ["light", "meaningful", "crisis", "extreme", "above_limit"] as const;
+const LIMITING_DIMENSIONS = [
+  "impact_score", "burn_months", "negative_cash_flow", "recovery_time",
+] as const;
+const DIFFICULTIES = ["guided", "normal", "hard"] as const;
+const EVENT_TIERS = ["micro", "medium", "large", "catastrophe", "unknown"] as const;
+
+function validateIntegerCounts(value: unknown, keys: readonly string[]): void {
+  if (!isRecord(value) || !hasExactKeys(value, keys) ||
+      !Object.values(value).every((count) => isFiniteInteger(count) && count >= 0)) {
+    invalidReport("invalid balance shadow counts");
+  }
+}
+
+function validatePreparedness(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version", "riskVersion", "asOfMonth", "scorePpm", "band", "components",
+  ]) || value.version !== "preparedness-assessment-v1" || value.riskVersion !== "risk-v1" ||
+      typeof value.asOfMonth !== "string" || !isFiniteInteger(value.scorePpm) ||
+      !PREPAREDNESS_BANDS.includes(value.band as never) || !isRecord(value.components)) {
+    invalidReport("invalid preparedness observation");
+  }
+  validateIntegerCounts(value.components, [
+    "liquidityPpm", "cashFlowPpm", "debtPpm", "insurancePpm", "diversificationPpm",
+  ]);
+}
+
+function validateChallenge(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version", "scorePpm", "band", "limitingDimension", "ratios",
+  ]) || value.version !== "runtime-balance-challenge-v1" ||
+      !isFiniteInteger(value.scorePpm) || !CHALLENGE_BANDS.includes(value.band as never) ||
+      !LIMITING_DIMENSIONS.includes(value.limitingDimension as never) ||
+      !isRecord(value.ratios)) {
+    invalidReport("invalid challenge observation");
+  }
+  validateIntegerCounts(value.ratios, [
+    "impactScorePpm", "burnMonthsPpm", "negativeCashFlowPpm", "recoveryTimePpm",
+  ]);
+}
+
+function validateCandidateChallenge(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "templateId", "templateVersion", "eventTier", "rank", "rejectionCodes", "assessment",
+  ]) || typeof value.templateId !== "string" || !isFiniteInteger(value.templateVersion) ||
+      !EVENT_TIERS.includes(value.eventTier as never) || !isFiniteInteger(value.rank) ||
+      !Array.isArray(value.rejectionCodes) ||
+      !value.rejectionCodes.every((code) => typeof code === "string")) {
+    invalidReport("invalid candidate challenge observation");
+  }
+  validateChallenge(value.assessment);
+}
+
+function validateBalanceObservation(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "version", "monthIndex", "stage", "month", "difficulty", "preparedness",
+    "candidateChallenges", "approvedChallenge",
+  ]) || value.version !== "balance-lab-balance-observation-v1" ||
+      !isFiniteInteger(value.monthIndex) ||
+      !(value.stage === "opening" || value.stage === "monthly") ||
+      typeof value.month !== "string" || !DIFFICULTIES.includes(value.difficulty as never) ||
+      !Array.isArray(value.candidateChallenges)) {
+    invalidReport("invalid balance shadow observation");
+  }
+  validatePreparedness(value.preparedness);
+  for (const candidate of value.candidateChallenges) validateCandidateChallenge(candidate);
+  if (value.approvedChallenge !== null) validateCandidateChallenge(value.approvedChallenge);
+}
 
 function validateRunMetrics(value: Record<string, unknown>): void {
   if (!hasExactKeys(value, METRIC_KEYS, [
-    "totalEventPlayerCostCents", "totalEventGrossCostCents",
+    "totalEventPlayerCostCents", "totalEventGrossCostCents", "balanceObservations",
+    "beginnerChapterEvidence",
   ]) || !["active", "bankruptcy", "financial_independence", "retirement"].includes(
     value.endReason as string,
   ) || !(value.grade === null || typeof value.grade === "string") ||
@@ -163,6 +235,178 @@ function validateRunMetrics(value: Record<string, unknown>): void {
       invalidReport("invalid event impact sample");
     }
   }
+  if (value.balanceObservations !== undefined) {
+    if (!Array.isArray(value.balanceObservations)) {
+      invalidReport("invalid balance shadow observations");
+    }
+    for (const observation of value.balanceObservations) {
+      validateBalanceObservation(observation);
+    }
+  }
+  if (value.beginnerChapterEvidence !== undefined) {
+    const chapter = value.beginnerChapterEvidence;
+    if (!isRecord(chapter) || !hasExactKeys(chapter, [
+      "outcome", "completed", "observedMonths", "scorePpm", "preparednessBand",
+    ]) || !["bankrupt", "fragile", "developing", "strong"].includes(chapter.outcome as string) ||
+        typeof chapter.completed !== "boolean" || !isFiniteInteger(chapter.observedMonths) ||
+        !isFiniteInteger(chapter.scorePpm) ||
+        !PREPAREDNESS_BANDS.includes(chapter.preparednessBand as never)) {
+      invalidReport("invalid beginner chapter evidence");
+    }
+  }
+  if (!Array.isArray(value.eventDecisionEvidence)) {
+    invalidReport("invalid event decision evidence");
+  }
+  for (const decision of value.eventDecisionEvidence) {
+    if (!isRecord(decision) || !hasExactKeys(decision, [
+      "eventId", "templateId", "templateVersion", "scheduledMonth", "tone",
+      "cadenceRole", "classification", "challengeBand", "followUpSourceEventId",
+      "choiceId", "availableChoiceIds", "materiallyAvailableChoiceIds",
+      "responseAvailability",
+    ]) || typeof decision.eventId !== "string" || typeof decision.templateId !== "string" ||
+        !isFiniteInteger(decision.templateVersion) || typeof decision.scheduledMonth !== "string" ||
+        !["serious", "relatable_comedy", "absurd_comedy"].includes(decision.tone as string) ||
+        !["challenge", "engagement", "follow_up"].includes(decision.cadenceRole as string) ||
+        !["positive", "neutral", "negative"].includes(decision.classification as string) ||
+        !(decision.challengeBand === null ||
+          CHALLENGE_BANDS.includes(decision.challengeBand as never)) ||
+        !(decision.followUpSourceEventId === null ||
+          typeof decision.followUpSourceEventId === "string") ||
+        typeof decision.choiceId !== "string" || !Array.isArray(decision.availableChoiceIds) ||
+        !decision.availableChoiceIds.every((choiceId) => typeof choiceId === "string") ||
+        !Array.isArray(decision.materiallyAvailableChoiceIds) ||
+        !decision.materiallyAvailableChoiceIds.every((choiceId) => typeof choiceId === "string") ||
+        !Array.isArray(decision.responseAvailability)) {
+      invalidReport("invalid event decision evidence");
+    }
+    for (const response of decision.responseAvailability) {
+      if (!isRecord(response) || !hasExactKeys(response, [
+        "responseId", "status", "materiallyDistinct",
+      ]) || typeof response.responseId !== "string" ||
+          !["available", "unavailable", "error"].includes(response.status as string) ||
+          typeof response.materiallyDistinct !== "boolean") {
+        invalidReport("invalid event response availability");
+      }
+    }
+  }
+  if (!Array.isArray(value.beginnerEventCadenceEvidence)) {
+    invalidReport("invalid beginner cadence evidence");
+  }
+  for (const cadence of value.beginnerEventCadenceEvidence) {
+    if (!isRecord(cadence) || !hasExactKeys(cadence, [
+      "assessment", "inputCandidateIds", "outputCandidateIds",
+      "preferredCandidateIds", "scheduledTemplateId", "safetyOverride",
+    ]) || !isRecord(cadence.assessment) || !hasExactKeys(cadence.assessment, [
+      "version", "mode", "chapterMonth", "quietEligibleStreak", "eventMonthStreak",
+      "rootEventStreak", "positiveObserved", "previousRootTone", "reasonCodes",
+    ]) || cadence.assessment.version !== "beginner-event-cadence-v1" ||
+        !isFiniteInteger(cadence.assessment.chapterMonth) ||
+        !isFiniteInteger(cadence.assessment.quietEligibleStreak) ||
+        !isFiniteInteger(cadence.assessment.eventMonthStreak) ||
+        !isFiniteInteger(cadence.assessment.rootEventStreak) ||
+        typeof cadence.assessment.positiveObserved !== "boolean" ||
+        !Array.isArray(cadence.assessment.reasonCodes) ||
+        !Array.isArray(cadence.inputCandidateIds) ||
+        !Array.isArray(cadence.outputCandidateIds) ||
+        !Array.isArray(cadence.preferredCandidateIds) ||
+        !(cadence.scheduledTemplateId === null ||
+          typeof cadence.scheduledTemplateId === "string") ||
+        typeof cadence.safetyOverride !== "boolean") {
+      invalidReport("invalid beginner cadence evidence");
+    }
+  }
+}
+
+function validateBalanceShadow(value: unknown): void {
+  const keys = [
+    "observationCount", "openingPreparednessMeanScorePpm",
+    "terminalPreparednessMeanScorePpm", "openingPreparednessBands",
+    "terminalPreparednessBands", "candidateChallengeBands",
+    "approvedChallengeBands", "limitingDimensions", "challengeByDifficultyAndTier",
+    "bankruptcyByOpeningPreparednessBand", "stableResilientUnavoidableFailureRate",
+    "stableResilientBankruptcyRate", "nonfatalRecoveryWithinSixMonthsRate",
+  ] as const;
+  if (!isRecord(value) || !hasExactKeys(value, keys) ||
+      !isFiniteInteger(value.observationCount) ||
+      !(value.openingPreparednessMeanScorePpm === null ||
+        isFiniteInteger(value.openingPreparednessMeanScorePpm)) ||
+      !(value.terminalPreparednessMeanScorePpm === null ||
+        isFiniteInteger(value.terminalPreparednessMeanScorePpm))) {
+    invalidReport("invalid balance shadow summary");
+  }
+  validateIntegerCounts(value.openingPreparednessBands, PREPAREDNESS_BANDS);
+  validateIntegerCounts(value.terminalPreparednessBands, PREPAREDNESS_BANDS);
+  validateIntegerCounts(value.candidateChallengeBands, CHALLENGE_BANDS);
+  validateIntegerCounts(value.approvedChallengeBands, CHALLENGE_BANDS);
+  validateIntegerCounts(value.limitingDimensions, LIMITING_DIMENSIONS);
+  if (!isRecord(value.challengeByDifficultyAndTier) ||
+      !hasExactKeys(value.challengeByDifficultyAndTier, DIFFICULTIES)) {
+    invalidReport("invalid challenge distribution");
+  }
+  for (const byTier of Object.values(value.challengeByDifficultyAndTier)) {
+    if (!isRecord(byTier) || !hasExactKeys(byTier, EVENT_TIERS)) {
+      invalidReport("invalid challenge tier distribution");
+    }
+    for (const byBand of Object.values(byTier)) {
+      validateIntegerCounts(byBand, CHALLENGE_BANDS);
+    }
+  }
+  if (!isRecord(value.bankruptcyByOpeningPreparednessBand) ||
+      !hasExactKeys(value.bankruptcyByOpeningPreparednessBand, PREPAREDNESS_BANDS)) {
+    invalidReport("invalid preparedness bankruptcy distribution");
+  }
+  for (const groupedRate of Object.values(value.bankruptcyByOpeningPreparednessBand)) {
+    validateRate(groupedRate);
+  }
+  validateRate(value.stableResilientUnavoidableFailureRate);
+  validateRate(value.stableResilientBankruptcyRate);
+  validateRate(value.nonfatalRecoveryWithinSixMonthsRate);
+}
+
+function validateBeginnerChapterSummary(value: unknown): void {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "assessmentCount", "outcomeDistribution", "completionRate", "bankruptcyByBot",
+    "medianDecisionEventCount", "decisionEventsInTargetRangeRate",
+    "uniqueDecisionTemplateCount", "meaningfulOrCrisisApprovedRate",
+    "nonfatalRecoveryWithinSixMonthsRate",
+  ]) || !isFiniteInteger(value.assessmentCount) ||
+      !(value.medianDecisionEventCount === null || isFiniteInteger(value.medianDecisionEventCount)) ||
+      !isFiniteInteger(value.uniqueDecisionTemplateCount) || !isRecord(value.bankruptcyByBot)) {
+    invalidReport("invalid beginner chapter summary");
+  }
+  validateIntegerCounts(value.outcomeDistribution, [
+    "bankrupt", "fragile", "developing", "strong",
+  ]);
+  validateRate(value.completionRate);
+  validateRate(value.decisionEventsInTargetRangeRate);
+  validateRate(value.meaningfulOrCrisisApprovedRate);
+  validateRate(value.nonfatalRecoveryWithinSixMonthsRate);
+  for (const groupedRate of Object.values(value.bankruptcyByBot)) validateRate(groupedRate);
+}
+
+function validateBeginnerEngagementSummary(value: unknown): void {
+  const nullableMedians = [
+    "medianTotalPromptCount", "medianMeaningfulDecisionCount",
+    "medianUniqueDecisionTemplateCount", "medianHumorousRootCount",
+    "medianAbsurdRootCount",
+  ] as const;
+  const counts = [
+    "adjacentAbsurdViolationCount", "rootEventStreakViolationCount",
+    "funnyRootAboveMeaningfulCount", "preparedFunnyUnavoidableFailureCount",
+    "safetyOverrideCount", "playerCausedFollowUpCount", "distinctResponseCount",
+  ] as const;
+  if (!isRecord(value) || !hasExactKeys(value, [
+    ...nullableMedians,
+    "atLeastSixMeaningfulDecisionRate",
+    "positiveOrRecoveryBeatRate",
+    ...counts,
+  ]) || nullableMedians.some((key) =>
+    !(value[key] === null || isFiniteInteger(value[key]))
+  ) || counts.some((key) => !isFiniteInteger(value[key]))) {
+    invalidReport("invalid beginner engagement summary");
+  }
+  validateRate(value.atLeastSixMeaningfulDecisionRate);
+  validateRate(value.positiveOrRecoveryBeatRate);
 }
 
 function validateSummary(value: Record<string, unknown>): void {
@@ -178,6 +422,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "matchedStrategyWinRatePpm", "maximumStrategyObjectiveLeadSharePpm",
     "impactReductionRatePpm", "majorEventPacingPpm", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
+    "beginnerChapter", "beginnerEngagement", "balanceShadow",
   ] as const;
   if (!hasExactKeys(value, keys)) invalidReport("unsupported summary fields");
   validateRate(value.bankruptcyRate);
@@ -188,6 +433,7 @@ function validateSummary(value: Record<string, unknown>): void {
     "gradeDistribution", "totalHighInterestDebtCreatedCents", "totalInterestPaidCents",
     "eventCountByTier", "meanRecoveryMonths", "matchedObjectiveResults",
     "objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot", "acceptanceEvidence",
+    "beginnerChapter", "beginnerEngagement", "balanceShadow",
   ].includes(key));
   if (!integerKeys.every((key) => isFiniteInteger(value[key])) ||
       !(value.meanRecoveryMonths === null || isFiniteInteger(value.meanRecoveryMonths)) ||
@@ -212,6 +458,9 @@ function validateSummary(value: Record<string, unknown>): void {
       invalidReport("invalid matched objective summary");
     }
   }
+  validateBeginnerChapterSummary(value.beginnerChapter);
+  validateBeginnerEngagementSummary(value.beginnerEngagement);
+  validateBalanceShadow(value.balanceShadow);
   for (const byObjective of Object.values(
     value.objectiveVarianceAcrossSeedsCentsSquaredByPersonaAndBot,
   )) {
@@ -230,6 +479,24 @@ function validateSummary(value: Record<string, unknown>): void {
     "healthy_persona_unavoidable_failure_rate_ppm", "impact_reduction_rate_ppm",
     "major_event_pacing_ppm", "matched_strategy_win_rate_ppm",
     "maximum_strategy_objective_lead_share_ppm",
+    "beginner_chapter_completion_rate_ppm", "beginner_bankruptcy_rate_ppm",
+    "average_beginner_bankruptcy_rate_ppm", "reckless_bankruptcy_rate_ppm",
+    "stable_resilient_bankruptcy_rate_ppm",
+    "beginner_nonfatal_recovery_within_six_months_rate_ppm",
+    "beginner_meaningful_or_crisis_approved_rate_ppm",
+    "beginner_extreme_approved_rate_ppm",
+    "beginner_median_decision_event_count",
+    "beginner_median_total_prompt_count",
+    "beginner_median_meaningful_decision_count",
+    "beginner_at_least_six_meaningful_decision_rate_ppm",
+    "beginner_median_unique_decision_template_count",
+    "beginner_median_humorous_root_count",
+    "beginner_median_absurd_root_count",
+    "beginner_positive_or_recovery_beat_rate_ppm",
+    "beginner_adjacent_absurd_violation_count",
+    "beginner_root_event_streak_violation_count",
+    "beginner_funny_root_above_meaningful_count",
+    "beginner_prepared_funny_unavoidable_failure_count",
   ];
   if (!hasExactKeys(value.acceptanceEvidence, acceptanceMetricKeys)) {
     invalidReport("invalid acceptance evidence metrics");
@@ -329,13 +596,18 @@ export function decodeBalanceLabReportV1(value: unknown): BalanceLabReportV1 {
     if (!isRecord(item) || !hasExactKeys(item, [
       "id", "metric", "status", "observed", "comparator", "threshold", "numerator",
       "denominator", "minimumSamples", "evidenceIds",
-    ]) || !Array.isArray(item.evidenceIds) ||
+    ], ["tierIds"]) || !Array.isArray(item.evidenceIds) ||
         typeof item.id !== "string" || typeof item.metric !== "string" ||
         !["pass", "fail", "insufficient_sample"].includes(item.status as string) ||
         !["at_least", "at_most", "equals"].includes(item.comparator as string) ||
         ![item.observed, item.threshold, item.numerator, item.denominator, item.minimumSamples]
           .every(isFiniteInteger) ||
-        !item.evidenceIds.every((entry) => typeof entry === "string")) {
+        !item.evidenceIds.every((entry) => typeof entry === "string") ||
+        (item.tierIds !== undefined && (
+          !Array.isArray(item.tierIds) ||
+          !item.tierIds.every((tierId) =>
+            ["beginner", "quick", "medium", "large"].includes(tierId as string))
+        ))) {
       invalidReport("invalid acceptance evidence");
     }
   }
@@ -375,22 +647,86 @@ export function renderBalanceLabRunsCsvV1(report: BalanceLabReportV1): string {
       "liquid_solvency_cents",
       "interest_paid_cents",
       "forced_sale_count",
+      "opening_preparedness_score_ppm",
+      "opening_preparedness_band",
+      "terminal_preparedness_score_ppm",
+      "terminal_preparedness_band",
+      "approved_challenge_score_ppm",
+      "approved_challenge_band",
+      "beginner_chapter_outcome",
+      "beginner_chapter_completed",
+      "total_prompt_count",
+      "meaningful_decision_count",
+      "unique_decision_template_count",
+      "humorous_root_count",
+      "absurd_root_count",
+      "player_caused_follow_up_count",
+      "adjacent_absurd_violation_count",
+      "root_event_streak_violation_count",
+      "safety_override_count",
       "final_state_checksum",
     ],
-    ...report.result.runs.map((run) => [
-      run.personaId,
-      run.matchedSeed,
-      run.botId,
-      run.processedMonths,
-      run.terminal,
-      run.metrics.endReason,
-      run.metrics.grade ?? "",
-      run.metrics.displayedNetWorthCents,
-      run.metrics.liquidSolvencyCents,
-      run.metrics.interestPaidCents,
-      run.metrics.forcedSaleCount,
-      run.finalStateChecksum,
-    ]),
+    ...report.result.runs.map((run) => {
+      const observations = run.metrics.balanceObservations ?? [];
+      const opening = observations.find(({ stage }) => stage === "opening");
+      const terminal = observations.findLast(({ stage }) => stage === "monthly") ?? opening;
+      const approved = observations.findLast(
+        ({ approvedChallenge }) => approvedChallenge !== null,
+      )?.approvedChallenge ?? null;
+      const prompts = run.metrics.eventDecisionEvidence ?? [];
+      const decisions = prompts.filter(
+        ({ materiallyAvailableChoiceIds }) =>
+          materiallyAvailableChoiceIds.length >= 3,
+      );
+      const roots = prompts.filter(({ cadenceRole }) => cadenceRole !== "follow_up");
+      let adjacentAbsurdViolationCount = 0;
+      let previousRootWasAbsurd = false;
+      for (const root of roots) {
+        const currentIsAbsurd = root.tone === "absurd_comedy";
+        if (currentIsAbsurd && previousRootWasAbsurd) {
+          adjacentAbsurdViolationCount += 1;
+        }
+        previousRootWasAbsurd = currentIsAbsurd;
+      }
+      const rootTemplateIds = new Set(roots.map(({ templateId }) => templateId));
+      const cadence = run.metrics.beginnerEventCadenceEvidence ?? [];
+      return [
+        run.personaId,
+        run.matchedSeed,
+        run.botId,
+        run.processedMonths,
+        run.terminal,
+        run.metrics.endReason,
+        run.metrics.grade ?? "",
+        run.metrics.displayedNetWorthCents,
+        run.metrics.liquidSolvencyCents,
+        run.metrics.interestPaidCents,
+        run.metrics.forcedSaleCount,
+        opening?.preparedness.scorePpm ?? "",
+        opening?.preparedness.band ?? "",
+        terminal?.preparedness.scorePpm ?? "",
+        terminal?.preparedness.band ?? "",
+        approved?.assessment.scorePpm ?? "",
+        approved?.assessment.band ?? "",
+        run.metrics.beginnerChapterEvidence?.outcome ?? "",
+        run.metrics.beginnerChapterEvidence?.completed ?? "",
+        prompts.length,
+        decisions.length,
+        new Set(decisions.map(({ templateId }) => templateId)).size,
+        roots.filter(({ tone }) => tone !== "serious").length,
+        roots.filter(({ tone }) => tone === "absurd_comedy").length,
+        prompts.filter(({ followUpSourceEventId }) => followUpSourceEventId !== null)
+          .length,
+        adjacentAbsurdViolationCount,
+        cadence.filter((entry) =>
+          entry.assessment.rootEventStreak >= 2 &&
+          entry.scheduledTemplateId !== null &&
+          rootTemplateIds.has(entry.scheduledTemplateId)
+        ).length,
+        cadence.filter(({ safetyOverride }) => safetyOverride).length,
+        run.finalStateChecksum,
+      ];
+    }),
   ]);
 }
 
@@ -440,6 +776,34 @@ export function renderBalanceLabMarkdownV1(report: BalanceLabReportV1): string {
     "| Runs | Production months | Bankruptcy PPM | FI PPM | Mean net worth | No-event PPM |",
     "| ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${report.summary.runCount} | ${report.summary.processedMonths} | ${report.summary.bankruptcyRate.ratePpm} | ${report.summary.fiAchievementRate.ratePpm} | ${report.summary.meanDisplayedNetWorthCents} | ${report.summary.noEventRatePpm} |`,
+    "",
+    "## Balance equation shadow",
+    "",
+    "| Observations | Mean opening preparedness | Mean terminal preparedness | Candidate challenges | Approved challenges | Stable/resilient unavoidable failure PPM | Six-month nonfatal recovery PPM |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${report.summary.balanceShadow.observationCount} | ${report.summary.balanceShadow.openingPreparednessMeanScorePpm ?? "—"} | ${report.summary.balanceShadow.terminalPreparednessMeanScorePpm ?? "—"} | ${Object.values(report.summary.balanceShadow.candidateChallengeBands).reduce((sum, count) => sum + count, 0)} | ${Object.values(report.summary.balanceShadow.approvedChallengeBands).reduce((sum, count) => sum + count, 0)} | ${report.summary.balanceShadow.stableResilientUnavoidableFailureRate.ratePpm} | ${report.summary.balanceShadow.nonfatalRecoveryWithinSixMonthsRate.ratePpm} |`,
+    "",
+    "## Beginner chapter",
+    "",
+    "| Assessments | Bankrupt | Fragile | Developing | Strong | Completion PPM | Median decisions | Unique decision templates | Meaningful/crisis PPM |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${report.summary.beginnerChapter.assessmentCount} | ${report.summary.beginnerChapter.outcomeDistribution.bankrupt} | ${report.summary.beginnerChapter.outcomeDistribution.fragile} | ${report.summary.beginnerChapter.outcomeDistribution.developing} | ${report.summary.beginnerChapter.outcomeDistribution.strong} | ${report.summary.beginnerChapter.completionRate.ratePpm} | ${report.summary.beginnerChapter.medianDecisionEventCount ?? "—"} | ${report.summary.beginnerChapter.uniqueDecisionTemplateCount} | ${report.summary.beginnerChapter.meaningfulOrCrisisApprovedRate.ratePpm} |`,
+    "",
+    "## Beginner engagement",
+    "",
+    "| Metric | Observed | Target |",
+    "| --- | ---: | ---: |",
+    `| Median total prompts | ${report.summary.beginnerEngagement.medianTotalPromptCount ?? "—"} | 8-10 |`,
+    `| Median meaningful decisions | ${report.summary.beginnerEngagement.medianMeaningfulDecisionCount ?? "—"} | 6-8 |`,
+    `| At least six meaningful decisions PPM | ${report.summary.beginnerEngagement.atLeastSixMeaningfulDecisionRate.ratePpm} | >= 750000 |`,
+    `| Median unique decision templates | ${report.summary.beginnerEngagement.medianUniqueDecisionTemplateCount ?? "—"} | >= 5 |`,
+    `| Median humorous roots | ${report.summary.beginnerEngagement.medianHumorousRootCount ?? "—"} | 4-6 |`,
+    `| Median absurd roots | ${report.summary.beginnerEngagement.medianAbsurdRootCount ?? "—"} | 1-2 |`,
+    `| Positive or recovery beat PPM | ${report.summary.beginnerEngagement.positiveOrRecoveryBeatRate.ratePpm} | >= 900000 |`,
+    `| Adjacent absurd violations | ${report.summary.beginnerEngagement.adjacentAbsurdViolationCount} | 0 |`,
+    `| Root event-streak violations | ${report.summary.beginnerEngagement.rootEventStreakViolationCount} | 0 |`,
+    `| Funny roots above meaningful | ${report.summary.beginnerEngagement.funnyRootAboveMeaningfulCount} | 0 |`,
+    `| Prepared funny unavoidable failures | ${report.summary.beginnerEngagement.preparedFunnyUnavoidableFailureCount} | 0 |`,
     "",
     "## Acceptance",
     "",

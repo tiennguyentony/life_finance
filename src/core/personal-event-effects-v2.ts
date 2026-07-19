@@ -115,7 +115,7 @@ function assertProposal(
   }
 }
 
-function mitigationAvailable(
+export function isPersonalEventMitigationAvailableV2(
   state: GameStateV2,
   template: PersonalEventTemplateV2,
   mitigationId: string,
@@ -165,7 +165,7 @@ export function resolvePersonalEventResponseV2(
   if (response.requiresMitigationIds.some(
     (mitigationId) =>
       !claimMitigationIds.has(mitigationId) &&
-      !mitigationAvailable(state, template, mitigationId),
+      !isPersonalEventMitigationAvailableV2(state, template, mitigationId),
   )) {
     throw new PersonalEventEffectV2Error(
       "MITIGATION_UNAVAILABLE",
@@ -233,7 +233,7 @@ export function resolvePersonalEventResponseV2(
       if (
         !mitigation ||
         !response.requiresMitigationIds.includes(effect.mitigationId) ||
-        !mitigationAvailable(state, template, effect.mitigationId) ||
+        !isPersonalEventMitigationAvailableV2(state, template, effect.mitigationId) ||
         (effect.coverage === "health" && mitigation.type !== "health_insurance") ||
         (effect.coverage === "selected_coverage" &&
           (mitigation.type !== "selected_coverage" || effect.coverageId !== mitigation.coverageId))

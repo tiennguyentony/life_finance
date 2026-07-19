@@ -775,11 +775,12 @@ const financialKernelMonthlyRecordSummarySchema =
               "catastrophe_limit",
               "parameter_out_of_bounds",
               "impact_above_band",
+              "FUNNY_ROOT_ABOVE_MEANINGFUL",
               "unavoidable_failure",
               "no_reasonable_response",
               "estimator_error",
             ]))
-            .max(14),
+            .max(15),
           warningCodes: z
             .array(z.enum([
               "impact_score_near_limit",
@@ -1204,6 +1205,39 @@ const pendingEventV2Schema = z
       .refine((ids) => new Set(ids).size === ids.length),
     scheduledMonth: brandedSimulationMonthSchema,
     expiresMonth: brandedSimulationMonthSchema,
+    eventSchemaVersion: z.literal(2).optional(),
+    category: z
+      .enum([
+        "maintenance",
+        "health",
+        "housing",
+        "career",
+        "caregiving",
+        "social",
+        "behavioral_trap",
+        "opportunity",
+      ])
+      .optional(),
+    classification: z.enum(["positive", "neutral", "negative"]).optional(),
+    lessonTags: z
+      .object({
+        primary: identifierSchema,
+        secondary: z
+          .array(identifierSchema)
+          .refine((tags) => new Set(tags).size === tags.length),
+      })
+      .strict()
+      .optional(),
+    pressureCost: z.int().min(0).optional(),
+    recoveryDurationMonths: z.int().min(0).max(120).optional(),
+    fallbackNarrative: z
+      .object({
+        headline: z.string().trim().min(1).max(240),
+        body: z.string().trim().min(1).max(2_000),
+      })
+      .strict()
+      .optional(),
+    followUpSourceEventId: identifierSchema.optional(),
     aiNarrative: z
       .object({
         source: z.enum([

@@ -183,6 +183,9 @@ export function queueScheduledDeclarativePersonalEventV2(
           pressureCost: template.pressureCost,
           recoveryDurationMonths: template.recovery.durationMonths,
           fallbackNarrative: template.fallbackNarrative,
+          ...(scheduled.followUpSourceEventId === undefined
+            ? {}
+            : { followUpSourceEventId: scheduled.followUpSourceEventId }),
         },
         ...(scheduled.followUpSourceEventId === undefined
           ? {}
@@ -327,6 +330,9 @@ export function resolveEventChoiceV2(
               pressureCost: template.pressureCost,
               recoveryDurationMonths: template.recovery.durationMonths,
               fallbackNarrative: template.fallbackNarrative,
+              ...(pending.followUpSourceEventId === undefined
+                ? {}
+                : { followUpSourceEventId: pending.followUpSourceEventId }),
               scheduledCashFlows: application.scheduledCashFlows,
               ...(application.livingCostPlans.length === 0
                 ? {}

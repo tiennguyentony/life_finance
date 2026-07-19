@@ -54,7 +54,17 @@ import {
   type EventSchedulerVersionV2,
   type EventSchedulingPolicyV2,
 } from "./event-scheduler-v2";
-import { PERSONAL_EVENT_TEMPLATES_V2 } from "../data/personal-event-templates-v2";
+import {
+  PERSONAL_EVENT_TEMPLATES_V2,
+  PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2,
+} from "../data/personal-event-templates-v2";
+import {
+  ACTIVE_BEGINNER_EVENT_CADENCE_VERSION,
+  BEGINNER_EVENT_CADENCE_V1_VERSION,
+  applyBeginnerEventCadenceV1,
+  assessBeginnerEventCadenceV1,
+  type BeginnerEventCadenceEvidenceV1,
+} from "./beginner-event-cadence-v1";
 import {
   generateDeclarativePersonalEventCandidatesV2,
   generateNamedDeclarativePersonalEventCandidatesV2,
@@ -217,6 +227,7 @@ export type MonthlyTurnV2Record = Readonly<{
     eligibleTemplateIds: readonly string[];
     candidateTemplateIds: readonly string[];
   }>;
+  beginnerEventCadence?: BeginnerEventCadenceEvidenceV1;
   worldRandomEvidence?: Readonly<{
     version: typeof WORLD_RANDOM_VERSION_V1;
     macroEvidenceHash: string;
@@ -829,6 +840,10 @@ type MonthlyTurnV2Dependencies = Readonly<{
   eventSchedulingPolicy?: EventSchedulingPolicyV2;
   macroStoryPolicy?: MacroStoryPolicyV2;
   personalEventCatalog?: readonly PersonalEventTemplateV2[];
+  activePersonalEventCatalog?: readonly PersonalEventTemplateV2[];
+  beginnerEventCadenceVersion?:
+    | typeof BEGINNER_EVENT_CADENCE_V1_VERSION
+    | null;
 }>;
 
 export function processMonthlyTurnV2(
@@ -1030,6 +1045,12 @@ function processMonthlyTurnV2Kernel200(
 ): MonthlyTurnV2Result {
   validateCommand(state, command);
   const eventCatalog = dependencies.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
+  const activeEventCatalog = dependencies.activePersonalEventCatalog ??
+    dependencies.personalEventCatalog ??
+    PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2;
+  const beginnerEventCadenceVersion =
+    dependencies.beginnerEventCadenceVersion ??
+    ACTIVE_BEGINNER_EVENT_CADENCE_VERSION;
   const validationOptions = {
     personalEventCatalog: eventCatalog,
     allowTransientRandomAdvance: true,
@@ -1188,6 +1209,9 @@ function processMonthlyTurnV2Kernel200(
     let runtimeBalanceCandidateSet:
       | MonthlyTurnV2Record["runtimeBalanceCandidateSet"]
       | undefined;
+    let beginnerEventCadence:
+      | MonthlyTurnV2Record["beginnerEventCadence"]
+      | undefined;
     let rawOpportunityFingerprint: string | null = null;
     let grossParameterFingerprint: string | null = null;
     if (outcome === null) {
@@ -1227,14 +1251,55 @@ function processMonthlyTurnV2Kernel200(
         if (balance?.version !== 2) {
           throw new RangeError("Runtime Balance v2 must be advanced before scheduling");
         }
-        const candidates = worldAfterMacro === null
-          ? generateDeclarativePersonalEventCandidatesV2(nextState, eventCatalog)
-          : generateNamedDeclarativePersonalEventCandidatesV2(nextState, eventCatalog);
+        const generatedCandidates = worldAfterMacro === null
+          ? generateDeclarativePersonalEventCandidatesV2(
+              nextState,
+              activeEventCatalog,
+              eventCatalog,
+            )
+          : generateNamedDeclarativePersonalEventCandidatesV2(
+              nextState,
+              activeEventCatalog,
+              eventCatalog,
+            );
+        const cadenceAssessment = beginnerEventCadenceVersion ===
+            BEGINNER_EVENT_CADENCE_V1_VERSION
+          ? assessBeginnerEventCadenceV1(nextState)
+          : null;
+        const cadenceResult = cadenceAssessment === null
+          ? null
+          : applyBeginnerEventCadenceV1(
+              cadenceAssessment,
+              generatedCandidates.candidates,
+            );
+        const candidates = cadenceResult === null
+          ? generatedCandidates
+          : Object.freeze({
+              ...generatedCandidates,
+              candidates: cadenceResult.candidates,
+              candidateTemplateIds: Object.freeze(
+                cadenceResult.candidates.map(({ template }) => template.id),
+              ),
+            });
+        if (cadenceAssessment !== null && cadenceResult !== null) {
+          beginnerEventCadence = Object.freeze({
+            assessment: cadenceAssessment,
+            inputCandidateIds: Object.freeze(
+              generatedCandidates.candidates.map(({ template }) => template.id),
+            ),
+            outputCandidateIds: Object.freeze(
+              cadenceResult.candidates.map(({ template }) => template.id),
+            ),
+            preferredCandidateIds: cadenceResult.preferredCandidateIds,
+            scheduledTemplateId: null,
+            safetyOverride: false,
+          });
+        }
         if (
-          "rawOpportunityFingerprint" in candidates &&
-          typeof candidates.rawOpportunityFingerprint === "string"
+          "rawOpportunityFingerprint" in generatedCandidates &&
+          typeof generatedCandidates.rawOpportunityFingerprint === "string"
         ) {
-          rawOpportunityFingerprint = candidates.rawOpportunityFingerprint;
+          rawOpportunityFingerprint = generatedCandidates.rawOpportunityFingerprint;
         }
         runtimeBalanceCandidateSet = Object.freeze({
           eligibleTemplateIds: candidates.eligibleTemplateIds,
@@ -1255,10 +1320,22 @@ function processMonthlyTurnV2Kernel200(
           nextState.currentMonth,
         );
         const eventParameterEpoch = worldAfterMacro?.eventParameters;
+        const parameterCatalogByIdentity = new Map(
+          activeEventCatalog.map((template) => [
+            `${template.id}@${template.version}`,
+            template,
+          ]),
+        );
+        for (const { template } of candidates.candidates) {
+          parameterCatalogByIdentity.set(
+            `${template.id}@${template.version}`,
+            template,
+          );
+        }
         const grossParameterEvidence = eventParameterEpoch === undefined
           ? null
           : Object.freeze(
-              [...eventCatalog]
+              [...parameterCatalogByIdentity.values()]
                 .toSorted(
                   (left, right) =>
                     left.id.localeCompare(right.id) || left.version - right.version,
@@ -1333,6 +1410,21 @@ function processMonthlyTurnV2Kernel200(
           },
         );
         runtimeBalanceDecision = choice.decision;
+        if (beginnerEventCadence !== undefined) {
+          const dueMode = [
+            "follow_up_due",
+            "positive_due",
+            "engagement_due",
+          ].includes(beginnerEventCadence.assessment.mode);
+          beginnerEventCadence = Object.freeze({
+            ...beginnerEventCadence,
+            scheduledTemplateId: choice.event?.template.id ?? null,
+            safetyOverride:
+              dueMode &&
+              beginnerEventCadence.preferredCandidateIds.length > 0 &&
+              choice.event === null,
+          });
+        }
         const chosenState = {
           ...nextState,
           random: choice.nextRandom,
@@ -1419,6 +1511,9 @@ function processMonthlyTurnV2Kernel200(
       ...(runtimeBalanceCandidateSet === undefined
         ? {}
         : { runtimeBalanceCandidateSet }),
+      ...(beginnerEventCadence === undefined
+        ? {}
+        : { beginnerEventCadence }),
       ...(worldRandomEvidence === undefined ? {} : { worldRandomEvidence }),
       outcome,
     }) satisfies MonthlyTurnV2Record;

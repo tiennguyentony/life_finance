@@ -48,7 +48,7 @@ export function createBalanceLabPersonaStateV1(input: Readonly<{
     resolvedScenario: selection(),
     annualGrossSalaryCents: moneyCents(12_000_000),
     finances: {
-      cashCents: moneyCents(lowCash ? 50_000 : debtBurdened ? 150_000 : 1_500_000),
+      cashCents: moneyCents(lowCash ? 100_000 : debtBurdened ? 150_000 : 1_500_000),
       taxableBroadIndexCents: moneyCents(lowCash ? 100_000 : 1_000_000),
       taxableSectorCents: moneyCents(debtBurdened ? 500_000 : 100_000),
       taxableSpeculativeCents: moneyCents(debtBurdened ? 600_000 : 50_000),

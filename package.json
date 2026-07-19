@@ -19,6 +19,7 @@
     "balance:medium": "node scripts/run-balance-lab.mjs --size medium",
     "balance:large": "node scripts/run-balance-lab.mjs --size large",
     "test": "pnpm check:test-layout && pnpm test:parallel && pnpm test:long-run",
+    "balance:beginner": "node scripts/run-balance-lab.mjs --size beginner",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {

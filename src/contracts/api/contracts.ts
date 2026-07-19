@@ -6,11 +6,46 @@ const rateSchema = z.number().int().min(0).max(1_000_000);
 const emergencyFundMonthsSchema = z.number().int().min(0).max(24_000_000);
 const identifierSchema = z.string().trim().min(1).max(160);
 
+const eventResponsePreviewSchema = z
+  .object({
+    version: z.literal("personal-event-response-preview-v1"),
+    status: z.enum(["available", "unavailable", "error"]),
+    immediateCashChangeCents: centsSchema,
+    recurringCashFlows: z.array(z
+      .object({
+        direction: z.enum(["expense", "income"]),
+        monthlyCents: centsSchema.nonnegative(),
+        durationMonths: z.number().int().min(2).max(120),
+        totalCents: centsSchema.nonnegative(),
+      })
+      .strict()),
+    annualLivingCostChangeCents: centsSchema,
+    wellbeingChangesPpm: z
+      .object({ happiness: centsSchema, burnout: centsSchema })
+      .strict(),
+    followUps: z.array(z
+      .object({
+        templateId: identifierSchema,
+        templateVersion: z.number().int().min(2),
+        delayMonths: z.number().int().min(1).max(120),
+        parameterRanges: z.record(z.string(), z
+          .object({ minimum: centsSchema, maximum: centsSchema })
+          .strict()),
+      })
+      .strict()),
+    netOutcomeCents: centsSchema.nullable(),
+    unavailableReason: z.string().max(500).nullable(),
+    summary: z.string().max(2_000),
+  })
+  .strict();
+
 const eventChoiceSchema = z
   .object({
     id: identifierSchema,
     label: z.string().trim().min(1).max(120),
-    description: z.string().max(500),
+    description: z.string().max(2_000),
+    enabled: z.boolean(),
+    preview: eventResponsePreviewSchema,
   })
   .strict();
 
@@ -26,6 +61,45 @@ const recurringStrategySchema = z
     afterTaxSpeculativeRatePpm: rateSchema,
     afterTaxIraRatePpm: rateSchema,
     afterTaxExtraDebtRatePpm: rateSchema,
+  })
+  .strict();
+
+const preparednessBandSchema = z.enum(["critical", "exposed", "stable", "resilient"]);
+const preparednessSchema = z
+  .object({
+    version: z.literal("preparedness-assessment-v1"),
+    riskVersion: z.literal("risk-v1"),
+    asOfMonth: monthSchema,
+    scorePpm: rateSchema,
+    band: preparednessBandSchema,
+    components: z
+      .object({
+        liquidityPpm: rateSchema,
+        cashFlowPpm: rateSchema,
+        debtPpm: rateSchema,
+        insurancePpm: rateSchema,
+        diversificationPpm: rateSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+const beginnerCheckpointSchema = z
+  .object({
+    version: z.literal("beginner-chapter-v1"),
+    checkpointMonth: monthSchema,
+    outcome: z.enum(["bankrupt", "fragile", "developing", "strong"]),
+    completed: z.boolean(),
+    scorePpm: rateSchema,
+    preparednessBand: preparednessBandSchema,
+    weakestComponent: z.enum([
+      "liquidity",
+      "cash_flow",
+      "debt",
+      "insurance",
+      "diversification",
+    ]),
+    lessonKey: identifierSchema,
   })
   .strict();
 
@@ -49,6 +123,7 @@ export const runViewSchema = z
   .object({
     runId: identifierSchema,
     revision: z.number().int().min(0),
+    startMonth: monthSchema,
     currentMonth: monthSchema,
     status: z.enum(["active", "completed"]),
     player: z
@@ -105,6 +180,8 @@ export const runViewSchema = z
         weaknessTags: z.array(identifierSchema),
       })
       .strict(),
+    preparedness: preparednessSchema,
+    beginnerCheckpoint: beginnerCheckpointSchema.nullable(),
     strategy: recurringStrategySchema,
     market: z
       .object({
