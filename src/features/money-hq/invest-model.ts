@@ -85,8 +85,8 @@ export const DIALS: readonly Dial[] = Object.freeze([
   },
   {
     key: "afterTaxExtraDebtRatePpm",
-    label: "Extra debt payment",
-    hint: "beyond the minimum",
+    label: "Extra term-debt payment",
+    hint: "student, auto, mortgage, or personal loan",
     stepPpm: 5_000,
     maxPpm: 200_000,
   },

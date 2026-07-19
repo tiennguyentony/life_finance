@@ -116,7 +116,7 @@ export function InvestScreen({ busy, draft, layout, onAdjust, onLayout, run }: P
       </p>
 
       {layout === "buckets" ? (
-        <BucketsLayout projected={projected} run={run} />
+        <BucketsLayout projected={projected} />
       ) : layout === "mountain" ? (
         <MountainLayout projected={projected} />
       ) : null}
@@ -297,16 +297,13 @@ function MatchBanner({ matchMonthlyCents, run }: MatchBannerProps) {
 
 type LayoutProps = Readonly<{
   projected: ReturnType<typeof projectContributionBuckets>;
-  run: RunViewWire;
 }>;
 
-function BucketsLayout({ projected, run }: LayoutProps) {
-  const targetAge = run.goal.targetAgeYears;
-
+function BucketsLayout({ projected }: LayoutProps) {
   return (
     <div className="hq-columns" data-balance="even">
       <div className="hq-column">
-        <HqCard eyebrow={`Locked until ~${targetAge} · pre-tax perks`}>
+        <HqCard eyebrow="Retirement accounts · early-withdrawal rules">
           <div className="hq-figure" style={{ fontSize: "1.75rem" }}>
             ≈{formatCents(projected.lockedMonthlyCents)}
             <span className="hq-figure-unit">/mo</span>
@@ -331,13 +328,14 @@ function BucketsLayout({ projected, run }: LayoutProps) {
           </p>
         </HqCard>
 
-        <HqCard eyebrow="Debt slayer · beyond the minimum">
+        <HqCard eyebrow="Term-debt slayer · beyond the minimum">
           <div className="hq-figure" style={{ fontSize: "1.75rem" }}>
             ≈{formatCents(projected.extraDebtMonthlyCents)}
             <span className="hq-figure-unit">/mo</span>
           </div>
           <p className="hq-note" data-tone="positive" style={{ margin: 0 }}>
-            A paid debt is a bill that can never surprise you again.
+            This recurring allocation targets active student, auto, mortgage,
+            or personal-loan principal. Revolving credit is managed in Debt.
           </p>
         </HqCard>
       </div>

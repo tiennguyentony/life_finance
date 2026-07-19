@@ -5,7 +5,11 @@ import Image from "next/image";
 import type { RunViewWire } from "@/contracts/api/contracts";
 import { useModalDialog } from "@/features/board/use-modal-dialog";
 
-import { formatPreciseCents, formatSignedCents } from "../hq-view";
+import {
+  formatPreciseCents,
+  formatSignedCents,
+  formatSignedPreciseCents,
+} from "../hq-view";
 
 const IMPULSO = "/assets/characters/impulso/impulso-sale.png";
 
@@ -70,18 +74,18 @@ export function HqEventDialog({ busy, onResolve, run }: Props) {
 
                 {preview.immediateCashChangeCents !== 0 ? (
                   <span className="hq-choice-effect">
-                    <span>Due now</span>
+                    <span>Cash now</span>
                     <b
                       data-tone={
                         preview.immediateCashChangeCents > 0 ? "positive" : "negative"
                       }
                     >
-                      {formatPreciseCents(Math.abs(preview.immediateCashChangeCents))}
+                      {formatSignedPreciseCents(preview.immediateCashChangeCents)}
                     </b>
                   </span>
                 ) : (
                   <span className="hq-choice-effect">
-                    <span>Due now</span>
+                    <span>Cash now</span>
                     <b data-tone="neutral">$0.00</b>
                   </span>
                 )}
