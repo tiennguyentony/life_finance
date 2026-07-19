@@ -615,7 +615,10 @@ function summarizeBeginnerEngagement(
       ({ materiallyAvailableChoiceIds }) =>
         materiallyAvailableChoiceIds.length >= 3,
     );
-    const roots = decisions.filter(({ cadenceRole }) => cadenceRole !== "follow_up");
+    const roots = decisions.filter(
+      ({ cadenceRole, followUpSourceEventId }) =>
+        cadenceRole !== "follow_up" && followUpSourceEventId === null,
+    );
     const humorousRoots = roots.filter(({ tone }) => tone !== "serious");
     const absurdRoots = roots.filter(({ tone }) => tone === "absurd_comedy");
     let adjacentAbsurdViolationCount = 0;
@@ -633,6 +636,7 @@ function summarizeBeginnerEngagement(
     const cadence = run.metrics.beginnerEventCadenceEvidence ?? [];
     const rootEventStreakViolationCount = cadence.filter((entry) =>
       entry.assessment.rootEventStreak >= 2 &&
+      entry.assessment.mode !== "follow_up_due" &&
       entry.scheduledTemplateId !== null &&
       rootByTemplateId.has(entry.scheduledTemplateId)
     ).length;

@@ -573,6 +573,13 @@ describe("offline balance lab v1 metrics", () => {
       eventDecisionEvidence: secondDecisions,
       beginnerEventCadenceEvidence: [
         cadence(2, secondDecisions[3]!.templateId),
+        {
+          ...cadence(2, secondDecisions[0]!.templateId),
+          assessment: {
+            ...cadence(2, secondDecisions[0]!.templateId).assessment,
+            mode: "follow_up_due" as const,
+          },
+        },
       ],
       recoveryObservations: [{
         eventMonthIndex: 2,
