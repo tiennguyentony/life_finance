@@ -2,10 +2,9 @@ import { safeBigIntToNumber } from "./domain/integer";
 import { moneyCents, type MoneyCents, type RatePpm } from "./domain/money";
 import {
   calculateInvestableAssets,
+  calculateTotalLiabilities,
   type FinancialSnapshot,
 } from "./game-state";
-
-export { calculateInvestableAssets as calculateGoalInvestableAssets } from "./game-state";
 
 export const FINANCIAL_GOAL_VERSION = "financial-goal-v1" as const;
 export const DEFAULT_SAFE_WITHDRAWAL_RATE_PPM = 40_000 as RatePpm;
@@ -83,12 +82,28 @@ export function financialGoalTargetCents(goal: FinancialGoalV1): MoneyCents {
   );
 }
 
+/** Assets that can fund financial independence after current liabilities are
+ * paid. Borrowed cash must never create apparent progress toward FI. */
+export function calculateGoalInvestableAssets(
+  finances: FinancialSnapshot,
+): MoneyCents {
+  const netInvestable =
+    BigInt(calculateInvestableAssets(finances)) -
+    BigInt(calculateTotalLiabilities(finances));
+  return moneyCents(
+    safeBigIntToNumber(
+      netInvestable > BigInt(0) ? netInvestable : BigInt(0),
+      "financial independence net investable assets",
+    ),
+  );
+}
+
 function projectResolvedFinancialGoal(
   finances: FinancialSnapshot,
   goal: FinancialGoalV1,
+  investableAssetsCents: MoneyCents,
 ): FinancialGoalProjection {
   const targetCents = financialGoalTargetCents(goal);
-  const investableAssetsCents = calculateInvestableAssets(finances);
   const progressPpm = Math.min(
     1_000_000,
     Number(
@@ -127,10 +142,16 @@ export function projectFinancialGoal(
           desiredAnnualSpendingCents: finances.annualLivingCostCents,
         })
       : configured;
-  return projectResolvedFinancialGoal(finances, goal);
+  return projectResolvedFinancialGoal(
+    finances,
+    goal,
+    calculateGoalInvestableAssets(finances),
+  );
 }
 
-/** Frozen configured-spending behavior for historical command replay only. */
+/** Frozen gross-assets behavior for historical command replay and persisted
+ * deterministic outcome validation only. New projections must use
+ * projectFinancialGoal so debt cannot masquerade as FI progress. */
 export function projectFinancialGoalV1Compatibility(
   finances: FinancialSnapshot,
   configuredGoal?: FinancialGoalV1,
@@ -138,5 +159,6 @@ export function projectFinancialGoalV1Compatibility(
   return projectResolvedFinancialGoal(
     finances,
     configuredGoal ?? defaultFinancialGoal(finances.annualLivingCostCents),
+    calculateInvestableAssets(finances),
   );
 }

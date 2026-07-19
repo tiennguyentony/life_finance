@@ -138,7 +138,10 @@ export function boardViewFromRun(run: BoardRunSource): BoardView {
     calendar: { label: monthLabel || month, detail: year },
     goal: {
       label: "Reach financial independence",
-      current: dollars(run.finances.investableAssetsCents),
+      current: dollars(Math.max(
+        0,
+        run.finances.investableAssetsCents - debtCents,
+      )),
       target: dollars(run.goal.targetCents),
     },
     trophies: run.status === "completed" ? 1 : 0,

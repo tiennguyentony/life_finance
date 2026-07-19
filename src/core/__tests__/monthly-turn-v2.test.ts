@@ -17,7 +17,7 @@ import {
   DECLARATIVE_EVENT_SCHEDULER_V2_VERSION,
   LEGACY_EXPOSURE_EVENT_SCHEDULER,
 } from "../event-scheduler-v2";
-import { calculateInvestableAssets, calculateNetWorth } from "../game-state";
+import { calculateNetWorth } from "../game-state";
 import {
   finalizeGameStateV2,
   validateGameStateV2,
@@ -1519,7 +1519,10 @@ describe("atomic v2 monthly turn", () => {
       ).targetCents,
     );
     expect(checkpoint.end.investableAssetsCents).toBe(
-      calculateInvestableAssets(result.state.finances),
+      projectFinancialGoal(
+        result.state.finances,
+        result.state.gameplay.financialGoal,
+      ).investableAssetsCents,
     );
     expect(checkpoint.end.netWorthCents).toBe(
       calculateNetWorth(result.state.finances),
