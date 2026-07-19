@@ -123,7 +123,9 @@ function homePlans(run: BoardPlanRun): readonly BoardPlan[] {
       description: "Trim living costs by $100 per month.",
       effects: [
         exactEffect("Annual living costs", "-$1,200", "positive"),
+        exactEffect("Required monthly obligations", "-$100", "positive"),
         directionalEffect("Lifestyle flexibility", "Lower", "negative"),
+        directionalEffect("Financial-independence target", "Lower", "positive"),
       ],
       disabledReason: cannotReduce
         ? "Living costs cannot be reduced by another $100 per month."
@@ -143,7 +145,9 @@ function homePlans(run: BoardPlanRun): readonly BoardPlan[] {
       description: "Allow $100 more per month for living costs.",
       effects: [
         exactEffect("Annual living costs", "+$1,200", "negative"),
+        exactEffect("Required monthly obligations", "+$100", "negative"),
         directionalEffect("Lifestyle flexibility", "Higher", "positive"),
+        directionalEffect("Financial-independence target", "Higher", "negative"),
       ],
       disabledReason: null,
       command: {
@@ -291,9 +295,9 @@ function upskillPlan(program: UpskillProgram, run: BoardPlanRun): BoardPlan {
     effects: [
       exactEffect("Cash", `-${formatPlanMoney(program.costCents)}`, "negative"),
       exactEffect("Program duration", `${program.durationMonths} months`, "neutral"),
-      directionalEffect(
-        "Annual salary potential",
-        `Up to +${formatPlanMoney(program.annualSalaryIncreaseCents)}`,
+      exactEffect(
+        "Annual salary on completion",
+        `+${formatPlanMoney(program.annualSalaryIncreaseCents)}`,
         "positive",
       ),
     ],
