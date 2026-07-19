@@ -36,15 +36,16 @@ integer cents; floating-point currency never crosses the HTTP boundary.
 ## Vercel deployment
 
 The repository deploys this FastAPI application and the Next.js frontend as two
-services in one Vercel project. The root [`vercel.json`](../../vercel.json)
-keeps this service private and injects its internal URL into the frontend as
-`TAX_SERVICE_URL`. See
+experimental services in one Vercel project. The root
+[`vercel.json`](../../vercel.json) mounts this service at `/svc/tax`; Vercel
+generates `TAX_SERVICE_URL` from the `tax_service` service name. See
 [`docs/operations/vercel-services.md`](../../docs/operations/vercel-services.md)
 for the project settings and rollback procedure.
 
 Configure a high-entropy `TAX_SERVICE_TOKEN` as a project environment variable;
 both services receive it. Do not configure `TAX_SERVICE_URL` in Vercel because
-the service binding generates it. Never expose either value to browser code.
+the services runtime generates it. The route is publicly addressable, so the
+bearer check is the service boundary; never expose either value to browser code.
 
 Enable Fluid Compute because PolicyEngine's scientific Python dependencies
 exceed a standard small function bundle. The Python 3.12 pin and locked
