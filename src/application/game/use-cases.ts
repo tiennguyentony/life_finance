@@ -52,6 +52,7 @@ export async function submitCommand(
       result: Readonly<{
         idempotentReplay: boolean;
         aiDirector: CommandResponseAiDirector;
+        monthlyExplanation: CommandResponseMonthlyExplanation;
       }>;
     }>
 > {
@@ -84,15 +85,60 @@ export async function submitCommand(
         topCandidateId: operationalEvidence.topCandidateId,
         fallbackReason: operationalEvidence.fallbackReason ?? null,
       });
+  const monthlyExplanation: CommandResponseMonthlyExplanation =
+    applied.monthlyRecord === null
+      ? null
+      : Object.freeze({
+          processedMonth: applied.monthlyRecord.processedMonth,
+          grossIncomeCents: applied.monthlyRecord.grossIncomeCents,
+          totalTaxCents: applied.monthlyRecord.totalTaxCents,
+          afterTaxCashIncomeCents:
+            applied.monthlyRecord.afterTaxCashIncomeCents,
+          resolvedIncomeCents:
+            "resolvedIncomeCents" in applied.monthlyRecord
+              ? applied.monthlyRecord.resolvedIncomeCents
+              : 0,
+          resolvedExpenseCents:
+            "resolvedExpenseCents" in applied.monthlyRecord
+              ? applied.monthlyRecord.resolvedExpenseCents
+              : 0,
+          marketValueChangeCents:
+            applied.monthlyRecord.marketValueChangeCents,
+          annualInflationIncreaseCents:
+            applied.monthlyRecord.annualInflationIncreaseCents,
+          insurancePlayerCostCents:
+            applied.monthlyRecord.insurancePlayerCostCents,
+          requiredCashCents: applied.monthlyRecord.requiredCashCents,
+          debtInterestCents:
+            applied.monthlyRecord.debtService.totalInterestCents,
+          debtPaymentCents:
+            applied.monthlyRecord.debtService.totalScheduledPaymentCents,
+        });
   return Object.freeze({
     run: projectRunView(applied.state),
     stateChecksum: applied.stateChecksum,
     result: Object.freeze({
       idempotentReplay: applied.idempotentReplay,
       aiDirector,
+      monthlyExplanation,
     }),
   });
 }
+
+export type CommandResponseMonthlyExplanation = Readonly<{
+  processedMonth: string;
+  grossIncomeCents: number;
+  totalTaxCents: number;
+  afterTaxCashIncomeCents: number;
+  resolvedIncomeCents: number;
+  resolvedExpenseCents: number;
+  marketValueChangeCents: number;
+  annualInflationIncreaseCents: number;
+  insurancePlayerCostCents: number;
+  requiredCashCents: number;
+  debtInterestCents: number;
+  debtPaymentCents: number;
+}> | null;
 
 export type CommandResponseAiDirector = Readonly<{
   mode: "shadow" | "active";

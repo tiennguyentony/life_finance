@@ -172,7 +172,20 @@ describe("board planning surfaces", () => {
         body: "Choose how to respond.",
       },
     };
-    const result = boardMonthResult(opening, ending, "Invest in broad index");
+    const result = boardMonthResult(opening, ending, "Invest in broad index", {
+      processedMonth: "2026-07",
+      grossIncomeCents: 1_000_000,
+      totalTaxCents: 220_000,
+      afterTaxCashIncomeCents: 730_000,
+      resolvedIncomeCents: 50_000,
+      resolvedExpenseCents: 25_000,
+      marketValueChangeCents: -12_500,
+      annualInflationIncreaseCents: 14_300,
+      insurancePlayerCostCents: 0,
+      requiredCashCents: 555_659,
+      debtInterestCents: 8_000,
+      debtPaymentCents: 25_000,
+    });
     const markup = renderToStaticMarkup(
       <MonthResultDialog
         busy={false}
@@ -212,6 +225,17 @@ describe("board planning surfaces", () => {
     expect(markup).toContain("Financial preparedness");
     expect(markup).toContain("Course started");
     expect(markup).toContain("upskill.certificate");
+    expect(markup).toContain("Why the numbers changed");
+    expect(markup).toContain("Backend-calculated evidence for July 2026");
+    expect(markup).toContain("Gross employment income");
+    expect(markup).toContain("+$10,000");
+    expect(markup).toContain("Taxes and withholding");
+    expect(markup).toContain("-$2,200");
+    expect(markup).toContain("Event and other income");
+    expect(markup).toContain("Event expenses");
+    expect(markup).toContain("Market movement");
+    expect(markup).toContain("Debt interest included");
+    expect(markup).toContain("Annual cost added by inflation");
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("A life decision is waiting before the next month.");
     expect(markup).not.toContain("AI Director");

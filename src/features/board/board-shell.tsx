@@ -190,9 +190,12 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     ending: RunViewWire,
     plan: BoardPlan,
     planLabel = plan.label,
+    monthlyExplanation: BoardMonthResult["monthlyExplanation"] = null,
   ) => {
     setRun(ending);
-    setMonthResult(boardMonthResult(opening, ending, planLabel));
+    setMonthResult(
+      boardMonthResult(opening, ending, planLabel, monthlyExplanation),
+    );
     setSelectedDestinationId(null);
     setSelectedPlanId(null);
     setPlanningError(null);
@@ -301,7 +304,13 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         type: "process_month",
         payload: {},
       });
-      completeMonth(recoveryOpening, response.run, plan);
+      completeMonth(
+        recoveryOpening,
+        response.run,
+        plan,
+        plan.label,
+        response.result.monthlyExplanation ?? null,
+      );
     } catch (reason) {
       const failure: PendingTurnFailure = {
         phase: "month",
@@ -365,7 +374,13 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         createId: (phase) => `board.turn.${phase}.${crypto.randomUUID()}`,
       });
       if (result.kind === "completed") {
-        completeMonth(result.opening, result.run, plan, plan.label);
+        completeMonth(
+          result.opening,
+          result.run,
+          plan,
+          plan.label,
+          result.monthlyExplanation,
+        );
       } else if (result.kind === "plan_failed") {
         const failure: PendingTurnFailure = {
           phase: "plan",

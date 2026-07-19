@@ -686,6 +686,20 @@
   font-size: 1rem;
 }
 
+.board-month-result-breakdown {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.board-month-result-breakdown h3,
+.board-month-result-breakdown p {
+  margin: 0;
+}
+
+.board-month-result-breakdown h3 {
+  font-size: 1rem;
+}
+
 .board-month-result-deltas {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
