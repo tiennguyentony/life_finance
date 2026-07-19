@@ -3,15 +3,35 @@ import { describe, expect, it } from "vitest";
 import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
 import { projectRunView } from "@/application/game/run-view";
 import { runViewSchema } from "@/contracts/api/contracts";
+import { moneyCents } from "@/core/domain/money";
 
 import { hqViewFromRun } from "../hq-view";
 
 describe("Money HQ view", () => {
   it("keeps the FI numerator aligned with the backend-owned progress", () => {
-    const run = runViewSchema.parse(projectRunView(currentRunState()));
+    const base = currentRunState();
+    const state = {
+      ...base,
+      finances: {
+        ...base.finances,
+        nonCreditLiabilitiesCents: moneyCents(
+          base.finances.nonCreditLiabilitiesCents + 250_000,
+        ),
+        creditUsedCents: moneyCents(100_000),
+      },
+    };
+    const run = runViewSchema.parse(projectRunView(state));
     const view = hqViewFromRun(run);
 
-    expect(view.goalCurrentCents).toBe(run.finances.investableAssetsCents);
+    expect(view.goalCurrentCents).toBe(run.goal.currentCents);
+    expect(view.goalCurrentCents).toBe(
+      Math.max(
+        0,
+        run.finances.investableAssetsCents -
+          run.finances.nonCreditLiabilitiesCents -
+          run.finances.creditUsedCents,
+      ),
+    );
     expect(view.goalProgressPpm).toBe(run.goal.progressPpm);
   });
 
