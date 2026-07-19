@@ -129,7 +129,20 @@ describe("board planning surfaces", () => {
         ...opening.finances,
         cashCents: opening.finances.cashCents + 12_500,
         netWorthCents: opening.finances.netWorthCents + 15_000,
+        taxableInvestmentsCents: opening.finances.taxableInvestmentsCents + 50_000,
+        annualLivingCostCents: opening.finances.annualLivingCostCents - 120_000,
+        requiredObligationsCents: opening.finances.requiredObligationsCents - 10_000,
       },
+      strategy: { ...opening.strategy, emergencyFundTargetMonthsPpm: 6_000_000 },
+      risk: {
+        ...opening.risk,
+        aggregateSeverityPpm: opening.risk.aggregateSeverityPpm - 5_000,
+      },
+      preparedness: {
+        ...opening.preparedness,
+        scorePpm: opening.preparedness.scorePpm + 7_000,
+      },
+      career: { pendingProgramIds: ["upskill.certificate"] },
       goal: { ...opening.goal, progressPpm: opening.goal.progressPpm + 4_000 },
       pendingInteraction: {
         kind: "event" as const,
@@ -186,6 +199,19 @@ describe("board planning surfaces", () => {
     expect(markup).toContain("$0");
     expect(markup).toContain("Goal progress");
     expect(markup).toContain("0.4 percentage points");
+    expect(markup).toContain("Taxable investments");
+    expect(markup).toContain("+$500");
+    expect(markup).toContain("Annual living cost");
+    expect(markup).toContain("-$1,200");
+    expect(markup).toContain("Required monthly expenses");
+    expect(markup).toContain("-$100");
+    expect(markup).toContain("Safety buffer target");
+    expect(markup).toContain("6 months");
+    expect(markup).toContain("Risk exposure");
+    expect(markup).toContain("lower risk");
+    expect(markup).toContain("Financial preparedness");
+    expect(markup).toContain("Course started");
+    expect(markup).toContain("upskill.certificate");
     expect(markup).toContain('aria-live="assertive"');
     expect(markup).toContain("A life decision is waiting before the next month.");
     expect(markup).not.toContain("AI Director");

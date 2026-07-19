@@ -49,12 +49,19 @@ export type BoardRunSource = Readonly<{
   status: "active" | "completed";
   finances: Readonly<{
     cashCents: number;
+    taxableInvestmentsCents?: number;
     netWorthCents: number;
     nonCreditLiabilitiesCents: number;
     creditUsedCents: number;
     investableAssetsCents: number;
+    annualLivingCostCents?: number;
+    requiredObligationsCents?: number;
   }>;
   goal: Readonly<{ targetCents: number; progressPpm: number }>;
+  income?: Readonly<{ annualGrossSalaryCents: number | null }>;
+  risk?: Readonly<{ aggregateSeverityPpm: number }>;
+  preparedness?: Readonly<{ scorePpm: number }>;
+  strategy?: Readonly<{ emergencyFundTargetMonthsPpm?: number }>;
   career?: Readonly<{ pendingProgramIds: readonly string[] }>;
   beginnerCheckpoint?: Readonly<{
     version: "beginner-chapter-v1";
@@ -166,8 +173,16 @@ export type BoardMonthResult = Readonly<{
   cashChangeCents: number;
   netWorthChangeCents: number;
   debtChangeCents: number;
+  taxableInvestmentsChangeCents: number;
+  annualLivingCostChangeCents: number;
+  requiredObligationsChangeCents: number;
+  annualGrossSalaryChangeCents: number;
   goalProgressChangePpm: number;
+  riskSeverityChangePpm: number;
+  preparednessScoreChangePpm: number;
+  emergencyFundTargetMonthsPpm: number | null;
   hasPendingEvent: boolean;
+  startedProgramIds: readonly string[];
   completedProgramIds: readonly string[];
   beginnerCheckpoint: NonNullable<BoardRunSource["beginnerCheckpoint"]> | null;
 }>;
@@ -182,6 +197,9 @@ export function boardMonthResult(
   const endingDebt =
     ending.finances.nonCreditLiabilitiesCents + ending.finances.creditUsedCents;
   const endingPrograms = new Set(ending.career?.pendingProgramIds ?? []);
+  const openingPrograms = new Set(opening.career?.pendingProgramIds ?? []);
+  const startedProgramIds = (ending.career?.pendingProgramIds ?? [])
+    .filter((id) => !openingPrograms.has(id));
   const completedProgramIds = (opening.career?.pendingProgramIds ?? [])
     .filter((id) => !endingPrograms.has(id));
 
@@ -192,8 +210,29 @@ export function boardMonthResult(
     cashChangeCents: ending.finances.cashCents - opening.finances.cashCents,
     netWorthChangeCents: ending.finances.netWorthCents - opening.finances.netWorthCents,
     debtChangeCents: endingDebt - openingDebt,
+    taxableInvestmentsChangeCents:
+      (ending.finances.taxableInvestmentsCents ?? 0) -
+      (opening.finances.taxableInvestmentsCents ?? 0),
+    annualLivingCostChangeCents:
+      (ending.finances.annualLivingCostCents ?? 0) -
+      (opening.finances.annualLivingCostCents ?? 0),
+    requiredObligationsChangeCents:
+      (ending.finances.requiredObligationsCents ?? 0) -
+      (opening.finances.requiredObligationsCents ?? 0),
+    annualGrossSalaryChangeCents:
+      (ending.income?.annualGrossSalaryCents ?? 0) -
+      (opening.income?.annualGrossSalaryCents ?? 0),
     goalProgressChangePpm: ending.goal.progressPpm - opening.goal.progressPpm,
+    riskSeverityChangePpm:
+      (ending.risk?.aggregateSeverityPpm ?? 0) -
+      (opening.risk?.aggregateSeverityPpm ?? 0),
+    preparednessScoreChangePpm:
+      (ending.preparedness?.scorePpm ?? 0) -
+      (opening.preparedness?.scorePpm ?? 0),
+    emergencyFundTargetMonthsPpm:
+      ending.strategy?.emergencyFundTargetMonthsPpm ?? null,
     hasPendingEvent: ending.pendingInteraction.kind === "event",
+    startedProgramIds: Object.freeze(startedProgramIds),
     completedProgramIds: Object.freeze(completedProgramIds),
     beginnerCheckpoint: ending.beginnerCheckpoint ?? null,
   });
