@@ -144,10 +144,10 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
                 value={`−${formatCents(view.monthlyRequiredCents)}`}
               />
               <GlanceTile
-                caption="retirement, funds, extra debt"
-                label="To future you"
+                caption="rate illustration; actual shown after month close"
+                label="Requested allocation"
                 tone="blue"
-                value={`${formatCents(
+                value={`≈${formatCents(
                   view.buckets.lockedMonthlyCents -
                     view.buckets.employerMatchMonthlyCents +
                     view.buckets.taxableMonthlyCents +
@@ -158,7 +158,7 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
                 caption="free money, on top of your pay"
                 label="Employer match"
                 tone="gold"
-                value={`+${formatCents(view.buckets.employerMatchMonthlyCents)}`}
+                value={`≈+${formatCents(view.buckets.employerMatchMonthlyCents)}`}
               />
             </div>
           </HqCard>

@@ -106,6 +106,13 @@ export function InvestScreen({ busy, draft, layout, onAdjust, onLayout, run }: P
 
       <MatchBanner matchMonthlyCents={projected.employerMatchMonthlyCents} run={run} />
 
+      <p className="hq-note" data-tone="caution">
+        Dollar amounts marked ≈ are planning illustrations from your salary and
+        selected rates. The engine applies annual account limits and calculates
+        after-tax buckets from cash left after taxes, required bills, and safety
+        retention. The month result is the authoritative amount actually moved.
+      </p>
+
       {layout === "buckets" ? (
         <BucketsLayout projected={projected} run={run} />
       ) : layout === "mountain" ? (
@@ -222,7 +229,7 @@ function DialRow({ busy, dial, monthlyCents, onAdjust, valuePpm }: DialRowProps)
       >
         {formatPpmPercent(valuePpm, 1)}
         <span className="hq-nav-hint" style={{ display: "block" }}>
-          {formatCents(monthlyCents)}/mo
+          ≈{formatCents(monthlyCents)}/mo
         </span>
       </span>
       <button
@@ -267,7 +274,7 @@ function MatchBanner({ matchMonthlyCents, run }: MatchBannerProps) {
   return (
     <p className="hq-note" data-tone="positive">
       ⚡ Employer match: {description} of salary — this plan earns{" "}
-      <b>{formatCents(matchMonthlyCents)}/mo</b> of free money.
+      <b>≈{formatCents(matchMonthlyCents)}/mo</b> before annual plan limits.
     </p>
   );
 }
@@ -285,7 +292,7 @@ function BucketsLayout({ projected, run }: LayoutProps) {
       <div className="hq-column">
         <HqCard eyebrow={`Locked until ~${targetAge} · pre-tax perks`}>
           <div className="hq-figure" style={{ fontSize: "1.75rem" }}>
-            {formatCents(projected.lockedMonthlyCents)}
+            ≈{formatCents(projected.lockedMonthlyCents)}
             <span className="hq-figure-unit">/mo</span>
           </div>
           <BucketLine
@@ -310,7 +317,7 @@ function BucketsLayout({ projected, run }: LayoutProps) {
 
         <HqCard eyebrow="Debt slayer · beyond the minimum">
           <div className="hq-figure" style={{ fontSize: "1.75rem" }}>
-            {formatCents(projected.extraDebtMonthlyCents)}
+            ≈{formatCents(projected.extraDebtMonthlyCents)}
             <span className="hq-figure-unit">/mo</span>
           </div>
           <p className="hq-note" data-tone="positive" style={{ margin: 0 }}>
@@ -322,7 +329,7 @@ function BucketsLayout({ projected, run }: LayoutProps) {
       <div className="hq-column">
         <HqCard eyebrow="Taxable · sellable any month">
           <div className="hq-figure" style={{ fontSize: "1.75rem" }}>
-            {formatCents(projected.taxableMonthlyCents)}
+            ≈{formatCents(projected.taxableMonthlyCents)}
             <span className="hq-figure-unit">/mo</span>
           </div>
           <BucketLine
@@ -378,7 +385,7 @@ function MountainLayout({ projected }: Readonly<{ projected: LayoutProps["projec
   return (
     <HqCard accent="green">
       <div className="hq-figure">
-        {formatCents(total)}
+        ≈{formatCents(total)}
         <span className="hq-figure-unit">/mo toward future you</span>
       </div>
       <p
