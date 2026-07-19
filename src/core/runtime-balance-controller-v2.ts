@@ -162,6 +162,26 @@ export type RuntimeBalanceChoiceOptionsV2 = Readonly<{
   ) => Readonly<Record<string, number>>;
 }>;
 
+export type RuntimeBalancePreparedCandidateV2 = Readonly<{
+  candidate: RuntimeBalanceCandidateV2;
+  parameters: Readonly<Record<string, number>> | null;
+  impact: PersonalEventImpactEstimateV2 | null;
+  rejectionCodes: readonly RuntimeBalanceRejectionCodeV2[];
+  warningCodes: readonly RuntimeBalanceWarningCodeV2[];
+  challengeBand: ReturnType<typeof assessRuntimeBalanceChallengeV1>["band"] | null;
+}>;
+
+export type RuntimeBalanceCandidatePreparationOptionsV2 = Readonly<{
+  eventCatalog: readonly PersonalEventTemplateV2[];
+  monthlyCashFlowEvidence: RuntimeBalanceMonthlyCashFlowEvidenceV2;
+  liquidationCostRatePpm: RatePpm;
+  parameterSampler: (
+    template: PersonalEventTemplateV2,
+  ) => Readonly<Record<string, number>>;
+  estimateImpact?: typeof estimatePersonalEventImpactV2;
+  preferredChallengeBands?: readonly ("meaningful" | "crisis")[];
+}>;
+
 type ScoredCandidate = Readonly<{
   candidate: RuntimeBalanceCandidateV2;
   rank: number;
@@ -549,6 +569,120 @@ export function assessRuntimeBalanceImpactV2(
     rejectionCodes: Object.freeze(rejectionCodes),
     warningCodes: Object.freeze(warningCodes),
   });
+}
+
+/**
+ * Freezes exact candidate parameters and evaluates every candidate before an
+ * adaptive ranker is allowed to order them. The ranker receives only verified
+ * deterministic evidence; Runtime Balance still repeats these checks when the
+ * selected candidate is approved.
+ */
+export function prepareRuntimeBalanceCandidatesV2(
+  state: GameStateV2,
+  candidates: readonly RuntimeBalanceCandidateV2[],
+  options: RuntimeBalanceCandidatePreparationOptionsV2,
+): readonly RuntimeBalancePreparedCandidateV2[] {
+  const balance = state.gameplay.runtimeBalance as unknown as RuntimeBalanceStateV2;
+  if (balance?.version !== 2) {
+    throw new RangeError("Runtime Balance preparation requires state version 2");
+  }
+  const policy = runtimeBalanceDifficultyPolicyV2(balance.difficulty);
+  const estimateImpact = options.estimateImpact ?? estimatePersonalEventImpactV2;
+  return Object.freeze(
+    candidates.slice(0, RUNTIME_BALANCE_CANDIDATE_LIMIT_V2).map((candidate) => {
+      const rejectionCodes = [
+        ...assessCandidatePacingV2(
+          state,
+          balance,
+          candidate,
+          options.eventCatalog,
+        ),
+      ];
+      if (rejectionCodes.length > 0) {
+        return Object.freeze({
+          candidate,
+          parameters: null,
+          impact: null,
+          rejectionCodes: Object.freeze(rejectionCodes),
+          warningCodes: Object.freeze([]),
+          challengeBand: null,
+        });
+      }
+
+      const parameters = Object.freeze({
+        ...options.parameterSampler(candidate.template),
+      });
+      let impact: PersonalEventImpactEstimateV2;
+      try {
+        impact = estimateImpact(
+          state,
+          candidate.template,
+          parameters,
+          options.liquidationCostRatePpm,
+          options.monthlyCashFlowEvidence,
+        );
+      } catch (error) {
+        if (error instanceof RuntimeBalanceImpactV2Error) {
+          rejectionCodes.push(
+            error.code === "PARAMETER_OUT_OF_BOUNDS"
+              ? "parameter_out_of_bounds"
+              : error.code === "NO_AVAILABLE_RESPONSE"
+                ? "no_reasonable_response"
+                : "estimator_error",
+          );
+        } else if (
+          error instanceof PersonalEventEffectV2Error ||
+          error instanceof ObligationFundingV2Error ||
+          error instanceof NumericDomainError
+        ) {
+          rejectionCodes.push("estimator_error");
+        } else {
+          throw error;
+        }
+        return Object.freeze({
+          candidate,
+          parameters,
+          impact: null,
+          rejectionCodes: Object.freeze(rejectionCodes),
+          warningCodes: Object.freeze([]),
+          challengeBand: null,
+        });
+      }
+
+      const impactBand = assessRuntimeBalanceImpactV2(balance.difficulty, impact);
+      rejectionCodes.push(...impactBand.rejectionCodes);
+      if (isHumorousRootCandidateV2(candidate)) {
+        const guidedChallenge = assessRuntimeBalanceChallengeV1(
+          impact,
+          runtimeBalanceDifficultyPolicyV2("guided"),
+        );
+        if (["crisis", "extreme", "above_limit"].includes(guidedChallenge.band)) {
+          rejectionCodes.push("FUNNY_ROOT_ABOVE_MEANINGFUL");
+        }
+      }
+      if (
+        policy.rejectImmediateUnavoidableFailure &&
+        (impact.immediateBankruptcyRisk || impact.reasonableResponseIds.length === 0)
+      ) rejectionCodes.push("unavoidable_failure");
+      const challengeBand = assessRuntimeBalanceChallengeV1(impact, policy).band;
+      if (
+        rejectionCodes.length === 0 &&
+        options.preferredChallengeBands !== undefined &&
+        !options.preferredChallengeBands.includes(
+          challengeBand as "meaningful" | "crisis",
+        )
+      ) rejectionCodes.push("cadence_challenge_below_target");
+
+      return Object.freeze({
+        candidate,
+        parameters,
+        impact,
+        rejectionCodes: Object.freeze(rejectionCodes),
+        warningCodes: impactBand.warningCodes,
+        challengeBand,
+      });
+    }),
+  );
 }
 
 function sampleParameters(

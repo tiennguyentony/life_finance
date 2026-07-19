@@ -17,6 +17,7 @@ import {
   assessCandidatePacingV2,
   assessRuntimeBalanceImpactV2,
   chooseBalancedEventV2,
+  prepareRuntimeBalanceCandidatesV2,
   prioritizeRuntimeBalanceCandidatesV2,
   type RuntimeBalanceCandidateV2,
 } from "../runtime-balance-controller-v2";
@@ -141,6 +142,38 @@ function choose(
 }
 
 describe("Runtime Balance controller v2", () => {
+  it("prepares exact impact evidence for every candidate before ranking", () => {
+    const state = baseState();
+    const first = cloneTemplate("personal.prepared.first", { pressureCost: 0 });
+    const second = cloneTemplate("personal.prepared.second", { pressureCost: 0 });
+    const prepared = prepareRuntimeBalanceCandidatesV2(
+      state,
+      [candidate(first), candidate(second)],
+      {
+        eventCatalog: [first, second],
+        liquidationCostRatePpm: ratePpm(10_000),
+        monthlyCashFlowEvidence: {
+          monthlyCashInflowCents: moneyCents(730_000),
+          requiredCashCents: moneyCents(584_967),
+        },
+        parameterSampler: (template) => ({
+          gross_bill_cents: template.id === first.id ? 100_000 : 200_000,
+        }),
+      },
+    );
+
+    expect(prepared).toHaveLength(2);
+    expect(prepared.map(({ parameters }) => parameters?.gross_bill_cents)).toEqual([
+      100_000,
+      200_000,
+    ]);
+    expect(prepared.every(({ impact }) => impact !== null)).toBe(true);
+    expect(prepared.every(({ challengeBand }) => challengeBand !== null)).toBe(true);
+    expect(() => {
+      (prepared as unknown as unknown[]).push("mutation");
+    }).toThrow();
+  });
+
   it("approves deterministically, samples hard bounds, and spends without calm regeneration", () => {
     const state = baseState();
     const candidates = [candidate(getPersonalEventTemplateV2("personal.medical_bill"))];
