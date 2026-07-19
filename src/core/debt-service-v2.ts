@@ -17,6 +17,10 @@ import {
 } from "./game-state-v2";
 import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { appendTransaction, type JournalPosting } from "./ledger";
+import {
+  planRevolvingCreditMonthV2,
+  type RevolvingCreditMonthPlanV2,
+} from "./revolving-credit-v2";
 
 export type DebtServiceLine = Readonly<{
   debtId: string;
@@ -31,6 +35,7 @@ export type DebtServiceLine = Readonly<{
 
 export type MonthlyDebtServicePlan = Readonly<{
   lines: readonly DebtServiceLine[];
+  revolving: RevolvingCreditMonthPlanV2;
   totalInterestCents: MoneyCents;
   totalScheduledPaymentCents: MoneyCents;
 }>;
@@ -175,14 +180,24 @@ export function planMonthlyDebtService(
           closingPrincipalCents === 0 ? 0 : debt.remainingTermMonths - 1,
       });
     });
+  const revolving = planRevolvingCreditMonthV2(
+    state.gameplay.debts.revolvingCreditUsedCents,
+  );
   return Object.freeze({
     lines: Object.freeze(lines),
+    revolving,
     totalInterestCents: sumMoney(
-      lines.map(({ interestCents }) => interestCents),
+      [
+        ...lines.map(({ interestCents }) => interestCents),
+        revolving.interestCents,
+      ],
       "monthly total debt interest",
     ),
     totalScheduledPaymentCents: sumMoney(
-      lines.map(({ scheduledPaymentCents }) => scheduledPaymentCents),
+      [
+        ...lines.map(({ scheduledPaymentCents }) => scheduledPaymentCents),
+        revolving.scheduledPaymentCents,
+      ],
       "monthly total debt payments",
     ),
   });
@@ -200,6 +215,7 @@ export function settleMonthlyDebtService(
   state: GameStateV2,
   commandId: string,
   validationOptions: GameStateV2ValidationOptions = {},
+  acceptedPlan?: MonthlyDebtServicePlan,
 ): Readonly<{ state: GameStateV2; plan: MonthlyDebtServicePlan }> {
   if (!COMMAND_ID.test(commandId)) {
     throw new DebtServiceV2Error(
@@ -207,7 +223,26 @@ export function settleMonthlyDebtService(
       "debt service command id must be a safe identifier",
     );
   }
-  const plan = planMonthlyDebtService(state);
+  const plan = acceptedPlan ?? planMonthlyDebtService(state);
+  if (
+    acceptedPlan !== undefined &&
+    JSON.stringify(planMonthlyDebtService(state).lines) !==
+      JSON.stringify(acceptedPlan.lines)
+  ) {
+    throw new DebtServiceV2Error(
+      "INVALID_DEBT",
+      "accepted term-debt service plan no longer matches the funded state",
+    );
+  }
+  if (
+    plan.revolving.openingPrincipalCents >
+    state.gameplay.debts.revolvingCreditUsedCents
+  ) {
+    throw new DebtServiceV2Error(
+      "INVALID_DEBT",
+      "accepted revolving-credit plan exceeds the funded balance",
+    );
+  }
   if (plan.totalScheduledPaymentCents > state.finances.cashCents) {
     throw new DebtServiceV2Error(
       "INSUFFICIENT_CASH",
@@ -215,7 +250,15 @@ export function settleMonthlyDebtService(
     );
   }
   let ledger = state.ledger;
-  if (plan.totalInterestCents > 0) {
+  const termInterestCents = sumMoney(
+    plan.lines.map(({ interestCents }) => interestCents),
+    "term-debt settlement interest",
+  );
+  const termPaymentCents = sumMoney(
+    plan.lines.map(({ scheduledPaymentCents }) => scheduledPaymentCents),
+    "term-debt settlement payment",
+  );
+  if (termInterestCents > 0) {
     ledger = appendTransaction(ledger, {
       id: `txn.${commandId}.debt-interest`,
       commandId,
@@ -229,12 +272,28 @@ export function settleMonthlyDebtService(
         id: commandId,
       },
       postings: [
-        debit("expense.interest", plan.totalInterestCents),
-        credit("liability.non_credit", plan.totalInterestCents),
+        debit("expense.interest", termInterestCents),
+        credit("liability.non_credit", termInterestCents),
       ],
     });
   }
-  if (plan.totalScheduledPaymentCents > 0) {
+  if (plan.revolving.interestCents > 0) {
+    ledger = appendTransaction(ledger, {
+      id: `txn.${commandId}.revolving-credit-interest`,
+      commandId,
+      effectiveMonth: state.currentMonth,
+      reasonCode: "monthly_revolving_credit_interest",
+      description: "Accrue exact monthly interest on revolving credit",
+      sourceSystem: "debt_service_v2",
+      category: "expense.debt_interest",
+      causalReference: { kind: "command", id: commandId },
+      postings: [
+        debit("expense.interest", plan.revolving.interestCents),
+        credit("liability.credit", plan.revolving.interestCents),
+      ],
+    });
+  }
+  if (termPaymentCents > 0) {
     ledger = appendTransaction(ledger, {
       id: `txn.${commandId}.debt-payment`,
       commandId,
@@ -248,8 +307,24 @@ export function settleMonthlyDebtService(
         id: commandId,
       },
       postings: [
-        debit("liability.non_credit", plan.totalScheduledPaymentCents),
-        credit("asset.cash", plan.totalScheduledPaymentCents),
+        debit("liability.non_credit", termPaymentCents),
+        credit("asset.cash", termPaymentCents),
+      ],
+    });
+  }
+  if (plan.revolving.scheduledPaymentCents > 0) {
+    ledger = appendTransaction(ledger, {
+      id: `txn.${commandId}.revolving-credit-payment`,
+      commandId,
+      effectiveMonth: state.currentMonth,
+      reasonCode: "monthly_revolving_credit_payment",
+      description: "Pay the revolving-credit statement minimum",
+      sourceSystem: "debt_service_v2",
+      category: "liability.debt_payment",
+      causalReference: { kind: "command", id: commandId },
+      postings: [
+        debit("liability.credit", plan.revolving.scheduledPaymentCents),
+        credit("asset.cash", plan.revolving.scheduledPaymentCents),
       ],
     });
   }
@@ -286,7 +361,11 @@ export function settleMonthlyDebtService(
     },
     gameplay: {
       ...state.gameplay,
-      debts: { ...state.gameplay.debts, termDebts: nextDebts },
+      debts: {
+        ...state.gameplay.debts,
+        termDebts: nextDebts,
+        revolvingCreditUsedCents: reconciled.creditUsedCents,
+      },
     },
   }, validationOptions);
   return Object.freeze({ state: nextState, plan });

@@ -12,6 +12,10 @@ import type { GameStateV2 } from "./game-state-v2";
 import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
 import { projectFinancialGoal } from "./financial-goals-v2";
 import {
+  calculateRevolvingCreditInterestV2,
+  planRevolvingCreditMonthV2,
+} from "./revolving-credit-v2";
+import {
   RISK_ANALYZER_V1_VERSION,
   RISK_CALCULATION_CONSTANTS_V1,
   RISK_METRIC_POLICIES_V1,
@@ -123,16 +127,9 @@ function totalMinimumDebtPayment(state: GameStateV2): number {
   const termMinimums = calculateTotalMinimumDebtPaymentV2(
     state.gameplay.debts.termDebts,
   );
-  const revolvingMinimum = safeBigIntToNumber(
-    divideRoundHalfAwayFromZero(
-      BigInt(Math.max(0, state.gameplay.debts.revolvingCreditUsedCents)) *
-        BigInt(
-          RISK_CALCULATION_CONSTANTS_V1.assumedRevolvingMinimumPaymentRatePpm,
-        ),
-      BigInt(PPM),
-    ),
-    "revolving minimum",
-  );
+  const revolvingMinimum = planRevolvingCreditMonthV2(
+    state.gameplay.debts.revolvingCreditUsedCents,
+  ).scheduledPaymentCents;
   return sum([termMinimums, revolvingMinimum], "minimum debt service");
 }
 
@@ -162,15 +159,8 @@ function estimatedMonthlyInterest(state: GameStateV2): number {
     ),
     "monthly term debt interest",
   );
-  const revolvingInterest = safeBigIntToNumber(
-    divideRoundHalfAwayFromZero(
-      BigInt(Math.max(0, state.gameplay.debts.revolvingCreditUsedCents)) *
-        BigInt(
-          RISK_CALCULATION_CONSTANTS_V1.assumedRevolvingAnnualInterestRatePpm,
-        ),
-      BigInt(PPM) * BigInt(12),
-    ),
-    "monthly revolving interest burden",
+  const revolvingInterest = calculateRevolvingCreditInterestV2(
+    state.gameplay.debts.revolvingCreditUsedCents,
   );
   return sum([termInterest, revolvingInterest], "monthly interest burden");
 }
@@ -259,7 +249,13 @@ function recentPlayerEventCosts(state: GameStateV2): number {
 
 function calculateMetricInputs(state: GameStateV2): Record<RiskMetricId, MetricInput> {
   const income = monthlyIncome(state);
-  const required = Math.max(0, state.finances.requiredObligationsCents);
+  const revolvingMinimum = planRevolvingCreditMonthV2(
+    state.gameplay.debts.revolvingCreditUsedCents,
+  ).scheduledPaymentCents;
+  const required = Math.max(
+    0,
+    state.finances.requiredObligationsCents + revolvingMinimum,
+  );
   const cash = Math.max(0, state.finances.cashCents);
   const revolvingDebt = Math.max(0, state.gameplay.debts.revolvingCreditUsedCents);
   // A credit draw can provide transaction liquidity, but it does not create an
