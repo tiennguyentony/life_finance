@@ -8,7 +8,11 @@ import { LogoutButton } from "@/features/auth/logout-button";
 export function AppHeader() {
   const pathname = usePathname();
 
-  if (pathname === "/" || pathname.startsWith("/board")) {
+  if (
+    pathname === "/" ||
+    pathname.startsWith("/board") ||
+    pathname.startsWith("/hq")
+  ) {
     return null;
   }
 
