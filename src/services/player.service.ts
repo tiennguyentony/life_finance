@@ -23,6 +23,15 @@ const BACKEND_PERSONA: Readonly<
   "city-survivor": "software",
 };
 
+const PERSONA_DIFFICULTY = Object.freeze({
+  "junior-developer": "normal",
+  educator: "guided",
+  "city-survivor": "hard",
+} as const);
+
+/** Gives the city-survivor card its advertised roughly two-month runway. */
+const CITY_SURVIVOR_CASH_CENTS = 1_100_000;
+
 function api(): LifeFinanceClient {
   return new LifeFinanceClient();
 }
@@ -66,10 +75,21 @@ export async function createRunFromProfile(
 ): Promise<RunViewWire> {
   const persona = PERSONAS.find(({ id }) => id === input.personaId);
   if (!persona) throw new Error("Unknown persona");
+  const personaDraft = onboardingDraftForPersonaV1(
+    BACKEND_PERSONA[input.personaId],
+    seed(),
+  );
   const draft = {
-    ...onboardingDraftForPersonaV1(BACKEND_PERSONA[input.personaId], seed()),
+    ...personaDraft,
     birthMonth: birthMonth(input.age, persona.age),
+    runtimeDifficulty: PERSONA_DIFFICULTY[input.personaId],
     locationId: input.locationId,
+    finances: {
+      ...personaDraft.finances,
+      ...(input.personaId === "city-survivor"
+        ? { cashCents: CITY_SURVIVOR_CASH_CENTS }
+        : {}),
+    },
     financialGoal: {
       version: "financial-goal-v1" as const,
       desiredAnnualSpendingCents: dollarsToCents(

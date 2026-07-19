@@ -31,7 +31,7 @@ describe("player service", () => {
     }));
 
     const result = await createRunFromProfile({
-      personaId: "junior-developer",
+      personaId: "city-survivor",
       age: "27",
       locationId: "location.austin",
       desiredAnnualSpendingDollars: "72000",
@@ -47,6 +47,8 @@ describe("player service", () => {
     expect(reviewBody.draft).toMatchObject({
       birthMonth: "1999-07",
       locationId: "location.austin",
+      runtimeDifficulty: "hard",
+      finances: expect.objectContaining({ cashCents: 1_100_000 }),
       financialGoal: {
         desiredAnnualSpendingCents: 7_200_000,
         safeWithdrawalRatePpm: 40_000,
