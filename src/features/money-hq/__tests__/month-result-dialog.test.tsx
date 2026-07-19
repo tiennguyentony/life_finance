@@ -29,6 +29,23 @@ const RESULT: BoardMonthResult = {
     grossIncomeCents: 1_000_000,
     totalTaxCents: 220_000,
     afterTaxCashIncomeCents: 730_000,
+    taxBreakdown: {
+      version: "monthly-tax-breakdown-v1",
+      monthlyFederalIncomeTaxCents: 125_000,
+      monthlyStateIncomeTaxCents: 20_000,
+      monthlyEmployeePayrollTaxCents: 75_000,
+      monthlySelfEmploymentTaxCents: 0,
+      annualGrossIncomeCents: 12_000_000,
+      annualTaxableIncomeCents: 11_400_000,
+      annualFederalIncomeTaxCents: 1_500_000,
+      annualStateIncomeTaxCents: 240_000,
+      annualEmployeePayrollTaxCents: 900_000,
+      annualSelfEmploymentTaxCents: 0,
+      annualTotalTaxCents: 2_640_000,
+      annualAfterTaxIncomeCents: 9_360_000,
+      effectiveTaxRatePpm: 220_000,
+      disclaimer: "Educational estimate only; not tax, legal, or financial advice.",
+    },
     resolvedIncomeCents: 50_000,
     resolvedExpenseCents: 25_000,
     marketValueChangeCents: -12_500,
@@ -53,6 +70,10 @@ describe("Money HQ month result", () => {
     expect(markup).toContain("Event and other income");
     expect(markup).toContain("Event and other expenses");
     expect(markup).toContain("Insurance claim cost");
+    expect(markup).toContain("Federal income tax");
+    expect(markup).toContain("State income tax");
+    expect(markup).toContain("Social Security + Medicare");
+    expect(markup).toContain("Total taxes and withholding");
     expect(markup).not.toContain(">Insurance cost<");
   });
 });

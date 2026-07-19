@@ -8,6 +8,7 @@ import type { GameplayDirector } from "@/server/ai/gameplay-director-service";
 
 import { InMemoryRunRepository } from "./in-memory-run-repository";
 import { OfflineDemoTaxCalculator } from "./offline-tax-calculator";
+import { TaxSummaryService, type TaxSummaryReader } from "@/server/tax/summary";
 
 type PersistentRunServiceFactory = () => CommandRunner;
 type PersistentRunReaderFactory = () => RunReader;
@@ -73,6 +74,13 @@ export class LocalDemoRuntime {
    */
   createTeachingService(): TeachingServiceV2 {
     return new TeachingServiceV2(this.#repository);
+  }
+
+  createTaxSummaryReader(): TaxSummaryReader {
+    return new TaxSummaryService(
+      this.#repository,
+      new OfflineDemoTaxCalculator(),
+    );
   }
 
   createRunReaderGateway(

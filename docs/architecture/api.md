@@ -15,6 +15,7 @@ The browser API is same-origin and intentionally unversioned. Internal schema an
 | `POST` | `/api/onboarding/review` | Deterministically normalize/validate a draft and return a checksum |
 | `POST` | `/api/runs` | Confirm the checksum-bound draft, create a run, and set its session cookie |
 | `GET` | `/api/runs/{runId}` | Read the authorized run as `RunView` |
+| `GET` | `/api/runs/{runId}/tax` | Read the authorized run's current paycheck/annual estimate and ledger-backed YTD tax summary |
 | `POST` | `/api/runs/{runId}/commands` | Submit a versionless player intent |
 
 Preview, multi-month time advancement, checkpoints, causal history, counterfactuals, teaching moments, and debriefs have internal contracts/services but no active unversioned route. Code or tests referring to historical `/api/v2/...` paths do not make those paths part of the current browser API.
@@ -45,6 +46,19 @@ This is capability-based run access, not a multi-user account system. Anyone who
 - terminal outcome and current action capabilities.
 
 It excludes schema/engine envelopes, raw ledger, tax evidence, RNG state, checksums, persistence rows, and the access secret.
+
+## Tax summary
+
+`GET /api/runs/{runId}/tax` is a read-only, authorization-checked projection. It
+uses the same tax request builder and configured tax calculator as monthly
+processing. The response separates federal income tax, state income tax,
+employee payroll tax, and self-employment tax; includes current-paycheck and
+annual estimates; and derives year-to-date totals from accepted payroll ledger
+transactions. It does not advance the run or write a command.
+
+The current engine withholds its modeled liability exactly, so projected refund
+and amount due are explicitly zero. They are not fabricated tax-return values.
+All amounts are educational estimates, not tax advice.
 
 ## Command intent
 

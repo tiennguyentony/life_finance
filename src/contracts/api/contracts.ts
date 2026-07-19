@@ -6,6 +6,28 @@ const rateSchema = z.number().int().min(0).max(1_000_000);
 const emergencyFundMonthsSchema = z.number().int().min(0).max(24_000_000);
 const identifierSchema = z.string().trim().min(1).max(160);
 
+export const monthlyTaxBreakdownSchema = z
+  .object({
+    version: z.literal("monthly-tax-breakdown-v1"),
+    monthlyFederalIncomeTaxCents: centsSchema,
+    monthlyStateIncomeTaxCents: centsSchema,
+    monthlyEmployeePayrollTaxCents: centsSchema,
+    monthlySelfEmploymentTaxCents: centsSchema,
+    annualGrossIncomeCents: centsSchema,
+    annualTaxableIncomeCents: centsSchema.nullable(),
+    annualFederalIncomeTaxCents: centsSchema,
+    annualStateIncomeTaxCents: centsSchema,
+    annualEmployeePayrollTaxCents: centsSchema,
+    annualSelfEmploymentTaxCents: centsSchema,
+    annualTotalTaxCents: centsSchema,
+    annualAfterTaxIncomeCents: centsSchema,
+    effectiveTaxRatePpm: z.number().int().min(-1_000_000).max(100_000_000),
+    disclaimer: z.literal(
+      "Educational estimate only; not tax, legal, or financial advice.",
+    ),
+  })
+  .strict();
+
 const eventResponsePreviewSchema = z
   .object({
     version: z.literal("personal-event-response-preview-v1"),
@@ -316,6 +338,7 @@ export const commandResponseSchema = runViewResponseSchema
             grossIncomeCents: centsSchema,
             totalTaxCents: centsSchema,
             afterTaxCashIncomeCents: centsSchema,
+            taxBreakdown: monthlyTaxBreakdownSchema.nullable().optional(),
             resolvedIncomeCents: centsSchema,
             resolvedExpenseCents: centsSchema,
             marketValueChangeCents: centsSchema,
@@ -387,6 +410,76 @@ export const activateRunResponseSchema = z
   .object({ activeRunId: z.string().uuid() })
   .strict();
 
+export const taxSummaryResponseSchema = z
+  .object({
+    status: z.literal("available"),
+    asOfMonth: monthSchema,
+    jurisdiction: z
+      .object({
+        stateCode: z.string().regex(/^[A-Z]{2}$/),
+        filingStatus: z.enum([
+          "single",
+          "married_filing_jointly",
+          "married_filing_separately",
+          "head_of_household",
+          "qualifying_surviving_spouse",
+        ]),
+        economicYear: z.number().int().min(2026).max(2200),
+        policyYear: z.literal(2026),
+      })
+      .strict(),
+    paycheckEstimate: z
+      .object({
+        grossIncomeCents: centsSchema,
+        employee401kContributionCents: centsSchema,
+        employeeHsaContributionCents: centsSchema,
+        federalIncomeTaxCents: centsSchema,
+        stateIncomeTaxCents: centsSchema,
+        employeePayrollTaxCents: centsSchema,
+        selfEmploymentTaxCents: centsSchema,
+        totalTaxCents: centsSchema,
+        afterTaxCashIncomeCents: centsSchema,
+        effectiveTaxRatePpm: z.number().int().min(-1_000_000).max(100_000_000),
+      })
+      .strict(),
+    annualEstimate: monthlyTaxBreakdownSchema,
+    yearToDate: z
+      .object({
+        paychecksProcessed: z.number().int().min(0).max(12),
+        grossIncomeCents: centsSchema,
+        totalTaxCents: centsSchema,
+        afterTaxCashIncomeCents: centsSchema,
+        employee401kContributionCents: centsSchema,
+        employeeHsaContributionCents: centsSchema,
+      })
+      .strict(),
+    settlement: z
+      .object({
+        method: z.literal("exact_modeled_liability_withholding"),
+        projectedRefundCents: z.literal(0),
+        projectedAmountDueCents: z.literal(0),
+        explanation: z.string().min(1).max(500),
+      })
+      .strict(),
+    stateContext: z
+      .object({
+        hasModeledStateIncomeTax: z.boolean(),
+        annualStateIncomeTaxCents: centsSchema,
+        differenceFromNoIncomeTaxStateCents: centsSchema,
+        explanation: z.string().min(1).max(500),
+      })
+      .strict(),
+    model: z
+      .object({
+        provider: z.literal("PolicyEngine US"),
+        bundleVersion: z.string().min(1).max(50),
+        rulesVersion: z.string().min(1).max(50),
+        projectedFromFrozenPolicy: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export type RunViewWire = z.infer<typeof runViewSchema>;
 export type CommandIntent = z.infer<typeof commandIntentSchema>;
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
@@ -395,3 +488,4 @@ export type CommandResponseWire = z.infer<typeof commandResponseSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type SavedRunWire = z.infer<typeof savedRunSchema>;
 export type SavedRunsResponse = z.infer<typeof savedRunsResponseSchema>;
+export type TaxSummaryResponse = z.infer<typeof taxSummaryResponseSchema>;

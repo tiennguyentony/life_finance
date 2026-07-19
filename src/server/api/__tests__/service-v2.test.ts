@@ -723,6 +723,14 @@ describe("annual tax year rollover", () => {
       hsaCents: moneyCents(20_000),
     });
     expect(calculate).toHaveBeenCalledOnce();
+    const breakdown = response.monthlyRecord?.taxBreakdown;
+    expect(breakdown).toBeDefined();
+    expect(
+      breakdown!.monthlyFederalIncomeTaxCents +
+        breakdown!.monthlyStateIncomeTaxCents +
+        breakdown!.monthlyEmployeePayrollTaxCents +
+        breakdown!.monthlySelfEmploymentTaxCents,
+    ).toBe(response.monthlyRecord?.totalTaxCents);
     expect(calculate.mock.calls[0]?.[0].people[0]?.income.w2Jobs[0]).toMatchObject({
       pretaxRetirementContributionsCents: 600_000,
       pretaxHealthContributionsCents: 240_000,

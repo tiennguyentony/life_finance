@@ -8,6 +8,9 @@ export function summarizeMonthlyRecord(record: MonthlyTurnV2Record) {
     grossIncomeCents: record.grossIncomeCents,
     totalTaxCents: record.totalTaxCents,
     afterTaxCashIncomeCents: record.afterTaxCashIncomeCents,
+    ...(record.taxBreakdown === undefined
+      ? {}
+      : { taxBreakdown: record.taxBreakdown }),
     market: record.market,
     marketValueChangeCents: record.marketValueChangeCents,
     annualInflationIncreaseCents: record.annualInflationIncreaseCents,

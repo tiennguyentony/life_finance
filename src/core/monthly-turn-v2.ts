@@ -230,6 +230,7 @@ export type MonthlyTurnV2Record = Readonly<{
   grossIncomeCents: MoneyCents;
   totalTaxCents: MoneyCents;
   afterTaxCashIncomeCents: MoneyCents;
+  taxBreakdown?: MonthlyTaxEvidence["breakdown"];
   market: SupportedMarketMonth;
   marketValueChangeCents: MoneyCents;
   annualInflationIncreaseCents: MoneyCents;
@@ -1769,6 +1770,9 @@ function processMonthlyTurnV2Legacy410(
           totalTaxCents: moneyCents(command.payload.taxEvidence.totalTaxCents),
           afterTaxCashIncomeCents:
             command.payload.taxEvidence.afterTaxCashIncomeCents,
+          ...(command.payload.taxEvidence.breakdown === undefined
+            ? {}
+            : { taxBreakdown: command.payload.taxEvidence.breakdown }),
           market: market.month,
           marketValueChangeCents: market.marketValueChangeCents,
           annualInflationIncreaseCents: inflation.annualIncreaseCents,
@@ -1862,6 +1866,9 @@ function processMonthlyTurnV2Legacy410(
         totalTaxCents: moneyCents(command.payload.taxEvidence.totalTaxCents),
         afterTaxCashIncomeCents:
           command.payload.taxEvidence.afterTaxCashIncomeCents,
+        ...(command.payload.taxEvidence.breakdown === undefined
+          ? {}
+          : { taxBreakdown: command.payload.taxEvidence.breakdown }),
         market: market.month,
         marketValueChangeCents: market.marketValueChangeCents,
         annualInflationIncreaseCents: inflation.annualIncreaseCents,

@@ -1,4 +1,5 @@
 import type { PersonalEventResponsePreviewV1 } from "@/application/game/personal-event-response-preview-v1";
+import type { MonthlyTaxBreakdownV1 } from "@/core/payroll-v2";
 
 export type BoardStatTone = "lime" | "blue" | "coral";
 
@@ -190,6 +191,7 @@ export type BoardMonthResult = Readonly<{
     grossIncomeCents: number;
     totalTaxCents: number;
     afterTaxCashIncomeCents: number;
+    taxBreakdown?: MonthlyTaxBreakdownV1 | null;
     resolvedIncomeCents: number;
     resolvedExpenseCents: number;
     marketValueChangeCents: number;

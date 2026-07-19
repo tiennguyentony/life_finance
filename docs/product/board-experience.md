@@ -78,7 +78,10 @@ The strategy route intentionally hides several prototype side panels. `/board/fr
 
 - Editable authoritative name, location, family situation, debts, insurance, health plan, and custom FI target during onboarding.
 - A broad life-event library and unscheduled narrative event variety.
-- Player-visible tax breakdown and education explaining 401(k), HSA, insurance, debt, and tax decisions.
+- The Money HQ Tax tab now shows paycheck, annual, state, and ledger-backed YTD
+  tax evidence and explains the current 401(k)/HSA interaction. Investment tax,
+  itemized deductions, spouse earnings, local tax, and real refund settlement
+  remain explicit future scope.
 - Mounted teaching, counterfactual, causal-history, checkpoint, or debrief UI.
 - LLM-authored monthly scenarios; the playable pipeline uses deterministic event generation/safety plus a bundled operational-ML ordering artifact.
 

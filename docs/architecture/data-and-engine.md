@@ -52,6 +52,14 @@ The persistent runtime calls the separate FastAPI service in `services/tax`, pin
 
 Tax evidence is cached by an annual-context fingerprint, so advancing every month does not necessarily call PolicyEngine. A year or relevant household/tax-context change invalidates reuse.
 
+New monthly evidence also preserves a reconciled component breakdown: federal
+income tax, state income tax, employee payroll tax, and self-employment tax.
+Older saved evidence without those optional fields remains readable and remains
+reusable for month processing; its historical month result shows the compatible
+total-tax line. The read-only tax summary obtains a fresh component estimate
+when an older cache cannot supply one, and reads year-to-date gross income and
+total tax from completed payroll ledger entries.
+
 The instant demo does **not** call PolicyEngine. Its deterministic approximation uses simplified federal brackets, a 4% state estimate except configured no-income-tax states, 7.65% employee payroll tax, and 15.3% self-employment payroll tax. It satisfies the same adapter contract only for local play and is not accuracy evidence for the production tax service.
 
 ## Persistence

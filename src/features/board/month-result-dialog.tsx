@@ -97,12 +97,23 @@ export function MonthResultDialog({
         diversification: "Diversification",
       }[checkpoint.weakestComponent];
   const explanation = result.monthlyExplanation;
+  const taxBreakdown = explanation?.taxBreakdown ?? null;
   const explanationRows: readonly (readonly [string, string])[] =
     explanation === null
       ? []
       : [
           ["Gross employment income", formatMoneyDelta(explanation.grossIncomeCents)],
-          ["Taxes and withholding", formatMoneyDelta(-explanation.totalTaxCents)],
+          ...(taxBreakdown === null
+            ? [["Taxes and withholding", formatMoneyDelta(-explanation.totalTaxCents)] as const]
+            : [
+                ["Federal income tax", formatMoneyDelta(-taxBreakdown.monthlyFederalIncomeTaxCents)] as const,
+                ["State income tax", formatMoneyDelta(-taxBreakdown.monthlyStateIncomeTaxCents)] as const,
+                ["Social Security + Medicare", formatMoneyDelta(-taxBreakdown.monthlyEmployeePayrollTaxCents)] as const,
+                ...(taxBreakdown.monthlySelfEmploymentTaxCents === 0
+                  ? []
+                  : [["Self-employment tax", formatMoneyDelta(-taxBreakdown.monthlySelfEmploymentTaxCents)] as const]),
+                ["Total taxes and withholding", formatMoneyDelta(-explanation.totalTaxCents)] as const,
+              ]),
           ["After-tax cash income", formatMoneyDelta(explanation.afterTaxCashIncomeCents)],
           ...(explanation.resolvedIncomeCents === 0
             ? []

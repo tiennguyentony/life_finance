@@ -12,7 +12,9 @@ import {
   handleActivateAccountRun,
   handleDeleteSession,
   handleGetAccountSession,
+  handleGetAccountTaxSummary,
   handleGetSession,
+  handleGetTaxSummary,
   handleGetRun,
   handleListAccountRuns,
   handleParseOnboarding,
@@ -29,6 +31,38 @@ const COOKIE = serializeRunSessionCookie(SESSION, { secure: false }).split(
 )[0]!;
 
 describe("current frontend HTTP API", () => {
+  it("authorizes account tax summaries with the verified user credential", async () => {
+    const getSummary = vi.fn(async () => ({ status: "available" }) as never);
+
+    const response = await handleGetAccountTaxSummary(
+      { userId: SESSION.runId },
+      SESSION.runId,
+      { getSummary },
+      () => "request.tax.account",
+    );
+
+    expect(response.status).toBe(200);
+    expect(getSummary).toHaveBeenCalledWith(
+      SESSION.runId,
+      `lf_account:${SESSION.runId}`,
+    );
+  });
+
+  it("does not expose a cookie tax summary for a different run", async () => {
+    const getSummary = vi.fn();
+    const response = await handleGetTaxSummary(
+      new Request("https://game.test/api/runs/another-run/tax", {
+        headers: { cookie: COOKIE },
+      }),
+      "another-run",
+      { getSummary },
+      () => "request.tax.cookie",
+    );
+
+    expect(response.status).toBe(401);
+    expect(getSummary).not.toHaveBeenCalled();
+  });
+
   it("lists account saves without exposing persisted state", async () => {
     const response = await handleListAccountRuns(
       { userId: SESSION.runId },
