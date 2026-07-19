@@ -13,6 +13,28 @@ export const PROFILE_LOCATIONS = Object.freeze([
   { id: "location.new_york", label: "New York–Newark–Jersey City, NY–NJ" },
 ] as const);
 
+export const PROFILE_INSURANCE_COVERAGES = Object.freeze([
+  { id: "insurance.short_term_disability", label: "Short-term disability" },
+  { id: "insurance.long_term_disability", label: "Long-term disability" },
+  { id: "insurance.term_life", label: "Term life" },
+  { id: "insurance.renters", label: "Renters coverage" },
+] as const);
+
+const PRIVATE_HEALTH_PLANS = Object.freeze([
+  { id: "health.hdhp_hsa", label: "HDHP with HSA" },
+  { id: "health.ppo_balanced", label: "Balanced PPO" },
+]);
+const PUBLIC_HEALTH_PLANS = Object.freeze([
+  { id: "health.hdhp_hsa", label: "HDHP with HSA" },
+  { id: "health.public_low_deductible", label: "Public low-deductible plan" },
+]);
+
+export function profileHealthPlans(
+  personaId: ProfileInput["personaId"],
+): readonly Readonly<{ id: string; label: string }>[] {
+  return personaId === "educator" ? PUBLIC_HEALTH_PLANS : PRIVATE_HEALTH_PLANS;
+}
+
 const DEFAULT_SAFE_WITHDRAWAL_RATE_PPM = 40_000;
 
 const BACKEND_PERSONA: Readonly<
@@ -84,6 +106,8 @@ export async function createRunFromProfile(
     birthMonth: birthMonth(input.age, persona.age),
     runtimeDifficulty: PERSONA_DIFFICULTY[input.personaId],
     locationId: input.locationId,
+    healthPlanId: input.healthPlanId,
+    insuranceCoverageIds: input.insuranceCoverageIds,
     finances: {
       ...personaDraft.finances,
       ...(input.personaId === "city-survivor"
