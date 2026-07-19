@@ -17,6 +17,7 @@ describe("board view model", () => {
     expect(view.calendar).toEqual({ label: "July", detail: "2026" });
     expect(view.goal).toMatchObject({
       label: "Reach financial independence",
+      current: 48_000,
       target: 1_625_000,
     });
     expect(view.pendingEvent).toBeNull();

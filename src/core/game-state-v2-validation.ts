@@ -25,6 +25,7 @@ import { validateCatalogAndBenefitsStateV2 } from "./game-state-v2-catalog-valid
 import { validateEventAndCareerStateV2 } from "./game-state-v2-event-validation";
 import {
   projectFinancialGoal,
+  projectFinancialGoalV1Compatibility,
   validateFinancialGoal,
 } from "./financial-goals-v2";
 import { validateLifeMilestoneState } from "./life-milestones-v2";
@@ -316,9 +317,14 @@ function validateDeterministicOutcomeAgainstState(
   const outcome = state.outcome as DeterministicGameOutcomeV1;
   let policy;
   let projection;
+  let compatibilityProjection;
   try {
     policy = outcomePolicyForVersionV2(outcome.outcomePolicyVersion);
     projection = projectFinancialGoal(
+      state.finances,
+      state.gameplay.financialGoal,
+    );
+    compatibilityProjection = projectFinancialGoalV1Compatibility(
       state.finances,
       state.gameplay.financialGoal,
     );
@@ -334,12 +340,17 @@ function validateDeterministicOutcomeAgainstState(
   }
 
   const fi = outcome.financialIndependence;
-  if (
-    fi.goalSource !== projection.goal.source ||
-    fi.investableAssetsCents !== projection.investableAssetsCents ||
-    fi.targetCents !== projection.targetCents ||
-    fi.progressPpm !== projection.progressPpm
-  ) {
+  const matchesProjection = (candidate: typeof projection): boolean =>
+    fi.goalSource === candidate.goal.source &&
+    fi.investableAssetsCents === candidate.investableAssetsCents &&
+    fi.targetCents === candidate.targetCents &&
+    fi.progressPpm === candidate.progressPpm;
+  const matchingProjection = matchesProjection(projection)
+    ? projection
+    : matchesProjection(compatibilityProjection)
+      ? compatibilityProjection
+      : null;
+  if (matchingProjection === null) {
     violations.push(
       violation(
         "outcome.financialIndependence",
@@ -364,7 +375,7 @@ function validateDeterministicOutcomeAgainstState(
     state.currentMonth,
   );
   const expectedGrade = gradeRetirementProgressV1(
-    projection.progressPpm,
+    (matchingProjection ?? projection).progressPpm,
     outcome.outcomePolicyVersion,
   );
   const retirement = outcome.retirementReadiness;

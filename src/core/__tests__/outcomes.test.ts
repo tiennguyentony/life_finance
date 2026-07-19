@@ -539,7 +539,7 @@ describe("outcome policy 1.0.0 assessment", () => {
     ).toEqual({
       outcomePolicyVersion: "1.0.0",
       kind: "retirement_age",
-      grade: "B",
+      grade: "C",
       reachedMonth: "2026-07",
       reasonCode: "configured_retirement_age_reached",
       reasonCodes: [
@@ -548,9 +548,9 @@ describe("outcome policy 1.0.0 assessment", () => {
       ],
       financialIndependence: {
         goalSource: "current_lifestyle_default",
-        investableAssetsCents: 15_000_00,
+        investableAssetsCents: 10_000_00,
         targetCents: 25_000_00,
-        progressPpm: 600_000,
+        progressPpm: 400_000,
       },
       displayedNetWorthCents: 30_000_00,
       automaticLiquidSolvency: {
@@ -563,7 +563,7 @@ describe("outcome policy 1.0.0 assessment", () => {
         retirementAgeYears: 65,
         currentAgeYears: 65,
         reachedRetirementAge: true,
-        gradeIfRetiredNow: "B",
+        gradeIfRetiredNow: "C",
       },
     });
   });

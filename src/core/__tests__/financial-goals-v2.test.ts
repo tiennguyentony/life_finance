@@ -11,7 +11,6 @@ import {
   type FinancialGoalV1,
 } from "../financial-goals-v2";
 import {
-  calculateInvestableAssets,
   type FinancialSnapshot,
 } from "../game-state";
 
@@ -51,10 +50,22 @@ describe("financial goals v2", () => {
     });
   });
 
-  it("exports the canonical investable-assets selector as its only authority", () => {
-    expect(calculateGoalInvestableAssets).toBe(calculateInvestableAssets);
-    expect(projectFinancialGoal(finances, goal).investableAssetsCents).toBe(
-      calculateInvestableAssets(finances),
+  it("subtracts liabilities so borrowed cash cannot increase FI progress", () => {
+    const opening = {
+      ...finances,
+      nonCreditLiabilitiesCents: moneyCents(2_000_000),
+      creditLimitCents: moneyCents(1_000_000),
+    };
+    const borrowed = {
+      ...opening,
+      cashCents: moneyCents(opening.cashCents + 500_000),
+      creditUsedCents: moneyCents(500_000),
+    };
+
+    expect(calculateGoalInvestableAssets(opening)).toBe(8_000_000);
+    expect(calculateGoalInvestableAssets(borrowed)).toBe(8_000_000);
+    expect(projectFinancialGoal(borrowed, goal).progressPpm).toBe(
+      projectFinancialGoal(opening, goal).progressPpm,
     );
   });
 
