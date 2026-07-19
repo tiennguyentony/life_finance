@@ -2,7 +2,6 @@ import { safeBigIntToNumber } from "./domain/integer";
 import { moneyCents, type MoneyCents, type RatePpm } from "./domain/money";
 import {
   calculateInvestableAssets,
-  calculateTotalLiabilities,
   type FinancialSnapshot,
 } from "./game-state";
 
@@ -89,7 +88,8 @@ export function calculateGoalInvestableAssets(
 ): MoneyCents {
   const netInvestable =
     BigInt(calculateInvestableAssets(finances)) -
-    BigInt(calculateTotalLiabilities(finances));
+    BigInt(finances.nonCreditLiabilitiesCents) -
+    BigInt(finances.creditUsedCents);
   return moneyCents(
     safeBigIntToNumber(
       netInvestable > BigInt(0) ? netInvestable : BigInt(0),
