@@ -11,6 +11,11 @@ import { simulationMonth } from "../domain/month";
 import { randomState } from "../domain/rng";
 import type { GameStateV2 } from "../game-state-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
+import {
+  OPERATIONAL_EVENT_FEATURE_NAMES_V1,
+  rankPreparedEventsOperationallyV1,
+  type OperationalEventRankerArtifactV1,
+} from "../operational-event-ranker-v1";
 import type { PersonalEventTemplateV2 } from "../personal-event-v2";
 import { estimatePersonalEventImpactV2 } from "../runtime-balance-impact-v2";
 import {
@@ -22,6 +27,8 @@ import {
   type RuntimeBalanceCandidateV2,
 } from "../runtime-balance-controller-v2";
 import { createInitialRuntimeBalanceStateV2 } from "../runtime-balance-state-v2";
+import { analyzeRiskV1 } from "../risk-v1";
+import { SCENARIO_DIRECTOR_V2_VERSION } from "../scenario-director-policy-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
 
 function baseState(
@@ -172,6 +179,77 @@ describe("Runtime Balance controller v2", () => {
     expect(() => {
       (prepared as unknown as unknown[]).push("mutation");
     }).toThrow();
+  });
+
+  it("ranks prepared candidates locally from a versioned integer artifact", () => {
+    const state = baseState();
+    const first = cloneTemplate("personal.ranker.first", { pressureCost: 0 });
+    const second = cloneTemplate("personal.ranker.second", { pressureCost: 0 });
+    const prepared = prepareRuntimeBalanceCandidatesV2(
+      state,
+      [candidate(first), candidate(second)],
+      {
+        eventCatalog: [first, second],
+        liquidationCostRatePpm: ratePpm(10_000),
+        monthlyCashFlowEvidence: {
+          monthlyCashInflowCents: moneyCents(730_000),
+          requiredCashCents: moneyCents(584_967),
+        },
+        parameterSampler: (template) => ({
+          gross_bill_cents: template.id === first.id ? 100_000 : 500_000,
+        }),
+      },
+    );
+    const coefficients = OPERATIONAL_EVENT_FEATURE_NAMES_V1.map((name) =>
+      name === "impact.score" ? 1 : 0
+    );
+    const artifact: OperationalEventRankerArtifactV1 = {
+      version: "operational-event-ranker-v1",
+      featureVersion: "operational-event-features-v1",
+      rewardPolicyVersion: "operational-event-reward-v1",
+      modelKind: "pairwise_linear_int_v1",
+      trainedAt: "2026-07-18T00:00:00.000Z",
+      trainingDatasetChecksum: "a".repeat(64),
+      featureNames: OPERATIONAL_EVENT_FEATURE_NAMES_V1,
+      coefficients,
+      intercept: 0,
+      validation: {
+        queryCount: 2,
+        pairCount: 1,
+        pairwiseAccuracyPpm: 1_000_000,
+        topOneAgreementPpm: 1_000_000,
+      },
+    };
+    const ranking = rankPreparedEventsOperationallyV1(
+      {
+        version: SCENARIO_DIRECTOR_V2_VERSION,
+        month: state.currentMonth,
+        riskSnapshot: analyzeRiskV1(state),
+        macro: { regime: state.marketRegime, tags: [] },
+        candidates: prepared.map(({ candidate: preparedCandidate }) => ({
+          templateId: preparedCandidate.template.id,
+          templateVersion: preparedCandidate.template.version,
+          category: preparedCandidate.template.category,
+          tier: preparedCandidate.template.severityTier,
+          targetedWeakness: preparedCandidate.targetedWeakness,
+          lessonTags: preparedCandidate.template.lessonTags,
+          directorTags: [],
+        })),
+        recentDecisions: [],
+        recentEvents: [],
+        lessonExposureCounts: [],
+        difficulty: "normal",
+      },
+      prepared,
+      artifact,
+    );
+
+    expect(ranking.status).toBe("ranked");
+    expect(ranking.ranked.map(({ templateId }) => templateId)).toEqual([
+      second.id,
+      first.id,
+    ]);
+    expect(ranking.latencyMicros).toBeLessThan(10_000);
   });
 
   it("approves deterministically, samples hard bounds, and spends without calm regeneration", () => {
