@@ -28,6 +28,13 @@ export function formatPreciseCents(cents: number): string {
   return preciseMoney.format(cents / 100);
 }
 
+export function formatSignedPreciseCents(cents: number): string {
+  const formatted = formatPreciseCents(Math.abs(cents));
+  if (cents > 0) return `+${formatted}`;
+  if (cents < 0) return `−${formatted}`;
+  return formatted;
+}
+
 /** Renders a change with an explicit sign, using a true minus glyph. */
 export function formatSignedCents(cents: number): string {
   const formatted = formatCents(Math.abs(cents));

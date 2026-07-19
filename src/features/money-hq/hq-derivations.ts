@@ -138,7 +138,7 @@ export type ContributionBuckets = Readonly<{
   broadIndexMonthlyCents: number;
   sectorMonthlyCents: number;
   speculativeMonthlyCents: number;
-  /** Extra payment beyond the revolving minimum. */
+  /** Extra payment routed to active term debt beyond its scheduled minimum. */
   extraDebtMonthlyCents: number;
 }>;
 

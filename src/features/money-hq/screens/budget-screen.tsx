@@ -127,7 +127,7 @@ export function BudgetScreen({
               </span>
               {insuranceMonthly > 0 ? (
                 <span style={{ font: "700 0.6875rem var(--hq-body-font)", color: "var(--hq-purple)" }}>
-                  ● health plan premium
+                  ● health and additional insurance premiums
                 </span>
               ) : null}
               {debtMinimums > 0 ? (
