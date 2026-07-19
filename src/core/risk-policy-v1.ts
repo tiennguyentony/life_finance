@@ -60,7 +60,7 @@ const policies = {
     thresholds: { low: 6_000_000, moderate: 3_000_000, high: 1_000_000 },
     normalization: { best: 12_000_000, worst: 0 },
     weaknessTag: "risk.low_emergency_fund",
-    factCode: "cash_covers_required_obligations_for_months",
+    factCode: "unborrowed_cash_covers_required_obligations_for_months",
   },
   monthly_free_cash_flow: {
     rawUnit: "money_cents_per_month",
@@ -105,7 +105,7 @@ const policies = {
     thresholds: { low: 12_000_000, moderate: 6_000_000, high: 3_000_000 },
     normalization: { best: 24_000_000, worst: 0 },
     weaknessTag: "risk.low_liquid_resources",
-    factCode: "liquid_resources_cover_required_obligations_for_months",
+    factCode: "net_liquid_resources_cover_required_obligations_for_months",
   },
   insurance_protection_gap: {
     rawUnit: "ratio_ppm",

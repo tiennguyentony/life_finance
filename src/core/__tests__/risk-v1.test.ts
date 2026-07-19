@@ -127,6 +127,26 @@ function withHighInterestDebt(input: GameStateV2): GameStateV2 {
   };
 }
 
+function withCreditDraw(input: GameStateV2, amountCents: number): GameStateV2 {
+  return {
+    ...input,
+    finances: {
+      ...input.finances,
+      cashCents: moneyCents(input.finances.cashCents + amountCents),
+      creditUsedCents: moneyCents(input.finances.creditUsedCents + amountCents),
+    },
+    gameplay: {
+      ...input.gameplay,
+      debts: {
+        ...input.gameplay.debts,
+        revolvingCreditUsedCents: moneyCents(
+          input.gameplay.debts.revolvingCreditUsedCents + amountCents,
+        ),
+      },
+    },
+  };
+}
+
 describe("risk and resilience analyzer v1", () => {
   it("returns every transparent metric with raw units and bounded severity", () => {
     const snapshot = analyzeRiskV1(state());
@@ -418,7 +438,7 @@ describe("risk and resilience analyzer v1", () => {
     expect(snapshot.facts).toContainEqual(
       expect.objectContaining({
         factId: "risk-v1.emergency_fund_months",
-        factCode: "cash_covers_required_obligations_for_months",
+        factCode: "unborrowed_cash_covers_required_obligations_for_months",
         rawValue: 0,
         unit: "months_ppm",
         band: "severe",
@@ -493,6 +513,25 @@ describe("risk and resilience analyzer v1", () => {
     ] as const) {
       expect(highCash.metrics[id]).toEqual(lowCash.metrics[id]);
     }
+  });
+
+  it("does not treat borrowed cash as a stronger emergency fund", () => {
+    const before = analyzeRiskV1(state());
+    const after = analyzeRiskV1(withCreditDraw(state(), 500_00));
+
+    expect(after.metrics.emergency_fund_months).toEqual(
+      before.metrics.emergency_fund_months,
+    );
+    expect(after.metrics.liquid_resource_coverage).toEqual(
+      before.metrics.liquid_resource_coverage,
+    );
+    expect(after.metrics.debt_service_ratio.severityPpm).toBeGreaterThan(
+      before.metrics.debt_service_ratio.severityPpm,
+    );
+    expect(after.metrics.high_interest_debt_burden.severityPpm).toBeGreaterThan(
+      before.metrics.high_interest_debt_burden.severityPpm,
+    );
+    expect(after.aggregateSeverityPpm).toBeGreaterThan(before.aggregateSeverityPpm);
   });
 
   it("monotonically improves debt dimensions when high-interest debt is paid off", () => {
