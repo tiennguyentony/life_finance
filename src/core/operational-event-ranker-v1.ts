@@ -52,7 +52,10 @@ export const OPERATIONAL_EVENT_FEATURE_NAMES_V1 = Object.freeze([
   "candidate.recent_template_count",
   "candidate.recent_category_count",
   "candidate.recent_target_count",
+  "candidate.novelty",
+  "candidate.target_severity_interaction",
   "impact.score",
+  "impact.challenge_fit",
   "impact.burn_months",
   "impact.negative_cash_flow_months",
   "impact.recovery_months",
@@ -157,6 +160,14 @@ function choiceSeparationPpm(
   return clampPpm(Math.max(...scores) - Math.min(...scores));
 }
 
+function challengeFitPpm(
+  difficulty: ScenarioDirectorInputV2["difficulty"],
+  impactScorePpm: number,
+): number {
+  const ideal = difficulty === "guided" ? 300_000 : difficulty === "normal" ? 450_000 : 600_000;
+  return clampPpm(PPM - Math.abs(impactScorePpm - ideal) * 2);
+}
+
 export function extractOperationalEventFeaturesV1(
   input: ScenarioDirectorInputV2,
   prepared: RuntimeBalancePreparedCandidateV2,
@@ -199,7 +210,14 @@ export function extractOperationalEventFeaturesV1(
     Math.min(MAX_FEATURE_VALUE, recentTemplateCount * PPM),
     Math.min(MAX_FEATURE_VALUE, recentCategoryCount * PPM),
     Math.min(MAX_FEATURE_VALUE, recentTargetCount * PPM),
+    recentTemplateCount === 0 && recentCategoryCount === 0 ? PPM : 0,
+    clampPpm(
+      (targetSeverityPpm(input, candidate.targetedWeakness) *
+        (candidate.targetedWeakness === "unrelated_hazard" ? 0 : PPM)) /
+        PPM,
+    ),
     impact.impactScorePpm,
+    challengeFitPpm(input.difficulty, impact.impactScorePpm),
     impact.burnMonthsPpm,
     Math.min(MAX_FEATURE_VALUE, impact.negativeCashFlowDurationMonths * PPM),
     Math.min(MAX_FEATURE_VALUE, impact.recoveryTimeMonths * PPM),
@@ -225,6 +243,36 @@ export function extractOperationalEventFeaturesV1(
     values: Object.freeze(values),
   };
   return Object.freeze({ ...identity, checksum: sha256Canonical(identity) });
+}
+
+/** Offline weak-supervision policy. It labels training examples only and is
+ * never called by production ranking. Values are integer-scaled so identical
+ * evidence always produces identical labels across platforms. */
+export function scoreOperationalEventTrainingLabelV1(
+  feature: OperationalEventFeatureVectorV1,
+): number {
+  const value = (name: OperationalEventFeatureNameV1) =>
+    feature.values[OPERATIONAL_EVENT_FEATURE_NAMES_V1.indexOf(name)]!;
+  const utility =
+    value("impact.challenge_fit") * 5 +
+    value("impact.choice_separation") * 4 +
+    value("candidate.target_severity_interaction") * 3 +
+    value("candidate.novelty") * 2 +
+    Math.min(PPM * 4, value("impact.reasonable_response_count")) -
+    value("candidate.recent_template_count") * 4 -
+    value("candidate.recent_category_count") * 2 -
+    value("candidate.recent_target_count") -
+    value("impact.bankruptcy_possible") * 8 -
+    value("impact.credit_use_share") * 2 -
+    value("impact.liquidation_share") -
+    value("impact.uncovered_cost_share") -
+    value("impact.burn_months") -
+    Math.floor(value("impact.negative_cash_flow_months") / 2) -
+    Math.floor(value("impact.recovery_months") / 3);
+  if (!Number.isSafeInteger(utility)) {
+    throw new RangeError("operational event training label exceeded safe integer range");
+  }
+  return utility;
 }
 
 function validArtifact(artifact: OperationalEventRankerArtifactV1): boolean {
