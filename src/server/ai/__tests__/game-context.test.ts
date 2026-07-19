@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { moneyCents, ratePpm } from "../../../core/domain/money";
 import {
-  calculateInvestableAssets,
   calculateNetWorth,
   createInitialGameState,
   type DeterministicGameOutcomeV1,
   type FinancialSnapshot,
 } from "../../../core/game-state";
+import { calculateGoalInvestableAssets } from "../../../core/financial-goals-v2";
 import {
   migrateGameStateV1ToV2,
   type GameStateV2,
@@ -56,7 +56,7 @@ describe("AI game context assembler", () => {
       month: "2026-07",
       finances: {
         cashCents: 100_000,
-        investableAssetsCents: 1_000_000,
+        investableAssetsCents: 940_000,
         netWorthCents: 9_940_000,
       },
       learning: { audienceLevel: "beginner", concepts: [] },
@@ -64,7 +64,7 @@ describe("AI game context assembler", () => {
     expect(context).not.toHaveProperty("ledger");
     expect(context).not.toHaveProperty("acceptedCommandIds");
     expect(context.finances.investableAssetsCents).toBe(
-      calculateInvestableAssets(current.finances),
+      calculateGoalInvestableAssets(current.finances),
     );
     expect(context.finances.netWorthCents).toBe(
       calculateNetWorth(current.finances),

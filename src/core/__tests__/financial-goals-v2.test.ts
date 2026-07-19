@@ -69,6 +69,19 @@ describe("financial goals v2", () => {
     );
   });
 
+  it("clamps net FI assets before converting an otherwise unsafe liability sum", () => {
+    const maximum = Number.MAX_SAFE_INTEGER;
+    expect(calculateGoalInvestableAssets({
+      ...finances,
+      cashCents: moneyCents(0),
+      taxableInvestmentsCents: moneyCents(0),
+      retirementCents: moneyCents(maximum - 1),
+      otherInvestableAssetsCents: moneyCents(0),
+      nonCreditLiabilitiesCents: moneyCents(maximum),
+      creditUsedCents: moneyCents(maximum),
+    })).toBe(0);
+  });
+
   it("rejects unsafe rates and target ages", () => {
     expect(() =>
       validateFinancialGoal({ ...goal, safeWithdrawalRatePpm: ratePpm(10_000) }),
