@@ -22,4 +22,3 @@ The trainer uses deterministic pairwise logistic regression with L2
 regularization and exports quantized integer coefficients. Replace the weak
 labels with multi-policy counterfactual rollout utility as the event catalog
 grows; the production feature and artifact contracts do not need to change.
-
