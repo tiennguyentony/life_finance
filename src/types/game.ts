@@ -26,8 +26,8 @@ export type Persona = {
 
 export type ProfileInput = {
   readonly personaId: PersonaId;
-  readonly name: string;
   readonly age: string;
-  readonly location: string;
-  readonly goal: string;
+  readonly locationId: string;
+  readonly desiredAnnualSpendingDollars: string;
+  readonly targetAgeYears: string;
 };

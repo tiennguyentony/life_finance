@@ -6,7 +6,7 @@ import { LifeFinanceClient } from "@/lib/api-client/client";
 import { createRunFromProfile } from "@/services/player.service";
 import type { PersonaId, ProfileInput } from "@/types/game";
 
-const STORAGE_KEY = "life-finance.onboarding.v1";
+const STORAGE_KEY = "life-finance.onboarding.v2";
 
 type StoredOnboarding = {
   readonly selectedPersonaId: PersonaId | null;

@@ -91,6 +91,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   color: inherit;
   font: inherit;
@@ -113,6 +114,7 @@ a {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 4px solid var(--blue);
   outline-offset: 4px;
@@ -889,6 +891,7 @@ textarea:focus-visible {
 }
 
 .wizard-fieldset input,
+.wizard-fieldset select,
 .wizard-fieldset textarea {
   width: 100%;
   border: 2px solid var(--ink);
@@ -901,7 +904,8 @@ textarea:focus-visible {
   transition: box-shadow 140ms ease, transform 140ms ease;
 }
 
-.wizard-fieldset input {
+.wizard-fieldset input,
+.wizard-fieldset select {
   height: 62px;
   padding: 0 1rem;
 }
@@ -913,6 +917,7 @@ textarea:focus-visible {
 }
 
 .wizard-fieldset input:focus,
+.wizard-fieldset select:focus,
 .wizard-fieldset textarea:focus {
   box-shadow: 5px 5px 0 var(--blue);
   transform: translate(-2px, -2px);
