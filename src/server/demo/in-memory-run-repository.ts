@@ -34,11 +34,13 @@ type StoredDemoCommand = Readonly<{
 }>;
 
 /**
- * A checkpoint aggregates at most twelve months, so the demo only needs a short
- * trailing window of state snapshots to serve one. Keeping a few spare
- * revisions bounds memory while still covering the whole checkpoint range.
+ * A checkpoint aggregates at most twelve months. Revisions are not months — a
+ * plan and an event response can each add a revision without moving time — so
+ * retaining an arbitrary revision count can evict the state at the beginning
+ * of an otherwise valid 12-month window. Keep the latest state for each month
+ * instead, plus two spare months, which is both smaller and semantically exact.
  */
-const RETAINED_STATE_REVISIONS = 16;
+const RETAINED_STATE_MONTHS = 14;
 
 type StoredDemoRun = {
   readonly accessSecret: string;
@@ -46,6 +48,8 @@ type StoredDemoRun = {
   readonly acceptedCommands: Map<string, StoredDemoCommand>;
   /** Trailing window of states by revision, for checkpoint evidence. */
   readonly stateByRevision: Map<number, GameStateV2>;
+  /** Revision of the latest retained state for each simulation month. */
+  readonly stateRevisionByMonth: Map<string, number>;
   readonly taxEvidenceByCommand: Map<string, MonthlyTaxEvidence>;
   readonly taxEvidenceByContext: Map<string, MonthlyTaxEvidence>;
   lastAccessedAt: number;
@@ -110,6 +114,7 @@ export class InMemoryRunRepository implements V2Repository {
       state,
       acceptedCommands: new Map(),
       stateByRevision: new Map([[state.revision, state]]),
+      stateRevisionByMonth: new Map([[state.currentMonth, state.revision]]),
       taxEvidenceByCommand: new Map(),
       taxEvidenceByContext: new Map(),
       lastAccessedAt: this.#clock(),
@@ -211,7 +216,17 @@ export class InMemoryRunRepository implements V2Repository {
       monthlyRecord: reduced.monthlyRecord,
       resultingRevision: reduced.state.revision,
     });
+    const replacedRevision = run.stateRevisionByMonth.get(
+      reduced.state.currentMonth,
+    );
+    if (replacedRevision !== undefined) {
+      run.stateByRevision.delete(replacedRevision);
+    }
     run.stateByRevision.set(reduced.state.revision, reduced.state);
+    run.stateRevisionByMonth.set(
+      reduced.state.currentMonth,
+      reduced.state.revision,
+    );
     this.#pruneStates(run);
     if (command.type === "process_month_v2") {
       const evidence = command.payload.taxEvidence;
@@ -268,6 +283,33 @@ export class InMemoryRunRepository implements V2Repository {
     });
   }
 
+  async loadTrailingMonthlyStartRevisionV2(
+    runId: string,
+    accessSecret: string,
+    months: number,
+  ): Promise<number> {
+    if (!Number.isSafeInteger(months) || months < 1 || months > 12) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "trailing checkpoint months must be between one and twelve",
+      );
+    }
+    const run = this.#authorize(runId, accessSecret);
+    const monthly = [...run.acceptedCommands.values()]
+      .filter(
+        (stored) => stored.monthlyRecord !== null && stored.monthlyRecord !== undefined,
+      )
+      .sort((left, right) => right.resultingRevision - left.resultingRevision)
+      .slice(0, months);
+    if (monthly.length !== months) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "run does not contain the requested number of completed months",
+      );
+    }
+    return monthly.at(-1)!.resultingRevision - 1;
+  }
+
   #checkpointRange(
     runId: string,
     accessSecret: string,
@@ -296,7 +338,7 @@ export class InMemoryRunRepository implements V2Repository {
     if (!startingState) {
       throw new RunRepositoryError(
         "PERSISTENCE_INVARIANT",
-        "demo runs retain only a trailing window of revisions for checkpoints",
+        "demo runs retain only the latest state for each trailing checkpoint month",
       );
     }
 
@@ -330,10 +372,15 @@ export class InMemoryRunRepository implements V2Repository {
   }
 
   #pruneStates(run: StoredDemoRun): void {
-    if (run.stateByRevision.size <= RETAINED_STATE_REVISIONS) return;
-    const revisions = [...run.stateByRevision.keys()].sort((a, b) => a - b);
-    for (const revision of revisions.slice(0, revisions.length - RETAINED_STATE_REVISIONS)) {
-      run.stateByRevision.delete(revision);
+    if (run.stateRevisionByMonth.size <= RETAINED_STATE_MONTHS) return;
+    const months = [...run.stateRevisionByMonth.keys()].sort();
+    for (const month of months.slice(
+      0,
+      months.length - RETAINED_STATE_MONTHS,
+    )) {
+      const revision = run.stateRevisionByMonth.get(month);
+      run.stateRevisionByMonth.delete(month);
+      if (revision !== undefined) run.stateByRevision.delete(revision);
     }
   }
 

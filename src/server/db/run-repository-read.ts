@@ -212,6 +212,45 @@ export async function loadTeachingCheckpointOwnerBundleV2(
   });
 }
 
+export async function loadTrailingMonthlyStartRevisionV2(
+  db: LifeFinanceDatabase,
+  secretCodec: RunSecretCodec,
+  runId: string,
+  accessSecret: string,
+  months: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(months) || months < 1 || months > 12) {
+    throw new RunRepositoryError(
+      "PERSISTENCE_INVARIANT",
+      "trailing checkpoint months must be between one and twelve",
+    );
+  }
+  const endingState = await loadAuthorizedRunV2(
+    db,
+    secretCodec,
+    runId,
+    accessSecret,
+  );
+  const rows = await db
+    .select({ resultingRevision: monthlyTurnRecords.resultingRevision })
+    .from(monthlyTurnRecords)
+    .where(
+      and(
+        eq(monthlyTurnRecords.runId, runId),
+        lte(monthlyTurnRecords.resultingRevision, endingState.revision),
+      ),
+    )
+    .orderBy(desc(monthlyTurnRecords.resultingRevision))
+    .limit(months);
+  if (rows.length !== months) {
+    throw new RunRepositoryError(
+      "PERSISTENCE_INVARIANT",
+      "run does not contain the requested number of completed months",
+    );
+  }
+  return rows.at(-1)!.resultingRevision - 1;
+}
+
 async function findAcceptedMonthlyCommandV2(
   db: LifeFinanceDatabase,
   secretCodec: RunSecretCodec,

@@ -242,7 +242,7 @@ export function MoneyHqShell() {
         <div className="hq-frame">
           <div className="hq-stage">
             {report === "checkpoint" ? (
-              <CheckpointScreen onBack={() => setReport(null)} run={run} trail={trail} />
+              <CheckpointScreen onBack={() => setReport(null)} run={run} />
             ) : (
               <DebriefScreen onBack={() => setReport(null)} run={run} />
             )}
@@ -310,7 +310,7 @@ export function MoneyHqShell() {
                     onClick={() => setReport("checkpoint")}
                     type="button"
                   >
-                    View the year-one report card →
+                    View the 12-month report →
                   </button>
                 ) : null}
                 {view.isComplete ? (
