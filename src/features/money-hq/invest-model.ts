@@ -8,6 +8,11 @@ export type EditableRate = keyof Omit<
 
 export type InvestDraft = Readonly<Record<EditableRate, number>>;
 
+export type InvestStrategyConstraints = Readonly<{
+  hsaEligible: boolean;
+  hasActiveTermDebt: boolean;
+}>;
+
 export type Dial = Readonly<{
   key: EditableRate;
   label: string;
@@ -107,14 +112,26 @@ export function adjustDraft(
  * normal plan commit means the Invest screen inherits the same optimistic
  * concurrency and partial-failure recovery as every other move.
  */
-export function investPlanFromDraft(draft: InvestDraft): BoardPlan {
+export function investPlanFromDraft(
+  draft: InvestDraft,
+  constraints: InvestStrategyConstraints = {
+    hsaEligible: true,
+    hasActiveTermDebt: true,
+  },
+): BoardPlan {
+  const disabledReason =
+    draft.preTaxHsaSalaryRatePpm > 0 && !constraints.hsaEligible
+      ? "Choose an HSA-eligible health plan before contributing to an HSA."
+      : draft.afterTaxExtraDebtRatePpm > 0 && !constraints.hasActiveTermDebt
+        ? "Set extra debt payments to 0% because no active term debt remains."
+        : null;
   return Object.freeze({
     id: "hq.invest.strategy",
     destinationId: "financial" as const,
     label: "Update contribution plan",
     description: "Save these contribution rates as your recurring strategy.",
     effects: Object.freeze([]),
-    disabledReason: null,
+    disabledReason,
     command: Object.freeze({
       type: "set_recurring_strategy_patch" as const,
       patch: Object.freeze({ ...draft }),

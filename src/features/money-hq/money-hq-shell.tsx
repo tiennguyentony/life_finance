@@ -151,7 +151,10 @@ export function MoneyHqShell() {
     effectiveInvestDraft,
     run.strategy,
   )
-    ? investPlanFromDraft(effectiveInvestDraft)
+    ? investPlanFromDraft(effectiveInvestDraft, {
+        hsaEligible: run.benefits?.healthPlan?.hsaEligible === true,
+        hasActiveTermDebt: run.finances.nonCreditLiabilitiesCents > 0,
+      })
     : null;
   const selectedPlan =
     activeTab === "invest"
@@ -159,10 +162,13 @@ export function MoneyHqShell() {
       : tabPlans.find((plan) => plan.id === selectedPlanId) ?? null;
 
   const eventPending = run.pendingInteraction.kind === "event";
+  const selectedPlanAllowed =
+    selectedPlan === null || selectedPlan.disabledReason === null;
   const canCommit =
     run.capabilities.canAdvance &&
     !eventPending &&
-    turn.monthResult === null;
+    turn.monthResult === null &&
+    selectedPlanAllowed;
 
   const handleSelectPlan = (planId: string) => {
     setSelectedPlanIds((previous) => ({ ...previous, [activeTab]: planId }));
@@ -231,6 +237,8 @@ export function MoneyHqShell() {
         : "Live this month!";
   const planHint = eventPending
     ? "Resolve the decision first"
+    : selectedPlan?.disabledReason
+      ? selectedPlan.disabledReason
     : selectedPlan
       ? null
       : "Choose your focus, then…";
@@ -420,7 +428,6 @@ function HqScreen({
           onAdjust={onAdjustInvest}
           onLayout={onInvestLayout}
           run={run}
-          view={view}
         />
       );
     case "career":
