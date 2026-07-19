@@ -13,7 +13,6 @@ import {
   boardMonthRecoveryMessage,
   boardRecoveryPlanLabel,
   commitBoardTurn,
-  continueBoardTurn,
   finishBoardMonthAfterRefresh,
   recoverBoardTurnFailure,
 } from "../turn-commit";
@@ -25,7 +24,6 @@ const actionPlan: BoardPlan = {
   description: "Pay down the balance.",
   effects: [],
   disabledReason: null,
-  continuation: { kind: "repeat_transaction", actionLabel: "Pay another $500" },
   command: {
     type: "take_detailed_action",
     action: { type: "pay_revolving_credit", amountCents: 50_000 },
@@ -169,94 +167,6 @@ describe("commitBoardTurn", () => {
       planApplied: true,
       error,
     });
-  });
-});
-
-describe("continueBoardTurn", () => {
-  it("submits one rebuilt repeat transaction and one month", async () => {
-    const opening = openingRun();
-    const planAppliedRun = { ...opening, revision: opening.revision + 1 };
-    const completedRun = {
-      ...planAppliedRun,
-      currentMonth: "2026-08",
-      revision: planAppliedRun.revision + 1,
-    };
-    const calls: Array<{ type: string; expectedRevision: number }> = [];
-
-    const result = await continueBoardTurn({
-      client: {
-        submitCommand: async (_runId, command) => {
-          calls.push(command);
-          return calls.length === 1 ? response(planAppliedRun) : response(completedRun);
-        },
-      },
-      opening,
-      previousPlan: actionPlan,
-      decision: {
-        kind: "repeat_transaction",
-        plan: actionPlan,
-        primaryLabel: "Pay another $500",
-      },
-      createId: (phase) => `continue.${phase}`,
-    });
-
-    expect(calls).toHaveLength(2);
-    expect(calls).toMatchObject([
-      { type: "take_detailed_action", expectedRevision: opening.revision },
-      { type: "process_month", expectedRevision: planAppliedRun.revision },
-    ]);
-    expect(result).toMatchObject({ kind: "completed", run: completedRun, planApplied: true });
-  });
-
-  it("advances one month without repeating a one-time command", async () => {
-    const opening = openingRun();
-    const completedRun = {
-      ...opening,
-      currentMonth: "2026-08",
-      revision: opening.revision + 1,
-    };
-    const calls: string[] = [];
-
-    const result = await continueBoardTurn({
-      client: {
-        submitCommand: async (_runId, command) => {
-          calls.push(command.type);
-          return response(completedRun);
-        },
-      },
-      opening,
-      previousPlan: actionPlan,
-      decision: { kind: "advance_only", primaryLabel: "Continue one month" },
-      createId: (phase) => `continue.${phase}`,
-    });
-
-    expect(calls).toEqual(["process_month"]);
-    expect(result).toMatchObject({ kind: "completed", run: completedRun, planApplied: false });
-  });
-
-  it("sends no command for an interrupted continuation", async () => {
-    const opening = openingRun();
-    let calls = 0;
-
-    const result = await continueBoardTurn({
-      client: {
-        submitCommand: async () => {
-          calls += 1;
-          return response(opening);
-        },
-      },
-      opening,
-      previousPlan: actionPlan,
-      decision: {
-        kind: "stop",
-        reason: "plan_unavailable",
-        message: "You need $500 in cash.",
-      },
-      createId: (phase) => `continue.${phase}`,
-    });
-
-    expect(calls).toBe(0);
-    expect(result).toEqual({ kind: "stopped", run: opening });
   });
 });
 

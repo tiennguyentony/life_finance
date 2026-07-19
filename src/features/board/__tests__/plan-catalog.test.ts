@@ -9,32 +9,6 @@ import {
 } from "../plan-catalog";
 
 describe("board plan catalog", () => {
-  it("opts only investments and revolving-credit payments into repetition", () => {
-    const run = projectRunView(currentRunState());
-    const plans = [
-      ...plansForDestination(run, "home"),
-      ...plansForDestination(run, "bank"),
-      ...plansForDestination(run, "financial"),
-      ...plansForDestination(run, "startup"),
-      ...plansForDestination(run, "hospital"),
-    ];
-
-    expect(plans.filter(({ continuation }) => continuation.kind === "repeat_transaction")
-      .map(({ id }) => id)
-      .toSorted()).toEqual([
-      "bank.pay-credit",
-      "financial.broad-index",
-      "financial.sector",
-      "financial.speculative",
-    ]);
-    expect(plans.find(({ id }) => id === "financial.broad-index")?.continuation)
-      .toEqual({ kind: "repeat_transaction", actionLabel: "Invest another $500" });
-    expect(plans.find(({ id }) => id === "bank.pay-credit")?.continuation)
-      .toEqual({ kind: "repeat_transaction", actionLabel: "Pay another $500" });
-    expect(plans.find(({ id }) => id === "startup.certificate")?.continuation)
-      .toEqual({ kind: "advance_only" });
-  });
-
   it("maps every destination to real public intents", () => {
     const run = projectRunView(currentRunState());
 

@@ -6,12 +6,12 @@ const boardSceneSource = readFileSync(new URL("../board-scene.tsx", import.meta.
 const hudSource = readFileSync(new URL("../hud.tsx", import.meta.url), "utf8");
 
 describe("board mode integration", () => {
-  it("connects contextual one-month continuation to the authoritative turn executor", () => {
-    expect(boardShellSource).toContain("evaluateBoardContinuationV1");
-    expect(boardShellSource).toContain("continueBoardTurn");
-    expect(boardShellSource).toContain("handleContinueMonth");
-    expect(boardShellSource).toContain("onPrimary");
-    expect(boardShellSource).toContain("onSecondary");
+  it("stops after each authoritative month and returns to planning", () => {
+    expect(boardShellSource).not.toContain("continueBoardTurn");
+    expect(boardShellSource).not.toContain("handleContinueMonth");
+    expect(boardShellSource).toContain("onPrimary={clearMonthResult}");
+    expect(boardShellSource).toContain('primaryLabel={resultPrimaryLabel}');
+    expect(boardShellSource).toContain('"Choose next plan"');
   });
 
   it("keeps the three board modes and their distinct selection paths", () => {
