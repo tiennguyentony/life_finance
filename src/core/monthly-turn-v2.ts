@@ -75,8 +75,17 @@ import {
 } from "./personal-event-v2";
 import {
   chooseBalancedEventV2,
+  prepareRuntimeBalanceCandidatesV2,
   type RuntimeBalanceDecisionV2,
 } from "./runtime-balance-controller-v2";
+import {
+  rankPreparedEventsOperationallyV1,
+  type OperationalEventRankerArtifactV1,
+  type OperationalEventRankingV1,
+} from "./operational-event-ranker-v1";
+import operationalEventRankerArtifactJsonV1 from "../data/operational-event-ranker-artifact-v1.json" with {
+  type: "json",
+};
 import {
   RUNTIME_BALANCE_CONTROLLER_V1_VERSION,
 } from "./runtime-balance-policy-v2";
@@ -238,6 +247,15 @@ export type MonthlyTurnV2Record = Readonly<{
   runtimeBalanceDecision?: RuntimeBalanceDecisionV2;
   scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
   scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
+  operationalEventRankerEvidence?: Readonly<{
+    version: OperationalEventRankingV1["version"];
+    status: OperationalEventRankingV1["status"];
+    artifactChecksum: string;
+    featureSetChecksum: string;
+    candidateCount: number;
+    topCandidateId: string | null;
+    fallbackReason?: OperationalEventRankingV1["fallbackReason"];
+  }>;
   scenarioDirectorAiEvidence?: ScenarioDirectorAiEvidenceV2;
   runtimeBalanceCandidateSet?: Readonly<{
     eligibleTemplateIds: readonly string[];
@@ -418,6 +436,8 @@ export function marketModelVersionForCommandV2(
 
 const COMMAND_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,95}$/;
 const ZERO = moneyCents(0);
+const OPERATIONAL_EVENT_RANKER_ARTIFACT_V1 =
+  operationalEventRankerArtifactJsonV1 as OperationalEventRankerArtifactV1;
 
 function debit(accountId: string, amountCents: MoneyCents): JournalPosting {
   return { accountId, debitCents: amountCents, creditCents: ZERO };
@@ -1223,6 +1243,9 @@ function processMonthlyTurnV2Kernel200(
     let runtimeBalanceDecision: RuntimeBalanceDecisionV2 | undefined;
     let scenarioDirectorInput: ScenarioDirectorInputV2 | undefined;
     let scenarioDirectorDecision: ScenarioDirectorDecisionV2 | undefined;
+    let operationalEventRankerEvidence:
+      | MonthlyTurnV2Record["operationalEventRankerEvidence"]
+      | undefined;
     let runtimeBalanceCandidateSet:
       | MonthlyTurnV2Record["runtimeBalanceCandidateSet"]
       | undefined;
@@ -1404,6 +1427,95 @@ function processMonthlyTurnV2Kernel200(
                 entry.parameters,
               ]),
             );
+        if (
+          command.payload.scenarioDirectorRankingOverride === undefined &&
+          scenarioDirectorInput !== undefined &&
+          scenarioDirectorDecision !== undefined &&
+          parameterEvidenceByIdentity !== null
+        ) {
+          const monthlyCashFlowEvidence = {
+            monthlyCashInflowCents: moneyCents(
+              safeBigIntToNumber(
+                BigInt(financial.record.afterTaxCashIncomeCents) +
+                  BigInt(financial.record.resolvedIncomeCents),
+                "operational ranker monthly cash inflow",
+              ),
+            ),
+            requiredCashCents: financial.record.requiredCashCents,
+          };
+          const prepared = prepareRuntimeBalanceCandidatesV2(
+            nextState,
+            candidates.candidates,
+            {
+              eventCatalog,
+              liquidationCostRatePpm:
+                command.payload.taxableLiquidationCostRatePpm,
+              monthlyCashFlowEvidence,
+              parameterSampler: (template) =>
+                parameterEvidenceByIdentity.get(
+                  `${template.id}@${template.version}`,
+                )!,
+              ...(cadenceAssessment?.mode === "challenge_due"
+                ? { preferredChallengeBands: ["meaningful", "crisis"] as const }
+                : {}),
+            },
+          );
+          const operationalRanking = rankPreparedEventsOperationallyV1(
+            scenarioDirectorInput,
+            prepared,
+            OPERATIONAL_EVENT_RANKER_ARTIFACT_V1,
+          );
+          operationalEventRankerEvidence = Object.freeze({
+            version: operationalRanking.version,
+            status: operationalRanking.status,
+            artifactChecksum: operationalRanking.artifactChecksum,
+            featureSetChecksum: operationalRanking.featureSetChecksum,
+            candidateCount: operationalRanking.ranked.length,
+            topCandidateId: operationalRanking.ranked[0]?.templateId ?? null,
+            ...(operationalRanking.fallbackReason === undefined
+              ? {}
+              : { fallbackReason: operationalRanking.fallbackReason }),
+          });
+          if (operationalRanking.status === "ranked") {
+            const rankedKeys = new Set(
+              operationalRanking.ranked.map(
+                ({ templateId, templateVersion }) =>
+                  `${templateId}@${templateVersion}`,
+              ),
+            );
+            const ranked = [
+              ...operationalRanking.ranked.map(
+                ({ templateId, templateVersion }) => ({
+                  templateId,
+                  templateVersion,
+                }),
+              ),
+              ...scenarioDirectorDecision.ranked
+                .filter(
+                  ({ templateId, templateVersion }) =>
+                    !rankedKeys.has(`${templateId}@${templateVersion}`),
+                )
+                .map(({ templateId, templateVersion }) => ({
+                  templateId,
+                  templateVersion,
+                })),
+            ];
+            scenarioDirectorDecision = applyScenarioDirectorRankingOverrideV2(
+              scenarioDirectorInput,
+              Object.freeze({
+                version: "scenario-director-ranking-override-v1",
+                candidateSetChecksum:
+                  scenarioDirectorDecision.candidateSetChecksum,
+                rankingInputChecksum:
+                  scenarioDirectorDecision.rankingInputChecksum,
+                ranked: Object.freeze(
+                  ranked.map((candidate) => Object.freeze({ ...candidate })),
+                ),
+              }),
+              "operational_ml_ranking",
+            );
+          }
+        }
         const choice = chooseBalancedEventV2(
           nextState,
           candidates.candidates,
@@ -1541,6 +1653,9 @@ function processMonthlyTurnV2Kernel200(
       ...(scenarioDirectorDecision === undefined
         ? {}
         : { scenarioDirectorDecision }),
+      ...(operationalEventRankerEvidence === undefined
+        ? {}
+        : { operationalEventRankerEvidence }),
       ...(command.payload.scenarioDirectorAiEvidence === undefined
         ? {}
         : {

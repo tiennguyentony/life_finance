@@ -817,6 +817,7 @@ const financialKernelMonthlyRecordSummarySchema =
           rankingSource: z.enum([
             "deterministic_fallback",
             "validated_ai_ranking",
+            "operational_ml_ranking",
           ]),
           candidateSetChecksum: checksumSchema,
           rankingInputChecksum: checksumSchema,
@@ -838,6 +839,25 @@ const financialKernelMonthlyRecordSummarySchema =
           latencyMs: z.int().min(0).max(30000),
           candidateCount: z.int().min(0).max(64),
           topCandidateAgreement: z.boolean().nullable(),
+        })
+        .strict()
+        .optional(),
+      operationalEventRankerEvidence: z
+        .object({
+          version: z.literal("operational-event-ranker-v1"),
+          status: z.enum(["ranked", "fallback"]),
+          artifactChecksum: checksumSchema,
+          featureSetChecksum: checksumSchema,
+          candidateCount: z.int().min(0).max(64),
+          topCandidateId: identifierSchema.nullable(),
+          fallbackReason: z
+            .enum([
+              "invalid_artifact",
+              "no_safe_candidates",
+              "feature_out_of_domain",
+              "score_out_of_bounds",
+            ])
+            .optional(),
         })
         .strict()
         .optional(),

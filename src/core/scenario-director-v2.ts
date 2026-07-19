@@ -99,7 +99,10 @@ export type ScenarioDirectorDecisionV2 = Readonly<{
   difficulty: RuntimeBalanceDifficultyV2;
   macroRegime: GameStateV2["marketRegime"];
   storyArcId?: string;
-  rankingSource: "deterministic_fallback" | "validated_ai_ranking";
+  rankingSource:
+    | "deterministic_fallback"
+    | "validated_ai_ranking"
+    | "operational_ml_ranking";
   candidateSetChecksum: string;
   rankingInputChecksum: string;
   ranked: readonly ScenarioDirectorRankedCandidateV2[];
@@ -845,6 +848,10 @@ export function rankScenarioCandidatesV2(
 export function applyScenarioDirectorRankingOverrideV2(
   input: ScenarioDirectorInputV2,
   override: ScenarioDirectorRankingOverrideV2,
+  rankingSource: Exclude<
+    ScenarioDirectorDecisionV2["rankingSource"],
+    "deterministic_fallback"
+  > = "validated_ai_ranking",
 ): ScenarioDirectorDecisionV2 {
   const fallback = rankScenarioCandidatesV2(input);
   if (
@@ -874,7 +881,7 @@ export function applyScenarioDirectorRankingOverrideV2(
   );
   return deepFreeze({
     ...fallback,
-    rankingSource: "validated_ai_ranking",
+    rankingSource,
     ranked: override.ranked.map((candidate, index) => ({
       ...fallbackByIdentity.get(identity(candidate))!,
       rank: index + 1,
