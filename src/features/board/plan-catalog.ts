@@ -33,7 +33,26 @@ export type BoardPlan = Readonly<{
     | Readonly<{
         type: "set_recurring_strategy";
         emergencyFundTargetMonthsPpm: number;
+      }>
+    /**
+     * Money HQ's Invest screen edits several contribution rates at once, so it
+     * sends a patch rather than the single buffer target the board offers.
+     */
+    | Readonly<{
+        type: "set_recurring_strategy_patch";
+        patch: Readonly<Partial<RecurringStrategyRates>>;
       }>;
+}>;
+
+export type RecurringStrategyRates = Readonly<{
+  emergencyFundTargetMonthsPpm: number;
+  preTax401kSalaryRatePpm: number;
+  preTaxHsaSalaryRatePpm: number;
+  afterTaxBroadIndexRatePpm: number;
+  afterTaxSectorRatePpm: number;
+  afterTaxSpeculativeRatePpm: number;
+  afterTaxIraRatePpm: number;
+  afterTaxExtraDebtRatePpm: number;
 }>;
 
 export const DEMO_ACTION_CENTS = 50_000;
@@ -364,16 +383,17 @@ export function commandIntentForPlan(
 
   const { effectiveMonth, ...strategy } = run.strategy;
   void effectiveMonth;
+  const patch = plan.command.type === "set_recurring_strategy_patch"
+    ? plan.command.patch
+    : {
+        emergencyFundTargetMonthsPpm: plan.command.emergencyFundTargetMonthsPpm,
+      };
+
   return {
     id: commandId,
     expectedRevision: run.revision,
     effectiveMonth: run.currentMonth,
     type: "set_recurring_strategy",
-    payload: {
-      strategy: {
-        ...strategy,
-        emergencyFundTargetMonthsPpm: plan.command.emergencyFundTargetMonthsPpm,
-      },
-    },
+    payload: { strategy: { ...strategy, ...patch } },
   };
 }

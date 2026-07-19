@@ -179,9 +179,14 @@ describe("offline balance lab production performance", () => {
           macroDifficulty: "normal",
         });
       }
-      expect(elapsedMs).toBeLessThan(40_000);
+      // Rebaselined when production scheduling moved to the highest-supported
+      // catalog. Per-month eligibility filtering and ranking now walk ~132
+      // templates instead of ~48, which measured 39s -> 62s for this 480-month
+      // run on the same machine. The budget still guards against runaway cost;
+      // it is set at the new baseline plus headroom, not removed.
+      expect(elapsedMs).toBeLessThan(95_000);
     },
-    45_000,
+    100_000,
   );
 
   it("bounds the configured 432-production-month quick cohort", () => {

@@ -3,6 +3,7 @@ import { onboardingDraftForPersonaV1 } from "@/core/onboarding-personas-v1";
 import type { CreatedRunV2 } from "@/server/db/run-repository-contracts";
 import { OnboardingService } from "@/server/api/onboarding-service";
 import { RunService } from "@/server/api/run-service";
+import { TeachingServiceV2 } from "@/server/teaching/service-v2";
 import type { GameplayDirector } from "@/server/ai/gameplay-director-service";
 
 import { InMemoryRunRepository } from "./in-memory-run-repository";
@@ -64,6 +65,14 @@ export class LocalDemoRuntime {
       submitCommand: (runId, accessSecret, command) =>
         serviceFor(runId).submitCommand(runId, accessSecret, command),
     });
+  }
+
+  /**
+   * A teaching service backed by the in-memory repository, so the year-one
+   * checkpoint works on the demo path instead of requiring PostgreSQL.
+   */
+  createTeachingService(): TeachingServiceV2 {
+    return new TeachingServiceV2(this.#repository);
   }
 
   createRunReaderGateway(

@@ -1018,6 +1018,12 @@ describe("atomic time advance orchestration", () => {
       minimumDurationMonths: 1,
       maximumDurationMonths: 1,
     }),
+    // A zero chance still leaves deterministic follow-ups able to interrupt a
+    // batch. These tests are about reusing one tax-context lookup across a
+    // batch, so they schedule from an empty catalog: no personal event can be
+    // raised at all, and the batch length under test stays the subject.
+    personalEventCatalog: Object.freeze([]),
+    activePersonalEventCatalog: Object.freeze([]),
   });
 
   function cachedTaxEvidence(commandId: string) {

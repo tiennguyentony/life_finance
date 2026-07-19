@@ -227,6 +227,38 @@ describe("projectRunView", () => {
     });
   });
 
+  it("projects the enrolled benefits a player is actually charged for", () => {
+    expect(projectRunView(currentRunState()).benefits).toEqual({
+      retirementPlan: {
+        label: "401(k) standard match",
+        employeeAnnualLimitCents: 2_450_000,
+        employerMatchTiers: [
+          { employeeContributionRateUpToPpm: 30_000, employerMatchRatePpm: 1_000_000 },
+          { employeeContributionRateUpToPpm: 50_000, employerMatchRatePpm: 500_000 },
+        ],
+      },
+      healthPlan: {
+        label: "HDHP with HSA",
+        hsaEligible: true,
+        monthlyPremiumCents: 11_000,
+        annualDeductibleCents: 180_000,
+        annualOutOfPocketMaximumCents: 800_000,
+        coinsurancePpm: 200_000,
+      },
+      insuranceCoverages: [expect.objectContaining({ id: "insurance.renters", kind: "renters" })],
+    });
+  });
+
+  it("reports unknown benefits for a run with no catalog snapshot", () => {
+    const base = currentRunState();
+    const state: GameStateV2 = {
+      ...base,
+      gameplay: { ...base.gameplay, catalogSnapshot: null },
+    };
+
+    expect(projectRunView(state).benefits).toBeNull();
+  });
+
   it("projects every deterministic declared expense and income summary", () => {
     const base = currentRunState();
     const template: PersonalEventTemplateV2 = {

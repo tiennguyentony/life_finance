@@ -792,8 +792,14 @@ export type PersonalEventSchedulingSelectionV2 =
   | "historical-v2"
   | "highest-supported";
 
+/**
+ * Production scheduling draws from the highest-supported catalog, so every
+ * template the project ships can appear in play rather than only the original
+ * historical set. Scheduling stays deterministic: the scheduler still picks by
+ * seeded RNG from templates the run is actually eligible for.
+ */
 export const PERSONAL_EVENT_SCHEDULING_SELECTION_V2:
-  PersonalEventSchedulingSelectionV2 = "historical-v2";
+  PersonalEventSchedulingSelectionV2 = "highest-supported";
 
 function productionPersonalEventCatalogV2(
   selection: PersonalEventSchedulingSelectionV2,

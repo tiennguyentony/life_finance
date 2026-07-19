@@ -1,6 +1,7 @@
 import { runSecretCodecFromEnvironment } from "../auth/run-secret";
 import { getDatabaseConnection } from "../db/runtime";
 import { RunRepository } from "../db/run-repository";
+import { getLocalDemoRuntime } from "../demo/runtime";
 import { TeachingServiceV2 } from "./service-v2";
 import { requestTeachingRewriteFromEnvironmentV2 } from "./rewrite-provider-v2";
 import { TeachingRewriteServiceV2 } from "./rewrite-service-v2";
@@ -16,6 +17,15 @@ export function getTeachingServiceV2(): TeachingServiceV2 {
     );
   }
   return service;
+}
+
+/**
+ * Picks the teaching service that owns this run. Demo runs live in memory and
+ * must not touch PostgreSQL, which may not be configured at all locally.
+ */
+export function getTeachingServiceForRunV2(runId: string): TeachingServiceV2 {
+  const demo = getLocalDemoRuntime();
+  return demo.hasRun(runId) ? demo.createTeachingService() : getTeachingServiceV2();
 }
 
 export function getTeachingRewriteServiceV2(): TeachingRewriteServiceV2 {

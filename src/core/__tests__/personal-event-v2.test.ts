@@ -128,8 +128,18 @@ describe("declarative personal-event v2 catalog", () => {
         delayMonths: 2,
         whenResponseIds: ["defer_repair"],
       }]);
+    // Production now schedules from the highest-supported catalog, so every
+    // shipped template can appear in play. The historical set stays a distinct,
+    // strictly smaller catalog that exact replay still depends on.
     expect(PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2)
-      .toEqual(HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2);
+      .toEqual(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2);
+    expect(HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2.length)
+      .toBeLessThan(PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2.length);
+    expect(
+      HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2.every(({ id }) =>
+        PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2.some((template) => template.id === id),
+      ),
+    ).toBe(true);
     expect(new Set(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.map(({ id }) => id)).size)
       .toBe(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.length);
     expect(ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.every((template) =>

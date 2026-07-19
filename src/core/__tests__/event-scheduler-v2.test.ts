@@ -77,7 +77,9 @@ describe("fair v2 personal-event scheduling", () => {
       "personal.utility_rebate",
     ]));
     expect(new Set(result.eligibleTemplateIds).size).toBe(result.eligibleTemplateIds.length);
-    expect(result.eligibleTemplateIds).not.toContain("personal.subscription_archaeology");
+    // Production schedules the highest-supported catalog, so templates beyond
+    // the original historical set are now eligible too.
+    expect(result.eligibleTemplateIds).toContain("personal.subscription_archaeology");
     expect(result.nextRandom).not.toEqual(opening.random);
     if (result.event) {
       expect(result.event.template.schemaVersion).toBe(2);
