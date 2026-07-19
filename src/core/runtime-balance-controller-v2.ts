@@ -155,6 +155,7 @@ export type RuntimeBalanceChoiceOptionsV2 = Readonly<{
   estimateImpact?: typeof estimatePersonalEventImpactV2;
   scenarioDirectorInput?: ScenarioDirectorInputV2;
   scenarioDirectorDecision?: ScenarioDirectorDecisionV2;
+  preferredChallengeBands?: readonly ("meaningful" | "crisis")[];
   /** Named-world mode supplies gross keyed parameters without consuming the legacy cursor. */
   parameterSampler?: (
     template: PersonalEventTemplateV2,
@@ -347,8 +348,7 @@ function directorOrderedCandidatesV2(
       "Scenario Director decision must match the verified deterministic input",
     );
   }
-  return Object.freeze(
-    verifiedDecision.ranked.map((ranked) => {
+  const ordered = verifiedDecision.ranked.map((ranked) => {
       const candidate = candidatesByIdentity.get(
         `${ranked.templateId}@${ranked.templateVersion}`,
       );
@@ -361,8 +361,11 @@ function directorOrderedCandidatesV2(
         );
       }
       return candidate;
-    }),
-  );
+    });
+  return Object.freeze([
+    ...ordered.filter(({ followUpSourceEventId }) => followUpSourceEventId !== undefined),
+    ...ordered.filter(({ followUpSourceEventId }) => followUpSourceEventId === undefined),
+  ]);
 }
 
 function scenarioDirectorEvidenceV2(
@@ -780,6 +783,13 @@ export function chooseBalancedEventV2(
       policy.rejectImmediateUnavoidableFailure &&
       (impact.immediateBankruptcyRisk || impact.reasonableResponseIds.length === 0)
     ) item.rejectionCodes.push("unavoidable_failure");
+    const preferredChallengeBands = options.preferredChallengeBands;
+    const challengeBand = assessRuntimeBalanceChallengeV1(impact, policy).band;
+    if (
+      item.rejectionCodes.length === 0 &&
+      preferredChallengeBands !== undefined &&
+      !preferredChallengeBands.some((preferred) => preferred === challengeBand)
+    ) item.rejectionCodes.push("cadence_challenge_below_target");
     if (item.rejectionCodes.length > 0) continue;
     const eventId = candidate.followUpSourceEventId === undefined
       ? `evt.${state.currentMonth}.${candidate.template.id}.v${candidate.template.version}`

@@ -41,6 +41,7 @@ export type RuntimeBalanceRejectionCodeV2 =
   | "catastrophe_limit"
   | "parameter_out_of_bounds"
   | "impact_above_band"
+  | "cadence_challenge_below_target"
   | "FUNNY_ROOT_ABOVE_MEANINGFUL"
   | "unavoidable_failure"
   | "no_reasonable_response"
@@ -123,6 +124,8 @@ const REJECTION_CODES = new Set<string>([
   "catastrophe_limit",
   "parameter_out_of_bounds",
   "impact_above_band",
+  "cadence_challenge_below_target",
+  "FUNNY_ROOT_ABOVE_MEANINGFUL",
   "unavoidable_failure",
   "no_reasonable_response",
   "estimator_error",

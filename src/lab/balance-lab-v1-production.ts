@@ -28,6 +28,7 @@ import { advanceTimeV2 } from "../core/time-controller-v2";
 import { DECLARATIVE_EVENT_SCHEDULER_V2_VERSION } from "../core/event-scheduler-v2";
 import { WORLD_RANDOM_VERSION_V1 } from "../core/world-random-v1";
 import {
+  activePersonalEventTemplatesV2,
   ACTIVE_PERSONAL_EVENT_TEMPLATES_V2,
   PERSONAL_EVENT_TEMPLATES_V2,
 } from "../data/personal-event-templates-v2";
@@ -317,8 +318,9 @@ export function createBalanceLabProductionOwnersV1(
 ): BalanceLabProductionOwnersV1<GameStateV2, BalanceLabProductionMonthRecordV1> {
   const ports = options.ports ?? BALANCE_LAB_PRODUCTION_PORTS_V1;
   const personalEventCatalog = options.personalEventCatalog ?? PERSONAL_EVENT_TEMPLATES_V2;
-  const activePersonalEventCatalog = options.personalEventCatalog ??
-    ACTIVE_PERSONAL_EVENT_TEMPLATES_V2;
+  const activePersonalEventCatalog = options.personalEventCatalog === undefined
+    ? ACTIVE_PERSONAL_EVENT_TEMPLATES_V2
+    : activePersonalEventTemplatesV2(options.personalEventCatalog);
   return Object.freeze({
     createOpeningState: ({ personaId, matchedSeed, difficulty, worldRandom }) =>
       finalizeGameStateV2({

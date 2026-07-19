@@ -758,7 +758,7 @@ export const HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2:
 export const PERSONAL_EVENT_TEMPLATES_V2: readonly PersonalEventTemplateV2[] =
   deepFreeze([...completeTemplates]);
 
-function highestVersionByTemplateId(
+export function activePersonalEventTemplatesV2(
   catalog: readonly PersonalEventTemplateV2[],
 ): readonly PersonalEventTemplateV2[] {
   const highest = new Map<string, PersonalEventTemplateV2>();
@@ -776,7 +776,7 @@ function highestVersionByTemplateId(
 }
 
 export const ACTIVE_PERSONAL_EVENT_TEMPLATES_V2:
-  readonly PersonalEventTemplateV2[] = highestVersionByTemplateId(
+  readonly PersonalEventTemplateV2[] = activePersonalEventTemplatesV2(
     PERSONAL_EVENT_TEMPLATES_V2,
   );
 

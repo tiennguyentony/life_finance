@@ -18,6 +18,7 @@ import {
   assessBeginnerEventCadenceV1,
   ACTIVE_BEGINNER_EVENT_CADENCE_VERSION,
   BEGINNER_EVENT_CADENCE_V1_VERSION,
+  beginnerEventCadenceFallbackCandidatesV1,
   type BeginnerEventCadenceAssessmentV1,
 } from "../beginner-event-cadence-v1";
 import { moneyCents, ratePpm } from "../domain/money";
@@ -240,6 +241,44 @@ describe("beginner event cadence v1", () => {
     });
   });
 
+  it("carries serious challenge quotas forward from months 3, 6, 9, and 12", () => {
+    const positiveHistory = historyEvent("personal.performance_bonus", "2026-08");
+    expect(assessBeginnerEventCadenceV1(
+      withHistory(baseState("2026-09"), [positiveHistory]),
+    )).toMatchObject({
+      chapterMonth: 3,
+      mode: "challenge_due",
+      positiveObserved: true,
+    });
+    const firstChallenge = historyEvent("personal.medical_bill", "2026-09");
+    expect(assessBeginnerEventCadenceV1(
+      withHistory(baseState("2026-10"), [positiveHistory]),
+    )).toMatchObject({
+      chapterMonth: 4,
+      mode: "challenge_due",
+    });
+    expect(assessBeginnerEventCadenceV1(
+      withHistory(baseState("2027-03"), [positiveHistory, firstChallenge]),
+    )).toMatchObject({
+      chapterMonth: 9,
+      mode: "challenge_due",
+      positiveObserved: true,
+    });
+  });
+
+  it("requires one absurd-comedy root after month 6 without replacing recovery", () => {
+    const history = [
+      historyEvent("personal.medical_bill", "2026-09"),
+      historyEvent("personal.rent_renewal", "2026-12"),
+    ];
+    expect(assessBeginnerEventCadenceV1(
+      withHistory(baseState("2027-01"), history),
+    )).toMatchObject({
+      chapterMonth: 7,
+      mode: "absurd_due",
+    });
+  });
+
   it("requests engagement after one eligible quiet month", () => {
     expect(assessBeginnerEventCadenceV1(baseState("2026-08"))).toMatchObject({
       chapterMonth: 2,
@@ -287,9 +326,41 @@ describe("beginner event cadence v1", () => {
       "personal.subscription_archaeology",
     ]);
     expect(applyBeginnerEventCadenceV1(
+      assessment({ mode: "challenge_due" }),
+      inputs,
+    ).candidates.map(({ template }) => template.id)).toEqual([
+      "personal.medical_bill",
+    ]);
+    expect(applyBeginnerEventCadenceV1(
       assessment({ mode: "recovery_preferred" }),
       inputs,
     ).candidates).toEqual([]);
+  });
+
+  it("deterministically supplements a due beat from eligible active templates", () => {
+    const state = baseState("2026-09");
+    const fallbacks = beginnerEventCadenceFallbackCandidatesV1(
+      state,
+      ACTIVE_PERSONAL_EVENT_TEMPLATES_V2,
+      PERSONAL_EVENT_TEMPLATES_V2,
+    );
+    const result = applyBeginnerEventCadenceV1(
+      assessment({ mode: "challenge_due" }),
+      [candidate("personal.subscription_archaeology")],
+      PERSONAL_EVENT_PRESENTATIONS_V1,
+      fallbacks,
+    );
+
+    expect(result.candidates.length).toBeGreaterThan(0);
+    expect(result.candidates.every((item) =>
+      getPersonalEventPresentationV1(
+        item.template.id,
+        item.template.version,
+      ).cadenceRole === "challenge" && item.template.severityTier !== "micro"
+    )).toBe(true);
+    expect(result.preferredCandidateIds).toEqual(
+      result.candidates.map(({ template }) => template.id),
+    );
   });
 
   it("never schedules adjacent absurd roots and preserves due follow-ups", () => {
@@ -320,6 +391,25 @@ describe("beginner event cadence v1", () => {
       due.candidates[0]!.template.id,
       due.candidates[0]!.template.version,
     ).cadenceRole).toBe("follow_up");
+  });
+
+  it("keeps eligible roots as safe alternatives behind a due follow-up", () => {
+    const followUp = {
+      ...candidate("personal.transport_repair_followup"),
+      followUpSourceEventId: "evt.transport",
+    };
+    const relatableRoot = candidate("personal.subscription_archaeology");
+    const result = applyBeginnerEventCadenceV1(
+      assessment({ mode: "follow_up_due" }),
+      [followUp],
+      PERSONAL_EVENT_PRESENTATIONS_V1,
+      [relatableRoot],
+    );
+
+    expect(result.candidates).toEqual([followUp, relatableRoot]);
+    expect(result.preferredCandidateIds).toEqual([
+      "personal.transport_repair_followup",
+    ]);
   });
 
   it("resolves an exact historical follow-up outside the active root catalog", () => {

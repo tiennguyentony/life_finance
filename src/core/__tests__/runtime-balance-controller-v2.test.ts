@@ -640,6 +640,39 @@ describe("Runtime Balance controller v2", () => {
     expect(invocations).toBe(5);
   });
 
+  it("skips a light candidate when cadence requests a meaningful challenge", () => {
+    const light = cloneTemplate("personal.cadence-light", { pressureCost: 0 });
+    const meaningful = cloneTemplate("personal.cadence-meaningful", { pressureCost: 0 });
+    const candidates = [candidate(light), candidate(meaningful)];
+    const result = chooseBalancedEventV2(
+      baseState(),
+      candidates,
+      randomState("cadence-challenge-target"),
+      ratePpm(10_000),
+      {
+        eventCatalog: [light, meaningful],
+        monthlyCashFlowEvidence: {
+          monthlyCashInflowCents: moneyCents(730_000),
+          requiredCashCents: moneyCents(584_967),
+        },
+        preferredChallengeBands: ["meaningful", "crisis"],
+        estimateImpact: (state, template, ...rest) => ({
+          ...estimatePersonalEventImpactV2(state, template, ...rest),
+          impactScorePpm: template.id === light.id ? 100_000 : 400_000,
+          burnMonthsPpm: 0,
+          negativeCashFlowDurationMonths: 0,
+          recoveryTimeMonths: 0,
+        }),
+      },
+    );
+
+    expect(result.event?.template.id).toBe(meaningful.id);
+    expect(result.decision.evaluatedCandidateCount).toBe(2);
+    expect(result.decision.candidates[0]?.rejectionCodes).toContain(
+      "cadence_challenge_below_target",
+    );
+  });
+
   it("allows Hard to approve a bounded event outside the Normal recovery band", () => {
     const template = cloneTemplate("personal.hard-recovery-band", {
       classification: "positive",

@@ -12,6 +12,7 @@ import {
   type PersonalEventTemplateV2,
 } from "../personal-event-v2";
 import {
+  activePersonalEventTemplatesV2,
   ACTIVE_PERSONAL_EVENT_TEMPLATES_V2,
   HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2,
   PERSONAL_EVENT_TEMPLATES_V2,
@@ -138,6 +139,23 @@ describe("declarative personal-event v2 catalog", () => {
     expect(Object.isFrozen(PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2)).toBe(true);
   });
 
+  it("derives one highest active version from an exact replay catalog", () => {
+    const replayCatalog = PERSONAL_EVENT_TEMPLATES_V2.filter(
+      ({ id }) => id === "personal.performance_bonus",
+    );
+
+    expect(activePersonalEventTemplatesV2(replayCatalog).map((template) => ({
+      id: template.id,
+      version: template.version,
+      responseCount: template.responses.length,
+    }))).toEqual([{
+      id: "personal.performance_bonus",
+      version: 3,
+      responseCount: 3,
+    }]);
+    expect(Object.isFrozen(activePersonalEventTemplatesV2(replayCatalog))).toBe(true);
+  });
+
   it("keeps historical V2 meanings while active scheduling selects expanded V3 choices", () => {
     expect(getPersonalEventTemplateV2("personal.medical_bill", 2).responses.map(({ id }) => id))
       .toEqual(["pay_uninsured", "use_insurance"]);
@@ -161,6 +179,12 @@ describe("declarative personal-event v2 catalog", () => {
       .toMatchObject({ templateVersion: 3 });
     expect(getActivePersonalEventTemplateV2("personal.transport_repair_followup").responses)
       .toHaveLength(3);
+    expect(getActivePersonalEventTemplateV2("personal.transport_repair_followup").parameters)
+      .toEqual([expect.objectContaining({
+        id: "escalated_repair_cost_cents",
+        minimum: 500_000,
+        maximum: 1_350_000,
+      })]);
   });
 
   it("contains valid setbacks, traps, and at least two opportunities", () => {

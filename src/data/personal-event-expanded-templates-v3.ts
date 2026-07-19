@@ -154,6 +154,11 @@ export function createPersonalEventExpandedTemplatesV3(
     {
       ...transportFollowUp,
       version: 3,
+      parameters: transportFollowUp.parameters.map((parameter) =>
+        parameter.id === "escalated_repair_cost_cents"
+          ? { ...parameter, maximum: 1_350_000 }
+          : parameter
+      ),
       responses: [
         transportFollowUp.responses.find(({ id }) => id === "complete_repair")!,
         {
