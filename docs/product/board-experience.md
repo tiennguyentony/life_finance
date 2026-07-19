@@ -26,9 +26,13 @@ The current UI uses deterministic typed drafts. `/api/onboarding/parse` supports
 4. Submit the plan command when it is not “stay the course.”
 5. Submit `process_month` at the next authoritative revision.
 6. Compare before/after cash, net worth, debt, and goal progress.
-7. If an event is pending, resolve it before another planning turn.
+7. Close the result and return to the board before choosing the next month's plan.
+8. If an event is pending, resolve it before another planning turn.
 
-The result dialog is shown before event choice. If the first command succeeds but month processing fails, recovery refreshes the run and retries only the month instead of repeating the plan.
+The result dialog never advances another month. It is shown before event choice,
+and closing it returns control to planning (or reveals the pending event). If the
+first command succeeds but month processing fails, recovery refreshes the run and
+retries only the month instead of repeating the plan.
 
 ## Exact current plan menu
 
