@@ -87,6 +87,21 @@ describe("invest draft", () => {
     expect(plan.disabledReason).toBeNull();
   });
 
+  it("blocks HSA and debt rates the current run cannot apply", () => {
+    expect(
+      investPlanFromDraft(
+        { ...SAVED, preTaxHsaSalaryRatePpm: 10_000 },
+        { hsaEligible: false, hasActiveTermDebt: true },
+      ).disabledReason,
+    ).toContain("HSA-eligible");
+    expect(
+      investPlanFromDraft(
+        { ...SAVED, afterTaxExtraDebtRatePpm: 10_000 },
+        { hsaEligible: true, hasActiveTermDebt: false },
+      ).disabledReason,
+    ).toContain("0%");
+  });
+
   it("keeps a dial for every editable rate on the wire", () => {
     const draft = draftFromStrategy(SAVED);
 

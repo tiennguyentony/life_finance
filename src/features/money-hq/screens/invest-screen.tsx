@@ -8,14 +8,13 @@ import { hqTab } from "../hq-tabs";
 import { HqCard, HqSpeech, HqUnavailable } from "../hq-ui";
 import { projectContributionBuckets } from "../hq-derivations";
 import {
-  adjustDraft,
   DIALS,
   draftDiffersFromStrategy,
   type Dial,
   type EditableRate,
   type InvestDraft,
 } from "../invest-model";
-import { formatCents, formatPpmPercent, type HqView } from "../hq-view";
+import { formatCents, formatPpmPercent } from "../hq-view";
 
 export type InvestLayout = "lab" | "mountain" | "buckets";
 
@@ -38,10 +37,9 @@ type Props = Readonly<{
   onAdjust: (key: EditableRate, deltaPpm: number, maxPpm: number) => void;
   onLayout: (layout: InvestLayout) => void;
   run: RunViewWire;
-  view: HqView;
 }>;
 
-export function InvestScreen({ busy, draft, layout, onAdjust, onLayout, run, view }: Props) {
+export function InvestScreen({ busy, draft, layout, onAdjust, onLayout, run }: Props) {
   const bengo = hqTab("invest");
   const changed = draftDiffersFromStrategy(draft, run.strategy);
 
