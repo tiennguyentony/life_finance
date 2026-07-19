@@ -13,6 +13,24 @@ export type InvestStrategyConstraints = Readonly<{
   hasActiveTermDebt: boolean;
 }>;
 
+const FULL_ALLOCATION_PPM = 1_000_000;
+
+export function allocationTotals(draft: InvestDraft): Readonly<{
+  preTaxPpm: number;
+  afterTaxPpm: number;
+}> {
+  return Object.freeze({
+    preTaxPpm:
+      draft.preTax401kSalaryRatePpm + draft.preTaxHsaSalaryRatePpm,
+    afterTaxPpm:
+      draft.afterTaxBroadIndexRatePpm +
+      draft.afterTaxSectorRatePpm +
+      draft.afterTaxSpeculativeRatePpm +
+      draft.afterTaxIraRatePpm +
+      draft.afterTaxExtraDebtRatePpm,
+  });
+}
+
 export type Dial = Readonly<{
   key: EditableRate;
   label: string;
@@ -119,8 +137,13 @@ export function investPlanFromDraft(
     hasActiveTermDebt: true,
   },
 ): BoardPlan {
+  const totals = allocationTotals(draft);
   const disabledReason =
-    draft.preTaxHsaSalaryRatePpm > 0 && !constraints.hsaEligible
+    totals.preTaxPpm > FULL_ALLOCATION_PPM
+      ? "Pre-tax 401(k) and HSA rates cannot exceed 100% in total."
+      : totals.afterTaxPpm > FULL_ALLOCATION_PPM
+        ? "After-tax investing and extra debt rates cannot exceed 100% in total."
+    : draft.preTaxHsaSalaryRatePpm > 0 && !constraints.hsaEligible
       ? "Choose an HSA-eligible health plan before contributing to an HSA."
       : draft.afterTaxExtraDebtRatePpm > 0 && !constraints.hasActiveTermDebt
         ? "Set extra debt payments to 0% because no active term debt remains."

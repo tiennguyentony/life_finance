@@ -8,6 +8,7 @@ import { hqTab } from "../hq-tabs";
 import { HqCard, HqSpeech, HqUnavailable } from "../hq-ui";
 import { projectContributionBuckets } from "../hq-derivations";
 import {
+  allocationTotals,
   DIALS,
   draftDiffersFromStrategy,
   type Dial,
@@ -54,6 +55,7 @@ export function InvestScreen({ busy, draft, layout, onAdjust, onLayout, run }: P
   );
 
   const noSalary = run.income.annualGrossSalaryCents === null;
+  const totals = allocationTotals(draft);
 
   return (
     <div className="hq-screen">
@@ -120,6 +122,20 @@ export function InvestScreen({ busy, draft, layout, onAdjust, onLayout, run }: P
       ) : null}
 
       <HqCard eyebrow="Set your monthly plan">
+        <div className="hq-chip-row" style={{ margin: "0 0 0.625rem" }}>
+          <span
+            className="hq-chip"
+            data-tone={totals.preTaxPpm > 1_000_000 ? "negative" : undefined}
+          >
+            Pre-tax total {formatPpmPercent(totals.preTaxPpm, 1)} / 100%
+          </span>
+          <span
+            className="hq-chip"
+            data-tone={totals.afterTaxPpm > 1_000_000 ? "negative" : undefined}
+          >
+            After-tax total {formatPpmPercent(totals.afterTaxPpm, 1)} / 100%
+          </span>
+        </div>
         <div style={{ display: "grid", gap: "0.5rem" }}>
           {DIALS.map((dial) => (
             <DialRow

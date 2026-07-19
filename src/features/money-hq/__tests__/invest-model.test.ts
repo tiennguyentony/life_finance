@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   adjustDraft,
+  allocationTotals,
   DIALS,
   draftDiffersFromStrategy,
   draftFromStrategy,
@@ -100,6 +101,29 @@ describe("invest draft", () => {
         { hsaEligible: true, hasActiveTermDebt: false },
       ).disabledReason,
     ).toContain("0%");
+  });
+
+  it("blocks combined allocations above the engine's group limits", () => {
+    const preTax = {
+      ...SAVED,
+      preTax401kSalaryRatePpm: 900_000,
+      preTaxHsaSalaryRatePpm: 150_000,
+    };
+    const afterTax = {
+      ...SAVED,
+      afterTaxIraRatePpm: 200_000,
+      afterTaxBroadIndexRatePpm: 300_000,
+      afterTaxSectorRatePpm: 200_000,
+      afterTaxSpeculativeRatePpm: 100_000,
+      afterTaxExtraDebtRatePpm: 250_000,
+    };
+
+    expect(allocationTotals(preTax)).toEqual({
+      preTaxPpm: 1_050_000,
+      afterTaxPpm: 0,
+    });
+    expect(investPlanFromDraft(preTax).disabledReason).toContain("Pre-tax");
+    expect(investPlanFromDraft(afterTax).disabledReason).toContain("After-tax");
   });
 
   it("keeps a dial for every editable rate on the wire", () => {
