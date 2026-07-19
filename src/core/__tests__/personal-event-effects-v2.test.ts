@@ -342,6 +342,63 @@ describe("declarative personal-event v2 effects", () => {
     })]);
   });
 
+  it("applies every new reward shape with exact bounded timing and trade-offs", () => {
+    const opening = state();
+    const cases = [
+      {
+        templateId: "personal.employer_wellness_credit",
+        responseId: "use_credit_for_recovery",
+        parameters: { credit_cents: 50_000 },
+        expectedFlow: { kind: "temporary_income", amountCents: 35_000, remainingMonths: 1 },
+        expectedWellbeing: { burnoutPpm: 65_000, happinessPpm: 900_000 },
+      },
+      {
+        templateId: "personal.professional_development_stipend",
+        responseId: "take_lighter_program",
+        parameters: { monthly_stipend_cents: 100_000 },
+        expectedFlow: { kind: "temporary_income", amountCents: 50_000, remainingMonths: 6 },
+        expectedWellbeing: { burnoutPpm: 100_000, happinessPpm: 915_000 },
+      },
+      {
+        templateId: "personal.consumer_refund",
+        responseId: "share_refund",
+        parameters: { refund_cents: 80_000 },
+        expectedFlow: { kind: "temporary_income", amountCents: 40_000, remainingMonths: 1 },
+        expectedWellbeing: { burnoutPpm: 100_000, happinessPpm: 925_000 },
+      },
+      {
+        templateId: "personal.side_project_license",
+        responseId: "take_six_month_royalty",
+        parameters: { license_value_cents: 500_000 },
+        expectedFlow: { kind: "temporary_income", amountCents: 100_000, remainingMonths: 6 },
+        expectedWellbeing: { burnoutPpm: 100_000, happinessPpm: 900_000 },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const template = getPersonalEventTemplateV2(testCase.templateId);
+      const resolved = resolvePersonalEventResponseV2(
+        opening,
+        template,
+        {
+          eventId: `evt.${testCase.templateId}`,
+          templateId: template.id,
+          templateVersion: template.version,
+          parameters: testCase.parameters,
+        },
+        testCase.responseId,
+        `cmd.${testCase.responseId}`,
+      );
+      expect(resolved.activeCashFlows).toEqual([
+        expect.objectContaining(testCase.expectedFlow),
+      ]);
+      expect(resolved.wellbeing).toEqual(testCase.expectedWellbeing);
+      expect(resolved.playerCostCents).toBe(0);
+      expect(resolved.finances).toEqual(opening.finances);
+      expect(resolved.ledger).toBe(opening.ledger);
+    }
+  });
+
   it("uses deterministic unique flow ids for multiple cash effects", () => {
     const opening = state();
     const base = getPersonalEventTemplateV2("personal.performance_bonus");
