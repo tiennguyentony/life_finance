@@ -74,6 +74,40 @@ describe("board plan catalog", () => {
     });
   });
 
+  it("previews the engine-owned lifestyle and career effects accurately", () => {
+    const run = projectRunView(currentRunState());
+    const lifestyle = plansForDestination(run, "home").find(
+      ({ id }) => id === "home.reduce-lifestyle",
+    )!;
+    const career = plansForDestination(run, "startup").find(
+      ({ id }) => id === "startup.certificate",
+    )!;
+
+    expect(lifestyle.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Required monthly obligations",
+          value: "-$100",
+          certainty: "exact",
+        }),
+        expect.objectContaining({
+          label: "Financial-independence target",
+          value: "Lower",
+          certainty: "directional",
+        }),
+      ]),
+    );
+    expect(career.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Annual salary on completion",
+          value: "+$3,000",
+          certainty: "exact",
+        }),
+      ]),
+    );
+  });
+
   it("preserves the recurring strategy when changing the reserve target", () => {
     const run = projectRunView(currentRunState());
     const plan = plansForDestination(run, "hospital").find(

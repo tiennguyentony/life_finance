@@ -9,8 +9,9 @@ import type { ScreenProps } from "./screen-props";
 const RULES: readonly Readonly<{ mark: string; text: string }>[] = Object.freeze([
   { mark: "✓", text: "Upskilling requires active employment" },
   { mark: "✓", text: "Cash upfront — no financing here" },
-  { mark: "✓", text: "One program at a time" },
-  { mark: "~", text: "“Up to” means the raise is not guaranteed" },
+  { mark: "✓", text: "The same program cannot be started twice at once" },
+  { mark: "✓", text: "Different programs may run in parallel if you can fund them" },
+  { mark: "✓", text: "The catalog raise lands when the program completes" },
 ]);
 
 export function CareerScreen({
@@ -85,7 +86,7 @@ export function CareerScreen({
                     <span>{formatCents(program.costCents)} upfront</span>
                     <span>{program.durationMonths} months</span>
                     <span>
-                      up to +{formatCents(program.annualSalaryIncreaseCents)}/yr
+                      +{formatCents(program.annualSalaryIncreaseCents)}/yr on completion
                     </span>
                     <span style={{ color: "var(--hq-green-deep)" }}>
                       pays for itself in ~{paybackMonths} months
@@ -98,8 +99,9 @@ export function CareerScreen({
               ))}
             </div>
             <p className="hq-note" style={{ marginTop: "0.625rem" }}>
-              Payback and upside are arithmetic on the program catalog, not a
-              forecast: they assume the full raise lands and holds.
+              Payback and upside are arithmetic, not a market forecast. The
+              engine applies the listed raise on completion; the ten-year
+              figure assumes that salary then remains unchanged for ten years.
             </p>
           </HqCard>
         </div>
@@ -144,9 +146,9 @@ export function CareerScreen({
                 lineHeight: 1.5,
               }}
             >
-              A raise repeats <b>every month, forever</b> — and raises compound
-              on raises. Early-career salary growth can out-earn any investment
-              you can afford right now.
+              A raise repeats in each later paycheck while employment and that
+              salary remain active. Early-career salary growth can out-earn an
+              investment you can afford right now.
             </p>
             <p className="hq-note" data-tone="positive" style={{ margin: 0 }}>
               You hold {formatCents(view.cashCents)} in cash today. Programs are
