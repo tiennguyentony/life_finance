@@ -28,6 +28,8 @@ export type ProfileInput = {
   readonly personaId: PersonaId;
   readonly age: string;
   readonly locationId: string;
+  readonly healthPlanId: string | null;
+  readonly insuranceCoverageIds: readonly string[];
   readonly desiredAnnualSpendingDollars: string;
   readonly targetAgeYears: string;
 };

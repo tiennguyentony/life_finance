@@ -6,10 +6,15 @@ import { useRouter } from "next/navigation";
 import { LoadingState } from "@/components/async-state";
 import { useOnboarding } from "./onboarding-provider";
 import { Sprout } from "@/components/sprout";
-import { getPersonas, PROFILE_LOCATIONS } from "@/services/player.service";
+import {
+  getPersonas,
+  PROFILE_INSURANCE_COVERAGES,
+  PROFILE_LOCATIONS,
+  profileHealthPlans,
+} from "@/services/player.service";
 import type { Persona, ProfileInput } from "@/types/game";
 
-const STEP_LABELS = ["You", "Where", "Why"] as const;
+const STEP_LABELS = ["You", "Where", "Protection", "Goal"] as const;
 const PERSONA_LOCATION_ID: Readonly<Record<Persona["id"], string>> = {
   "junior-developer": "location.seattle",
   educator: "location.chicago",
@@ -24,6 +29,8 @@ export function ProfileWizard() {
   const [form, setForm] = useState<Omit<ProfileInput, "personaId">>({
     age: "",
     locationId: "",
+    healthPlanId: "health.hdhp_hsa",
+    insuranceCoverageIds: ["insurance.renters"],
     desiredAnnualSpendingDollars: "60000",
     targetAgeYears: "50",
   });
@@ -47,12 +54,24 @@ export function ProfileWizard() {
     return <LoadingState label="Loading your character sheet..." />;
   }
 
-  function updateField(field: keyof typeof form, value: string) {
+  function updateField<K extends keyof typeof form>(
+    field: K,
+    value: (typeof form)[K],
+  ) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function toggleCoverage(coverageId: string) {
+    setForm((current) => ({
+      ...current,
+      insuranceCoverageIds: current.insuranceCoverageIds.includes(coverageId)
+        ? current.insuranceCoverageIds.filter((id) => id !== coverageId)
+        : [...current.insuranceCoverageIds, coverageId],
+    }));
+  }
+
   function handleContinue() {
-    if (step < 2) {
+    if (step < 3) {
       setStep((current) => current + 1);
       return;
     }
@@ -69,12 +88,21 @@ export function ProfileWizard() {
   const parsedAge = form.age === "" ? persona.age : Number(form.age);
   const effectiveLocationId =
     form.locationId || PERSONA_LOCATION_ID[persona.id];
+  const availableHealthPlans = profileHealthPlans(persona.id);
+  const protectionIsValid =
+    (form.healthPlanId === null ||
+      availableHealthPlans.some(({ id }) => id === form.healthPlanId)) &&
+    form.insuranceCoverageIds.every((id) =>
+      PROFILE_INSURANCE_COVERAGES.some((coverage) => coverage.id === id),
+    );
   const canContinue =
     step === 0
       ? Number.isInteger(parsedAge) && parsedAge >= 18 && parsedAge <= 80
       : step === 1
         ? PROFILE_LOCATIONS.some(({ id }) => id === effectiveLocationId)
-        : Number.isSafeInteger(Number(form.desiredAnnualSpendingDollars)) &&
+        : step === 2
+          ? protectionIsValid
+          : Number.isSafeInteger(Number(form.desiredAnnualSpendingDollars)) &&
           Number(form.desiredAnnualSpendingDollars) > 0 &&
           Number.isSafeInteger(Number(form.targetAgeYears)) &&
           Number(form.targetAgeYears) >= 18 &&
@@ -83,7 +111,7 @@ export function ProfileWizard() {
   return (
     <div className="screen wizard-screen">
       <section className="wizard-panel">
-        <div className="wizard-progress" aria-label={`Profile step ${step + 1} of 3`}>
+        <div className="wizard-progress" aria-label={`Profile step ${step + 1} of 4`}>
           {STEP_LABELS.map((label, index) => (
             <div className={index <= step ? "wizard-step wizard-step-active" : "wizard-step"} key={label}>
               <i />
@@ -139,6 +167,51 @@ export function ProfileWizard() {
           ) : null}
 
           {step === 2 ? (
+            <fieldset className="wizard-fieldset" key="protection">
+              <legend>Choose what protects you</legend>
+              <label className="field-wide">
+                Health plan
+                <select
+                  autoFocus
+                  onChange={(event) =>
+                    updateField("healthPlanId", event.target.value || null)
+                  }
+                  value={form.healthPlanId ?? ""}
+                >
+                  <option value="">No health plan</option>
+                  {availableHealthPlans.map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="field-wide" style={{ display: "grid", gap: "0.5rem" }}>
+                <span className="hq-eyebrow">Optional insurance</span>
+                {PROFILE_INSURANCE_COVERAGES.map((coverage) => (
+                  <label
+                    key={coverage.id}
+                    style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+                  >
+                    <input
+                      checked={form.insuranceCoverageIds.includes(coverage.id)}
+                      onChange={() => toggleCoverage(coverage.id)}
+                      style={{ height: 20, width: 20 }}
+                      type="checkbox"
+                    />
+                    {coverage.label}
+                  </label>
+                ))}
+              </div>
+              <p className="hq-note">
+                Choosing no plan or no optional coverage is allowed. Premiums
+                become required monthly spending and coverage can mitigate
+                matching life events.
+              </p>
+            </fieldset>
+          ) : null}
+
+          {step === 3 ? (
             <fieldset className="wizard-fieldset" key="goal">
               <legend>Define financial independence</legend>
               <label className="field-wide">
@@ -180,7 +253,7 @@ export function ProfileWizard() {
               </button>
             ) : <span />}
             <button className="button button-primary" disabled={!canContinue} type="submit">
-              {step === 2 ? "Generate my life" : "Continue"}
+              {step === 3 ? "Generate my life" : "Continue"}
             </button>
           </div>
         </form>
@@ -189,7 +262,7 @@ export function ProfileWizard() {
         <span>Selected life</span>
         <h2>{persona.name}</h2>
         <p>{persona.career}</p>
-        <Sprout emotion={step === 2 ? "thinking" : "idle"} size="medium" />
+        <Sprout emotion={step === 3 ? "thinking" : "idle"} size="medium" />
       </aside>
     </div>
   );

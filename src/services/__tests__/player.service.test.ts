@@ -34,6 +34,8 @@ describe("player service", () => {
       personaId: "city-survivor",
       age: "27",
       locationId: "location.austin",
+      healthPlanId: null,
+      insuranceCoverageIds: [],
       desiredAnnualSpendingDollars: "72000",
       targetAgeYears: "52",
     });
@@ -48,6 +50,8 @@ describe("player service", () => {
       birthMonth: "1999-07",
       locationId: "location.austin",
       runtimeDifficulty: "hard",
+      healthPlanId: null,
+      insuranceCoverageIds: [],
       finances: expect.objectContaining({ cashCents: 1_100_000 }),
       financialGoal: {
         desiredAnnualSpendingCents: 7_200_000,
@@ -67,6 +71,8 @@ describe("player service", () => {
         personaId: "educator",
         age: "28",
         locationId: "location.chicago",
+        healthPlanId: "health.public_low_deductible",
+        insuranceCoverageIds: ["insurance.renters"],
         desiredAnnualSpendingDollars: "0",
         targetAgeYears: "50",
       }),
