@@ -16,17 +16,13 @@
     },
     "tax": {
       "root": "services/tax/",
+      "framework": "fastapi",
+      "entrypoint": "tax_service.app:app",
       "functions": {
-        "api/index.py": {
+        "tax_service/app.py": {
           "maxDuration": 300
         }
-      },
-      "rewrites": [
-        {
-          "source": "/(.*)",
-          "destination": "/api/index"
-        }
-      ]
+      }
     }
   },
   "rewrites": [
