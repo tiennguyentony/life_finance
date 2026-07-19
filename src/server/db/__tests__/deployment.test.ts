@@ -4,21 +4,32 @@ import { describe, expect, it } from "vitest";
 
 type VercelConfig = Readonly<{
   buildCommand?: string;
-  services?: unknown;
-  experimentalServices?: Readonly<{
+  experimentalServices?: unknown;
+  services?: Readonly<{
     web?: Readonly<{
-      entrypoint?: string;
-      routePrefix?: string;
+      root?: string;
       framework?: string;
       buildCommand?: string;
+      bindings?: readonly Readonly<{
+        type?: string;
+        service?: string;
+        format?: string;
+        env?: string;
+      }>[];
     }>;
     tax_service?: Readonly<{
+      root?: string;
       entrypoint?: string;
-      routePrefix?: string;
       framework?: string;
-      maxDuration?: number;
+      functions?: Readonly<
+        Record<string, Readonly<{ maxDuration?: number }>>
+      >;
     }>;
   }>;
+  rewrites?: readonly Readonly<{
+    source?: string;
+    destination?: Readonly<{ service?: string }>;
+  }>[];
 }>;
 
 describe("production database deployment", () => {
@@ -28,8 +39,8 @@ describe("production database deployment", () => {
     ) as VercelConfig;
 
     expect(config.buildCommand).toBeUndefined();
-    expect(config.services).toBeUndefined();
-    expect(config.experimentalServices?.web?.buildCommand).toBe(
+    expect(config.experimentalServices).toBeUndefined();
+    expect(config.services?.web?.buildCommand).toBe(
       "node scripts/vercel-build.mjs",
     );
     const buildScript = readFileSync(
@@ -49,21 +60,38 @@ describe("production database deployment", () => {
     expect(migrationScript).toContain("pg_advisory_unlock");
   });
 
-  it("mounts the bearer-protected tax service with its generated environment name", () => {
+  it("binds the bearer-protected tax service privately to the frontend", () => {
     const config = JSON.parse(
       readFileSync(new URL("../../../../vercel.json", import.meta.url), "utf8"),
     ) as VercelConfig;
 
-    expect(config.experimentalServices?.web).toMatchObject({
-      entrypoint: ".",
-      routePrefix: "/",
+    expect(config.services?.web).toMatchObject({
+      root: ".",
       framework: "nextjs",
+      bindings: [
+        {
+          type: "service",
+          service: "tax_service",
+          format: "url",
+          env: "TAX_SERVICE_URL",
+        },
+      ],
     });
-    expect(config.experimentalServices?.tax_service).toMatchObject({
-      entrypoint: "services/tax/api/index.py",
-      routePrefix: "/svc/tax",
+    expect(config.services?.tax_service).toMatchObject({
+      root: "services/tax",
+      entrypoint: "api/index.py",
       framework: "fastapi",
-      maxDuration: 300,
+      functions: {
+        "api/index.py": {
+          maxDuration: 300,
+        },
+      },
     });
+    expect(config.rewrites).toEqual([
+      {
+        source: "/(.*)",
+        destination: { service: "web" },
+      },
+    ]);
   });
 });
