@@ -10,3 +10,10 @@ coverage/
 .venv/
 .worktrees/
 KayKit_BoardGameBits_1.0_FREE/
+
+# Python tooling caches. The tax service builds inside this project now, so a
+# CLI deploy from a working tree would otherwise upload them.
+**/__pycache__/
+**/.mypy_cache/
+**/.pytest_cache/
+**/.ruff_cache/

@@ -4,7 +4,22 @@ import { describe, expect, it } from "vitest";
 
 type VercelConfig = Readonly<{
   buildCommand?: string;
-  services?: unknown;
+  services?: Readonly<{
+    web?: Readonly<{
+      buildCommand?: string;
+      bindings?: readonly Readonly<{
+        type?: string;
+        service?: string;
+        format?: string;
+        env?: string;
+      }>[];
+    }>;
+    tax?: Readonly<{
+      root?: string;
+      functions?: Readonly<Record<string, Readonly<{ maxDuration?: number }>>>;
+      rewrites?: readonly Readonly<{ source?: string; destination?: string }>[];
+    }>;
+  }>;
 }>;
 
 describe("production database deployment", () => {
@@ -13,8 +28,10 @@ describe("production database deployment", () => {
       readFileSync(new URL("../../../../vercel.json", import.meta.url), "utf8"),
     ) as VercelConfig;
 
-    expect(config.buildCommand).toBe("node scripts/vercel-build.mjs");
-    expect(config.services).toBeUndefined();
+    expect(config.buildCommand).toBeUndefined();
+    expect(config.services?.web?.buildCommand).toBe(
+      "node scripts/vercel-build.mjs",
+    );
     const buildScript = readFileSync(
       new URL("../../../../scripts/vercel-build.mjs", import.meta.url),
       "utf8",
@@ -30,5 +47,25 @@ describe("production database deployment", () => {
     expect(migrationScript).toContain("max: 1");
     expect(migrationScript).toContain("pg_advisory_lock");
     expect(migrationScript).toContain("pg_advisory_unlock");
+  });
+
+  it("binds the frontend to the private tax service", () => {
+    const config = JSON.parse(
+      readFileSync(new URL("../../../../vercel.json", import.meta.url), "utf8"),
+    ) as VercelConfig;
+
+    expect(config.services?.web?.bindings).toContainEqual({
+      type: "service",
+      service: "tax",
+      format: "url",
+      env: "TAX_SERVICE_URL",
+    });
+    expect(config.services?.tax).toMatchObject({
+      root: "services/tax/",
+      functions: {
+        "api/index.py": { maxDuration: 300 },
+      },
+      rewrites: [{ source: "/(.*)", destination: "/api/index" }],
+    });
   });
 });
