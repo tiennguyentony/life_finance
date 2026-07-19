@@ -24,6 +24,7 @@ import {
 function state(
   termDebts: DebtBreakdown["termDebts"],
   cashCents = 1_000_000,
+  revolvingCreditUsedCents = 0,
 ): GameStateV2 {
   const resolvedScenario = resolveScenarioCatalogSelection(
     US_2026_SCENARIO_CATALOG,
@@ -59,7 +60,7 @@ function state(
       otherAssetsCents: moneyCents(0),
       termDebts,
       revolvingCreditLimitCents: moneyCents(1_000_000),
-      revolvingCreditUsedCents: moneyCents(0),
+      revolvingCreditUsedCents: moneyCents(revolvingCreditUsedCents),
     },
     wellbeing: {
       burnoutPpm: ratePpm(0),
@@ -279,6 +280,36 @@ describe("monthly term-debt service", () => {
     expect(plan.totalInterestCents).toBe(4_200);
     expect(plan.totalScheduledPaymentCents).toBe(113_000);
     expect(Object.isFrozen(plan.lines)).toBe(true);
+  });
+
+  it("charges and services revolving credit with the shared 24% APR policy", () => {
+    const initial = state([], 1_000_000, 500_000);
+    const plan = planMonthlyDebtService(initial);
+
+    expect(plan.revolving).toEqual({
+      version: "revolving-credit-policy-v2",
+      openingPrincipalCents: 500_000,
+      interestCents: 10_000,
+      scheduledPaymentCents: 15_300,
+      principalPaidCents: 5_300,
+      closingPrincipalBeforeNewDrawsCents: 494_700,
+    });
+    expect(plan.totalInterestCents).toBe(10_000);
+    expect(plan.totalScheduledPaymentCents).toBe(15_300);
+
+    const settled = settleMonthlyDebtService(
+      initial,
+      "turn.revolving-credit",
+    ).state;
+    expect(settled.finances.cashCents).toBe(984_700);
+    expect(settled.finances.creditUsedCents).toBe(494_700);
+    expect(settled.gameplay.debts.revolvingCreditUsedCents).toBe(494_700);
+    expect(
+      settled.ledger.transactions.slice(-2).map(({ reasonCode }) => reasonCode),
+    ).toEqual([
+      "monthly_revolving_credit_interest",
+      "monthly_revolving_credit_payment",
+    ]);
   });
 
   it("settles interest and payment in balanced journals and updates next obligations", () => {

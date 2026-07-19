@@ -987,6 +987,7 @@ export function simulateFinancialMonthV2(
     working,
     input.commandId,
     validationOptions,
+    debtService,
   ).state;
   const postObligationIncomeCents = moneyCents(
     Math.max(

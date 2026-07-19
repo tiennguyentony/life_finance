@@ -11,6 +11,7 @@ import {
 } from "./game-state-v2";
 import type { GameStateV2ValidationOptions } from "./game-state-v2-validation";
 import { activeInsuranceCoveragesV2 } from "./insurance-selection-v2";
+import { planRevolvingCreditMonthV2 } from "./revolving-credit-v2";
 
 const PPM = 1_000_000;
 const MAX_EMERGENCY_MONTHS_PPM = 12_000_000;
@@ -85,12 +86,17 @@ export function computeExposureSnapshotV2(
   state: GameStateV2,
   month: SimulationMonth = state.currentMonth,
 ): ExposureSnapshot {
+  const effectiveRequiredObligationsCents =
+    state.finances.requiredObligationsCents +
+    planRevolvingCreditMonthV2(
+      state.gameplay.debts.revolvingCreditUsedCents,
+    ).scheduledPaymentCents;
   const emergencyFundMonthsPpm =
-    state.finances.requiredObligationsCents === 0
+    effectiveRequiredObligationsCents === 0
       ? ratePpm(MAX_EMERGENCY_MONTHS_PPM)
       : ratioPpm(
           state.finances.cashCents,
-          state.finances.requiredObligationsCents,
+          effectiveRequiredObligationsCents,
           MAX_EMERGENCY_MONTHS_PPM,
         );
   const annualIncome =

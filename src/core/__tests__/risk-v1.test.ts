@@ -519,11 +519,11 @@ describe("risk and resilience analyzer v1", () => {
     const before = analyzeRiskV1(state());
     const after = analyzeRiskV1(withCreditDraw(state(), 500_00));
 
-    expect(after.metrics.emergency_fund_months).toEqual(
-      before.metrics.emergency_fund_months,
+    expect(after.metrics.emergency_fund_months.severityPpm).toBeGreaterThan(
+      before.metrics.emergency_fund_months.severityPpm,
     );
-    expect(after.metrics.liquid_resource_coverage).toEqual(
-      before.metrics.liquid_resource_coverage,
+    expect(after.metrics.liquid_resource_coverage.severityPpm).toBeGreaterThan(
+      before.metrics.liquid_resource_coverage.severityPpm,
     );
     expect(after.metrics.debt_service_ratio.severityPpm).toBeGreaterThan(
       before.metrics.debt_service_ratio.severityPpm,

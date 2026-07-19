@@ -1,4 +1,5 @@
 import type { RatePpm } from "./domain/money";
+import { REVOLVING_CREDIT_POLICY_V2 } from "./revolving-credit-v2";
 
 export const RISK_ANALYZER_V1_VERSION = "risk-v1" as const;
 
@@ -207,8 +208,10 @@ export const RISK_METRIC_WEIGHTS_V1: Readonly<Record<RiskMetricId, RatePpm>> =
 export const RISK_CALCULATION_CONSTANTS_V1 = Object.freeze({
   partsPerMillion: 1_000_000,
   highInterestAnnualRateThresholdPpm: 100_000,
-  assumedRevolvingAnnualInterestRatePpm: 240_000,
-  assumedRevolvingMinimumPaymentRatePpm: 30_000,
+  assumedRevolvingAnnualInterestRatePpm:
+    REVOLVING_CREDIT_POLICY_V2.annualInterestRatePpm,
+  assumedRevolvingMinimumPaymentRatePpm:
+    REVOLVING_CREDIT_POLICY_V2.minimumPaymentRatePpm,
   defaultSafeWithdrawalRatePpm: 40_000,
   dependentLifeInsuranceIncomeYears: 5,
   recentStressWindowMonths: 3,
