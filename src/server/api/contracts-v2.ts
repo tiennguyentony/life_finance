@@ -434,9 +434,21 @@ const debtServiceLineSchema = z
   })
   .strict();
 
+const revolvingCreditServiceEvidenceSchema = z
+  .object({
+    version: z.literal("revolving-credit-policy-v2"),
+    openingPrincipalCents: nonNegativeCentsSchema,
+    interestCents: nonNegativeCentsSchema,
+    scheduledPaymentCents: nonNegativeCentsSchema,
+    principalPaidCents: nonNegativeCentsSchema,
+    closingPrincipalBeforeNewDrawsCents: nonNegativeCentsSchema,
+  })
+  .strict();
+
 const debtServiceEvidenceSchema = z
   .object({
     lines: z.array(debtServiceLineSchema).max(32),
+    revolving: revolvingCreditServiceEvidenceSchema.optional(),
     totalInterestCents: nonNegativeCentsSchema,
     totalScheduledPaymentCents: nonNegativeCentsSchema,
   })
