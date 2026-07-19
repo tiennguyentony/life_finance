@@ -1,0 +1,12 @@
+# Local generated evidence and benchmark outputs are never runtime inputs.
+.balance-lab-dist/
+.artifacts/
+.ml-dist/
+coverage/
+
+# Local caches, reference libraries, and isolated worktrees.
+.next/
+.pnpm-store/
+.venv/
+.worktrees/
+KayKit_BoardGameBits_1.0_FREE/
