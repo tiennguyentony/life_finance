@@ -261,6 +261,10 @@ function calculateMetricInputs(state: GameStateV2): Record<RiskMetricId, MetricI
   const income = monthlyIncome(state);
   const required = Math.max(0, state.finances.requiredObligationsCents);
   const cash = Math.max(0, state.finances.cashCents);
+  const revolvingDebt = Math.max(0, state.gameplay.debts.revolvingCreditUsedCents);
+  // A credit draw can provide transaction liquidity, but it does not create an
+  // emergency fund. Count only cash that remains after revolving debt.
+  const unborrowedCash = Math.max(0, cash - revolvingDebt);
   const debtService = totalMinimumDebtPayment(state);
   const annualIncome = Math.max(0, income * 12);
   const freeCashFlow = safeBigIntToNumber(
@@ -275,13 +279,17 @@ function calculateMetricInputs(state: GameStateV2): Record<RiskMetricId, MetricI
     ],
     "concentrated portfolio",
   );
-  const liquidResources = sum(
-    [
-      cash,
-      Math.max(0, state.finances.taxableInvestmentsCents),
-      Math.max(0, state.finances.otherInvestableAssetsCents),
-    ],
-    "liquid resources",
+  const liquidResources = Math.max(
+    0,
+    sum(
+      [
+        cash,
+        Math.max(0, state.finances.taxableInvestmentsCents),
+        Math.max(0, state.finances.otherInvestableAssetsCents),
+        -revolvingDebt,
+      ],
+      "net liquid resources",
+    ),
   );
   const highInterest = highInterestPrincipal(state);
   const interest = estimatedMonthlyInterest(state);
@@ -295,7 +303,11 @@ function calculateMetricInputs(state: GameStateV2): Record<RiskMetricId, MetricI
   const recentStress = recentPlayerEventCosts(state);
   const emergencyMonths = required === 0
     ? RISK_CALCULATION_CONSTANTS_V1.maximumCoverageMonthsPpm
-    : ratioPpm(cash, required, RISK_CALCULATION_CONSTANTS_V1.maximumCoverageMonthsPpm);
+    : ratioPpm(
+        unborrowedCash,
+        required,
+        RISK_CALCULATION_CONSTANTS_V1.maximumCoverageMonthsPpm,
+      );
   const liquidMonths = required === 0
     ? RISK_CALCULATION_CONSTANTS_V1.maximumCoverageMonthsPpm
     : ratioPpm(
