@@ -85,6 +85,37 @@ export type RunView = Readonly<{
   career: Readonly<{
     pendingProgramIds: readonly string[];
   }>;
+  /**
+   * Scenario-selected benefits the player is actually enrolled in. Null for
+   * legacy runs created before the catalog snapshot existed, so every reader
+   * must treat an absent block as "unknown" rather than "no coverage".
+   */
+  benefits: Readonly<{
+    retirementPlan: Readonly<{
+      label: string;
+      employeeAnnualLimitCents: number;
+      employerMatchTiers: readonly Readonly<{
+        employeeContributionRateUpToPpm: number;
+        employerMatchRatePpm: number;
+      }>[];
+    }>;
+    healthPlan: Readonly<{
+      label: string;
+      hsaEligible: boolean;
+      monthlyPremiumCents: number;
+      annualDeductibleCents: number;
+      annualOutOfPocketMaximumCents: number;
+      coinsurancePpm: number;
+    }> | null;
+    insuranceCoverages: readonly Readonly<{
+      id: string;
+      label: string;
+      kind: "short_term_disability" | "long_term_disability" | "term_life" | "renters";
+      monthlyPremiumCents: number;
+      coverageLimitCents: number;
+      deductibleCents: number;
+    }>[];
+  }> | null;
   pendingInteraction:
     | Readonly<{ kind: "none" }>
     | Readonly<{
@@ -110,6 +141,54 @@ export type RunView = Readonly<{
     canRequestTeaching: boolean;
   }>;
 }>;
+
+/**
+ * Mirrors the self/family split `applyInsuranceMonthV2` uses, so the numbers a
+ * player reads on the Safety screen are the ones the engine will charge them.
+ */
+function projectBenefits(state: GameStateV2): RunView["benefits"] {
+  const snapshot = state.gameplay.catalogSnapshot;
+  if (snapshot === null) return null;
+  const { healthPlan, retirementPlan, insuranceCoverages, household } = snapshot.selected;
+  const family = household.healthCoverageTier === "family";
+
+  return Object.freeze({
+    retirementPlan: Object.freeze({
+      label: retirementPlan.label,
+      employeeAnnualLimitCents: retirementPlan.employeeAnnualLimitCents,
+      employerMatchTiers: Object.freeze(
+        retirementPlan.employerMatchTiers.map((tier) => Object.freeze({ ...tier })),
+      ),
+    }),
+    healthPlan:
+      healthPlan === null
+        ? null
+        : Object.freeze({
+            label: healthPlan.label,
+            hsaEligible: healthPlan.hsaEligible,
+            monthlyPremiumCents: snapshot.derived.monthlyHealthPremiumCents,
+            annualDeductibleCents: family
+              ? healthPlan.annualDeductibleFamilyCents
+              : healthPlan.annualDeductibleSelfCents,
+            annualOutOfPocketMaximumCents: family
+              ? healthPlan.annualOutOfPocketMaximumFamilyCents
+              : healthPlan.annualOutOfPocketMaximumSelfCents,
+            coinsurancePpm: healthPlan.coinsurancePpm,
+          }),
+    insuranceCoverages: Object.freeze(
+      insuranceCoverages.map((coverage) =>
+        Object.freeze({
+          id: coverage.id,
+          label: coverage.label,
+          kind: coverage.kind,
+          monthlyPremiumCents: coverage.monthlyPremiumCents,
+          coverageLimitCents: coverage.coverageLimitCents,
+          deductibleCents: coverage.deductibleCents,
+        }),
+      ),
+    ),
+  });
+}
 
 function titleCaseIdentifier(id: string): string {
   return id.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -262,6 +341,7 @@ export function projectRunView(state: GameStateV2): RunView {
         state.gameplay.careerDevelopment.pending.map(({ programId }) => programId),
       ),
     }),
+    benefits: projectBenefits(state),
     pendingInteraction:
       pending === null
         ? Object.freeze({ kind: "none" as const })

@@ -1,0 +1,179 @@
+import type { RunViewWire } from "@/contracts/api/contracts";
+import { moneyCents } from "@/core/domain/money";
+import { planRevolvingCreditMonthV2 } from "@/core/revolving-credit-v2";
+
+import {
+  annualToMonthlyCents,
+  debtServiceRatioPpm,
+  emergencyFundMonths,
+  projectContributionBuckets,
+  type ContributionBuckets,
+} from "./hq-derivations";
+
+const money = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+const preciseMoney = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+export function formatCents(cents: number): string {
+  return money.format(Math.round(cents) / 100);
+}
+
+export function formatPreciseCents(cents: number): string {
+  return preciseMoney.format(cents / 100);
+}
+
+/** Renders a change with an explicit sign, using a true minus glyph. */
+export function formatSignedCents(cents: number): string {
+  const formatted = formatCents(Math.abs(cents));
+  if (cents > 0) return `+${formatted}`;
+  if (cents < 0) return `−${formatted}`;
+  return formatted;
+}
+
+export function formatPpmPercent(ppm: number, fractionDigits = 0): string {
+  return `${(ppm / 10_000).toFixed(fractionDigits)}%`;
+}
+
+export function formatMonths(months: number): string {
+  const rounded = Math.round(months * 10) / 10;
+  return `${rounded} ${rounded === 1 ? "month" : "months"}`;
+}
+
+export function formatMonthLabel(month: string): string {
+  const parsed = new Date(`${month}-01T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return month;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+export function formatShortMonthLabel(month: string): string {
+  const parsed = new Date(`${month}-01T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return month;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+export type MoneyTone = "positive" | "negative" | "neutral";
+
+export function toneForChange(cents: number): MoneyTone {
+  if (cents > 0) return "positive";
+  if (cents < 0) return "negative";
+  return "neutral";
+}
+
+export type HqView = Readonly<{
+  cashCents: number;
+  netWorthCents: number;
+  /** Non-credit liabilities plus drawn revolving credit, as a positive number. */
+  debtCents: number;
+  revolvingUsedCents: number;
+  revolvingLimitCents: number;
+  revolvingAvailableCents: number;
+  monthlyRequiredCents: number;
+  annualLivingCostCents: number;
+  monthlyGrossSalaryCents: number | null;
+  monthLabel: string;
+  shortMonthLabel: string;
+  /** 1-based month index within the run. */
+  monthNumber: number;
+  goalCurrentCents: number;
+  goalTargetCents: number;
+  goalProgressPpm: number;
+  preparednessPpm: number;
+  preparednessBand: RunViewWire["preparedness"]["band"];
+  riskPpm: number;
+  emergencyFundMonths: number | null;
+  emergencyTargetMonths: number | null;
+  debtServiceRatioPpm: number | null;
+  buckets: ContributionBuckets;
+  hasPendingEvent: boolean;
+  /** Nav badge counts keyed by tab. */
+  debtBadge: number;
+  isComplete: boolean;
+}>;
+
+function monthIndex(startMonth: string, currentMonth: string): number {
+  const [startYear = 0, startMonthPart = 1] = startMonth.split("-").map(Number);
+  const [year = 0, month = 1] = currentMonth.split("-").map(Number);
+  return (year - startYear) * 12 + (month - startMonthPart) + 1;
+}
+
+export function hqViewFromRun(run: RunViewWire): HqView {
+  const debtCents =
+    run.finances.nonCreditLiabilitiesCents + run.finances.creditUsedCents;
+  const monthlyRequiredCents = run.finances.requiredObligationsCents;
+  const emergencyTargetMonthsPpm = run.strategy.emergencyFundTargetMonthsPpm;
+
+  return Object.freeze({
+    cashCents: run.finances.cashCents,
+    netWorthCents: run.finances.netWorthCents,
+    debtCents,
+    revolvingUsedCents: run.finances.creditUsedCents,
+    revolvingLimitCents: run.finances.creditLimitCents,
+    revolvingAvailableCents: Math.max(
+      0,
+      run.finances.creditLimitCents - run.finances.creditUsedCents,
+    ),
+    monthlyRequiredCents,
+    annualLivingCostCents: run.finances.annualLivingCostCents,
+    monthlyGrossSalaryCents:
+      run.income.annualGrossSalaryCents === null
+        ? null
+        : annualToMonthlyCents(run.income.annualGrossSalaryCents),
+    monthLabel: formatMonthLabel(run.currentMonth),
+    shortMonthLabel: formatShortMonthLabel(run.currentMonth),
+    monthNumber: monthIndex(run.startMonth, run.currentMonth),
+    goalCurrentCents: Math.max(0, run.finances.investableAssetsCents - debtCents),
+    goalTargetCents: run.goal.targetCents,
+    goalProgressPpm: run.goal.progressPpm,
+    preparednessPpm: run.preparedness.scorePpm,
+    preparednessBand: run.preparedness.band,
+    riskPpm: run.risk.aggregateSeverityPpm,
+    emergencyFundMonths: emergencyFundMonths(
+      run.finances.cashCents,
+      monthlyRequiredCents,
+    ),
+    emergencyTargetMonths:
+      emergencyTargetMonthsPpm === undefined
+        ? null
+        : emergencyTargetMonthsPpm / 1_000_000,
+    debtServiceRatioPpm: debtServiceRatioPpm(
+      monthlyRequiredCents > 0 ? estimatedMonthlyDebtPaymentCents(run) : 0,
+      run.income.annualGrossSalaryCents,
+    ),
+    buckets: projectContributionBuckets(
+      run.income.annualGrossSalaryCents,
+      run.strategy,
+      run.benefits?.retirementPlan.employerMatchTiers ?? null,
+    ),
+    hasPendingEvent: run.pendingInteraction.kind === "event",
+    debtBadge: run.finances.creditUsedCents > 0 ? 1 : 0,
+    isComplete: run.status === "completed",
+  });
+}
+
+/**
+ * The wire reports required obligations as one total rather than a debt-only
+ * line, so the ratio uses the revolving minimum the credit policy itself
+ * schedules. Term-debt payments sit inside required obligations and are not
+ * separable here, which is why the Debt screen labels this revolving-only.
+ */
+function estimatedMonthlyDebtPaymentCents(run: RunViewWire): number {
+  if (run.finances.creditUsedCents <= 0) return 0;
+  return planRevolvingCreditMonthV2(moneyCents(run.finances.creditUsedCents))
+    .scheduledPaymentCents;
+}

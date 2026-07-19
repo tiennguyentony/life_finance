@@ -58,6 +58,7 @@ import { decodePersistedGameState } from "../persisted-game-state";
 import {
   HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2,
   PERSONAL_EVENT_TEMPLATES_V2,
+  PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2,
   getActivePersonalEventTemplateV2,
 } from "../../data/personal-event-templates-v2";
 import { BEGINNER_EVENT_CADENCE_V1_VERSION } from "../beginner-event-cadence-v1";
@@ -319,16 +320,21 @@ describe("named world random monthly routing", () => {
     });
   });
 
-  it("keeps the uncalibrated production root catalog historical", () => {
+  it("keeps the production root catalog inside the shipped template set", () => {
     const opening = configuredState();
     const result = processMonthlyTurnV2(opening, namedCommand(opening));
+    const eligibleIds = result.record.runtimeBalanceCandidateSet?.eligibleTemplateIds ?? [];
+    const productionIds = new Set(
+      PRODUCTION_PERSONAL_EVENT_TEMPLATES_V2.map(({ id }) => id),
+    );
     const historicalIds = new Set(
       HISTORICAL_PERSONAL_EVENT_TEMPLATES_V2.map(({ id }) => id),
     );
 
-    expect(result.record.runtimeBalanceCandidateSet?.eligibleTemplateIds.every(
-      (id) => historicalIds.has(id),
-    )).toBe(true);
+    // Nothing outside the shipped catalog can ever be scheduled...
+    expect(eligibleIds.every((id) => productionIds.has(id))).toBe(true);
+    // ...and production now reaches beyond the original historical set.
+    expect(eligibleIds.some((id) => !historicalIds.has(id))).toBe(true);
     expect(result.record.beginnerEventCadence).toBeUndefined();
   });
 });
@@ -746,14 +752,17 @@ describe("atomic v2 monthly turn", () => {
       approvedCandidate:
         first.record.runtimeBalanceDecision?.approved?.templateId ?? null,
     }).toEqual({
-      stateChecksum: "8cbe67a510e1da8a8aa62e9b69e5fe2c9d1a8846408dff3f18adea6ff86955bd",
-      randomValue: 2_579_994_238,
+      // Re-goldened when production scheduling moved to the highest-supported
+      // catalog: a wider candidate pool changes the seeded draw and every
+      // downstream checksum. Determinism itself is asserted below.
+      stateChecksum: "37379ce0e921d3557d2934c89748b085b23dda73b9eeca8c0ec32518a5de5434",
+      randomValue: 2_452_111_844,
       candidateSetChecksum:
-        "3af4ea6d7042ad8fc85fcb56a0f78315a7745a41a43e464db8c87c1c08eafc8d",
+        "d3bcd632cc72c6728722aa113ed258b37f59174ba5518ce51bf2e9693a53e006",
       rankingInputChecksum:
-        "ba4440f908a637cb4cfd3548b0547561bb05f64455e385fc156555beafdec8f8",
-      topCandidate: "personal.performance_bonus",
-      approvedCandidate: "personal.performance_bonus",
+        "22199519add027b7877022d09c0ac3010b245819514f0d44b25a086e1c1414bd",
+      topCandidate: "personal.employer_wellness_credit",
+      approvedCandidate: "personal.employer_wellness_credit",
     });
   });
 
@@ -822,9 +831,11 @@ describe("atomic v2 monthly turn", () => {
       approvedEventId:
         observed.record.runtimeBalanceDecision?.approved?.eventId,
     }).toEqual({
-      checksum: "e3ab92c6783cd9ab1702a40fca80f15b805298f177ae096c7ce86b2258d25c69",
-      randomValue: 2_579_994_238,
-      approvedEventId: "evt.2026-08.personal.performance_bonus.v2",
+      // Re-goldened for the highest-supported production catalog; the wider
+      // candidate pool changes which template the seeded draw approves.
+      checksum: "2f2a4776c4859c36f38f7bca61ef7601eaeb663f4a9771e01f41fe2a7076f4a8",
+      randomValue: 2_452_111_844,
+      approvedEventId: "evt.2026-08.personal.employer_wellness_credit.v2",
     });
   });
 

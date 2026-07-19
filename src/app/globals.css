@@ -3,6 +3,7 @@
 @import "./styles/responsive.css";
 @import "./styles/teaching.css";
 @import "./styles/board.css";
+@import "./styles/money-hq.css";
 
 .auth-screen {
   display: grid;

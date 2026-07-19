@@ -103,6 +103,58 @@ const beginnerCheckpointSchema = z
   })
   .strict();
 
+/**
+ * Nullable because runs created before the scenario catalog snapshot existed
+ * carry no benefits. Readers must render "unknown", never "not covered".
+ */
+const benefitsSchema = z
+  .object({
+    retirementPlan: z
+      .object({
+        label: z.string().max(160),
+        employeeAnnualLimitCents: centsSchema.nonnegative(),
+        employerMatchTiers: z
+          .array(z
+            .object({
+              employeeContributionRateUpToPpm: rateSchema,
+              employerMatchRatePpm: rateSchema,
+            })
+            .strict())
+          .max(8),
+      })
+      .strict(),
+    healthPlan: z
+      .object({
+        label: z.string().max(160),
+        hsaEligible: z.boolean(),
+        monthlyPremiumCents: centsSchema.nonnegative(),
+        annualDeductibleCents: centsSchema.nonnegative(),
+        annualOutOfPocketMaximumCents: centsSchema.nonnegative(),
+        coinsurancePpm: rateSchema,
+      })
+      .strict()
+      .nullable(),
+    insuranceCoverages: z
+      .array(z
+        .object({
+          id: identifierSchema,
+          label: z.string().max(160),
+          kind: z.enum([
+            "short_term_disability",
+            "long_term_disability",
+            "term_life",
+            "renters",
+          ]),
+          monthlyPremiumCents: centsSchema.nonnegative(),
+          coverageLimitCents: centsSchema.nonnegative(),
+          deductibleCents: centsSchema.nonnegative(),
+        })
+        .strict())
+      .max(16),
+  })
+  .strict()
+  .nullable();
+
 const pendingInteractionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
   z
@@ -192,6 +244,7 @@ export const runViewSchema = z
     career: z
       .object({ pendingProgramIds: z.array(identifierSchema) })
       .strict(),
+    benefits: benefitsSchema,
     pendingInteraction: pendingInteractionSchema,
     outcome: z.unknown().nullable(),
     capabilities: z

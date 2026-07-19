@@ -1,9 +1,20 @@
 import { randomUUID } from "node:crypto";
 
 import { canonicalJson, sha256Canonical } from "@/core/canonical";
+import {
+  buildCheckpointEvidenceV2,
+  type CheckpointEvidenceV2,
+} from "@/core/checkpoint-v2";
+import { projectFinancialGoal } from "@/core/financial-goals-v2";
 import type { GameStateV2 } from "@/core/game-state-v2";
 import { assertValidGameStateV2 } from "@/core/game-state-v2-validation";
+import type { MonthlyTurnV2Record } from "@/core/monthly-turn-v2";
 import type { MonthlyTaxEvidence } from "@/core/payroll-v2";
+import { analyzeRiskV1 } from "@/core/risk-v1";
+import type {
+  TeachingCheckpointOwnerBundleV2,
+  TeachingMonthlyOwnerRecordV2,
+} from "@/core/teaching-checkpoint-owner-v2";
 import { RunSecretCodec, isRunSecret } from "@/server/auth/run-secret";
 import type { V2Repository } from "@/server/api/run-repository-port";
 import {
@@ -19,12 +30,22 @@ const secretCodec = new RunSecretCodec(new Uint8Array(32).fill(73));
 type StoredDemoCommand = Readonly<{
   command: GameCommandV2;
   monthlyRecord: AppliedCommandV2["monthlyRecord"];
+  resultingRevision: number;
 }>;
+
+/**
+ * A checkpoint aggregates at most twelve months, so the demo only needs a short
+ * trailing window of state snapshots to serve one. Keeping a few spare
+ * revisions bounds memory while still covering the whole checkpoint range.
+ */
+const RETAINED_STATE_REVISIONS = 16;
 
 type StoredDemoRun = {
   readonly accessSecret: string;
   state: GameStateV2;
   readonly acceptedCommands: Map<string, StoredDemoCommand>;
+  /** Trailing window of states by revision, for checkpoint evidence. */
+  readonly stateByRevision: Map<number, GameStateV2>;
   readonly taxEvidenceByCommand: Map<string, MonthlyTaxEvidence>;
   readonly taxEvidenceByContext: Map<string, MonthlyTaxEvidence>;
   lastAccessedAt: number;
@@ -88,6 +109,7 @@ export class InMemoryRunRepository implements V2Repository {
       accessSecret,
       state,
       acceptedCommands: new Map(),
+      stateByRevision: new Map([[state.revision, state]]),
       taxEvidenceByCommand: new Map(),
       taxEvidenceByContext: new Map(),
       lastAccessedAt: this.#clock(),
@@ -187,7 +209,10 @@ export class InMemoryRunRepository implements V2Repository {
     run.acceptedCommands.set(command.id, {
       command: structuredClone(command),
       monthlyRecord: reduced.monthlyRecord,
+      resultingRevision: reduced.state.revision,
     });
+    run.stateByRevision.set(reduced.state.revision, reduced.state);
+    this.#pruneStates(run);
     if (command.type === "process_month_v2") {
       const evidence = command.payload.taxEvidence;
       run.taxEvidenceByCommand.set(command.id, evidence);
@@ -207,10 +232,109 @@ export class InMemoryRunRepository implements V2Repository {
     runId: string,
     accessSecret: string,
     fromRevision: number,
-  ): Promise<never> {
-    void fromRevision;
-    this.#authorize(runId, accessSecret);
-    throw new Error("checkpoint evidence is unavailable for local demo runs");
+  ): Promise<CheckpointEvidenceV2> {
+    const { startingState, endingState, records } = this.#checkpointRange(
+      runId,
+      accessSecret,
+      fromRevision,
+    );
+    return buildCheckpointEvidenceV2(startingState, endingState, records);
+  }
+
+  /**
+   * Mirrors the database bundle so the demo path serves the same year-one
+   * report card the persistent path does, from the same engine evidence.
+   */
+  async loadTeachingCheckpointOwnerBundleV2(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ): Promise<TeachingCheckpointOwnerBundleV2> {
+    const { startingState, endingState, monthlyRecords, records } =
+      this.#checkpointRange(runId, accessSecret, fromRevision);
+
+    return Object.freeze({
+      evidence: buildCheckpointEvidenceV2(startingState, endingState, records),
+      fromRevision,
+      toRevision: endingState.revision,
+      endingStateChecksum: sha256Canonical(endingState),
+      monthlyRecords: Object.freeze(monthlyRecords),
+      startRisk: analyzeRiskV1(startingState),
+      endRisk: analyzeRiskV1(endingState),
+      endGoal: projectFinancialGoal(
+        endingState.finances,
+        endingState.gameplay.financialGoal,
+      ),
+    });
+  }
+
+  #checkpointRange(
+    runId: string,
+    accessSecret: string,
+    fromRevision: number,
+  ): Readonly<{
+    startingState: GameStateV2;
+    endingState: GameStateV2;
+    monthlyRecords: readonly TeachingMonthlyOwnerRecordV2[];
+    records: readonly MonthlyTurnV2Record[];
+  }> {
+    if (!Number.isSafeInteger(fromRevision) || fromRevision < 0) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "checkpoint start revision must be a non-negative safe integer",
+      );
+    }
+    const run = this.#authorize(runId, accessSecret);
+    const endingState = run.state;
+    if (fromRevision > endingState.revision) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "checkpoint start revision cannot exceed current revision",
+      );
+    }
+    const startingState = run.stateByRevision.get(fromRevision);
+    if (!startingState) {
+      throw new RunRepositoryError(
+        "PERSISTENCE_INVARIANT",
+        "demo runs retain only a trailing window of revisions for checkpoints",
+      );
+    }
+
+    const monthlyRecords = [...run.acceptedCommands.values()]
+      .filter(
+        (stored): stored is StoredDemoCommand & { monthlyRecord: MonthlyTurnV2Record } =>
+          stored.monthlyRecord !== null &&
+          stored.monthlyRecord !== undefined &&
+          stored.resultingRevision > fromRevision &&
+          stored.resultingRevision <= endingState.revision,
+      )
+      .sort((left, right) =>
+        left.monthlyRecord.processedMonth.localeCompare(
+          right.monthlyRecord.processedMonth,
+        ),
+      )
+      .map((stored) =>
+        Object.freeze({
+          resultingRevision: stored.resultingRevision,
+          recordChecksum: sha256Canonical(stored.monthlyRecord),
+          record: stored.monthlyRecord,
+        }),
+      );
+
+    return {
+      startingState,
+      endingState,
+      monthlyRecords,
+      records: monthlyRecords.map(({ record }) => record),
+    };
+  }
+
+  #pruneStates(run: StoredDemoRun): void {
+    if (run.stateByRevision.size <= RETAINED_STATE_REVISIONS) return;
+    const revisions = [...run.stateByRevision.keys()].sort((a, b) => a - b);
+    for (const revision of revisions.slice(0, revisions.length - RETAINED_STATE_REVISIONS)) {
+      run.stateByRevision.delete(revision);
+    }
   }
 
   async migrateRunStateToV2(runId: string, accessSecret: string) {
