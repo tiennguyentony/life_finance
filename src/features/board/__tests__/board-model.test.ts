@@ -33,7 +33,20 @@ describe("board view model", () => {
         cashCents: opening.finances.cashCents + 125_000,
         netWorthCents: opening.finances.netWorthCents + 150_000,
         creditUsedCents: opening.finances.creditUsedCents - 25_000,
+        taxableInvestmentsCents: opening.finances.taxableInvestmentsCents + 50_000,
+        annualLivingCostCents: opening.finances.annualLivingCostCents - 120_000,
+        requiredObligationsCents: opening.finances.requiredObligationsCents - 10_000,
       },
+      risk: {
+        ...opening.risk,
+        aggregateSeverityPpm: opening.risk.aggregateSeverityPpm - 5_000,
+      },
+      preparedness: {
+        ...opening.preparedness,
+        scorePpm: opening.preparedness.scorePpm + 7_000,
+      },
+      strategy: { ...opening.strategy, emergencyFundTargetMonthsPpm: 6_000_000 },
+      career: { pendingProgramIds: ["upskill.certificate"] },
       goal: { ...opening.goal, progressPpm: opening.goal.progressPpm + 4_000 },
     };
 
@@ -44,7 +57,14 @@ describe("board view model", () => {
       cashChangeCents: 125_000,
       netWorthChangeCents: 150_000,
       debtChangeCents: -25_000,
+      taxableInvestmentsChangeCents: 50_000,
+      annualLivingCostChangeCents: -120_000,
+      requiredObligationsChangeCents: -10_000,
       goalProgressChangePpm: 4_000,
+      riskSeverityChangePpm: -5_000,
+      preparednessScoreChangePpm: 7_000,
+      emergencyFundTargetMonthsPpm: 6_000_000,
+      startedProgramIds: ["upskill.certificate"],
     });
   });
 

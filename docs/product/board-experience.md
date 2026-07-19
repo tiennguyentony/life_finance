@@ -25,7 +25,10 @@ The current UI uses deterministic typed drafts. `/api/onboarding/parse` supports
 3. Select one plan and choose **Live this month**.
 4. Submit the plan command when it is not “stay the course.”
 5. Submit `process_month` at the next authoritative revision.
-6. Compare before/after cash, net worth, debt, and goal progress.
+6. Compare the authoritative before/after totals. The dialog always shows cash,
+   net worth, debt, and FI progress, then adds changed values such as taxable
+   investments, living cost, required monthly expenses, salary, risk,
+   preparedness, the safety-buffer target, and course starts/completions.
 7. Close the result and return to the board before choosing the next month's plan.
 8. If an event is pending, resolve it before another planning turn.
 
@@ -48,7 +51,7 @@ Availability checks use the current `RunView` (cash, credit, debt, employment, a
 
 ## Display ownership
 
-`board-model.ts` maps `RunView` into HUD values. The HUD shows cash, net worth, debt, calendar, financial-independence progress, event status, and outcome-derived trophies. Current level is a presentation derivation from revision, and XP mirrors FI progress; neither is a persisted progression system. The player label is currently presented as “Sprout,” not the profile-form name.
+`board-model.ts` maps `RunView` into HUD values. The HUD shows cash, net worth, debt, calendar, financial-independence progress, event status, and outcome-derived trophies. FI progress uses investable assets net of liabilities, so drawing credit cannot create progress. Current level is a presentation derivation from revision, and XP mirrors FI progress; neither is a persisted progression system. The player label is currently presented as “Sprout,” not the profile-form name.
 
 The strategy route intentionally hides several prototype side panels. `/board/free` still contains Goals, Events, Journal, and Menu controls that are placeholders for later milestones.
 

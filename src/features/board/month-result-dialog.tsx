@@ -31,6 +31,16 @@ function formatProgressDelta(ppm: number): string {
   return percentagePoints > 0 ? `+${formatted}` : percentagePoints < 0 ? `-${formatted}` : formatted;
 }
 
+function formatRiskDelta(ppm: number): string {
+  const delta = formatProgressDelta(ppm);
+  return ppm < 0 ? `${delta} (lower risk)` : ppm > 0 ? `${delta} (higher risk)` : delta;
+}
+
+function formatBufferTarget(ppm: number): string {
+  const months = ppm / 1_000_000;
+  return `${Number.isInteger(months) ? months.toFixed(0) : months.toFixed(1)} months`;
+}
+
 export function MonthResultDialog({
   busy,
   onPrimary,
@@ -46,12 +56,33 @@ export function MonthResultDialog({
 
   if (!result) return null;
 
-  const deltaRows = [
+  const deltaRows: readonly (readonly [string, string])[] = [
     ["Cash", formatMoneyDelta(result.cashChangeCents)],
     ["Net worth", formatMoneyDelta(result.netWorthChangeCents)],
     ["Debt", formatMoneyDelta(result.debtChangeCents)],
     ["Goal progress", formatProgressDelta(result.goalProgressChangePpm)],
-  ] as const;
+    ...(result.taxableInvestmentsChangeCents === 0
+      ? []
+      : [["Taxable investments", formatMoneyDelta(result.taxableInvestmentsChangeCents)] as const]),
+    ...(result.annualLivingCostChangeCents === 0
+      ? []
+      : [["Annual living cost", formatMoneyDelta(result.annualLivingCostChangeCents)] as const]),
+    ...(result.requiredObligationsChangeCents === 0
+      ? []
+      : [["Required monthly expenses", formatMoneyDelta(result.requiredObligationsChangeCents)] as const]),
+    ...(result.annualGrossSalaryChangeCents === 0
+      ? []
+      : [["Annual salary", formatMoneyDelta(result.annualGrossSalaryChangeCents)] as const]),
+    ...(result.emergencyFundTargetMonthsPpm === null
+      ? []
+      : [["Safety buffer target", formatBufferTarget(result.emergencyFundTargetMonthsPpm)] as const]),
+    ...(result.riskSeverityChangePpm === 0
+      ? []
+      : [["Risk exposure", formatRiskDelta(result.riskSeverityChangePpm)] as const]),
+    ...(result.preparednessScoreChangePpm === 0
+      ? []
+      : [["Financial preparedness", formatProgressDelta(result.preparednessScoreChangePpm)] as const]),
+  ];
   const checkpoint = result.beginnerCheckpoint;
   const checkpointOutcome = checkpoint === null
     ? null
@@ -93,6 +124,13 @@ export function MonthResultDialog({
           <section className="board-month-result-highlight">
             <h3>Course completed</h3>
             <p>{result.completedProgramIds.join(", ")}</p>
+          </section>
+        ) : null}
+
+        {result.startedProgramIds.length > 0 ? (
+          <section className="board-month-result-highlight">
+            <h3>Course started</h3>
+            <p>{result.startedProgramIds.join(", ")}</p>
           </section>
         ) : null}
 
