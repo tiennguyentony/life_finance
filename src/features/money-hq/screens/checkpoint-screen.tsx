@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import type { RunViewWire } from "@/contracts/api/contracts";
 
 import { hqTab } from "../hq-tabs";
-import { revisionMonthsBack, type TrailPoint } from "../run-trail";
 import { HqCard, HqSpeech, HqUnavailable } from "../hq-ui";
 import { formatCents, formatPpmPercent } from "../hq-view";
 import {
@@ -23,12 +22,10 @@ const CHECKPOINT_MONTHS = 12;
 
 type Props = Readonly<{
   run: RunViewWire;
-  /** Recorded months, used to turn a 12-month window into a revision. */
-  trail: readonly TrailPoint[];
   onBack: () => void;
 }>;
 
-export function CheckpointScreen({ run, trail, onBack }: Props) {
+export function CheckpointScreen({ run, onBack }: Props) {
   const froggy = hqTab("glossary");
   const [state, setState] = useState<
     | Readonly<{ kind: "loading" }>
@@ -38,13 +35,10 @@ export function CheckpointScreen({ run, trail, onBack }: Props) {
 
   useEffect(() => {
     let active = true;
-    // Revisions are not months: resolving an event also advances a revision.
-    // The recorded trail maps months back to the revision that produced them,
-    // so a 12-month window asks for the right range instead of guessing.
-    const fromRevision =
-      revisionMonthsBack(trail, CHECKPOINT_MONTHS) ??
-      Math.max(0, run.revision - CHECKPOINT_MONTHS);
-    fetchTeachingCheckpoint(run.runId, run.revision, fromRevision)
+    // The server resolves months to revisions from persisted monthly records.
+    // This stays correct after event/action revisions and on another browser,
+    // where the optional local chart trail may be empty.
+    fetchTeachingCheckpoint(run.runId, run.revision, CHECKPOINT_MONTHS)
       .then((data) => {
         if (active) setState({ kind: "ready", data });
       })
@@ -61,17 +55,21 @@ export function CheckpointScreen({ run, trail, onBack }: Props) {
     return () => {
       active = false;
     };
-  }, [run.runId, run.revision, trail]);
+  }, [run.runId, run.revision]);
 
   const checkpoint = run.beginnerCheckpoint;
+  const currentWeakest = Object.entries(run.preparedness.components).reduce(
+    (weakest, candidate) => candidate[1] < weakest[1] ? candidate : weakest,
+  );
+  const currentWeakestLabel = currentWeakest[0].replace(/Ppm$/, "").replace(/_/g, " ");
 
   return (
     <div className="hq-screen">
       <div className="hq-screen-head">
         <div>
-          <h2 className="hq-screen-title">Froggy&rsquo;s Report Card</h2>
+          <h2 className="hq-screen-title">Froggy&rsquo;s 12-Month Report</h2>
           <p className="hq-screen-subtitle">
-            Every number below has a verified source in the ledger.
+            A rolling year of verified monthly records, ending now.
           </p>
         </div>
         <div className="hq-planbar-spacer" />
@@ -84,7 +82,7 @@ export function CheckpointScreen({ run, trail, onBack }: Props) {
         <HqSpeech characterName={froggy.characterName} characterSrc={froggy.characterSrc}>
           {checkpoint
             ? `A ${checkpoint.outcome} year. The weakest link was ${checkpoint.weakestComponent.replace("_", " ")} — fix that and next year gets gentler. Ribbit.`
-            : "Keep playing — a checkpoint lands once you have a year of months behind you. Ribbit."}
+            : `Your current weakest link is ${currentWeakestLabel}. The verified figures below show what drove the last twelve months. Ribbit.`}
         </HqSpeech>
       </div>
 
@@ -142,10 +140,24 @@ export function CheckpointScreen({ run, trail, onBack }: Props) {
           </p>
         </HqCard>
       ) : (
-        <HqUnavailable>
-          No beginner checkpoint has been assessed for this run yet. It is
-          produced once the run reaches its twelfth month.
-        </HqUnavailable>
+        <HqCard eyebrow="Current preparedness">
+          <div
+            style={{
+              display: "grid",
+              gap: "0.5rem",
+              gridTemplateColumns: "repeat(auto-fit, minmax(10rem, 1fr))",
+            }}
+          >
+            <SummaryTile label="Preparedness band" value={run.preparedness.band} />
+            <SummaryTile label="Score" value={formatPpmPercent(run.preparedness.scorePpm)} />
+            <SummaryTile label="Weakest component" value={currentWeakestLabel} />
+          </div>
+          <p className="hq-note" data-tone="caution" style={{ marginTop: "0.75rem" }}>
+            The named beginner outcome is captured at the exact year-one
+            boundary. This later report uses the current preparedness snapshot
+            and the server&rsquo;s trailing twelve-month evidence.
+          </p>
+        </HqCard>
       )}
 
       <HqCard
@@ -164,8 +176,8 @@ export function CheckpointScreen({ run, trail, onBack }: Props) {
           </p>
         ) : state.kind === "unavailable" ? (
           <HqUnavailable>
-            {state.message} Checkpoint evidence is served from the persistent
-            database, so it is unavailable on the in-memory demo path.
+            {state.message} A 12-month report needs twelve completed monthly
+            records for this run.
           </HqUnavailable>
         ) : (
           <>

@@ -148,11 +148,11 @@ async function request<T>(
 export function fetchTeachingCheckpoint(
   runId: string,
   expectedRevision: number,
-  fromRevision: number,
+  trailingMonths: number,
 ): Promise<TeachingCheckpointResponse> {
   const query = new URLSearchParams({
     expectedRevision: String(expectedRevision),
-    fromRevision: String(fromRevision),
+    trailingMonths: String(trailingMonths),
   });
   return request(
     `/api/runs/${encodeURIComponent(runId)}/teaching/checkpoint?${query}`,

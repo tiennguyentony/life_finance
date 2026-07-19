@@ -284,6 +284,34 @@ describe("TeachingServiceV2 checkpoint integration", () => {
     ]);
   });
 
+  it("resolves a trailing month window on the server instead of guessing revisions", async () => {
+    const repository = {
+      loadAuthorizedRunV2: vi.fn().mockResolvedValue(state(23)),
+      loadCheckpointEvidenceV2: vi.fn().mockResolvedValue(checkpointEvidence),
+      loadTrailingMonthlyStartRevisionV2: vi.fn().mockResolvedValue(6),
+      loadTeachingCheckpointOwnerBundleV2: vi
+        .fn()
+        .mockResolvedValue(checkpointOwnerBundle()),
+    };
+    const service = new TeachingServiceV2(repository);
+
+    await service.getCheckpoint(state(23).runId, "access-secret", {
+      expectedRevision: 23,
+      trailingMonths: 12,
+    });
+
+    expect(repository.loadTrailingMonthlyStartRevisionV2).toHaveBeenCalledWith(
+      state(23).runId,
+      "access-secret",
+      12,
+    );
+    expect(repository.loadTeachingCheckpointOwnerBundleV2).toHaveBeenCalledWith(
+      state(23).runId,
+      "access-secret",
+      6,
+    );
+  });
+
   it("rejects a run that changes while checkpoint evidence is loaded", async () => {
     const repository = {
       loadAuthorizedRunV2: vi

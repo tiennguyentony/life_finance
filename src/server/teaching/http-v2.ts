@@ -28,7 +28,11 @@ export async function handleGetTeachingCheckpointV2(
     const url = new URL(request.url);
     const expectedRevision = parseRevision(url.searchParams.get("expectedRevision"));
     const fromRevision = parseRevision(url.searchParams.get("fromRevision"));
-    if (expectedRevision === null || fromRevision === null) {
+    const trailingMonths = parseRevision(url.searchParams.get("trailingMonths"));
+    if (
+      expectedRevision === null ||
+      (fromRevision === null) === (trailingMonths === null)
+    ) {
       return response(
         { error: { code: "INVALID_REQUEST", message: "valid revisions are required" } },
         400,
@@ -38,7 +42,7 @@ export async function handleGetTeachingCheckpointV2(
     return response(
       await service.getCheckpoint(runId, accessSecret, {
         expectedRevision,
-        fromRevision,
+        ...(fromRevision === null ? { trailingMonths: trailingMonths! } : { fromRevision }),
       }),
       200,
     );

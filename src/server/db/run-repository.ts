@@ -43,6 +43,7 @@ import {
   loadAcceptedMonthlyCommandV2,
   loadCheckpointEvidenceV2,
   loadTeachingCheckpointOwnerBundleV2,
+  loadTrailingMonthlyStartRevisionV2,
   loadMonthlyTaxEvidenceForCommand,
   loadMonthlyTaxEvidenceForContext,
 } from "./run-repository-read";
@@ -744,6 +745,20 @@ export class RunRepository {
       runId,
       accessSecret,
       fromRevision,
+    );
+  }
+
+  async loadTrailingMonthlyStartRevisionV2(
+    runId: string,
+    accessSecret: string,
+    months: number,
+  ) {
+    return loadTrailingMonthlyStartRevisionV2(
+      this.#db,
+      this.#secretCodec,
+      runId,
+      accessSecret,
+      months,
     );
   }
 

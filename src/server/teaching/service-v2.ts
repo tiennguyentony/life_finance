@@ -81,6 +81,11 @@ export type TeachingCheckpointRepositoryV2 = Readonly<{
     accessSecret: string,
     fromRevision: number,
   ) => Promise<TeachingCheckpointOwnerBundleV2>;
+  loadTrailingMonthlyStartRevisionV2?: (
+    runId: string,
+    accessSecret: string,
+    months: number,
+  ) => Promise<number>;
   applyCommandV2?: (
     runId: string,
     accessSecret: string,
@@ -104,7 +109,8 @@ export type TeachingCheckpointRepositoryV2 = Readonly<{
 
 export type TeachingCheckpointRequestV2 = Readonly<{
   expectedRevision: number;
-  fromRevision: number;
+  fromRevision?: number;
+  trailingMonths?: number;
 }>;
 
 export type TeachingCheckpointResponseV2 = Readonly<{
@@ -183,9 +189,16 @@ function assertRequest(
     !RUN_ID.test(runId) ||
     !Number.isSafeInteger(request.expectedRevision) ||
     request.expectedRevision < 0 ||
-    !Number.isSafeInteger(request.fromRevision) ||
-    request.fromRevision < 0 ||
-    request.fromRevision > request.expectedRevision
+    (request.fromRevision === undefined) ===
+      (request.trailingMonths === undefined) ||
+    (request.fromRevision !== undefined &&
+      (!Number.isSafeInteger(request.fromRevision) ||
+        request.fromRevision < 0 ||
+        request.fromRevision > request.expectedRevision)) ||
+    (request.trailingMonths !== undefined &&
+      (!Number.isSafeInteger(request.trailingMonths) ||
+        request.trailingMonths < 1 ||
+        request.trailingMonths > 12))
   ) {
     throw new TeachingServiceV2Error("INVALID_REQUEST");
   }
@@ -206,11 +219,17 @@ export class TeachingServiceV2 {
     }
     const loadBundle = this.repository.loadTeachingCheckpointOwnerBundleV2;
     if (!loadBundle) throw new TeachingServiceV2Error("INVALID_REQUEST");
+    const fromRevision = request.fromRevision ??
+      await this.trailingMonthlyStartRevision(
+        runId,
+        accessSecret,
+        request.trailingMonths!,
+      );
     const bundle = await loadBundle.call(
       this.repository,
       runId,
       accessSecret,
-      request.fromRevision,
+      fromRevision,
     );
     const after = await this.repository.loadAuthorizedRunV2(runId, accessSecret);
     if (after.runId !== runId || after.revision !== request.expectedRevision) {
@@ -220,6 +239,16 @@ export class TeachingServiceV2 {
       source: "deterministic_template",
       checkpoint: buildTeachingCheckpointFromOwnersV2(bundle),
     });
+  }
+
+  private async trailingMonthlyStartRevision(
+    runId: string,
+    accessSecret: string,
+    months: number,
+  ): Promise<number> {
+    const load = this.repository.loadTrailingMonthlyStartRevisionV2;
+    if (!load) throw new TeachingServiceV2Error("INVALID_REQUEST");
+    return load.call(this.repository, runId, accessSecret, months);
   }
 
   async getMoment(
