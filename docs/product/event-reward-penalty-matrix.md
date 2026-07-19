@@ -59,26 +59,53 @@ monthly record; the browser does not recalculate them.
 
 ## Local verification on 2026-07-18
 
-The final local cohort for commit `a7dd8ab` executed 3,600 matched runs and
-43,187 production months. Its deterministic production fingerprint was
-`6e3729121f4a165228c09c3d6065e420f01f15f359269f1b382244db13dd0019`.
+The final local cohort for commit `501aa78` executed 3,600 matched runs and
+41,873 production months. Its deterministic production fingerprint was
+`e46d0df55fe2f66afdac6e598880cfab1a3ee7b3ce8240fac2a16f4808fc6fa8`.
 
 The checks confirmed:
 
 - all 25 active events and their response effects pass the static signed-impact
   matrix;
 - prepared choices reduce event impact and matched strategy comparison passes;
+- bankruptcy is behavior-linked: 9.17% overall, 11.50% for the average bot,
+  34.67% for the debt-heavy lifestyle bot, and 0.33% for the disciplined bot;
+- the prepared-versus-reckless bankruptcy gap is 34.33 percentage points;
 - no major-event pacing, extreme-challenge, adjacent-absurd, root-event-streak,
   or prepared unavoidable-failure violations occurred;
-- six-month nonfatal recovery was 93.21%, above its 75% target; and
-- the runtime was 91.18 seconds, below the 300-second budget.
+- no failure was classified as unavoidable;
+- six-month nonfatal recovery was 92.56%, above its 75% target; and
+- the runtime was 88.31 seconds, below the 300-second budget.
 
-The complete beginner acceptance suite remains blocked. Bankruptcy was 0.39%
-against its configured 5–15% band, meaningful/crisis prompts were 33.44%
-against the 40–60% band, and the median was seven prompts against the configured
-eight-to-ten range. These are whole-game cadence and difficulty calibration
-gaps; they are not hidden by lowering acceptance thresholds or by increasing
-event amounts without evidence.
+The bankruptcy checks now pass their configured bands: 5–15% overall, 10–20%
+for the average bot, and 30–45% for the reckless bot. The complete beginner
+acceptance suite remains blocked by engagement and cadence checks: chapter
+completion is 55% against a 65% minimum, meaningful/crisis prompts are 33.55%
+against the 40–60% band, the median is seven prompts against the configured
+eight-to-ten range, 58.83% of runs receive at least six meaningful decisions
+against a 75% minimum, and the median is three humorous roots against the
+four-to-six range. These separate gaps are not hidden by lowering thresholds.
+
+## Behavior-linked difficulty mechanics
+
+Difficulty is produced by authoritative financial consequences and causal
+hazards, not by multiplying event penalties for a selected difficulty label:
+
+- revolving credit accrues 24% APR and requires 3% of the statement balance,
+  with a $25 floor, each month; interest and principal payment are separate
+  ledger entries, and the same policy is shared by the kernel, risk analyzer,
+  exposure model, and player-facing bank projection;
+- persistent lifestyle costs and financing choices continue to consume cash in
+  later months rather than disappearing after the response dialog;
+- burnout below 40% keeps the reduced-hours event at its 3% base chance, while
+  burnout at or above 40% raises that event's chance to 20%; and
+- the average bot spreads an income gap onto credit, the prepared bot trims
+  spending, and the reckless bot continues borrowing. This produces measurable
+  outcome separation from the same event catalog.
+
+Runtime Balance still rejects challenges that would create immediate,
+unavoidable failure. Operational ML may rank only the candidates that survive
+those deterministic rules; it cannot bypass them or mutate balances directly.
 
 ## Remaining modeling boundary
 
