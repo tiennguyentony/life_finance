@@ -13,7 +13,7 @@ export async function launchLocalDemo(
   navigate: (path: string) => void,
 ): Promise<void> {
   await client.createDemoRun();
-  navigate("/board");
+  navigate("/hq");
 }
 
 export function DemoLaunchButton() {
