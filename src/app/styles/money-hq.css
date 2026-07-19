@@ -709,6 +709,14 @@
   overflow: auto;
 }
 
+/* Dialog content reuses .hq for its design tokens, but must not inherit the
+ * full-page canvas sizing and padding from the application shell. */
+.hq-dialog > .hq {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
 .hq-dialog-title {
   margin: 0;
   font: 800 1.5rem var(--hq-display);
