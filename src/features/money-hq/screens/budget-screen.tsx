@@ -3,7 +3,6 @@
 import { getEducationConcept } from "../hq-concepts";
 import { hqTab } from "../hq-tabs";
 import { HqCard, HqChoiceList, HqSpeech, HqUnavailable } from "../hq-ui";
-import { annualToMonthlyCents } from "../hq-derivations";
 import { formatCents } from "../hq-view";
 import type { ScreenProps } from "./screen-props";
 
@@ -17,12 +16,15 @@ export function BudgetScreen({
 }: ScreenProps) {
   const inflato = hqTab("budget");
   const creep = getEducationConcept("lifestyle_creep");
-  const monthlyLiving = annualToMonthlyCents(view.annualLivingCostCents);
-  const insuranceMonthly = run.benefits?.healthPlan?.monthlyPremiumCents ?? 0;
-  const otherRequired = Math.max(
-    0,
-    view.monthlyRequiredCents - monthlyLiving - insuranceMonthly,
-  );
+  const obligations = run.finances.monthlyObligations;
+  const monthlyLiving = obligations.livingCostCents;
+  const insuranceMonthly =
+    obligations.healthPremiumCents +
+    obligations.additionalInsurancePremiumsCents;
+  const debtMinimums =
+    obligations.termDebtMinimumsCents +
+    obligations.revolvingCreditMinimumCents;
+  const otherRequired = obligations.otherRequiredCents;
   const total = Math.max(1, view.monthlyRequiredCents);
   const share = (part: number) => `${Math.round((part / total) * 100)}%`;
 
@@ -93,6 +95,18 @@ export function BudgetScreen({
                   {formatCents(insuranceMonthly)}
                 </div>
               ) : null}
+              {debtMinimums > 0 ? (
+                <div
+                  style={{
+                    width: share(debtMinimums),
+                    background: "var(--hq-red-bright)",
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {formatCents(debtMinimums)}
+                </div>
+              ) : null}
               {otherRequired > 0 ? (
                 <div
                   style={{
@@ -116,11 +130,16 @@ export function BudgetScreen({
                   ● health plan premium
                 </span>
               ) : null}
+              {debtMinimums > 0 ? (
+                <span style={{ font: "700 0.6875rem var(--hq-body-font)", color: "var(--hq-red-bright)" }}>
+                  ● debt minimums
+                </span>
+              ) : null}
               {otherRequired > 0 ? (
                 // Whatever required spending is left once living costs and the
                 // health premium are accounted for: debt minimums, other cover.
                 <span style={{ font: "700 0.6875rem var(--hq-body-font)", color: "var(--hq-red-bright)" }}>
-                  ● other required obligations
+                  ● event and other obligations
                 </span>
               ) : null}
             </div>

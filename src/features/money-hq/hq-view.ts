@@ -1,7 +1,4 @@
 import type { RunViewWire } from "@/contracts/api/contracts";
-import { moneyCents } from "@/core/domain/money";
-import { planRevolvingCreditMonthV2 } from "@/core/revolving-credit-v2";
-
 import {
   annualToMonthlyCents,
   debtServiceRatioPpm,
@@ -115,7 +112,8 @@ function monthIndex(startMonth: string, currentMonth: string): number {
 export function hqViewFromRun(run: RunViewWire): HqView {
   const debtCents =
     run.finances.nonCreditLiabilitiesCents + run.finances.creditUsedCents;
-  const monthlyRequiredCents = run.finances.requiredObligationsCents;
+  const monthlyRequiredCents =
+    run.finances.monthlyObligations.totalRequiredCashCents;
   const emergencyTargetMonthsPpm = run.strategy.emergencyFundTargetMonthsPpm;
 
   return Object.freeze({
@@ -152,7 +150,8 @@ export function hqViewFromRun(run: RunViewWire): HqView {
         ? null
         : emergencyTargetMonthsPpm / 1_000_000,
     debtServiceRatioPpm: debtServiceRatioPpm(
-      monthlyRequiredCents > 0 ? estimatedMonthlyDebtPaymentCents(run) : 0,
+      run.finances.monthlyObligations.termDebtMinimumsCents +
+        run.finances.monthlyObligations.revolvingCreditMinimumCents,
       run.income.annualGrossSalaryCents,
     ),
     buckets: projectContributionBuckets(
@@ -164,16 +163,4 @@ export function hqViewFromRun(run: RunViewWire): HqView {
     debtBadge: run.finances.creditUsedCents > 0 ? 1 : 0,
     isComplete: run.status === "completed",
   });
-}
-
-/**
- * The wire reports required obligations as one total rather than a debt-only
- * line, so the ratio uses the revolving minimum the credit policy itself
- * schedules. Term-debt payments sit inside required obligations and are not
- * separable here, which is why the Debt screen labels this revolving-only.
- */
-function estimatedMonthlyDebtPaymentCents(run: RunViewWire): number {
-  if (run.finances.creditUsedCents <= 0) return 0;
-  return planRevolvingCreditMonthV2(moneyCents(run.finances.creditUsedCents))
-    .scheduledPaymentCents;
 }

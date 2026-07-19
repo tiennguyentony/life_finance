@@ -42,6 +42,16 @@ describe("projectRunView", () => {
         taxableInvestmentsCents: 2_400_000,
         retirementCents: 3_500_000,
         netWorthCents: calculateNetWorth(state.finances),
+        monthlyObligations: {
+          livingCostCents: expect.any(Number),
+          healthPremiumCents: 11_000,
+          additionalInsurancePremiumsCents: 1_800,
+          termDebtMinimumsCents: 25_000,
+          revolvingCreditMinimumCents: 6_120,
+          otherRequiredCents: 0,
+          totalRequiredCashCents:
+            state.finances.requiredObligationsCents + 6_120,
+        },
       },
       income: { annualGrossSalaryCents: 12000000 },
       preparedness: {
@@ -247,6 +257,26 @@ describe("projectRunView", () => {
       },
       insuranceCoverages: [expect.objectContaining({ id: "insurance.renters", kind: "renters" })],
     });
+  });
+
+  it("projects only currently active optional insurance coverage", () => {
+    const base = currentRunState();
+    const state: GameStateV2 = {
+      ...base,
+      gameplay: {
+        ...base.gameplay,
+        recurringStrategy: {
+          ...base.gameplay.recurringStrategy,
+          insuranceCoverageIds: [],
+        },
+      },
+    };
+
+    expect(projectRunView(state).benefits?.insuranceCoverages).toEqual([]);
+    expect(
+      projectRunView(state).finances.monthlyObligations
+        .additionalInsurancePremiumsCents,
+    ).toBe(0);
   });
 
   it("reports unknown benefits for a run with no catalog snapshot", () => {
