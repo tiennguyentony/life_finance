@@ -99,10 +99,20 @@ export type ScenarioDirectorDecisionV2 = Readonly<{
   difficulty: RuntimeBalanceDifficultyV2;
   macroRegime: GameStateV2["marketRegime"];
   storyArcId?: string;
-  rankingSource: "deterministic_fallback";
+  rankingSource: "deterministic_fallback" | "validated_ai_ranking";
   candidateSetChecksum: string;
   rankingInputChecksum: string;
   ranked: readonly ScenarioDirectorRankedCandidateV2[];
+}>;
+
+export type ScenarioDirectorRankingOverrideV2 = Readonly<{
+  version: "scenario-director-ranking-override-v1";
+  candidateSetChecksum: string;
+  rankingInputChecksum: string;
+  ranked: readonly Readonly<{
+    templateId: string;
+    templateVersion: number;
+  }>[];
 }>;
 
 export type ScenarioDirectorInputErrorCodeV2 =
@@ -824,5 +834,50 @@ export function rankScenarioCandidatesV2(
     candidateSetChecksum: candidateChecksum(input.candidates),
     rankingInputChecksum: rankingInputChecksum(input, policy),
     ranked,
+  });
+}
+
+/**
+ * Rehydrates an externally ranked permutation from verified deterministic
+ * evidence. The external ranker can only change ordering; every gameplay fact
+ * remains owned by the frozen Scenario Director policy.
+ */
+export function applyScenarioDirectorRankingOverrideV2(
+  input: ScenarioDirectorInputV2,
+  override: ScenarioDirectorRankingOverrideV2,
+): ScenarioDirectorDecisionV2 {
+  const fallback = rankScenarioCandidatesV2(input);
+  if (
+    override.version !== "scenario-director-ranking-override-v1" ||
+    override.candidateSetChecksum !== fallback.candidateSetChecksum ||
+    override.rankingInputChecksum !== fallback.rankingInputChecksum
+  ) {
+    throw new ScenarioDirectorInputErrorV2(
+      "invalid_candidate_metadata",
+      "rankingOverride",
+      "ranking override checksums do not match the verified director input",
+    );
+  }
+  const violations = validateScenarioDirectorPermutationV2(
+    fallback.ranked,
+    override.ranked,
+  );
+  if (violations.length > 0) {
+    throw new ScenarioDirectorInputErrorV2(
+      "invalid_candidate_metadata",
+      "rankingOverride.ranked",
+      "ranking override must be an exact candidate permutation",
+    );
+  }
+  const fallbackByIdentity = new Map(
+    fallback.ranked.map((candidate) => [identity(candidate), candidate]),
+  );
+  return deepFreeze({
+    ...fallback,
+    rankingSource: "validated_ai_ranking",
+    ranked: override.ranked.map((candidate, index) => ({
+      ...fallbackByIdentity.get(identity(candidate))!,
+      rank: index + 1,
+    })),
   });
 }
