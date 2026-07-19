@@ -37,6 +37,15 @@ function PanelBadge({ count }: Readonly<{ count: number }>) {
   return <span className="board-badge">{count > 9 ? "9+" : count}</span>;
 }
 
+function formatPreviewMoney(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
 export function BoardHud({
   actionLabel,
   actionHint,
@@ -209,13 +218,31 @@ export function BoardHud({
           <div>
             {view.pendingEvent.choices.map((choice) => (
               <button
-                disabled={busy}
+                disabled={busy || !choice.enabled}
                 key={choice.id}
                 onClick={() => onResolveEvent(choice.id)}
                 type="button"
               >
                 <strong>{choice.label}</strong>
                 <span>{choice.description}</span>
+                {choice.preview.immediateCashChangeCents !== 0 ? (
+                  <small>
+                    {choice.preview.immediateCashChangeCents < 0 ? "Due now" : "Receive now"}: {formatPreviewMoney(Math.abs(choice.preview.immediateCashChangeCents))}
+                  </small>
+                ) : null}
+                {choice.preview.recurringCashFlows.map((flow, index) => (
+                  <small key={`${choice.id}.flow.${index}`}>
+                    {flow.direction === "expense" ? "Pay" : "Receive"} {formatPreviewMoney(flow.monthlyCents)} per month for {flow.durationMonths} months ({formatPreviewMoney(flow.totalCents)} total)
+                  </small>
+                ))}
+                {choice.preview.followUps.map((followUp) => (
+                  <small key={`${followUp.templateId}@${followUp.templateVersion}`}>
+                    {followUp.templateId} in {followUp.delayMonths} months
+                  </small>
+                ))}
+                {choice.preview.unavailableReason ? (
+                  <small>{choice.preview.unavailableReason}</small>
+                ) : null}
               </button>
             ))}
           </div>

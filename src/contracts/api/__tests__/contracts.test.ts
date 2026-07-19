@@ -59,6 +59,12 @@ describe("frontend API contracts", () => {
     );
 
     expect(runViewSchema.parse(projectRunView(eventState))).toMatchObject({
+      startMonth: "2026-07",
+      preparedness: {
+        version: "preparedness-assessment-v1",
+        scorePpm: expect.any(Number),
+      },
+      beginnerCheckpoint: null,
       career: { pendingProgramIds: [] },
       pendingInteraction: {
         kind: "event",
@@ -69,6 +75,28 @@ describe("frontend API contracts", () => {
         ],
       },
     });
+  });
+
+  it("rejects unsupported preparedness and beginner-checkpoint versions", () => {
+    const view = projectRunView(currentRunState());
+
+    expect(runViewSchema.safeParse({
+      ...view,
+      preparedness: { ...view.preparedness, version: "preparedness-assessment-v2" },
+    }).success).toBe(false);
+    expect(runViewSchema.safeParse({
+      ...view,
+      beginnerCheckpoint: {
+        version: "beginner-chapter-v2",
+        checkpointMonth: "2027-07",
+        outcome: "strong",
+        completed: true,
+        scorePpm: 500_000,
+        preparednessBand: "stable",
+        weakestComponent: "liquidity",
+        lessonKey: "lesson.emergency_fund",
+      },
+    }).success).toBe(false);
   });
 
   it("accepts contract-unit emergency reserve targets", () => {

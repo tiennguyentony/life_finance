@@ -15,6 +15,7 @@ export type BalanceLabAcceptanceResultV1 = Readonly<{
   numerator: number;
   denominator: number;
   minimumSamples: number;
+  tierIds?: readonly BalanceLabBatchSizeV1[];
   evidenceIds: readonly string[];
 }>;
 
@@ -33,7 +34,7 @@ export function balanceLabGateDecisionV1(
     .map(({ id }) => id);
   const blockingRuleIds = [
     ...failed,
-    ...(size === "quick" ? [] : insufficient),
+    ...(size === "quick" || size === "beginner" ? [] : insufficient),
   ].toSorted();
   return Object.freeze({
     status: blockingRuleIds.length > 0
@@ -74,12 +75,13 @@ export function evaluateBalanceLabAcceptanceV1(
   summary: BalanceLabMetricSummaryV1,
   rules: readonly BalanceLabAcceptanceRuleV1[],
   runtimeMs: number,
+  size: BalanceLabBatchSizeV1,
 ): readonly BalanceLabAcceptanceResultV1[] {
   if (!Number.isSafeInteger(runtimeMs) || runtimeMs < 0) {
     throw new RangeError("balance lab runtime must be a non-negative safe integer");
   }
   return Object.freeze(
-    rules.map((rule) => {
+    rules.filter((rule) => rule.tierIds === undefined || rule.tierIds.includes(size)).map((rule) => {
       const observed = observation(rule, summary, runtimeMs);
       const status = observed.denominator < rule.minimumSamples
         ? "insufficient_sample"
@@ -87,7 +89,12 @@ export function evaluateBalanceLabAcceptanceV1(
           ? "pass"
           : "fail";
       return Object.freeze({
-        ...rule,
+        id: rule.id,
+        metric: rule.metric,
+        comparator: rule.comparator,
+        threshold: rule.threshold,
+        minimumSamples: rule.minimumSamples,
+        ...(rule.tierIds === undefined ? {} : { tierIds: rule.tierIds }),
         ...observed,
         status,
         evidenceIds: Object.freeze([

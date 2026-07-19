@@ -2,6 +2,13 @@
   "version": "balance-lab-config-v1",
   "seedNamespace": "life-finance-balance-v1",
   "tiers": {
+    "beginner": {
+      "personaIds": ["healthy-v1", "low-cash-v1", "debt-burdened-v1"],
+      "matchedSeedCount": 200,
+      "horizonMonths": 12,
+      "difficulty": "guided",
+      "runtimeBudgetMs": 300000
+    },
     "quick": {
       "personaIds": ["healthy-v1"],
       "matchedSeedCount": 3,
@@ -30,14 +37,16 @@
       "metric": "bankruptcy_rate_ppm",
       "comparator": "at_most",
       "threshold": 250000,
-      "minimumSamples": 25
+      "minimumSamples": 25,
+      "tierIds": ["quick", "medium", "large"]
     },
     {
       "id": "unavoidable-failure-rate",
       "metric": "unavoidable_failure_rate_ppm",
       "comparator": "at_most",
       "threshold": 10000,
-      "minimumSamples": 25
+      "minimumSamples": 25,
+      "tierIds": ["quick", "medium", "large"]
     },
     {
       "id": "repeated-lessons",
@@ -51,14 +60,16 @@
       "metric": "prepared_vs_reckless_bankruptcy_delta_ppm",
       "comparator": "at_least",
       "threshold": 1,
-      "minimumSamples": 6
+      "minimumSamples": 6,
+      "tierIds": ["quick", "medium", "large"]
     },
     {
       "id": "healthy-persona-unavoidable-failure",
       "metric": "healthy_persona_unavoidable_failure_rate_ppm",
       "comparator": "at_most",
       "threshold": 100000,
-      "minimumSamples": 6
+      "minimumSamples": 6,
+      "tierIds": ["quick", "medium", "large"]
     },
     {
       "id": "prepared-impact-reduction",
@@ -86,14 +97,288 @@
       "metric": "maximum_strategy_objective_lead_share_ppm",
       "comparator": "at_most",
       "threshold": 950000,
-      "minimumSamples": 3
+      "minimumSamples": 3,
+      "tierIds": ["quick", "medium", "large"]
     },
     {
-      "id": "runtime-budget",
+      "id": "quick-runtime-budget",
       "metric": "runtime_ms",
       "comparator": "at_most",
       "threshold": 30000,
-      "minimumSamples": 1
+      "minimumSamples": 1,
+      "tierIds": ["quick"]
+    },
+    {
+      "id": "medium-runtime-budget",
+      "metric": "runtime_ms",
+      "comparator": "at_most",
+      "threshold": 900000,
+      "minimumSamples": 1,
+      "tierIds": ["medium"]
+    },
+    {
+      "id": "large-runtime-budget",
+      "metric": "runtime_ms",
+      "comparator": "at_most",
+      "threshold": 14400000,
+      "minimumSamples": 1,
+      "tierIds": ["large"]
+    },
+    {
+      "id": "beginner-chapter-completion-minimum",
+      "metric": "beginner_chapter_completion_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 650000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-chapter-completion-maximum",
+      "metric": "beginner_chapter_completion_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 750000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-bankruptcy-minimum",
+      "metric": "beginner_bankruptcy_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 50000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-bankruptcy-maximum",
+      "metric": "beginner_bankruptcy_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 150000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "average-beginner-bankruptcy-minimum",
+      "metric": "average_beginner_bankruptcy_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 100000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "average-beginner-bankruptcy-maximum",
+      "metric": "average_beginner_bankruptcy_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 200000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "reckless-bankruptcy-minimum",
+      "metric": "reckless_bankruptcy_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 300000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "reckless-bankruptcy-maximum",
+      "metric": "reckless_bankruptcy_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 450000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-prepared-vs-reckless-bankruptcy",
+      "metric": "prepared_vs_reckless_bankruptcy_delta_ppm",
+      "comparator": "at_least",
+      "threshold": 200000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-stable-resilient-bankruptcy",
+      "metric": "stable_resilient_bankruptcy_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 80000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-unavoidable-failure",
+      "metric": "unavoidable_failure_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 10000,
+      "minimumSamples": 1000,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-six-month-recovery",
+      "metric": "beginner_nonfatal_recovery_within_six_months_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 750000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-challenge-mix-minimum",
+      "metric": "beginner_meaningful_or_crisis_approved_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 400000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-challenge-mix-maximum",
+      "metric": "beginner_meaningful_or_crisis_approved_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 600000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-zero-extreme-challenges",
+      "metric": "beginner_extreme_approved_rate_ppm",
+      "comparator": "at_most",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-objective-domination",
+      "metric": "maximum_strategy_objective_lead_share_ppm",
+      "comparator": "at_most",
+      "threshold": 650000,
+      "minimumSamples": 3,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-total-prompts-minimum",
+      "metric": "beginner_median_total_prompt_count",
+      "comparator": "at_least",
+      "threshold": 8,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-total-prompts-maximum",
+      "metric": "beginner_median_total_prompt_count",
+      "comparator": "at_most",
+      "threshold": 10,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-meaningful-decisions-minimum",
+      "metric": "beginner_median_meaningful_decision_count",
+      "comparator": "at_least",
+      "threshold": 6,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-meaningful-decisions-maximum",
+      "metric": "beginner_median_meaningful_decision_count",
+      "comparator": "at_most",
+      "threshold": 8,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-six-meaningful-decision-rate",
+      "metric": "beginner_at_least_six_meaningful_decision_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 750000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-unique-decision-templates",
+      "metric": "beginner_median_unique_decision_template_count",
+      "comparator": "at_least",
+      "threshold": 5,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-humorous-roots-minimum",
+      "metric": "beginner_median_humorous_root_count",
+      "comparator": "at_least",
+      "threshold": 4,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-humorous-roots-maximum",
+      "metric": "beginner_median_humorous_root_count",
+      "comparator": "at_most",
+      "threshold": 6,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-absurd-roots-minimum",
+      "metric": "beginner_median_absurd_root_count",
+      "comparator": "at_least",
+      "threshold": 1,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-absurd-roots-maximum",
+      "metric": "beginner_median_absurd_root_count",
+      "comparator": "at_most",
+      "threshold": 2,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-positive-or-recovery-beat",
+      "metric": "beginner_positive_or_recovery_beat_rate_ppm",
+      "comparator": "at_least",
+      "threshold": 900000,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-adjacent-absurd-violations",
+      "metric": "beginner_adjacent_absurd_violation_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-root-event-streak-violations",
+      "metric": "beginner_root_event_streak_violation_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-funny-root-challenge-ceiling",
+      "metric": "beginner_funny_root_above_meaningful_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-prepared-funny-unavoidable-failures",
+      "metric": "beginner_prepared_funny_unavoidable_failure_count",
+      "comparator": "equals",
+      "threshold": 0,
+      "minimumSamples": 200,
+      "tierIds": ["beginner"]
+    },
+    {
+      "id": "beginner-runtime-budget",
+      "metric": "runtime_ms",
+      "comparator": "at_most",
+      "threshold": 300000,
+      "minimumSamples": 1,
+      "tierIds": ["beginner"]
     }
   ],
   "maximumReproductionBundles": 25

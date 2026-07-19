@@ -46,17 +46,27 @@ const run = {
     eventImpactSamples: [],
     majorEventPacingViolationCount: 0,
     majorEventPacingSampleCount: 0,
+    eventDecisionEvidence: [],
+    beginnerEventCadenceEvidence: [],
     objectiveValues: { survival: 1 },
   },
 };
 
 describe("balance lab config, acceptance, and reports", () => {
-  it("strictly resolves documented quick/medium/large production-month tiers", () => {
+  it("strictly resolves documented beginner/quick/medium/large production-month tiers", () => {
     const config = decodeBalanceLabConfigV1(rawConfig);
+    const beginner = resolveBalanceLabBatchV1(config, "beginner", "beginner-first-run");
     const quick = resolveBalanceLabBatchV1(config, "quick", "quick-ci");
     const medium = resolveBalanceLabBatchV1(config, "medium", "medium-local");
     const large = resolveBalanceLabBatchV1(config, "large", "large-scheduled");
 
+    expect(beginner.spec.horizonMonths).toBe(12);
+    expect(beginner.spec.difficulty).toBe("guided");
+    expect(beginner.spec.personaIds).toEqual([
+      "healthy-v1",
+      "low-cash-v1",
+      "debt-burdened-v1",
+    ]);
     expect(quick.spec.matchedSeeds).toHaveLength(3);
     expect(quick.spec.horizonMonths).toBe(24);
     expect(medium.spec.matchedSeeds).toHaveLength(25);
@@ -71,8 +81,35 @@ describe("balance lab config, acceptance, and reports", () => {
         "major_event_pacing_ppm",
         "matched_strategy_win_rate_ppm",
         "maximum_strategy_objective_lead_share_ppm",
+        "beginner_chapter_completion_rate_ppm",
+        "beginner_nonfatal_recovery_within_six_months_rate_ppm",
+        "beginner_meaningful_or_crisis_approved_rate_ppm",
+        "beginner_extreme_approved_rate_ppm",
+        "beginner_median_total_prompt_count",
+        "beginner_median_meaningful_decision_count",
+        "beginner_at_least_six_meaningful_decision_rate_ppm",
+        "beginner_median_unique_decision_template_count",
+        "beginner_median_humorous_root_count",
+        "beginner_median_absurd_root_count",
+        "beginner_positive_or_recovery_beat_rate_ppm",
+        "beginner_adjacent_absurd_violation_count",
+        "beginner_root_event_streak_violation_count",
+        "beginner_funny_root_above_meaningful_count",
+        "beginner_prepared_funny_unavoidable_failure_count",
       ]),
     );
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-prepared-vs-reckless-bankruptcy",
+    )).toMatchObject({ threshold: 200_000, tierIds: ["beginner"] });
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-total-prompts-minimum",
+    )).toMatchObject({ threshold: 8, minimumSamples: 200 });
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-meaningful-decisions-maximum",
+    )).toMatchObject({ threshold: 8, comparator: "at_most" });
+    expect(config.acceptance.find(
+      ({ id }) => id === "beginner-adjacent-absurd-violations",
+    )).toMatchObject({ threshold: 0, comparator: "equals" });
   });
 
   it("emits three-state configurable acceptance with sample evidence", () => {
@@ -82,12 +119,13 @@ describe("balance lab config, acceptance, and reports", () => {
       summary,
       config.acceptance,
       100,
+      "quick",
     );
 
     expect(acceptance.find(({ id }) => id === "bankruptcy-rate")?.status).toBe(
       "insufficient_sample",
     );
-    expect(acceptance.find(({ id }) => id === "runtime-budget")?.status).toBe(
+    expect(acceptance.find(({ id }) => id === "quick-runtime-budget")?.status).toBe(
       "pass",
     );
     expect(acceptance.find(({ id }) => id === "repeated-lessons")).toMatchObject({
@@ -96,6 +134,57 @@ describe("balance lab config, acceptance, and reports", () => {
       observed: 333_333,
     });
     expect(acceptance.every(({ evidenceIds }) => evidenceIds.length === 2)).toBe(true);
+  });
+
+  it("applies scoped rules only to their declared tiers", () => {
+    const config = decodeBalanceLabConfigV1({
+      ...rawConfig,
+      acceptance: [
+        {
+          id: "all-tiers",
+          metric: "bankruptcy_rate_ppm",
+          comparator: "at_most",
+          threshold: 1_000_000,
+          minimumSamples: 1,
+        },
+        {
+          id: "beginner-only",
+          metric: "beginner_chapter_completion_rate_ppm",
+          comparator: "at_least",
+          threshold: 650_000,
+          minimumSamples: 200,
+          tierIds: ["beginner"],
+        },
+      ],
+    });
+    const summary = summarizeBalanceLabRunsV1([run]);
+
+    expect(evaluateBalanceLabAcceptanceV1(
+      summary,
+      config.acceptance,
+      100,
+      "quick",
+    ).map(({ id }) => id)).toEqual(["all-tiers"]);
+    expect(evaluateBalanceLabAcceptanceV1(
+      summary,
+      config.acceptance,
+      100,
+      "beginner",
+    ).map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: "all-tiers", status: "pass" },
+      { id: "beginner-only", status: "insufficient_sample" },
+    ]);
+    expect(() => decodeBalanceLabConfigV1({
+      ...rawConfig,
+      acceptance: [{
+        id: "invalid-scope",
+        metric: "bankruptcy_rate_ppm",
+        comparator: "at_most",
+        threshold: 1,
+        minimumSamples: 1,
+        tierIds: ["unknown"],
+      }],
+    })).toThrow();
   });
 
   it("strictly decodes the documented strategy and pacing acceptance metrics", () => {
@@ -165,6 +254,10 @@ describe("balance lab config, acceptance, and reports", () => {
       status: "pass_with_insufficient_samples",
       blockingRuleIds: [],
     });
+    expect(balanceLabGateDecisionV1("beginner", insufficient)).toEqual({
+      status: "pass_with_insufficient_samples",
+      blockingRuleIds: [],
+    });
     expect(balanceLabGateDecisionV1("medium", insufficient)).toEqual({
       status: "fail",
       blockingRuleIds: ["small"],
@@ -216,7 +309,7 @@ describe("balance lab config, acceptance, and reports", () => {
       },
       result,
       summary,
-      acceptance: evaluateBalanceLabAcceptanceV1(summary, config.acceptance, 100),
+      acceptance: evaluateBalanceLabAcceptanceV1(summary, config.acceptance, 100, "quick"),
       warnings: ["small sample"],
       limitations: ["No production large/catastrophe templates."],
       runtime: {
@@ -227,7 +320,7 @@ describe("balance lab config, acceptance, and reports", () => {
     });
     const slowerReport = buildBalanceLabReportV1({
       ...report,
-      acceptance: evaluateBalanceLabAcceptanceV1(summary, config.acceptance, 200),
+      acceptance: evaluateBalanceLabAcceptanceV1(summary, config.acceptance, 200, "quick"),
       runtime: {
         elapsedMs: 200,
         processedProductionMonths: 24,
@@ -259,6 +352,15 @@ describe("balance lab config, acceptance, and reports", () => {
       ...report,
       summary: { ...report.summary, extra: true },
     })).toThrow();
+    const summaryWithoutEngagement = { ...report.summary } as Record<
+      string,
+      unknown
+    >;
+    Reflect.deleteProperty(summaryWithoutEngagement, "beginnerEngagement");
+    expect(() => decodeBalanceLabReportV1({
+      ...report,
+      summary: summaryWithoutEngagement,
+    })).toThrow();
     expect(() => decodeBalanceLabReportV1({
       ...report,
       acceptance: [{ ...report.acceptance[0]!, observed: "0" }],
@@ -273,14 +375,40 @@ describe("balance lab config, acceptance, and reports", () => {
         }],
       },
     })).toThrow();
+    const metricsWithoutCadence = {
+      ...report.result.runs[0]!.metrics,
+    } as Record<string, unknown>;
+    Reflect.deleteProperty(
+      metricsWithoutCadence,
+      "beginnerEventCadenceEvidence",
+    );
+    expect(() => decodeBalanceLabReportV1({
+      ...report,
+      result: {
+        ...report.result,
+        runs: [{
+          ...report.result.runs[0]!,
+          metrics: metricsWithoutCadence,
+        }],
+      },
+    })).toThrow();
     expect(runsCsv).toContain("\r\n");
+    expect(runsCsv).toContain("opening_preparedness_score_ppm");
+    expect(runsCsv).toContain("terminal_preparedness_band");
+    expect(runsCsv).toContain("approved_challenge_score_ppm");
+    expect(runsCsv).toContain("beginner_chapter_outcome");
+    expect(runsCsv).toContain("meaningful_decision_count");
+    expect(runsCsv).toContain("safety_override_count");
     expect(matchedCsv).toContain("objective_id");
+    expect(markdown).toContain("## Balance equation shadow");
+    expect(markdown).toContain("## Beginner chapter");
+    expect(markdown).toContain("## Beginner engagement");
     expect(markdown).toContain(
       "No production large/catastrophe templates.",
     );
     expect(markdown).toContain("f".repeat(64));
     expect(sha256Canonical({ json, runsCsv, matchedCsv, markdown })).toBe(
-      "85db3345407ddfc0a1597352913fc0f9374bacd1f563d3a2600097474f2566b6",
+      "adec7577cdf9fb07af6a32a92f7645192557bbf7a7f1fddbbd2094baf4f06d56",
     );
   });
 });

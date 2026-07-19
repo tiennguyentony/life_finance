@@ -7,6 +7,10 @@ import type { RunViewWire } from "@/contracts/api/contracts";
 import { LifeFinanceClient } from "@/lib/api-client/client";
 
 import { INITIAL_NAV_STATE, boardNavReducer } from "./board-nav";
+import {
+  evaluateBoardContinuationV1,
+  type BoardContinuationDecisionV1,
+} from "./board-continuation";
 import { boardMonthResult, boardViewFromRun, type BoardMonthResult } from "./board-model";
 import type { BoardMode } from "./board-scene";
 import { BoardHud } from "./hud";
@@ -23,6 +27,7 @@ import {
   boardMonthRecoveryMessage,
   boardRecoveryPlanLabel,
   commitBoardTurn,
+  continueBoardTurn,
   finishBoardMonthAfterRefresh,
   recoverBoardTurnFailure,
   type BoardTurnFailurePhase,
@@ -48,6 +53,11 @@ type PendingTurnFailure = Readonly<{
   failedRun: RunViewWire;
   plan: BoardPlan;
   planApplied: boolean;
+}>;
+
+type BoardContinuationContext = Readonly<{
+  opening: RunViewWire;
+  plan: BoardPlan;
 }>;
 
 function useReducedMotion(): boolean {
@@ -80,6 +90,8 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     useState<BoardDestinationId | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [monthResult, setMonthResult] = useState<BoardMonthResult | null>(null);
+  const [continuationContext, setContinuationContext] =
+    useState<BoardContinuationContext | null>(null);
   const [planningError, setPlanningError] = useState<string | null>(null);
   const [finishMonthOnly, setFinishMonthOnly] = useState(false);
   const [recoveryPlan, setRecoveryPlan] = useState<BoardPlan | null>(null);
@@ -193,6 +205,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
   ) => {
     setRun(ending);
     setMonthResult(boardMonthResult(opening, ending, planLabel));
+    setContinuationContext(Object.freeze({ opening, plan }));
     setSelectedDestinationId(null);
     setSelectedPlanId(null);
     setPlanningError(null);
@@ -415,6 +428,61 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     }
   };
 
+  const clearMonthResult = () => {
+    setMonthResult(null);
+    setContinuationContext(null);
+  };
+
+  const handleContinueMonth = async () => {
+    if (!run || !monthResult || !continuationContext || busy) return;
+    const decision = evaluateBoardContinuationV1({
+      opening: continuationContext.opening,
+      ending: run,
+      plan: continuationContext.plan,
+    });
+    if (decision.kind === "stop") {
+      clearMonthResult();
+      return;
+    }
+
+    const plan = decision.kind === "repeat_transaction"
+      ? decision.plan
+      : continuationContext.plan;
+    const opening = run;
+    setBusy(true);
+    try {
+      const result = await continueBoardTurn({
+        client: new LifeFinanceClient(),
+        opening,
+        previousPlan: continuationContext.plan,
+        decision,
+        createId: (phase) => `board.continue.${phase}.${crypto.randomUUID()}`,
+      });
+      if (result.kind === "stopped") {
+        clearMonthResult();
+      } else if (result.kind === "completed") {
+        completeMonth(result.opening, result.run, plan);
+      } else {
+        setMonthResult(null);
+        setContinuationContext(null);
+        setSelectedDestinationId(plan.destinationId);
+        setSelectedPlanId(plan.id);
+        const failure: PendingTurnFailure = {
+          phase: result.kind === "plan_failed" ? "plan" : "month",
+          error: result.error,
+          opening,
+          failedRun: result.run,
+          plan,
+          planApplied: result.kind === "month_failed" && result.planApplied,
+        };
+        pendingFailureRef.current = failure;
+        adoptRecovery(await recoverFailure(failure), failure);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleResolveEvent = async (choiceId: string) => {
     if (!run || busy || monthResult || run.pendingInteraction.kind !== "event") return;
     setBusy(true);
@@ -427,6 +495,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         payload: { eventId: run.pendingInteraction.eventId, choiceId },
       });
       setRun(response.run);
+      setContinuationContext(null);
       showToast(
         mode === "strategy"
           ? "Decision applied. Your board is ready for a new focus."
@@ -488,6 +557,38 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     />
   ) : null;
   const eventVisible = view.pendingEvent !== null && monthResult === null;
+  const continuationDecision: BoardContinuationDecisionV1 | null =
+    monthResult !== null && continuationContext !== null
+      ? evaluateBoardContinuationV1({
+          opening: continuationContext.opening,
+          ending: run,
+          plan: continuationContext.plan,
+        })
+      : null;
+  const resultPrimaryLabel = continuationDecision === null
+    ? "Choose another plan"
+    : continuationDecision.kind !== "stop"
+      ? continuationDecision.primaryLabel
+      : continuationDecision.reason === "pending_event"
+        ? "Review decision"
+        : continuationDecision.reason === "course_completed"
+          ? "Review course completion"
+          : continuationDecision.reason === "chapter_checkpoint"
+            ? "Review financial checkpoint"
+            : continuationDecision.reason === "warning_crossed"
+              ? "Review safety warning"
+              : "Choose another plan";
+  const resultSecondaryLabel = continuationDecision !== null &&
+      continuationDecision.kind !== "stop"
+    ? "Choose a different plan"
+    : null;
+  const resultSummary = continuationDecision === null
+    ? null
+    : continuationDecision.kind === "stop"
+      ? continuationDecision.message
+      : continuationDecision.kind === "repeat_transaction"
+        ? "Repeat the transaction using next month's latest available balance."
+        : "The previous plan was applied once; continue without applying it again.";
 
   return (
     <div className="board-stage">
@@ -541,9 +642,13 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         monthResultDialog={
           <MonthResultDialog
             busy={busy}
-            onContinue={() => setMonthResult(null)}
+            onPrimary={() => void handleContinueMonth()}
+            onSecondary={clearMonthResult}
+            primaryLabel={resultPrimaryLabel}
             result={monthResult}
             returnFocusTarget={planningFocusTarget}
+            secondaryLabel={resultSecondaryLabel}
+            summary={resultSummary}
           />
         }
         onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}

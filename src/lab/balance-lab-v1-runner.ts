@@ -1,5 +1,14 @@
 import { sha256Canonical } from "../core/canonical";
+import type { BeginnerChapterOutcomeV1 } from "../core/beginner-chapter-v1";
+import type { BeginnerEventCadenceEvidenceV1 } from "../core/beginner-event-cadence-v1";
+import type { SimulationMonth } from "../core/domain/month";
 import { randomState, type RandomState } from "../core/domain/rng";
+import type { PreparednessBandV1 } from "../core/preparedness-assessment-v1";
+import type { RuntimeBalanceChallengeBandV1 } from "../core/runtime-balance-challenge-v1";
+import type {
+  PersonalEventCadenceRoleV1,
+  PersonalEventPresentationToneV1,
+} from "../data/personal-event-presentation-v1";
 import {
   decodeWorldRandomStateV1,
   initializeNamedWorldRandomV1,
@@ -17,6 +26,7 @@ import {
   type BalanceLabDifficultyV1,
   type BalanceLabRunSpecV1,
 } from "./balance-lab-v1-contracts";
+import type { BalanceLabBalanceObservationV1 } from "./balance-lab-balance-observation-v1";
 
 export type BalanceLabWorldEvidenceV1 = Readonly<{
   monthIndex: number;
@@ -33,6 +43,26 @@ export type BalanceLabBotIntentEvidenceV1 = Readonly<{
   disposition: "applied" | "not_applicable" | "resolved";
   eventId?: string;
   choiceId?: string;
+}>;
+
+export type BalanceLabEventDecisionEvidenceV1 = Readonly<{
+  eventId: string;
+  templateId: string;
+  templateVersion: number;
+  scheduledMonth: SimulationMonth;
+  tone: PersonalEventPresentationToneV1;
+  cadenceRole: PersonalEventCadenceRoleV1;
+  classification: "positive" | "neutral" | "negative";
+  challengeBand: RuntimeBalanceChallengeBandV1 | null;
+  followUpSourceEventId: string | null;
+  choiceId: string;
+  availableChoiceIds: readonly string[];
+  materiallyAvailableChoiceIds: readonly string[];
+  responseAvailability: readonly Readonly<{
+    responseId: string;
+    status: "available" | "unavailable" | "error";
+    materiallyDistinct: boolean;
+  }>[];
 }>;
 
 export type BalanceLabAuthoritativeMetricsV1 = Readonly<{
@@ -71,6 +101,16 @@ export type BalanceLabAuthoritativeMetricsV1 = Readonly<{
   }>[];
   majorEventPacingViolationCount?: number;
   majorEventPacingSampleCount?: number;
+  balanceObservations?: readonly BalanceLabBalanceObservationV1[];
+  beginnerChapterEvidence?: Readonly<{
+    outcome: BeginnerChapterOutcomeV1;
+    completed: boolean;
+    observedMonths: number;
+    scorePpm: number;
+    preparednessBand: PreparednessBandV1;
+  }>;
+  eventDecisionEvidence?: readonly BalanceLabEventDecisionEvidenceV1[];
+  beginnerEventCadenceEvidence?: readonly BeginnerEventCadenceEvidenceV1[];
   /** Objective values are produced by their production owner, never recalculated by the lab. */
   objectiveValues: Readonly<Record<string, number>>;
 }>;
@@ -104,11 +144,17 @@ export type BalanceLabProductionOwnersV1<State, MonthlyRecord> = Readonly<{
     nextBotRandom?: RandomState | undefined;
     botIntents?: readonly BalanceLabBotIntentEvidenceV1[];
   }>;
+  observeBalance?(input: Readonly<{
+    state: State;
+    record: MonthlyRecord | undefined;
+    monthIndex: number;
+  }>): BalanceLabBalanceObservationV1;
   readAuthoritativeMetrics(input: Readonly<{
     state: State;
     records: readonly MonthlyRecord[];
     processedMonths: number;
     terminal: boolean;
+    balanceObservations: readonly BalanceLabBalanceObservationV1[];
   }>): BalanceLabAuthoritativeMetricsV1;
 }>;
 
@@ -242,6 +288,78 @@ function validateMetrics(
     (metrics.majorEventPacingViolationCount ?? 0) >
     (metrics.majorEventPacingSampleCount ?? 0)
   ) ownerViolation("major-event pacing violations exceed samples");
+  for (const decision of metrics.eventDecisionEvidence ?? []) {
+    if (
+      !IDENTIFIER.test(decision.eventId) ||
+      !IDENTIFIER.test(decision.templateId) ||
+      !Number.isSafeInteger(decision.templateVersion) ||
+      decision.templateVersion < 1 ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(decision.scheduledMonth) ||
+      !["serious", "relatable_comedy", "absurd_comedy"].includes(decision.tone) ||
+      !["challenge", "engagement", "follow_up"].includes(decision.cadenceRole) ||
+      !["positive", "neutral", "negative"].includes(decision.classification) ||
+      (decision.challengeBand !== null && ![
+        "light", "meaningful", "crisis", "extreme", "above_limit",
+      ].includes(decision.challengeBand)) ||
+      (decision.followUpSourceEventId !== null &&
+        !IDENTIFIER.test(decision.followUpSourceEventId)) ||
+      !IDENTIFIER.test(decision.choiceId) ||
+      !decision.availableChoiceIds.includes(decision.choiceId) ||
+      new Set(decision.availableChoiceIds).size !==
+        decision.availableChoiceIds.length ||
+      new Set(decision.materiallyAvailableChoiceIds).size !==
+        decision.materiallyAvailableChoiceIds.length ||
+      decision.materiallyAvailableChoiceIds.some(
+        (choiceId) => !decision.availableChoiceIds.includes(choiceId),
+      ) ||
+      decision.responseAvailability.length === 0 ||
+      new Set(decision.responseAvailability.map(({ responseId }) => responseId)).size !==
+        decision.responseAvailability.length
+    ) {
+      ownerViolation("event decision evidence is inconsistent");
+    }
+    for (const response of decision.responseAvailability) {
+      if (
+        !IDENTIFIER.test(response.responseId) ||
+        !["available", "unavailable", "error"].includes(response.status) ||
+        typeof response.materiallyDistinct !== "boolean" ||
+        (response.status === "available") !==
+          decision.availableChoiceIds.includes(response.responseId) ||
+        response.materiallyDistinct !==
+          decision.materiallyAvailableChoiceIds.includes(response.responseId)
+      ) {
+        ownerViolation("event response availability is inconsistent");
+      }
+    }
+  }
+  for (const cadence of metrics.beginnerEventCadenceEvidence ?? []) {
+    if (
+      cadence.assessment.version !== "beginner-event-cadence-v1" ||
+      ![
+        "inactive", "pending_or_terminal", "follow_up_due", "positive_due",
+        "engagement_due", "open", "recovery_preferred",
+      ].includes(cadence.assessment.mode) ||
+      !Number.isSafeInteger(cadence.assessment.chapterMonth) ||
+      !Number.isSafeInteger(cadence.assessment.quietEligibleStreak) ||
+      !Number.isSafeInteger(cadence.assessment.eventMonthStreak) ||
+      !Number.isSafeInteger(cadence.assessment.rootEventStreak) ||
+      typeof cadence.assessment.positiveObserved !== "boolean" ||
+      (cadence.assessment.previousRootTone !== null && ![
+        "serious", "relatable_comedy", "absurd_comedy",
+      ].includes(cadence.assessment.previousRootTone)) ||
+      typeof cadence.safetyOverride !== "boolean" ||
+      (cadence.scheduledTemplateId !== null &&
+        !IDENTIFIER.test(cadence.scheduledTemplateId)) ||
+      [
+        ...cadence.assessment.reasonCodes,
+        ...cadence.inputCandidateIds,
+        ...cadence.outputCandidateIds,
+        ...cadence.preferredCandidateIds,
+      ].some((id) => !IDENTIFIER.test(id))
+    ) {
+      ownerViolation("beginner cadence evidence is inconsistent");
+    }
+  }
   for (const [objectiveId, value] of Object.entries(metrics.objectiveValues)) {
     if (!IDENTIFIER.test(objectiveId)) ownerViolation("objective id must be canonical");
     requireSafeInteger(value, `objective ${objectiveId}`);
@@ -262,9 +380,40 @@ function validateMetrics(
     majorEventPacingViolationCount:
       metrics.majorEventPacingViolationCount ?? 0,
     majorEventPacingSampleCount: metrics.majorEventPacingSampleCount ?? 0,
+    eventDecisionEvidence: Object.freeze(
+      (metrics.eventDecisionEvidence ?? []).map((decision) => Object.freeze({
+        ...decision,
+        availableChoiceIds: Object.freeze([...decision.availableChoiceIds]),
+        materiallyAvailableChoiceIds: Object.freeze([
+          ...decision.materiallyAvailableChoiceIds,
+        ]),
+        responseAvailability: Object.freeze(
+          decision.responseAvailability.map((response) =>
+            Object.freeze({ ...response })
+          ),
+        ),
+      })),
+    ),
+    beginnerEventCadenceEvidence: Object.freeze(
+      (metrics.beginnerEventCadenceEvidence ?? []).map((cadence) =>
+        Object.freeze({
+          ...cadence,
+          assessment: Object.freeze({
+            ...cadence.assessment,
+            reasonCodes: Object.freeze([...cadence.assessment.reasonCodes]),
+          }),
+          inputCandidateIds: Object.freeze([...cadence.inputCandidateIds]),
+          outputCandidateIds: Object.freeze([...cadence.outputCandidateIds]),
+          preferredCandidateIds: Object.freeze([...cadence.preferredCandidateIds]),
+        })
+      ),
+    ),
     objectiveValues: Object.freeze({ ...metrics.objectiveValues }),
     bankruptcyResidualShortfallCents:
       metrics.bankruptcyResidualShortfallCents ?? 0,
+    ...(metrics.balanceObservations === undefined
+      ? {}
+      : { balanceObservations: Object.freeze([...metrics.balanceObservations]) }),
   });
 }
 
@@ -336,6 +485,52 @@ function initialWorldRandom(spec: BalanceLabRunSpecV1, personaId: string, matche
   );
 }
 
+export function assembleOfflineBalanceLabResultV1(
+  unsafeSpec: BalanceLabRunSpecV1,
+  unorderedRuns: readonly BalanceLabRunResultV1[],
+): OfflineBalanceLabResultV1 {
+  const spec = decodeBalanceLabRunSpecV1(unsafeSpec);
+  const personaOrder = new Map(spec.personaIds.map((id, index) => [id, index]));
+  const seedOrder = new Map(spec.matchedSeeds.map((seed, index) => [seed, index]));
+  const botOrder = new Map(spec.botIds.map((id, index) => [id, index]));
+  const expectedRunCount = spec.personaIds.length * spec.matchedSeeds.length * spec.botIds.length;
+  const identities = new Set<string>();
+  if (unorderedRuns.length !== expectedRunCount) {
+    ownerViolation(`assembled run count must equal ${expectedRunCount}`);
+  }
+  for (const run of unorderedRuns) {
+    if (
+      !personaOrder.has(run.personaId) ||
+      !seedOrder.has(run.matchedSeed) ||
+      !botOrder.has(run.botId)
+    ) ownerViolation("assembled run is outside the requested cohort");
+    const identity = `${run.personaId}|${run.matchedSeed}|${run.botId}`;
+    if (identities.has(identity)) ownerViolation("assembled cohort contains a duplicate run");
+    identities.add(identity);
+  }
+  const orderedRuns = [...unorderedRuns].toSorted((left, right) =>
+    personaOrder.get(left.personaId)! - personaOrder.get(right.personaId)! ||
+    seedOrder.get(left.matchedSeed)! - seedOrder.get(right.matchedSeed)! ||
+    botOrder.get(left.botId)! - botOrder.get(right.botId)!);
+  const frozenRuns = classifyMatchedUnavoidableFailures(orderedRuns, spec.botIds.length);
+  assertMatchedWorlds(frozenRuns);
+  const configurationHash = sha256Canonical({
+    spec,
+    worldRandomVersion: "named-world-rng-v1",
+    botPolicies: spec.botIds.map(balanceLabBotPolicyV1),
+  });
+  const fingerprintInput = {
+    version: "offline-balance-lab-v1" as const,
+    spec,
+    configurationHash,
+    runs: frozenRuns,
+  };
+  return Object.freeze({
+    ...fingerprintInput,
+    deterministicResultFingerprint: sha256Canonical(fingerprintInput),
+  });
+}
+
 export function runOfflineBalanceLabV1<State, MonthlyRecord>(
   unsafeSpec: BalanceLabRunSpecV1,
   owners: BalanceLabProductionOwnersV1<State, MonthlyRecord>,
@@ -359,6 +554,14 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
         matchedOpeningChecksum ??= openingStateChecksum;
         if (openingStateChecksum !== matchedOpeningChecksum) {
           ownerViolation("matched bots did not receive the same opening production state");
+        }
+        const balanceObservations: BalanceLabBalanceObservationV1[] = [];
+        if (owners.observeBalance !== undefined) {
+          balanceObservations.push(owners.observeBalance({
+            state,
+            record: undefined,
+            monthIndex: -1,
+          }));
         }
 
         let botRandom = botId === "random-control-v1"
@@ -389,6 +592,13 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
           state = transition.state;
           worldRandom = decodeWorldRandomStateV1(transition.worldRandom);
           records.push(transition.record);
+          if (owners.observeBalance !== undefined) {
+            balanceObservations.push(owners.observeBalance({
+              state,
+              record: transition.record,
+              monthIndex,
+            }));
+          }
           worldEvidence.push(validateWorldEvidence(transition.worldEvidence, monthIndex, worldRandom));
           botRandom = transition.nextBotRandom ?? botRandom;
           botIntents.push(...(
@@ -408,6 +618,7 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
             records: Object.freeze([...records]),
             processedMonths: records.length,
             terminal,
+            balanceObservations: Object.freeze([...balanceObservations]),
           }),
           records.length,
         );
@@ -438,21 +649,5 @@ export function runOfflineBalanceLabV1<State, MonthlyRecord>(
     }
   }
 
-  const frozenRuns = classifyMatchedUnavoidableFailures(runs, spec.botIds.length);
-  assertMatchedWorlds(frozenRuns);
-  const configurationHash = sha256Canonical({
-    spec,
-    worldRandomVersion: "named-world-rng-v1",
-    botPolicies: spec.botIds.map(balanceLabBotPolicyV1),
-  });
-  const fingerprintInput = {
-    version: "offline-balance-lab-v1" as const,
-    spec,
-    configurationHash,
-    runs: frozenRuns,
-  };
-  return Object.freeze({
-    ...fingerprintInput,
-    deterministicResultFingerprint: sha256Canonical(fingerprintInput),
-  });
+  return assembleOfflineBalanceLabResultV1(spec, runs);
 }

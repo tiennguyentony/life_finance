@@ -2,7 +2,7 @@ import { onboardingDraftForPersonaV1 } from "@/core/onboarding-personas-v1";
 import type { OnboardingPersonaIdV1 } from "@/core/onboarding-personas-v1";
 import { PERSONAS } from "@/features/onboarding/personas";
 import { LifeFinanceClient } from "@/lib/api-client/client";
-import type { RunView } from "@/application/game/run-view";
+import type { RunViewWire } from "@/contracts/api/contracts";
 import type { Persona, ProfileInput } from "@/types/game";
 
 const BACKEND_PERSONA: Readonly<
@@ -33,7 +33,7 @@ export async function getPersonas(): Promise<readonly Persona[]> {
 
 export async function createRunFromProfile(
   input: ProfileInput,
-): Promise<RunView> {
+): Promise<RunViewWire> {
   const persona = PERSONAS.find(({ id }) => id === input.personaId);
   if (!persona) throw new Error("Unknown persona");
   const draft = {

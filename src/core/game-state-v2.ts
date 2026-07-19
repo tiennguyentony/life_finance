@@ -139,6 +139,8 @@ export type PendingEventV2 = Readonly<{
   pressureCost?: number;
   recoveryDurationMonths?: number;
   fallbackNarrative?: Readonly<{ headline: string; body: string }>;
+  /** Present when this event was scheduled by a declared response follow-up. */
+  followUpSourceEventId?: string;
   aiNarrative?: Readonly<{
     source: AiContentSource;
     headline: string;
@@ -180,6 +182,8 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   pressureCost?: number;
   recoveryDurationMonths?: number;
   fallbackNarrative?: Readonly<{ headline: string; body: string }>;
+  /** Present when this resolved event originated from a declared response follow-up. */
+  followUpSourceEventId?: string;
   /** Immutable canonical evidence for cash flows scheduled by this resolved response. */
   scheduledCashFlows?: readonly ScheduledPersonalEventCashFlowV2[];
   /** Optional for replay compatibility with events resolved before the Financial Engine plan owner. */

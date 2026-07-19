@@ -8,6 +8,7 @@ import {
   commandIntentForPlan,
   type BoardPlan,
 } from "./plan-catalog";
+import type { BoardContinuationDecisionV1 } from "./board-continuation";
 
 export type TurnClient = Readonly<{
   submitCommand(runId: string, command: CommandIntent): Promise<CommandResponseWire>;
@@ -216,4 +217,36 @@ export async function commitBoardTurn({
   } catch (error) {
     return { kind: "month_failed", run, planApplied, error };
   }
+}
+
+export type BoardContinuationStoppedV1 = Readonly<{
+  kind: "stopped";
+  run: RunViewWire;
+}>;
+
+export async function continueBoardTurn(input: Readonly<{
+  client: TurnClient;
+  opening: RunViewWire;
+  decision: BoardContinuationDecisionV1;
+  previousPlan: BoardPlan;
+  createId: (phase: "plan" | "month") => string;
+}>): Promise<BoardTurnCommitResult | BoardContinuationStoppedV1> {
+  if (input.decision.kind === "stop") {
+    return Object.freeze({ kind: "stopped", run: input.opening });
+  }
+
+  const plan = input.decision.kind === "repeat_transaction"
+    ? input.decision.plan
+    : Object.freeze({
+        ...input.previousPlan,
+        continuation: Object.freeze({ kind: "advance_only" as const }),
+        command: Object.freeze({ type: "none" as const }),
+      });
+
+  return commitBoardTurn({
+    client: input.client,
+    opening: input.opening,
+    plan,
+    createId: input.createId,
+  });
 }

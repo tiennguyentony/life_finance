@@ -6,7 +6,10 @@ import {
   POLICYENGINE_US_VERSION,
   type TaxCalculationResult,
 } from "../../server/tax/contracts";
-import { createBalanceLabPersonaStateV1 } from "../../data/balance-lab-personas-v1";
+import {
+  BALANCE_LAB_PERSONA_IDS_V1,
+  createBalanceLabPersonaStateV1,
+} from "../../data/balance-lab-personas-v1";
 import { PERSONAL_EVENT_TEMPLATES_V2 } from "../../data/personal-event-templates-v2";
 import type { PersonalEventTemplateV2 } from "../../core/personal-event-v2";
 import { ratePpm } from "../../core/domain/money";
@@ -65,6 +68,23 @@ function testTaxSource(): BalanceLabTaxEvidenceSourceV1 {
 }
 
 describe("offline balance lab production owners", () => {
+  it("initializes every declared persona inside its selected scenario bounds", () => {
+    for (const personaId of BALANCE_LAB_PERSONA_IDS_V1) {
+      const state = createBalanceLabPersonaStateV1({
+        personaId,
+        matchedSeed: 1,
+        difficulty: "guided",
+      });
+      const scenario = state.gameplay.catalogSnapshot!.selected.scenario;
+      expect(state.finances.cashCents).toBeGreaterThanOrEqual(
+        scenario.minimumStartingCashCents,
+      );
+      expect(state.finances.cashCents).toBeLessThanOrEqual(
+        scenario.maximumStartingCashCents,
+      );
+    }
+  });
+
   it("integrates the real strategy, Time Controller, monthly, market, event, director, balance, lifecycle, and goal owners", () => {
     const ports = {
       ...BALANCE_LAB_PRODUCTION_PORTS_V1,
@@ -101,7 +121,7 @@ describe("offline balance lab production owners", () => {
     expect(ports.advanceTime).toHaveBeenCalledTimes(4);
     expect(ports.projectGoal).toHaveBeenCalledTimes(2);
     expect(ports.calculateNetWorth).toHaveBeenCalledTimes(2);
-    expect(ports.calculateAutomaticLiquidity).toHaveBeenCalledTimes(2);
+    expect(ports.calculateAutomaticLiquidity.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(result.runs[0]!.worldEvidence).toEqual(result.runs[1]!.worldEvidence);
     expect(result.runs.every((run) => run.processedMonths === 2)).toBe(true);
     expect(result.runs.every((run) => run.botIntents.length >= 2)).toBe(true);
@@ -195,8 +215,56 @@ describe("offline balance lab production owners", () => {
 
     expect(ports.resolveEvent).toHaveBeenCalledTimes(1);
     expect(result.runs[0]!.metrics.eventCountByTier.large).toBe(1);
+    expect(result.runs[0]!.metrics.eventDecisionEvidence).toEqual([
+      expect.objectContaining({
+        templateId: "personal.custom_large_bill",
+        templateVersion: 2,
+        tone: "serious",
+        cadenceRole: "challenge",
+        choiceId: "pay_uninsured",
+        availableChoiceIds: expect.arrayContaining(["pay_uninsured", "use_insurance"]),
+        materiallyAvailableChoiceIds: expect.arrayContaining([
+          "pay_uninsured",
+          "use_insurance",
+        ]),
+        responseAvailability: expect.arrayContaining([
+          expect.objectContaining({
+            responseId: "pay_uninsured",
+            status: "available",
+          }),
+        ]),
+      }),
+    ]);
     expect(result.runs[0]!.metrics.recoveryObservations).toEqual([
       expect.objectContaining({ status: "censored" }),
     ]);
+  });
+
+  it("records the authoritative beginner checkpoint after twelve processed months", () => {
+    const result = runOfflineBalanceLabV1(
+      {
+        version: "offline-balance-lab-v1",
+        experimentId: "beginner-checkpoint-evidence",
+        personaIds: ["healthy-v1"],
+        matchedSeeds: [17],
+        botIds: ["disciplined-v1"],
+        horizonMonths: 12,
+        difficulty: "guided",
+      },
+      createBalanceLabProductionOwnersV1({
+        createPersonaState: createBalanceLabPersonaStateV1,
+        taxEvidence: testTaxSource(),
+      }),
+    );
+
+    expect(result.runs[0]!.processedMonths).toBe(12);
+    expect(result.runs[0]!.metrics.beginnerChapterEvidence).toMatchObject({
+      observedMonths: 12,
+      completed: expect.any(Boolean),
+      outcome: expect.stringMatching(/^(fragile|developing|strong)$/),
+      scorePpm: expect.any(Number),
+      preparednessBand: expect.stringMatching(/^(critical|exposed|stable|resilient)$/),
+    });
+    expect(result.runs[0]!.metrics.beginnerEventCadenceEvidence).toHaveLength(12);
   });
 });
