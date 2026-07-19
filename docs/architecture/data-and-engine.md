@@ -22,12 +22,12 @@ For `process_month`, `RunService` performs this sequence under revision and auth
 4. Generate the named market draw and apply calibrated market movement.
 5. Evaluate deterministic outcomes and end conditions.
 6. Generate eligible declarative event candidates with deterministic named RNG.
-7. Rank those candidates with the deterministic Scenario Director. When monthly AI is enabled and the sampling gate is due, send only the bounded structured ranking context to the configured model.
-8. Validate the model response as an exact permutation of the engine-owned candidates. In `active` mode apply the ordering; in `shadow` mode record the comparison without changing gameplay; on timeout, outage, or invalid output retain the deterministic ordering.
-9. Apply Runtime Balance fairness/impact policy and either approve one candidate or schedule none.
-10. Persist the new state, command, AI comparison evidence, monthly/tax evidence, ledger records, snapshots when required, and outbox records atomically.
+7. Freeze exact named-RNG parameters for the bounded candidate set and calculate every candidate's response/impact evidence with production financial logic.
+8. Reject unsafe candidates with deterministic pacing, eligibility, response, bankruptcy, recovery, and impact-band rules.
+9. Extract the frozen `operational-event-features-v1` numeric vector and rank safe candidates with the bundled `operational-event-ranker-v1` artifact. Invalid artifacts, out-of-domain features, empty safe sets, or unsafe scores fall back to Scenario Director order.
+10. Re-run Runtime Balance verification, approve at most one candidate (or none), and persist compact model checksums with the monthly evidence.
 
-The Scenario Director cannot invent an event or change its mechanics. Risk/exposure affects context and prioritization, but the hazard system decides whether a candidate exists. The model cannot change tier, lesson, parameters, cost, impact, probability, or immutable scoring facts. Runtime Balance independently re-verifies the candidate set and remains the final safety authority. The validated ranking is stored in the accepted command, so an idempotent replay never calls the provider and produces the same result.
+The ranker cannot invent an event or change mechanics, probability, parameters, money, lessons, or state. Its only output is order. Feature and artifact checksums are recorded, wall-clock timing is deliberately excluded from authoritative replay evidence, and identical state/command/seed produces byte-identical results.
 
 ## Cash shortfall and bankruptcy
 
@@ -69,14 +69,14 @@ All Drizzle tables have row-level security enabled. The repository owns:
 
 Repository writes use transactions and optimistic revision checks. Sparse snapshots plus accepted commands and evidence support deterministic replay without treating every JSON response as authority.
 
-## AI gameplay modes
+## Operational ML
 
-Monthly AI is opt-in through `AI_GAMEPLAY_MODE=off|shadow|active`; the default is `off`. Calls require at least `AI_GAMEPLAY_MINIMUM_CANDIDATES` candidates and occur only every `AI_GAMEPLAY_SAMPLE_EVERY_MONTHS` simulation months. Three consecutive invalid/unavailable results open a one-minute in-process circuit breaker. The API and month-result UI expose the mode, source, validation status, bounded latency, candidate count, and whether the AI and deterministic top candidate agreed. Raw prompts and model output are not sent to the browser.
+`pnpm ml:event-data` builds grouped training queries from the production personas, event catalog, Risk Analyzer, impact estimator, and Runtime Balance gates. `pnpm ml:event-train` fits deterministic pairwise logistic regression, applies monotonic constraints, blocks category/tier/template-identity shortcuts, and exports quantized integer coefficients. Seeds 1–18 train; seeds 19–24 validate, preventing row leakage across a query.
 
-Provider adapters support Groq, OpenAI, and loopback-only Ollama. Persistent deployments use encrypted audit storage. Local development can run the gameplay director with the in-memory demo and a local Ollama model without PostgreSQL; those local audit records are intentionally not persisted.
+The committed v1 artifact trained on 648 queries and 3,240 candidates covering all 21 highest-supported template identities (including the not-yet-activated calibration catalog). Its held-out seed cohort reached 95.83% pairwise accuracy and 90.74% top-one agreement against reward-policy-v1. These numbers measure imitation of the versioned offline utility, not real-player learning or causal proof.
 
 ## Implemented but not publicly exposed
 
 The codebase contains deterministic preview, multi-month time control (including stop conditions), checkpoints, causal history, counterfactual analysis, teaching moments, learning replay, debrief services, and an AI world-director service. The active route tree does not expose them. The current board also does not mount the teaching panels.
 
-Teaching, counterfactual, causal-history, and debrief services remain unmounted. AI-assisted monthly candidate ordering is now connected to the normal command path when explicitly enabled; provider failure remains a deterministic no-failure fallback.
+Teaching, counterfactual, causal-history, and debrief services remain unmounted. Provider-backed LLM modules remain available for future asynchronous narration, but normal monthly play never calls them.

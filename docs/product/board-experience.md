@@ -67,6 +67,6 @@ The strategy route intentionally hides several prototype side panels. `/board/fr
 - A broad life-event library and unscheduled narrative event variety.
 - Player-visible tax breakdown and education explaining 401(k), HSA, insurance, debt, and tax decisions.
 - Mounted teaching, counterfactual, causal-history, checkpoint, or debrief UI.
-- AI-directed monthly scenarios; the playable monthly pipeline is deterministic.
+- LLM-authored monthly scenarios; the playable pipeline uses deterministic event generation/safety plus a bundled operational-ML ordering artifact.
 
 Core/server modules cover portions of these areas, but they are not player-visible until connected through current contracts and UI.

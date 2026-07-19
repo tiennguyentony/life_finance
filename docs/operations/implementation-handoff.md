@@ -5,7 +5,7 @@ This file is the durable continuation context for the current implementation bra
 ## Mainline status
 
 - Branch: `main`
-- Current audited local sequence ends with the monthly AI integration commits listed below; use `git log -1` for the exact moving head.
+- Current audited local sequence ends with operational-ML activation; use `git log -1` for the exact moving head.
 - Local `main` contains commits not present on `origin/main`; do not claim these changes are pushed.
 - The account-save/performance sequence below is now part of `main`.
 - `e291629` — Supabase email OTP authentication foundation
@@ -25,6 +25,10 @@ This file is the durable continuation context for the current implementation bra
 - `b5568d3` — persisted, replay-safe validated AI candidate rankings
 - `6e0aeec` — off/shadow/active monthly AI orchestration and evidence
 - `2991f41` — local Ollama demo wiring and board-visible AI evidence
+- `8f993fc` — exact parameter/impact preparation before adaptive ranking
+- `d3a4cd0` — frozen feature schema and deterministic TypeScript inference
+- `5e493d9` — reproducible grouped dataset and self-training pipeline
+- `a13bba0` — operational-ML activation and removal of LLM calls from Next Month
 
 The later equation-balance, repeatable beginner-loop, and funny-event-rhythm work is also present on `main`. Its candidate event catalog and beginner cadence remain calibration-only: production continues to use the historical V2 scheduling catalog until the documented activation gates pass.
 
@@ -56,8 +60,9 @@ The later equation-balance, repeatable beginner-loop, and funny-event-rhythm wor
 13. Three.js is pinned to r182 until React Three Fiber replaces its deprecated `THREE.Clock` dependency; do not widen the version range without checking the browser console and board render.
 14. `/start` is dedicated to new-game persona selection; the header links to `/saves`, which lists up to 50 account-owned games. Restoring an archived game atomically archives the previous active game without deleting either.
 15. Account commands are accepted only for the currently active save; archived saves are read-only until restored.
-16. AI can reorder only an exact checksum-bound candidate permutation. Event identity, mechanics, amounts, lessons, scores, and safety remain engine-owned.
-17. Accepted AI rankings are stored in the monthly command. Idempotent replay returns the same result without another provider call.
+16. Operational ML can reorder only exact prepared candidates. Event identity, mechanics, amounts, lessons, eligibility, and safety remain engine-owned.
+17. Feature/artifact checksums and the final ordering are replay-safe. Wall-clock timing is excluded from authoritative state.
+18. Normal monthly play performs no AI/network/model-server call. The committed integer artifact is evaluated in-process and falls back deterministically.
 
 ## Local verification performed
 
@@ -73,7 +78,8 @@ The later equation-balance, repeatable beginner-loop, and funny-event-rhythm wor
 - Heap samples across the persistent run fluctuated with garbage collection instead of increasing monotonically. RSS ended near 345 MB in the Vitest process.
 - The optimized production Next.js server idled near 157 MB RSS. The development compiler reached roughly 1.5 GB after extended use, so dev RSS must not be treated as deployment memory.
 - A cold development command spent about 950 ms compiling and 25 ms in application code; the next command completed in 16 ms total and 11 ms in application code.
-- A real Instant Demo run invoked local Ollama `gpt-oss:20b` on a three-candidate month. The validated active ranking completed in 28.7 seconds and scheduled through Runtime Balance; replay returned the stored AI evidence with `idempotentReplay=true` and no second model call.
+- The retired Ollama hot-path experiment took 28.7 seconds for one eligible month; it is retained only as historical evidence and is no longer called by normal play.
+- Operational ranker training produced 648 queries/3,240 rows across all 21 highest-supported templates; production scheduling still activates only the gated historical subset. Held-out seeds reached 95.83% pairwise accuracy and 90.74% top-one agreement; deterministic retraining produced a byte-identical artifact.
 - The complete `pnpm verify` gate passed after monthly AI integration: 156 normal test files passed (4 skipped), 3 long-run files passed, and the production build completed.
 
 ## Performance interpretation

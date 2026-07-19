@@ -52,43 +52,32 @@ A Vercel access token is a deployment credential, not application runtime config
 
 Do not run migrations casually against a shared or production Supabase database. Confirm the target, take a backup for production changes, and prefer a disposable/local database for development.
 
-## Optional monthly AI Director
+## Monthly operational ML
 
-The typed onboarding and monthly board still work when AI is off or unavailable. To test real AI ordering locally with the already-supported `gpt-oss:20b` model:
+No model setup is required. Instant Demo and persistent play both load the
+committed self-trained artifact and rank safe candidates in-process. The result
+dialog shows `Operational ML: ranked` or a deterministic `fallback`; no API key,
+Ollama process, or network model call is involved.
+
+To reproduce the artifact:
 
 ```bash
-ollama pull gpt-oss:20b
-ollama serve
+pnpm ml:event-data
+pnpm ml:event-train
+git diff -- src/data/operational-event-ranker-artifact-v1.json
 ```
 
-Then add this to `.env.local` and restart `pnpm dev`:
-
-```dotenv
-AI_PROVIDER=ollama
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-AI_GAMEPLAY_MODE=active
-AI_GAMEPLAY_TIMEOUT_MS=30000
-AI_GAMEPLAY_SAMPLE_EVERY_MONTHS=3
-AI_GAMEPLAY_MINIMUM_CANDIDATES=2
-```
-
-Choose **Instant demo** and play normally. The model is called only on sampled months with enough eligible candidates. A month-result panel shows `AI Director` evidence when a call occurred. A first local `gpt-oss:20b` request can take tens of seconds while the model loads; other months stay on the fast deterministic path. Use `AI_GAMEPLAY_MODE=shadow` to measure ranking agreement without changing the selected order, or `off` to disable all monthly model calls.
-
-Server adapters also support:
-
-- `AI_PROVIDER=groq` with `GROQ_API_KEY`;
-- `AI_PROVIDER=openai` with `OPENAI_API_KEY` and actual project/model entitlement;
-- local `AI_PROVIDER=ollama` with a loopback `OLLAMA_BASE_URL` (for example `gpt-oss:20b` configured by the local runtime).
-
-Provider keys are server-only. Persistent/production AI uses encrypted audit storage and therefore needs the audit keyring plus database configuration. The development-only in-memory demo can use loopback Ollama without a database; its audit is deliberately ephemeral. AI never controls amounts or approves an event, and a failed/late/malformed response falls back to the deterministic ranking.
+Training rows are written under ignored `.ml-dist/`. Repeating both commands
+without source/data changes must produce an identical artifact. Python is
+training-only and is not needed by Next.js, Vercel, or players.
 
 ## Expected failure modes
 
 - Missing `DATABASE_URL`: normal onboarding fails at run creation; Instant demo still works locally.
 - Invalid/missing pepper: persistent session-secret hashing fails.
 - Unavailable tax service: a month needing fresh evidence fails without committing a new revision.
-- No AI provider or `AI_GAMEPLAY_MODE=off`: typed onboarding and board use deterministic ranking.
-- Slow local model: only a sampled eligible month waits up to `AI_GAMEPLAY_TIMEOUT_MS`; reduce sampling frequency or use shadow/off while testing other features.
+- Missing/corrupt ranker artifact: monthly play records a compact fallback reason and preserves deterministic Scenario Director behavior.
+- Provider environment variables are not needed for monthly play. Existing provider adapters are reserved for optional future asynchronous narration/onboarding.
 - No Supabase account session in production: protected pages redirect to `/login`.
 - A valid account with no active save: onboarding starts a new save.
 - A pre-auth capability save is claimed at first sign-in; a save owned by another account cannot be claimed.
