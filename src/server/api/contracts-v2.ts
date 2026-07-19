@@ -814,7 +814,10 @@ const financialKernelMonthlyRecordSummarySchema =
             "recession",
             "recovery",
           ]),
-          rankingSource: z.literal("deterministic_fallback"),
+          rankingSource: z.enum([
+            "deterministic_fallback",
+            "validated_ai_ranking",
+          ]),
           candidateSetChecksum: checksumSchema,
           rankingInputChecksum: checksumSchema,
           rankedCandidateCount: z.int().min(0).max(64),

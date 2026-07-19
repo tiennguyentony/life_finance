@@ -86,9 +86,11 @@ import {
 } from "./runtime-balance-state-v2";
 import { analyzeRiskV1 } from "./risk-v1";
 import {
+  applyScenarioDirectorRankingOverrideV2,
   rankScenarioCandidatesV2,
   type ScenarioDirectorDecisionV2,
   type ScenarioDirectorInputV2,
+  type ScenarioDirectorRankingOverrideV2,
 } from "./scenario-director-v2";
 import {
   projectScenarioDirectorStateContextV2,
@@ -186,6 +188,7 @@ export type ProcessMonthV2Command = Readonly<{
     runtimeBalanceControllerVersion?:
       typeof RUNTIME_BALANCE_CONTROLLER_V1_VERSION;
     scenarioDirectorVersion?: typeof SCENARIO_DIRECTOR_V2_VERSION;
+    scenarioDirectorRankingOverride?: ScenarioDirectorRankingOverrideV2;
     worldRandomVersion?: typeof WORLD_RANDOM_VERSION_V1;
     marketModelVersion?:
       | typeof MARKET_MODEL_VERSION
@@ -837,7 +840,7 @@ function applyAfterTaxPlan(
   });
 }
 
-type MonthlyTurnV2Dependencies = Readonly<{
+export type MonthlyTurnV2Dependencies = Readonly<{
   eventSchedulingPolicy?: EventSchedulingPolicyV2;
   macroStoryPolicy?: MacroStoryPolicyV2;
   personalEventCatalog?: readonly PersonalEventTemplateV2[];
@@ -845,6 +848,7 @@ type MonthlyTurnV2Dependencies = Readonly<{
   beginnerEventCadenceVersion?:
     | typeof BEGINNER_EVENT_CADENCE_V1_VERSION
     | null;
+  scenarioDirectorInputObserver?: (input: ScenarioDirectorInputV2) => void;
 }>;
 
 export function processMonthlyTurnV2(
@@ -1318,9 +1322,14 @@ function processMonthlyTurnV2Kernel200(
             candidates.candidates,
             eventCatalog,
           );
-          scenarioDirectorDecision = rankScenarioCandidatesV2(
-            scenarioDirectorInput,
-          );
+          dependencies.scenarioDirectorInputObserver?.(scenarioDirectorInput);
+          scenarioDirectorDecision =
+            command.payload.scenarioDirectorRankingOverride === undefined
+              ? rankScenarioCandidatesV2(scenarioDirectorInput)
+              : applyScenarioDirectorRankingOverrideV2(
+                  scenarioDirectorInput,
+                  command.payload.scenarioDirectorRankingOverride,
+                );
         }
         const monthIndex = monthsBetween(
           simulationMonth("0001-01"),

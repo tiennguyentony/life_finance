@@ -15,6 +15,7 @@ import {
   type ScenarioDirectorPolicyV2,
 } from "../scenario-director-policy-v2";
 import {
+  applyScenarioDirectorRankingOverrideV2,
   ScenarioDirectorInputErrorV2,
   rankScenarioCandidatesV2,
   validateScenarioDirectorPermutationV2,
@@ -99,6 +100,44 @@ function input(
     ...overrides,
   };
 }
+
+describe("Scenario Director persisted AI ranking", () => {
+  it("allows only an exact reordered permutation and preserves policy facts", () => {
+    const request = input([candidate("event.alpha"), candidate("event.beta")]);
+    const fallback = rankScenarioCandidatesV2(request);
+    const decision = applyScenarioDirectorRankingOverrideV2(request, {
+      version: "scenario-director-ranking-override-v1",
+      candidateSetChecksum: fallback.candidateSetChecksum,
+      rankingInputChecksum: fallback.rankingInputChecksum,
+      ranked: [...fallback.ranked]
+        .reverse()
+        .map(({ templateId, templateVersion }) => ({ templateId, templateVersion })),
+    });
+
+    expect(decision.rankingSource).toBe("validated_ai_ranking");
+    expect(decision.ranked.map(({ templateId }) => templateId)).toEqual(
+      [...fallback.ranked].reverse().map(({ templateId }) => templateId),
+    );
+    expect(decision.ranked[0]?.intendedLesson).toBe("lesson.shared");
+  });
+
+  it("rejects stale checksums and incomplete rankings", () => {
+    const request = input([candidate("event.alpha"), candidate("event.beta")]);
+    const fallback = rankScenarioCandidatesV2(request);
+    expect(() => applyScenarioDirectorRankingOverrideV2(request, {
+      version: "scenario-director-ranking-override-v1",
+      candidateSetChecksum: "0".repeat(64),
+      rankingInputChecksum: fallback.rankingInputChecksum,
+      ranked: fallback.ranked,
+    })).toThrow("checksums");
+    expect(() => applyScenarioDirectorRankingOverrideV2(request, {
+      version: "scenario-director-ranking-override-v1",
+      candidateSetChecksum: fallback.candidateSetChecksum,
+      rankingInputChecksum: fallback.rankingInputChecksum,
+      ranked: fallback.ranked.slice(0, 1),
+    })).toThrow("exact candidate permutation");
+  });
+});
 
 describe("Scenario Director policy v2", () => {
   it("is frozen, complete, and valid for startup use", () => {

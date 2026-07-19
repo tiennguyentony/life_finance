@@ -425,6 +425,24 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
           scenarioDirectorVersion: z
             .literal("scenario-director-v2")
             .optional(),
+          scenarioDirectorRankingOverride: z
+            .object({
+              version: z.literal("scenario-director-ranking-override-v1"),
+              candidateSetChecksum: z.string().regex(/^[0-9a-f]{64}$/),
+              rankingInputChecksum: z.string().regex(/^[0-9a-f]{64}$/),
+              ranked: z
+                .array(
+                  z
+                    .object({
+                      templateId: identifierSchema,
+                      templateVersion: z.int().min(1),
+                    })
+                    .strict(),
+                )
+                .max(64),
+            })
+            .strict()
+            .optional(),
           worldRandomVersion: z.literal("named-world-rng-v1").optional(),
           marketModelVersion: z.enum(["regime-v1", "regime-v2"]).optional(),
           macroDifficulty: z.enum(["guided", "normal", "hard"]).optional(),
@@ -489,6 +507,16 @@ const persistedGameCommandV2Schema = z.discriminatedUnion("type", [
               path: ["scenarioDirectorVersion"],
               message:
                 "scenario-director-v2 requires runtime-balance-v1",
+            });
+          }
+          if (
+            payload.scenarioDirectorRankingOverride !== undefined &&
+            payload.scenarioDirectorVersion !== "scenario-director-v2"
+          ) {
+            context.addIssue({
+              code: "custom",
+              path: ["scenarioDirectorRankingOverride"],
+              message: "AI ranking override requires scenario-director-v2",
             });
           }
           if (

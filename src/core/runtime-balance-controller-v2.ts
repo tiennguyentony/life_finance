@@ -343,18 +343,44 @@ function directorOrderedCandidatesV2(
     }
   }
   const verifiedDecision = rankScenarioCandidatesV2(input);
-  if (sha256Canonical(verifiedDecision) !== sha256Canonical(decision)) {
+  if (
+    decision.candidateSetChecksum !== verifiedDecision.candidateSetChecksum ||
+    decision.rankingInputChecksum !== verifiedDecision.rankingInputChecksum ||
+    decision.version !== verifiedDecision.version ||
+    decision.policyVersion !== verifiedDecision.policyVersion ||
+    decision.riskVersion !== verifiedDecision.riskVersion ||
+    decision.riskAsOfMonth !== verifiedDecision.riskAsOfMonth ||
+    decision.difficulty !== verifiedDecision.difficulty ||
+    decision.macroRegime !== verifiedDecision.macroRegime ||
+    decision.storyArcId !== verifiedDecision.storyArcId ||
+    validateScenarioDirectorPermutationV2(
+      verifiedDecision.ranked,
+      decision.ranked,
+    ).length > 0
+  ) {
     throw new RangeError(
-      "Scenario Director decision must match the verified deterministic input",
+      "Scenario Director decision must preserve verified deterministic input evidence and candidate identity",
     );
   }
-  const ordered = verifiedDecision.ranked.map((ranked) => {
+  const verifiedByIdentity = new Map(
+    verifiedDecision.ranked.map((candidate) => [
+      `${candidate.templateId}@${candidate.templateVersion}`,
+      candidate,
+    ]),
+  );
+  const ordered = decision.ranked.map((ranked) => {
       const candidate = candidatesByIdentity.get(
+        `${ranked.templateId}@${ranked.templateVersion}`,
+      );
+      const verified = verifiedByIdentity.get(
         `${ranked.templateId}@${ranked.templateVersion}`,
       );
       if (
         candidate === undefined ||
-        ranked.intendedLesson !== candidate.template.lessonTags.primary
+        verified === undefined ||
+        ranked.intendedLesson !== candidate.template.lessonTags.primary ||
+        sha256Canonical({ ...ranked, rank: 0 }) !==
+          sha256Canonical({ ...verified, rank: 0 })
       ) {
         throw new RangeError(
           "Scenario Director ranking must preserve immutable candidate lesson metadata",
