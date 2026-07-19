@@ -96,7 +96,7 @@ const AVERAGE_EVENT_RESPONSES = Object.freeze({
   "personal.rent_renewal": ["accept_increase"],
   "personal.family_care_request": ["split_cost_and_time"],
   "personal.work_device_replacement": ["device_payment_plan"],
-  "personal.reduced_work_hours": ["trim_spending"],
+  "personal.reduced_work_hours": ["spread_income_gap"],
   "personal.social_commitment": ["spread_commitment_cost"],
   "personal.utility_rebate": ["claim_rebate"],
   "personal.subscription_archaeology": ["keep_favorite"],

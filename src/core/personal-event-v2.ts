@@ -89,6 +89,13 @@ export type PersonalEventHazardModifierV2 =
       type: "macro_regime";
       regimes: readonly GameStateV2["marketRegime"][];
       deltaPpm: number;
+    }>
+  | Readonly<{
+      type: "wellbeing_threshold";
+      field: "burnoutPpm" | "happinessPpm";
+      comparator: "at_least" | "at_most";
+      thresholdPpm: number;
+      deltaPpm: number;
     }>;
 
 export type PersonalEventTemplateV2 = Readonly<{
@@ -347,7 +354,7 @@ export function validatePersonalEventTemplateV2(
     violations.push(violation("hazard", "invalid_hazard_bounds", "hazard chance must be bounded PPM"));
   }
   template.hazard.modifiers.forEach((modifier, index) => {
-    if (modifier.type !== "macro_regime" && modifier.type !== "employment_sector") {
+    if (!["macro_regime", "employment_sector", "wellbeing_threshold"].includes(modifier.type)) {
       violations.push(violation(`hazard.modifiers.${index}.type`, "invalid_hazard_modifier_type", "hazard modifier type is unsupported"));
     } else if (
       modifier.type === "macro_regime" &&
@@ -359,6 +366,15 @@ export function validatePersonalEventTemplateV2(
       (modifier.sectorIds.length === 0 || modifier.sectorIds.some((sectorId) => !IDENTIFIER.test(sectorId)))
     ) {
       violations.push(violation(`hazard.modifiers.${index}.sectorIds`, "invalid_hazard_modifier", "sector modifier requires stable sector identifiers"));
+    } else if (
+      modifier.type === "wellbeing_threshold" &&
+      (
+        !["burnoutPpm", "happinessPpm"].includes(modifier.field) ||
+        !["at_least", "at_most"].includes(modifier.comparator) ||
+        !validPpm(modifier.thresholdPpm)
+      )
+    ) {
+      violations.push(violation(`hazard.modifiers.${index}`, "invalid_hazard_modifier", "wellbeing modifier requires a valid field, comparator, and PPM threshold"));
     }
     if (!Number.isSafeInteger(modifier.deltaPpm) || Math.abs(modifier.deltaPpm) > 1_000_000) {
       violations.push(violation(`hazard.modifiers.${index}.deltaPpm`, "invalid_hazard_modifier", "modifier must be signed PPM"));
@@ -620,7 +636,11 @@ function hazardChancePpm(template: PersonalEventTemplateV2, state: GameStateV2):
   for (const modifier of template.hazard.modifiers) {
     if (
       (modifier.type === "macro_regime" && modifier.regimes.includes(state.marketRegime)) ||
-      (modifier.type === "employment_sector" && state.gameplay.employment.status === "employed" && modifier.sectorIds.includes(state.gameplay.employment.sectorId))
+      (modifier.type === "employment_sector" && state.gameplay.employment.status === "employed" && modifier.sectorIds.includes(state.gameplay.employment.sectorId)) ||
+      (modifier.type === "wellbeing_threshold" &&
+        (modifier.comparator === "at_least"
+          ? state.wellbeing[modifier.field] >= modifier.thresholdPpm
+          : state.wellbeing[modifier.field] <= modifier.thresholdPpm))
     ) chance += modifier.deltaPpm;
   }
   return Math.max(template.hazard.minimumChancePpm, Math.min(template.hazard.maximumChancePpm, chance));
