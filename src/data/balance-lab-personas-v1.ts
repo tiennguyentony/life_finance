@@ -49,9 +49,11 @@ export function createBalanceLabPersonaStateV1(input: Readonly<{
     annualGrossSalaryCents: moneyCents(12_000_000),
     finances: {
       cashCents: moneyCents(lowCash ? 100_000 : debtBurdened ? 150_000 : 1_500_000),
-      taxableBroadIndexCents: moneyCents(lowCash ? 100_000 : 1_000_000),
-      taxableSectorCents: moneyCents(debtBurdened ? 500_000 : 100_000),
-      taxableSpeculativeCents: moneyCents(debtBurdened ? 600_000 : 50_000),
+      taxableBroadIndexCents: moneyCents(
+        lowCash ? 100_000 : debtBurdened ? 200_000 : 1_000_000,
+      ),
+      taxableSectorCents: moneyCents(100_000),
+      taxableSpeculativeCents: moneyCents(debtBurdened ? 100_000 : 50_000),
       retirement401kCents: moneyCents(debtBurdened ? 100_000 : 1_000_000),
       retirementIraCents: moneyCents(100_000),
       hsaCents: moneyCents(50_000),
@@ -74,7 +76,9 @@ export function createBalanceLabPersonaStateV1(input: Readonly<{
             minimumPaymentCents: moneyCents(25_000),
             remainingTermMonths: 60,
           }],
-      revolvingCreditLimitCents: moneyCents(1_500_000),
+      revolvingCreditLimitCents: moneyCents(
+        debtBurdened ? 1_300_000 : 1_500_000,
+      ),
       revolvingCreditUsedCents: moneyCents(debtBurdened ? 1_200_000 : 0),
     },
     wellbeing: {

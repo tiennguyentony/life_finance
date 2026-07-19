@@ -277,6 +277,21 @@ function openingActionForPolicy(
   policy: BalanceLabBotPolicyV1,
 ): DetailedFinancialAction | null {
   if (policy.monthlyAction === "pay_highest_rate_debt") {
+    if (
+      state.gameplay.debts.revolvingCreditUsedCents > 0 &&
+      state.finances.cashCents > 0
+    ) {
+      return Object.freeze({
+        type: "pay_revolving_credit",
+        amountCents: moneyCents(
+          Math.min(
+            10_000,
+            state.gameplay.debts.revolvingCreditUsedCents,
+            state.finances.cashCents,
+          ),
+        ),
+      });
+    }
     const debt = [...state.gameplay.debts.termDebts]
       .filter(({ principalCents }) => principalCents > 0)
       .toSorted(
