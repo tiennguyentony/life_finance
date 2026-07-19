@@ -10,7 +10,7 @@ flowchart LR
   H --> A[Application use cases]
   A --> S[Onboarding and Run services]
   S --> E[Deterministic schema-2 engine]
-  S -. optional bounded ranking .-> AI[Groq / OpenAI / local Ollama]
+  E --> ML[Bundled operational-ML ranker]
   S --> T[Tax adapter]
   S --> R[Run repository]
   R --> P[(PostgreSQL)]
@@ -27,7 +27,7 @@ The development-only demo replaces PostgreSQL with an in-memory repository and P
 - `RunService` orchestrates tax evidence, deterministic reduction, market/event policy, persistence, and projection.
 - The core owns exact-cent financial math, event effects, outcomes, replay, and state invariants.
 - PostgreSQL owns the current state, revisions, idempotency records, evidence, snapshots, ledger, and outbox.
-- AI is optional infrastructure. The monthly command can invoke a privacy-minimized, schema-constrained candidate ranker in shadow or active mode. The deterministic engine and Runtime Balance remain authoritative, and the board exposes only compact validation evidence.
+- A bundled, self-trained linear ranker orders already-eligible, already-preflighted candidates in-process. It cannot invent events or effects. Runtime Balance re-verifies the selected event, and invalid/out-of-domain model evidence falls back deterministically.
 
 ## Monthly command flow
 
@@ -37,7 +37,7 @@ sequenceDiagram
   participant API as Same-origin API
   participant RS as RunService
   participant TAX as Tax adapter
-  participant AI as Optional AI ranker
+  participant ML as Local operational ML
   participant CORE as Deterministic core
   participant DB as Repository
   UI->>API: plan intent (optional)
@@ -48,12 +48,11 @@ sequenceDiagram
   API->>RS: authorized intent + expected revision
   RS->>TAX: cached or fresh annual-context evidence
   RS->>CORE: monthly kernel + market + outcomes
-  RS->>CORE: event candidates, ranking, fairness
-  opt sampled AI enabled and at least two candidates
-    RS->>CORE: capture verified ranking input
-    RS->>AI: privacy-minimized candidate facts
-    AI-->>RS: exact permutation or fallback
-  end
+  RS->>CORE: eligible event candidates
+  CORE->>CORE: freeze parameters + estimate every impact + safety filter
+  CORE->>ML: frozen numeric feature vectors
+  ML-->>CORE: ranked safe permutation or fallback
+  CORE->>CORE: Runtime Balance re-verification + approval
   RS->>DB: state + evidence + ledger + outbox
   RS-->>UI: projected RunView
 ```
@@ -74,7 +73,8 @@ The board deliberately issues the plan and month as two revisioned commands. Its
 | `src/server/auth` | Cookie session and same-origin write protection |
 | `src/server/db` | Drizzle/PostgreSQL persistence, snapshots, replay, and history |
 | `src/server/tax` | Tax-service client, caching context, and adapters |
-| `src/server/ai`, `src/server/teaching` | Monthly AI orchestration plus optional/unmounted teaching services |
+| `ml/event_ranker`, `src/core/operational-event-ranker-v1.ts` | Offline self-training and network-free production inference |
+| `src/server/ai`, `src/server/teaching` | Optional provider and unmounted teaching/narration services; not in the monthly hot path |
 | `src/core` | Pure deterministic domain engine |
 
 ## Adding player-visible behavior
