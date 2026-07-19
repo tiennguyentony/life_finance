@@ -6,6 +6,7 @@ import {
 import { deepFreeze, parameter } from "./personal-event-template-helpers";
 import { PERSONAL_EVENT_FUNNY_TEMPLATES_V2 } from "./personal-event-funny-templates-v2";
 import { createPersonalEventExpandedTemplatesV3 } from "./personal-event-expanded-templates-v3";
+import { PERSONAL_EVENT_REWARD_TEMPLATES_V2 } from "./personal-event-reward-templates-v2";
 
 const templates: readonly PersonalEventTemplateV2[] = [
   {
@@ -742,6 +743,7 @@ const expandedTemplatesV3 = createPersonalEventExpandedTemplatesV3(templates);
 const completeTemplates = [
   ...templates,
   ...PERSONAL_EVENT_FUNNY_TEMPLATES_V2,
+  ...PERSONAL_EVENT_REWARD_TEMPLATES_V2,
   ...expandedTemplatesV3,
 ] as const satisfies readonly PersonalEventTemplateV2[];
 
