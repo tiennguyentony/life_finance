@@ -14,7 +14,7 @@ Life Finance is a deterministic US personal-finance simulation presented as a 3D
 
 ## Run it locally
 
-The quickest path requires Node.js 22+ and pnpm 11, but no database, tax service, or AI key:
+The quickest deterministic path requires Node.js 22+ and pnpm 11, but no database, tax service, or AI key:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -30,7 +30,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-The required variables are `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `RUN_SECRET_PEPPER_BASE64URL`, `TAX_SERVICE_URL`, and `TAX_SERVICE_TOKEN`. AI credentials are optional for the current typed onboarding and board loop. A Vercel access token alone is not runtime configuration and is not enough to run the persistent path.
+The required persistent variables are `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `RUN_SECRET_PEPPER_BASE64URL`, `TAX_SERVICE_URL`, and `TAX_SERVICE_TOKEN`. Monthly AI is opt-in with `AI_GAMEPLAY_MODE=shadow|active` plus a configured Groq, OpenAI, or loopback Ollama provider. Without it, and whenever it fails validation, the board uses the deterministic Scenario Director. A Vercel access token alone is not runtime configuration and is not enough to run the persistent path.
 
 The auto-confirm setting is intentionally demo-only. It provides real account ownership and cross-device saves, but does not verify that an email address belongs to the registrant and this project does not offer a dependable password-recovery flow. Enable email confirmation and production SMTP before treating the app as production authentication.
 

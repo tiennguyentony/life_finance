@@ -51,6 +51,7 @@ export async function submitCommand(
     Readonly<{
       result: Readonly<{
         idempotentReplay: boolean;
+        aiDirector: CommandResponseAiDirector;
       }>;
     }>
 > {
@@ -64,11 +65,25 @@ export async function submitCommand(
     effectiveMonth: intent.effectiveMonth ?? current?.state.currentMonth,
   });
   const applied = await service.submitCommand(runId, accessSecret, command);
+  const aiDirector = applied.monthlyRecord !== null &&
+      "scenarioDirectorAiEvidence" in applied.monthlyRecord
+    ? applied.monthlyRecord.scenarioDirectorAiEvidence ?? null
+    : null;
   return Object.freeze({
     run: projectRunView(applied.state),
     stateChecksum: applied.stateChecksum,
     result: Object.freeze({
       idempotentReplay: applied.idempotentReplay,
+      aiDirector,
     }),
   });
 }
+
+type CommandResponseAiDirector = Readonly<{
+  mode: "shadow" | "active";
+  source: "openai" | "hosted_oss" | "local_oss" | "deterministic_fallback";
+  status: "validated" | "fallback";
+  latencyMs: number;
+  candidateCount: number;
+  topCandidateAgreement: boolean | null;
+}> | null;

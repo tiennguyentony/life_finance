@@ -245,6 +245,23 @@ export const commandResponseSchema = runViewResponseSchema
     result: z
       .object({
         idempotentReplay: z.boolean(),
+        aiDirector: z
+          .object({
+            mode: z.enum(["shadow", "active"]),
+            source: z.enum([
+              "openai",
+              "hosted_oss",
+              "local_oss",
+              "deterministic_fallback",
+            ]),
+            status: z.enum(["validated", "fallback"]),
+            latencyMs: z.number().int().min(0).max(30_000),
+            candidateCount: z.number().int().min(0).max(64),
+            topCandidateAgreement: z.boolean().nullable(),
+          })
+          .strict()
+          .nullable()
+          .optional(),
       })
       .strict(),
   })

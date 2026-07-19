@@ -4,6 +4,14 @@ import { formatBoardMoney, type BoardMonthResult } from "./board-model";
 import { useModalDialog } from "./use-modal-dialog";
 
 type MonthResultDialogProps = Readonly<{
+  aiDirector?: Readonly<{
+    mode: "shadow" | "active";
+    source: "openai" | "hosted_oss" | "local_oss" | "deterministic_fallback";
+    status: "validated" | "fallback";
+    latencyMs: number;
+    candidateCount: number;
+    topCandidateAgreement: boolean | null;
+  }> | null;
   busy: boolean;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -32,6 +40,7 @@ function formatProgressDelta(ppm: number): string {
 }
 
 export function MonthResultDialog({
+  aiDirector = null,
   busy,
   onPrimary,
   onSecondary,
@@ -101,6 +110,20 @@ export function MonthResultDialog({
             <h3>12-month checkpoint: {checkpointOutcome}</h3>
             <p>Preparedness score {Math.round(checkpoint.scorePpm / 10_000)}%</p>
             <p>Focus next: {focusLabel}</p>
+          </section>
+        ) : null}
+
+        {aiDirector !== null ? (
+          <section className="board-month-result-highlight" data-testid="ai-director-evidence">
+            <h3>AI Director: {aiDirector.status}</h3>
+            <p>
+              {aiDirector.mode} · {aiDirector.source} · {aiDirector.candidateCount} candidates · {aiDirector.latencyMs} ms
+            </p>
+            {aiDirector.topCandidateAgreement === null ? null : (
+              <p>
+                Deterministic top choice: {aiDirector.topCandidateAgreement ? "same" : "different"}
+              </p>
+            )}
           </section>
         ) : null}
 

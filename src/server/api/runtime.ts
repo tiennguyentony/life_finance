@@ -1,6 +1,7 @@
 import { OnboardingAiServiceV1 } from "../ai/onboarding-service-v1";
 import type { CommandRunner, RunReader } from "../../application/game/use-cases";
-import { getAiRoleClient } from "../ai/runtime";
+import { AiRoleClient } from "../ai/client";
+import { aiTransportFromEnvironment, getAiRoleClient } from "../ai/runtime";
 import {
   GameplayDirectorService,
   gameplayDirectorConfigFromEnvironment,
@@ -28,8 +29,18 @@ function getGameplayDirector(): GameplayDirector | null {
   const config = gameplayDirectorConfigFromEnvironment();
   if (config.mode === "off") return (gameplayDirector = null);
   try {
+    let localClient: AiRoleClient | undefined;
     gameplayDirector = new GameplayDirectorService((runId) => {
-      const client = getAiRoleClient(runId);
+      let client: AiRoleClient;
+      try {
+        client = getAiRoleClient(runId);
+      } catch (error) {
+        if (process.env.NODE_ENV !== "development") throw error;
+        localClient ??= new AiRoleClient(aiTransportFromEnvironment(), {
+          record: async () => undefined,
+        });
+        client = localClient;
+      }
       return {
         generate: (request) => client.generate<"scenario_director">(request),
         responseSource: () => client.responseSource(),
@@ -67,7 +78,9 @@ export function getRunService(): RunService {
 
 export function getRunGateway(): CommandRunner {
   if (!runGateway) {
-    runGateway = getLocalDemoRuntime().createRunGateway(getRunService);
+    const demo = getLocalDemoRuntime();
+    demo.configureGameplayDirector(getGameplayDirector());
+    runGateway = demo.createRunGateway(getRunService);
   }
   return runGateway;
 }

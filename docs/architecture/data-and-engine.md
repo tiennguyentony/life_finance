@@ -22,11 +22,12 @@ For `process_month`, `RunService` performs this sequence under revision and auth
 4. Generate the named market draw and apply calibrated market movement.
 5. Evaluate deterministic outcomes and end conditions.
 6. Generate eligible declarative event candidates with deterministic named RNG.
-7. Rank only those candidates with the deterministic Scenario Director.
-8. Apply Runtime Balance fairness/impact policy and either approve one candidate or schedule none.
-9. Persist the new state, command, monthly/tax evidence, ledger records, snapshots when required, and outbox records atomically.
+7. Rank those candidates with the deterministic Scenario Director. When monthly AI is enabled and the sampling gate is due, send only the bounded structured ranking context to the configured model.
+8. Validate the model response as an exact permutation of the engine-owned candidates. In `active` mode apply the ordering; in `shadow` mode record the comparison without changing gameplay; on timeout, outage, or invalid output retain the deterministic ordering.
+9. Apply Runtime Balance fairness/impact policy and either approve one candidate or schedule none.
+10. Persist the new state, command, AI comparison evidence, monthly/tax evidence, ledger records, snapshots when required, and outbox records atomically.
 
-The Scenario Director cannot invent an event or change its mechanics. Risk/exposure affects context and prioritization, but the hazard system decides whether a candidate exists. Runtime Balance can suppress unfair/repetitive pressure.
+The Scenario Director cannot invent an event or change its mechanics. Risk/exposure affects context and prioritization, but the hazard system decides whether a candidate exists. The model cannot change tier, lesson, parameters, cost, impact, probability, or immutable scoring facts. Runtime Balance independently re-verifies the candidate set and remains the final safety authority. The validated ranking is stored in the accepted command, so an idempotent replay never calls the provider and produces the same result.
 
 ## Cash shortfall and bankruptcy
 
@@ -68,8 +69,14 @@ All Drizzle tables have row-level security enabled. The repository owns:
 
 Repository writes use transactions and optimistic revision checks. Sparse snapshots plus accepted commands and evidence support deterministic replay without treating every JSON response as authority.
 
+## AI gameplay modes
+
+Monthly AI is opt-in through `AI_GAMEPLAY_MODE=off|shadow|active`; the default is `off`. Calls require at least `AI_GAMEPLAY_MINIMUM_CANDIDATES` candidates and occur only every `AI_GAMEPLAY_SAMPLE_EVERY_MONTHS` simulation months. Three consecutive invalid/unavailable results open a one-minute in-process circuit breaker. The API and month-result UI expose the mode, source, validation status, bounded latency, candidate count, and whether the AI and deterministic top candidate agreed. Raw prompts and model output are not sent to the browser.
+
+Provider adapters support Groq, OpenAI, and loopback-only Ollama. Persistent deployments use encrypted audit storage. Local development can run the gameplay director with the in-memory demo and a local Ollama model without PostgreSQL; those local audit records are intentionally not persisted.
+
 ## Implemented but not publicly exposed
 
 The codebase contains deterministic preview, multi-month time control (including stop conditions), checkpoints, causal history, counterfactual analysis, teaching moments, learning replay, debrief services, and an AI world-director service. The active route tree does not expose them. The current board also does not mount the teaching panels.
 
-AI provider adapters exist for Groq and OpenAI, plus loopback-only Ollama development. Today `/api/onboarding/parse` is the only active route that can invoke AI, and the current persona UI does not call it. Monthly event selection remains deterministic and makes no provider call.
+Teaching, counterfactual, causal-history, and debrief services remain unmounted. AI-assisted monthly candidate ordering is now connected to the normal command path when explicitly enabled; provider failure remains a deterministic no-failure fallback.

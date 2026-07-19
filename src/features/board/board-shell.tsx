@@ -90,6 +90,9 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     useState<BoardDestinationId | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [monthResult, setMonthResult] = useState<BoardMonthResult | null>(null);
+  const [aiDirector, setAiDirector] = useState<
+    Awaited<ReturnType<LifeFinanceClient["submitCommand"]>>["result"]["aiDirector"]
+  >(null);
   const [continuationContext, setContinuationContext] =
     useState<BoardContinuationContext | null>(null);
   const [planningError, setPlanningError] = useState<string | null>(null);
@@ -202,9 +205,11 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     ending: RunViewWire,
     plan: BoardPlan,
     planLabel = plan.label,
+    director: typeof aiDirector = null,
   ) => {
     setRun(ending);
     setMonthResult(boardMonthResult(opening, ending, planLabel));
+    setAiDirector(director);
     setContinuationContext(Object.freeze({ opening, plan }));
     setSelectedDestinationId(null);
     setSelectedPlanId(null);
@@ -378,7 +383,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         createId: (phase) => `board.turn.${phase}.${crypto.randomUUID()}`,
       });
       if (result.kind === "completed") {
-        completeMonth(result.opening, result.run, plan);
+        completeMonth(result.opening, result.run, plan, plan.label, result.aiDirector);
       } else if (result.kind === "plan_failed") {
         const failure: PendingTurnFailure = {
           phase: "plan",
@@ -419,7 +424,14 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         payload: {},
       });
       setRun(response.run);
-      showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
+      const director = response.result.aiDirector ?? null;
+      if (director !== null) {
+        showToast(
+          `AI Director ${director.mode}: ${director.status} via ${director.source} (${director.latencyMs} ms).`,
+        );
+      } else {
+        showToast(`Advanced to ${response.run.currentMonth}. Your run is saved.`);
+      }
       dispatch(mode === "loop" ? { type: "loop-advance" } : { type: "free-bounce" });
     } catch (reason) {
       showToast(errorMessage(reason, "The turn could not advance."));
@@ -430,6 +442,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
 
   const clearMonthResult = () => {
     setMonthResult(null);
+    setAiDirector(null);
     setContinuationContext(null);
   };
 
@@ -461,7 +474,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
       if (result.kind === "stopped") {
         clearMonthResult();
       } else if (result.kind === "completed") {
-        completeMonth(result.opening, result.run, plan);
+        completeMonth(result.opening, result.run, plan, plan.label, result.aiDirector);
       } else {
         setMonthResult(null);
         setContinuationContext(null);
@@ -641,6 +654,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         mode={mode}
         monthResultDialog={
           <MonthResultDialog
+            aiDirector={aiDirector}
             busy={busy}
             onPrimary={() => void handleContinueMonth()}
             onSecondary={clearMonthResult}
