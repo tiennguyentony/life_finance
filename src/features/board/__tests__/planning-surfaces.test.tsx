@@ -200,6 +200,31 @@ describe("board planning surfaces", () => {
     expect(markup).toContain("active · hosted_oss · 4 candidates · 417 ms");
     expect(markup).toContain("Deterministic top choice: different");
     expect(markup).toContain(">Review decision</button>");
+
+    const operationalMarkup = renderToStaticMarkup(
+      <MonthResultDialog
+        aiDirector={{
+          mode: "operational",
+          source: "self_trained_local",
+          status: "ranked",
+          candidateCount: 3,
+          artifactChecksum: "a".repeat(64),
+          topCandidateId: "personal.performance_bonus",
+          fallbackReason: null,
+        }}
+        busy={false}
+        onPrimary={() => undefined}
+        onSecondary={() => undefined}
+        primaryLabel="Review decision"
+        result={result}
+        returnFocusTarget={null}
+        secondaryLabel={null}
+        summary={null}
+      />,
+    );
+    expect(operationalMarkup).toContain("Operational ML: ranked");
+    expect(operationalMarkup).toContain("self-trained local ranker · 3 safe candidates");
+    expect(operationalMarkup).toContain("Artifact aaaaaaaaaaaa");
   });
 
   it("renders monthly, total, follow-up, and disabled preview evidence", () => {

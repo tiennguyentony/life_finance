@@ -65,10 +65,25 @@ export async function submitCommand(
     effectiveMonth: intent.effectiveMonth ?? current?.state.currentMonth,
   });
   const applied = await service.submitCommand(runId, accessSecret, command);
-  const aiDirector = applied.monthlyRecord !== null &&
+  const operationalEvidence = applied.monthlyRecord !== null &&
+      "operationalEventRankerEvidence" in applied.monthlyRecord
+    ? applied.monthlyRecord.operationalEventRankerEvidence ?? null
+    : null;
+  const legacyAiEvidence = applied.monthlyRecord !== null &&
       "scenarioDirectorAiEvidence" in applied.monthlyRecord
     ? applied.monthlyRecord.scenarioDirectorAiEvidence ?? null
     : null;
+  const aiDirector: CommandResponseAiDirector = operationalEvidence === null
+    ? legacyAiEvidence
+    : Object.freeze({
+        mode: "operational" as const,
+        source: "self_trained_local" as const,
+        status: operationalEvidence.status,
+        candidateCount: operationalEvidence.candidateCount,
+        artifactChecksum: operationalEvidence.artifactChecksum,
+        topCandidateId: operationalEvidence.topCandidateId,
+        fallbackReason: operationalEvidence.fallbackReason ?? null,
+      });
   return Object.freeze({
     run: projectRunView(applied.state),
     stateChecksum: applied.stateChecksum,
@@ -79,11 +94,19 @@ export async function submitCommand(
   });
 }
 
-type CommandResponseAiDirector = Readonly<{
+export type CommandResponseAiDirector = Readonly<{
   mode: "shadow" | "active";
   source: "openai" | "hosted_oss" | "local_oss" | "deterministic_fallback";
   status: "validated" | "fallback";
   latencyMs: number;
   candidateCount: number;
   topCandidateAgreement: boolean | null;
+}> | Readonly<{
+  mode: "operational";
+  source: "self_trained_local";
+  status: "ranked" | "fallback";
+  candidateCount: number;
+  artifactChecksum: string;
+  topCandidateId: string | null;
+  fallbackReason: string | null;
 }> | null;

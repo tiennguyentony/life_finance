@@ -2,16 +2,10 @@
 
 import { formatBoardMoney, type BoardMonthResult } from "./board-model";
 import { useModalDialog } from "./use-modal-dialog";
+import type { CommandResponseAiDirector } from "@/application/game/use-cases";
 
 type MonthResultDialogProps = Readonly<{
-  aiDirector?: Readonly<{
-    mode: "shadow" | "active";
-    source: "openai" | "hosted_oss" | "local_oss" | "deterministic_fallback";
-    status: "validated" | "fallback";
-    latencyMs: number;
-    candidateCount: number;
-    topCandidateAgreement: boolean | null;
-  }> | null;
+  aiDirector?: CommandResponseAiDirector;
   busy: boolean;
   onPrimary: () => void;
   onSecondary: () => void;
@@ -115,14 +109,24 @@ export function MonthResultDialog({
 
         {aiDirector !== null ? (
           <section className="board-month-result-highlight" data-testid="ai-director-evidence">
-            <h3>AI Director: {aiDirector.status}</h3>
-            <p>
-              {aiDirector.mode} · {aiDirector.source} · {aiDirector.candidateCount} candidates · {aiDirector.latencyMs} ms
-            </p>
-            {aiDirector.topCandidateAgreement === null ? null : (
-              <p>
-                Deterministic top choice: {aiDirector.topCandidateAgreement ? "same" : "different"}
-              </p>
+            {aiDirector.mode === "operational" ? (
+              <>
+                <h3>Operational ML: {aiDirector.status}</h3>
+                <p>self-trained local ranker · {aiDirector.candidateCount} safe candidates</p>
+                <p>Artifact {aiDirector.artifactChecksum.slice(0, 12)}</p>
+              </>
+            ) : (
+              <>
+                <h3>AI Director: {aiDirector.status}</h3>
+                <p>
+                  {aiDirector.mode} · {aiDirector.source} · {aiDirector.candidateCount} candidates · {aiDirector.latencyMs} ms
+                </p>
+                {aiDirector.topCandidateAgreement === null ? null : (
+                  <p>
+                    Deterministic top choice: {aiDirector.topCandidateAgreement ? "same" : "different"}
+                  </p>
+                )}
+              </>
             )}
           </section>
         ) : null}
