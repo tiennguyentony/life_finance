@@ -185,12 +185,27 @@ export type BoardMonthResult = Readonly<{
   startedProgramIds: readonly string[];
   completedProgramIds: readonly string[];
   beginnerCheckpoint: NonNullable<BoardRunSource["beginnerCheckpoint"]> | null;
+  monthlyExplanation: Readonly<{
+    processedMonth: string;
+    grossIncomeCents: number;
+    totalTaxCents: number;
+    afterTaxCashIncomeCents: number;
+    resolvedIncomeCents: number;
+    resolvedExpenseCents: number;
+    marketValueChangeCents: number;
+    annualInflationIncreaseCents: number;
+    insurancePlayerCostCents: number;
+    requiredCashCents: number;
+    debtInterestCents: number;
+    debtPaymentCents: number;
+  }> | null;
 }>;
 
 export function boardMonthResult(
   opening: BoardRunSource,
   ending: BoardRunSource,
   planLabel: string,
+  monthlyExplanation: BoardMonthResult["monthlyExplanation"] = null,
 ): BoardMonthResult {
   const openingDebt =
     opening.finances.nonCreditLiabilitiesCents + opening.finances.creditUsedCents;
@@ -235,5 +250,6 @@ export function boardMonthResult(
     startedProgramIds: Object.freeze(startedProgramIds),
     completedProgramIds: Object.freeze(completedProgramIds),
     beginnerCheckpoint: ending.beginnerCheckpoint ?? null,
+    monthlyExplanation,
   });
 }

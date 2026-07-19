@@ -96,6 +96,35 @@ export function MonthResultDialog({
         insurance: "Insurance",
         diversification: "Diversification",
       }[checkpoint.weakestComponent];
+  const explanation = result.monthlyExplanation;
+  const explanationRows: readonly (readonly [string, string])[] =
+    explanation === null
+      ? []
+      : [
+          ["Gross employment income", formatMoneyDelta(explanation.grossIncomeCents)],
+          ["Taxes and withholding", formatMoneyDelta(-explanation.totalTaxCents)],
+          ["After-tax cash income", formatMoneyDelta(explanation.afterTaxCashIncomeCents)],
+          ...(explanation.resolvedIncomeCents === 0
+            ? []
+            : [["Event and other income", formatMoneyDelta(explanation.resolvedIncomeCents)] as const]),
+          ...(explanation.resolvedExpenseCents === 0
+            ? []
+            : [["Event expenses", formatMoneyDelta(-explanation.resolvedExpenseCents)] as const]),
+          ["Required cash paid", formatMoneyDelta(-explanation.requiredCashCents)],
+          ...(explanation.debtInterestCents === 0
+            ? []
+            : [["Debt interest included", formatMoneyDelta(-explanation.debtInterestCents)] as const]),
+          ...(explanation.debtPaymentCents === 0
+            ? []
+            : [["Debt payments included", formatMoneyDelta(-explanation.debtPaymentCents)] as const]),
+          ...(explanation.insurancePlayerCostCents === 0
+            ? []
+            : [["Insurance claim cost", formatMoneyDelta(-explanation.insurancePlayerCostCents)] as const]),
+          ["Market movement", formatMoneyDelta(explanation.marketValueChangeCents)],
+          ...(explanation.annualInflationIncreaseCents === 0
+            ? []
+            : [["Annual cost added by inflation", formatMoneyDelta(explanation.annualInflationIncreaseCents)] as const]),
+        ];
 
   return (
     <dialog
@@ -139,6 +168,21 @@ export function MonthResultDialog({
             <h3>12-month checkpoint: {checkpointOutcome}</h3>
             <p>Preparedness score {Math.round(checkpoint.scorePpm / 10_000)}%</p>
             <p>Focus next: {focusLabel}</p>
+          </section>
+        ) : null}
+
+        {explanationRows.length > 0 ? (
+          <section className="board-month-result-breakdown">
+            <h3>Why the numbers changed</h3>
+            <p>Backend-calculated evidence for {formatMonth(explanation!.processedMonth)}.</p>
+            <dl className="board-month-result-deltas">
+              {explanationRows.map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
           </section>
         ) : null}
 

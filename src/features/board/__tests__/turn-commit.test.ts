@@ -37,11 +37,14 @@ const noActionPlan: BoardPlan = {
   command: { type: "none" },
 };
 
-function response(run: RunViewWire): CommandResponseWire {
+function response(
+  run: RunViewWire,
+  monthlyExplanation?: CommandResponseWire["result"]["monthlyExplanation"],
+): CommandResponseWire {
   return {
     run,
     stateChecksum: "a".repeat(64),
-      result: { idempotentReplay: false },
+    result: { idempotentReplay: false, monthlyExplanation },
   };
 }
 
@@ -89,10 +92,24 @@ describe("commitBoardTurn", () => {
     const completedRun = { ...opening, currentMonth: "2026-08", revision: opening.revision + 1 };
     const calls: Array<{ type: string; expectedRevision: number; id: string }> = [];
     const phases: string[] = [];
+    const monthlyExplanation = {
+      processedMonth: "2026-07",
+      grossIncomeCents: 1_000_000,
+      totalTaxCents: 220_000,
+      afterTaxCashIncomeCents: 730_000,
+      resolvedIncomeCents: 0,
+      resolvedExpenseCents: 0,
+      marketValueChangeCents: 12_500,
+      annualInflationIncreaseCents: 14_300,
+      insurancePlayerCostCents: 0,
+      requiredCashCents: 555_659,
+      debtInterestCents: 8_000,
+      debtPaymentCents: 25_000,
+    };
     const client = {
       submitCommand: async (_runId: string, command: { type: string; expectedRevision: number; id: string }) => {
         calls.push(command);
-        return response(completedRun);
+        return response(completedRun, monthlyExplanation);
       },
     };
 
@@ -114,7 +131,12 @@ describe("commitBoardTurn", () => {
       payload: {},
     }]);
     expect(phases).toEqual(["month"]);
-    expect(result).toMatchObject({ kind: "completed", run: completedRun, planApplied: false });
+    expect(result).toMatchObject({
+      kind: "completed",
+      run: completedRun,
+      planApplied: false,
+      monthlyExplanation,
+    });
   });
 
   it("stops before month processing when the selected action fails", async () => {

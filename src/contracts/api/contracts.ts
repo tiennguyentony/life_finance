@@ -245,6 +245,24 @@ export const commandResponseSchema = runViewResponseSchema
     result: z
       .object({
         idempotentReplay: z.boolean(),
+        monthlyExplanation: z
+          .object({
+            processedMonth: monthSchema,
+            grossIncomeCents: centsSchema,
+            totalTaxCents: centsSchema,
+            afterTaxCashIncomeCents: centsSchema,
+            resolvedIncomeCents: centsSchema,
+            resolvedExpenseCents: centsSchema,
+            marketValueChangeCents: centsSchema,
+            annualInflationIncreaseCents: centsSchema,
+            insurancePlayerCostCents: centsSchema,
+            requiredCashCents: centsSchema,
+            debtInterestCents: centsSchema,
+            debtPaymentCents: centsSchema,
+          })
+          .strict()
+          .nullable()
+          .optional(),
         aiDirector: z.union([
           z.object({
             mode: z.enum(["shadow", "active"]),

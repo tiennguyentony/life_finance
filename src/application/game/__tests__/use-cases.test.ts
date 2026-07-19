@@ -64,7 +64,7 @@ describe("game application use cases", () => {
     expect(response).toMatchObject({
       run: { runId: "run.current" },
       stateChecksum: "a".repeat(64),
-      result: { idempotentReplay: false },
+      result: { idempotentReplay: false, monthlyExplanation: null },
     });
     expect(response).not.toHaveProperty("state");
   });

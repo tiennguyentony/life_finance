@@ -23,6 +23,9 @@ export type BoardTurnCommitResult =
         CommandResponseWire["result"]["aiDirector"],
         undefined
       >;
+      monthlyExplanation: NonNullable<
+        CommandResponseWire["result"]["monthlyExplanation"]
+      > | null;
     }>
   | Readonly<{ kind: "plan_failed"; run: RunViewWire; error: unknown }>
   | Readonly<{
@@ -222,6 +225,7 @@ export async function commitBoardTurn({
       run: response.run,
       planApplied,
       aiDirector: response.result.aiDirector ?? null,
+      monthlyExplanation: response.result.monthlyExplanation ?? null,
     };
   } catch (error) {
     return { kind: "month_failed", run, planApplied, error };
