@@ -77,6 +77,7 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
           className="hq-character"
           height={88}
           src={penny.characterSrc}
+          unoptimized
           width={88}
         />
         <p className="hq-speech">
@@ -228,6 +229,7 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
                   height={56}
                   src={bengo.characterSrc}
                   style={{ objectFit: "contain" }}
+                  unoptimized
                   width={56}
                 />
                 <div>

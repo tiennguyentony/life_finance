@@ -20,6 +20,7 @@ export function HqTopbar({ view, busy, onSavedGames, onNewGame }: TopbarProps) {
           alt="Sprout"
           height={42}
           src={SPROUT_AVATAR}
+          unoptimized
           width={42}
         />
         <div>
@@ -131,6 +132,7 @@ export function HqSidebar({ activeTab, view, onSelectTab }: SidebarProps) {
                 height={34}
                 src={tab.characterSrc}
                 style={{ background: tab.iconTint }}
+                unoptimized
                 width={34}
               />
               <span>

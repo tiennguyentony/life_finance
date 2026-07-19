@@ -29,7 +29,14 @@ export function HqEventDialog({ busy, onResolve, run }: Props) {
     <dialog className="hq-dialog" ref={dialogRef}>
       <div className="hq">
         <div className="hq-screen-head">
-          <Image alt="Impulso" className="hq-character" height={96} src={IMPULSO} width={96} />
+          <Image
+            alt="Impulso"
+            className="hq-character"
+            height={96}
+            src={IMPULSO}
+            unoptimized
+            width={96}
+          />
           <div>
             <p className="hq-chip" data-tone="negative" style={{ marginBottom: "0.375rem" }}>
               Decision required

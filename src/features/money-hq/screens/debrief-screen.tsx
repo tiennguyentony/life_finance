@@ -51,7 +51,14 @@ export function DebriefScreen({ run, onBack }: Props) {
   return (
     <div className="hq-screen">
       <div className="hq-screen-head">
-        <Image alt="Richie" className="hq-character" height={96} src={RICHIE} width={96} />
+        <Image
+          alt="Richie"
+          className="hq-character"
+          height={96}
+          src={RICHIE}
+          unoptimized
+          width={96}
+        />
         <div>
           <h2 className="hq-screen-title">Richie&rsquo;s Final Debrief</h2>
           <p className="hq-screen-subtitle">
