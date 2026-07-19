@@ -56,6 +56,10 @@ function freezePolicy(policy: BalanceLabBotPolicyV1): BalanceLabBotPolicyV1 {
 }
 
 const PREPARED_EVENT_RESPONSES = Object.freeze({
+  "personal.employer_wellness_credit": ["use_credit_for_recovery"],
+  "personal.professional_development_stipend": ["take_lighter_program"],
+  "personal.consumer_refund": ["keep_refund"],
+  "personal.side_project_license": ["take_six_month_royalty"],
   "personal.medical_bill": ["use_insurance", "negotiate_bill"],
   "personal.lifestyle_upgrade": ["keep_current_lifestyle"],
   "personal.performance_bonus": ["save_bonus"],
@@ -80,6 +84,10 @@ const PREPARED_EVENT_RESPONSES = Object.freeze({
 });
 
 const AVERAGE_EVENT_RESPONSES = Object.freeze({
+  "personal.employer_wellness_credit": ["claim_full_credit"],
+  "personal.professional_development_stipend": ["take_lighter_program"],
+  "personal.consumer_refund": ["share_refund"],
+  "personal.side_project_license": ["take_upfront_payment"],
   "personal.medical_bill": ["medical_payment_plan"],
   "personal.lifestyle_upgrade": ["trial_upgrade"],
   "personal.performance_bonus": ["celebrate_some"],
@@ -104,6 +112,10 @@ const AVERAGE_EVENT_RESPONSES = Object.freeze({
 });
 
 const RECKLESS_EVENT_RESPONSES = Object.freeze({
+  "personal.employer_wellness_credit": ["claim_full_credit"],
+  "personal.professional_development_stipend": ["take_intensive_program"],
+  "personal.consumer_refund": ["share_refund"],
+  "personal.side_project_license": ["take_upfront_payment"],
   "personal.medical_bill": ["pay_uninsured"],
   "personal.lifestyle_upgrade": ["accept_upgrade"],
   "personal.performance_bonus": ["spend_most_bonus"],
