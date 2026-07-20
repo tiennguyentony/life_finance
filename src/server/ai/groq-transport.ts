@@ -180,6 +180,15 @@ export class GroqGptOssTransport implements AiResponsesTransport {
           })),
           response_format: { type: "json_schema", json_schema: jsonSchema },
           reasoning_effort: request.reasoningEffort,
+          ...(request.maxOutputTokens === undefined
+            ? {}
+            : { max_completion_tokens: request.maxOutputTokens }),
+          ...(request.sampling === undefined
+            ? {}
+            : {
+                temperature: request.sampling.temperature,
+                seed: request.sampling.seed,
+              }),
           stream: false,
         }),
         cache: "no-store",

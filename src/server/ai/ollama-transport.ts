@@ -121,11 +121,13 @@ export class OllamaGptOssTransport implements AiResponsesTransport {
   readonly #endpoint: URL;
   readonly #fetch: FetchLike;
   readonly #timeoutMs: number;
+  readonly #model: string;
 
   constructor(
     options: Readonly<{
       baseUrl?: string;
       timeoutMs?: number;
+      model?: string;
       fetchFunction?: FetchLike;
     }> = {},
   ) {
@@ -134,13 +136,17 @@ export class OllamaGptOssTransport implements AiResponsesTransport {
     );
     this.#fetch = options.fetchFunction ?? globalThis.fetch;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_OLLAMA_TIMEOUT_MS;
+    this.#model = options.model ?? OLLAMA_GPT_OSS_MODEL;
     if (!Number.isSafeInteger(this.#timeoutMs) || this.#timeoutMs < 1_000) {
       throw new Error("Ollama timeout must be a safe integer of at least 1,000 ms");
+    }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}:[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/u.test(this.#model)) {
+      throw new Error("Ollama model must be a local model identifier with a tag");
     }
   }
 
   auditModel(): string {
-    return `ollama/${OLLAMA_GPT_OSS_MODEL}`;
+    return `ollama/${this.#model}`;
   }
 
   responseSource(): AiModelSource {
@@ -165,7 +171,7 @@ export class OllamaGptOssTransport implements AiResponsesTransport {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: OLLAMA_GPT_OSS_MODEL,
+          model: this.#model,
           messages: request.input.map(({ role, content }) => ({
             role: role === "developer" ? "system" : role,
             content:
@@ -175,9 +181,17 @@ export class OllamaGptOssTransport implements AiResponsesTransport {
           })),
           stream: false,
           format: outputSchema,
-          think: request.reasoningEffort,
+          think: this.#model === OLLAMA_GPT_OSS_MODEL
+            ? request.reasoningEffort
+            : false,
           keep_alive: "15m",
-          options: { temperature: 0, seed: 0 },
+          options: {
+            temperature: request.sampling?.temperature ?? 0,
+            seed: request.sampling?.seed ?? 0,
+            ...(request.maxOutputTokens === undefined
+              ? {}
+              : { num_predict: request.maxOutputTokens }),
+          },
         }),
         cache: "no-store",
         signal: controller.signal,
@@ -211,7 +225,7 @@ export class OllamaGptOssTransport implements AiResponsesTransport {
       });
     }
     const parsed = ollamaResponseSchema.safeParse(decoded);
-    if (!parsed.success || parsed.data.model !== OLLAMA_GPT_OSS_MODEL) {
+    if (!parsed.success || parsed.data.model !== this.#model) {
       throw new OllamaTransportError(
         "local AI response violates the transport contract",
         502,

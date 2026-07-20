@@ -11,8 +11,17 @@ import {
   plansForDestination,
   type BoardPlan,
 } from "@/features/board/plan-catalog";
+import {
+  characterBanterFromResponse,
+  characterBanterRequestForMonth,
+  loadCharacterBanterHistory,
+  saveCharacterBanterHistory,
+  type CharacterBanter,
+  type CharacterBanterHistoryEntry,
+} from "@/features/banter/character-banter";
 import { LifeFinanceClient } from "@/lib/api-client/client";
 
+import { HqCharacterBanter } from "./character-banter";
 import { HqEventDialog } from "./dialogs/event-dialog";
 import { HqMonthResultDialog } from "./dialogs/month-result-dialog";
 import { HqPlanBar, HqSidebar, HqTopbar } from "./hq-chrome";
@@ -52,6 +61,8 @@ type HqReport = "checkpoint" | "debrief" | null;
 const CHECKPOINT_MONTHS = 12;
 
 const TOAST_MS = 4000;
+// Long enough for assistive technology and a human reader to finish the line.
+const BANTER_MS = 6500;
 
 export function MoneyHqShell() {
   const router = useRouter();
@@ -70,9 +81,12 @@ export function MoneyHqShell() {
   });
   const [taxRetry, setTaxRetry] = useState(0);
   const [trail, setTrail] = useState<readonly TrailPoint[]>([]);
-  const [resolvingEvent, setResolvingEvent] = useState(false);
   const [toast, setToast] = useState({ message: "", visible: false });
+  const [banter, setBanter] = useState<CharacterBanter | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const banterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const banterRequestToken = useRef(0);
+  const recentBanterHistory = useRef<readonly CharacterBanterHistoryEntry[]>([]);
 
   /**
    * Every authoritative run state the server returns is recorded, so the trend
@@ -101,6 +115,7 @@ export function MoneyHqShell() {
         }
         // Restore anything this browser already recorded before appending.
         setTrail(loadTrail(session.run.runId));
+        recentBanterHistory.current = loadCharacterBanterHistory(session.run.runId);
         recordRun(session.run);
       })
       .catch(() => {
@@ -145,6 +160,8 @@ export function MoneyHqShell() {
   useEffect(() => {
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
+      if (banterTimer.current) clearTimeout(banterTimer.current);
+      banterRequestToken.current += 1;
     };
   }, []);
 
@@ -155,6 +172,15 @@ export function MoneyHqShell() {
       () => setToast((previous) => ({ ...previous, visible: false })),
       TOAST_MS,
     );
+  };
+
+  const showBanter = (message: CharacterBanter | null) => {
+    if (banterTimer.current) clearTimeout(banterTimer.current);
+    setBanter(message);
+    if (message === null) return;
+    banterTimer.current = setTimeout(() => {
+      setBanter((current) => current?.id === message.id ? null : current);
+    }, BANTER_MS);
   };
 
   const view = useMemo(() => (run ? hqViewFromRun(run) : null), [run]);
@@ -233,28 +259,52 @@ export function MoneyHqShell() {
     });
   };
 
-  const handleResolveEvent = async (choiceId: string) => {
-    if (!run || resolvingEvent || run.pendingInteraction.kind !== "event") return;
-    setResolvingEvent(true);
-    try {
-      const response = await new LifeFinanceClient().submitCommand(run.runId, {
-        id: `hq.event.${crypto.randomUUID()}`,
-        expectedRevision: run.revision,
-        effectiveMonth: run.currentMonth,
-        type: "resolve_event_choice",
-        payload: { eventId: run.pendingInteraction.eventId, choiceId },
+  const handleEventCommitted = (committedRun: RunViewWire, reaction: string) => {
+    recordRun(committedRun);
+    showToast(reaction);
+  };
+
+  const handleDismissMonthResult = () => {
+    const result = turn.monthResult;
+    turn.dismissResult();
+    if (result === null) return;
+
+    const variation = new Uint32Array(1);
+    crypto.getRandomValues(variation);
+    const request = characterBanterRequestForMonth(
+      run,
+      result,
+      recentBanterHistory.current,
+      variation[0]! & 0x7fff_ffff,
+    );
+    if (request === null) return;
+
+    const token = ++banterRequestToken.current;
+    // Cosmetic copy is deliberately generated after the report closes. The
+    // player can keep planning while this background request is in flight.
+    void new LifeFinanceClient()
+      .generateCharacterBanter(run.runId, request)
+      .then((response) => {
+        if (banterRequestToken.current !== token) return;
+        const generated = characterBanterFromResponse(
+          response,
+          request.simulationMonth,
+        );
+        if (generated === null) return;
+        recentBanterHistory.current = Object.freeze([
+          ...recentBanterHistory.current,
+          {
+            characterId: generated.characterId,
+            citedEvidenceId: generated.citedEvidenceId,
+            message: generated.message,
+          },
+        ].slice(-8));
+        saveCharacterBanterHistory(run.runId, recentBanterHistory.current);
+        showBanter(generated);
+      })
+      .catch(() => {
+        // Banter is optional and must never interrupt or slow the game loop.
       });
-      recordRun(response.run);
-      showToast("Decision applied. Money HQ is ready for your next plan.");
-    } catch (reason) {
-      showToast(
-        reason instanceof Error && reason.message
-          ? reason.message
-          : "The decision could not be applied.",
-      );
-    } finally {
-      setResolvingEvent(false);
-    }
   };
 
   const handleNewGame = () => {
@@ -308,6 +358,13 @@ export function MoneyHqShell() {
             onSavedGames={() => router.push("/saves")}
             view={view}
           />
+
+          {banter ? (
+            <HqCharacterBanter
+              banter={banter}
+              onDismiss={() => showBanter(null)}
+            />
+          ) : null}
 
           <div className="hq-body">
             <HqSidebar
@@ -386,15 +443,14 @@ export function MoneyHqShell() {
 
       {eventPending && turn.monthResult === null ? (
         <HqEventDialog
-          busy={resolvingEvent}
-          onResolve={(choiceId) => void handleResolveEvent(choiceId)}
+          onCommitted={handleEventCommitted}
           run={run}
         />
       ) : null}
 
       {turn.monthResult ? (
         <HqMonthResultDialog
-          onDismiss={turn.dismissResult}
+          onDismiss={handleDismissMonthResult}
           result={turn.monthResult}
         />
       ) : null}

@@ -6,7 +6,13 @@ import {
   type CommandRunner,
   type RunReader,
 } from "@/application/game/use-cases";
-import { commandIntentSchema } from "@/contracts/api/contracts";
+import {
+  characterBanterRequestSchema,
+  characterBanterResponseSchema,
+  commandIntentSchema,
+  interpretEventRequestSchema,
+  interpretEventResponseSchema,
+} from "@/contracts/api/contracts";
 import { GameCommandError } from "@/core/commands";
 import { DetailedFinanceError } from "@/core/detailed-actions-v2-contracts";
 import { EventLifecycleV2Error } from "@/core/event-lifecycle-v2";
@@ -41,6 +47,14 @@ import type { OnboardingAiServiceV1 } from "@/server/ai/onboarding-service-v1";
 import { accountRunCredential } from "@/server/auth/account-run-credential";
 import type { AuthenticatedUser } from "@/server/auth/supabase-user";
 import type { TaxSummaryReader } from "@/server/tax/summary";
+import {
+  InteractiveEventError,
+  type InteractiveEventService,
+} from "@/server/ai/interactive-event-service";
+import {
+  CharacterBanterError,
+  type CharacterBanterService,
+} from "@/server/ai/character-banter-service";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
@@ -93,6 +107,10 @@ function publicErrorStatus(error: unknown): number | null {
     }
     return 400;
   }
+  if (error instanceof InteractiveEventError) {
+    return error.code === "STALE_REVISION" ? 409 : 400;
+  }
+  if (error instanceof CharacterBanterError) return 409;
   if (
     error instanceof GameCommandError ||
     error instanceof DetailedFinanceError ||
@@ -657,6 +675,118 @@ export async function handleSubmitCommand(
       200,
       requestId,
     );
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleInterpretEvent(
+  request: Request,
+  runId: string,
+  reader: RunReader,
+  interpreter: Pick<InteractiveEventService, "interpret">,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    const session = parseRunSessionCookie(request.headers.get("cookie"));
+    if (!session || session.runId !== runId) {
+      return jsonResponse({
+        error: {
+          code: "SESSION_REQUIRED",
+          message: "an active run session is required",
+          requestId,
+        },
+      }, 401, requestId);
+    }
+    const input = interpretEventRequestSchema.parse(await readJson(request));
+    const current = await getRun(reader, runId, session.accessSecret);
+    const result = await interpreter.interpret(current.run, input);
+    return jsonResponse(interpretEventResponseSchema.parse(result), 200, requestId);
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleInterpretAccountEvent(
+  request: Request,
+  user: AuthenticatedUser,
+  runId: string,
+  repository: Pick<OwnedRunSessionRepository, "loadActiveOwnedRunId">,
+  reader: RunReader,
+  interpreter: Pick<InteractiveEventService, "interpret">,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    if (await repository.loadActiveOwnedRunId(user.userId) !== runId) {
+      throw new RunApiV2Error(
+        "RUN_NOT_ACTIVE",
+        "activate this saved game before interpreting a decision",
+      );
+    }
+    const input = interpretEventRequestSchema.parse(await readJson(request));
+    const current = await getRun(reader, runId, accountRunCredential(user.userId));
+    const result = await interpreter.interpret(current.run, input);
+    return jsonResponse(interpretEventResponseSchema.parse(result), 200, requestId);
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleGenerateCharacterBanter(
+  request: Request,
+  runId: string,
+  reader: RunReader,
+  writer: Pick<CharacterBanterService, "generate">,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    const session = parseRunSessionCookie(request.headers.get("cookie"));
+    if (!session || session.runId !== runId) {
+      return jsonResponse({
+        error: {
+          code: "SESSION_REQUIRED",
+          message: "an active run session is required",
+          requestId,
+        },
+      }, 401, requestId);
+    }
+    const input = characterBanterRequestSchema.parse(await readJson(request));
+    const current = await getRun(reader, runId, session.accessSecret);
+    const result = await writer.generate(current.run, input);
+    return jsonResponse(characterBanterResponseSchema.parse(result), 200, requestId);
+  } catch (error) {
+    return failure(error, requestId);
+  }
+}
+
+export async function handleGenerateAccountCharacterBanter(
+  request: Request,
+  user: AuthenticatedUser,
+  runId: string,
+  repository: Pick<OwnedRunSessionRepository, "loadActiveOwnedRunId">,
+  reader: RunReader,
+  writer: Pick<CharacterBanterService, "generate">,
+  requestIdFactory: RequestIdFactory = randomUUID,
+): Promise<Response> {
+  const requestId = requestIdFactory();
+  try {
+    assertSameOriginWrite(request);
+    if (await repository.loadActiveOwnedRunId(user.userId) !== runId) {
+      throw new RunApiV2Error(
+        "RUN_NOT_ACTIVE",
+        "activate this saved game before generating a character message",
+      );
+    }
+    const input = characterBanterRequestSchema.parse(await readJson(request));
+    const current = await getRun(reader, runId, accountRunCredential(user.userId));
+    const result = await writer.generate(current.run, input);
+    return jsonResponse(characterBanterResponseSchema.parse(result), 200, requestId);
   } catch (error) {
     return failure(error, requestId);
   }

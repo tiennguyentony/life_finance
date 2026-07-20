@@ -488,7 +488,7 @@ export const aiAuditRecords = pgTable(
     check("ai_audit_records_contract_version_positive", sql`${table.contractVersion} > 0`),
     check(
       "ai_audit_records_role_valid",
-      sql`${table.role} IN ('hostile_fed', 'teacher', 'onboarding', 'explanation')`,
+      sql`${table.role} IN ('hostile_fed', 'scenario_director', 'teacher', 'onboarding', 'explanation', 'event_interpreter', 'banter_writer')`,
     ),
     check(
       "ai_audit_records_outcome_valid",

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
 import { projectRunView } from "@/application/game/run-view";
+import type { RunViewWire } from "@/contracts/api/contracts";
 
 import { boardMonthResult, boardViewFromRun } from "../board-model";
 import { BoardHud } from "../hud";
@@ -170,7 +171,7 @@ describe("board planning surfaces", () => {
         parameters: {},
         headline: "A decision is waiting",
         body: "Choose how to respond.",
-      },
+      } as const,
     };
     const result = boardMonthResult(opening, ending, "Invest in broad index", {
       processedMonth: "2026-07",
@@ -245,10 +246,10 @@ describe("board planning surfaces", () => {
 
   it("renders monthly, total, follow-up, and disabled preview evidence", () => {
     const run = projectRunView(currentRunState());
-    const view = boardViewFromRun({
+    const interactiveRun = {
       ...run,
       pendingInteraction: {
-        kind: "event",
+        kind: "event" as const,
         eventId: "event.preview",
         choiceIds: ["finance", "insured"],
         choices: [
@@ -302,8 +303,9 @@ describe("board planning surfaces", () => {
         parameters: {},
         headline: "Choose a response",
         body: "Every cost is shown before confirmation.",
-      },
-    });
+      } as const,
+    };
+    const view = boardViewFromRun(interactiveRun);
     const markup = renderToStaticMarkup(
       <BoardHud
         actionHint=""
@@ -314,7 +316,7 @@ describe("board planning surfaces", () => {
         mode="strategy"
         monthResultDialog={null}
         onNewGame={() => undefined}
-        onResolveEvent={() => undefined}
+        onEventCommitted={() => undefined}
         onSavedGames={() => undefined}
         onStub={() => undefined}
         onTakeAction={() => undefined}
@@ -322,14 +324,17 @@ describe("board planning surfaces", () => {
         toastMessage=""
         toastVisible={false}
         view={view}
+        run={interactiveRun as unknown as RunViewWire}
       />,
     );
 
-    expect(markup).toContain("$75.00 per month");
-    expect(markup).toContain("$300.00 total");
-    expect(markup).toContain("personal.followup in 2 months");
-    expect(markup).toContain("Requires active health coverage");
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("What do you do?");
+    expect(markup).toContain("Type your own response in English");
+    expect(markup).toContain("Make this decision");
+    expect(markup).toContain("Need a hint?");
+    expect(markup).not.toContain("Build your answer");
+    expect(markup).not.toContain("Try “Finance it”");
+    expect(markup).not.toContain("Try “Use coverage”");
   });
 
   it("continues to the authoritative ending month when no event is pending", () => {

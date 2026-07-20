@@ -23,19 +23,30 @@ let dependencies: AiRuntimeDependencies | undefined;
 
 export function aiTransportFromEnvironment(
   environment: Readonly<Record<string, string | undefined>> = process.env,
+  options: Readonly<{ timeoutMs?: number; ollamaModel?: string }> = {},
 ): AiResponsesTransport {
   const provider = environment.AI_PROVIDER ?? "openai";
   if (provider === "openai") {
-    return new OpenAiResponsesTransport({ apiKey: environment.OPENAI_API_KEY });
+    return new OpenAiResponsesTransport({
+      apiKey: environment.OPENAI_API_KEY,
+      timeoutMs: options.timeoutMs,
+    });
   }
   if (provider === "ollama") {
     if (environment.VERCEL_ENV === "production") {
       throw new Error("Ollama is restricted to local development");
     }
-    return new OllamaGptOssTransport({ baseUrl: environment.OLLAMA_BASE_URL });
+    return new OllamaGptOssTransport({
+      baseUrl: environment.OLLAMA_BASE_URL,
+      timeoutMs: options.timeoutMs,
+      model: options.ollamaModel,
+    });
   }
   if (provider === "groq") {
-    return new GroqGptOssTransport({ apiKey: environment.GROQ_API_KEY });
+    return new GroqGptOssTransport({
+      apiKey: environment.GROQ_API_KEY,
+      timeoutMs: options.timeoutMs,
+    });
   }
   throw new Error("AI_PROVIDER must be openai, groq, or ollama");
 }

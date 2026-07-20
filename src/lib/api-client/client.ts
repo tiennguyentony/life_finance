@@ -1,14 +1,22 @@
 import {
   apiErrorResponseSchema,
   activateRunResponseSchema,
+  characterBanterRequestSchema,
+  characterBanterResponseSchema,
   commandIntentSchema,
   commandResponseSchema,
+  interpretEventRequestSchema,
+  interpretEventResponseSchema,
   runViewResponseSchema,
   sessionResponseSchema,
   savedRunsResponseSchema,
   taxSummaryResponseSchema,
   type CommandIntent,
   type CommandResponseWire,
+  type CharacterBanterRequest,
+  type CharacterBanterResponse,
+  type InterpretEventRequest,
+  type InterpretEventResponse,
   type RunViewResponseWire,
   type SessionResponse,
   type SavedRunsResponse,
@@ -225,6 +233,38 @@ export class LifeFinanceClient {
         body: JSON.stringify(body),
       },
       commandResponseSchema,
+    );
+  }
+
+  interpretEvent(
+    runId: string,
+    request: InterpretEventRequest,
+  ): Promise<InterpretEventResponse> {
+    const body = interpretEventRequestSchema.parse(request);
+    return this.#request(
+      `/api/runs/${encodeURIComponent(runId)}/events/interpret`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      interpretEventResponseSchema,
+    );
+  }
+
+  generateCharacterBanter(
+    runId: string,
+    request: CharacterBanterRequest,
+  ): Promise<CharacterBanterResponse> {
+    const body = characterBanterRequestSchema.parse(request);
+    return this.#request(
+      `/api/runs/${encodeURIComponent(runId)}/banter`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      characterBanterResponseSchema,
     );
   }
 }

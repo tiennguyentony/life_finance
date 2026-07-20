@@ -8,7 +8,9 @@ import type {
 } from "../client";
 import { AiRoleClient, AiServiceError } from "../client";
 import type {
+  BanterWriterRequest,
   ExplanationRequest,
+  EventInterpreterRequest,
   HostileFedRequest,
   ScenarioDirectorRequest,
   TeacherRequest,
@@ -337,6 +339,218 @@ describe("AiRoleClient", () => {
     const { client, requests } = harness([completed(output), completed(output, "resp_2")]);
     await expect(client.generate(request)).rejects.toMatchObject({ code: "AI_UNAVAILABLE" });
     expect(requests[0]).toMatchObject({ model: "gpt-5.6-terra", reasoningEffort: "low" });
+  });
+
+  it("uses the fast interpreter model and keeps raw conversations out of audit records", async () => {
+    const request: EventInterpreterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "event_interpreter",
+      event: {
+        templateId: "personal.industry_layoff",
+        headline: "The paycheck stopped",
+        situation: "Income is interrupted while expenses continue.",
+        choices: [{
+          id: "emergency_budget",
+          label: "Activate an emergency budget",
+          consequence: "Reduce ongoing expenses.",
+        }],
+      },
+      conversation: [{ role: "player", content: "I want to protect my runway." }],
+      playerTurn: 1,
+      maximumPlayerTurns: 3,
+    };
+    const output = {
+      status: "ambiguous",
+      choiceId: null,
+      confidencePpm: 400_000,
+      reasonCode: "multiple_choices",
+      followUpQuestion: "What concrete action would you take first?",
+    };
+    const { client, requests, audits } = harness([completed(output)]);
+
+    await expect(client.generate(request)).resolves.toEqual(output);
+    expect(requests[0]).toMatchObject({
+      model: "gpt-5.6-luna",
+      reasoningEffort: "low",
+      maxOutputTokens: 160,
+      store: false,
+    });
+    expect(audits[0]?.prompt.input).toMatchObject({
+      conversationMessageCount: 1,
+      conversationCharacterCount: 28,
+      playerTurn: 1,
+    });
+    expect(audits[0]?.prompt.input).not.toHaveProperty("conversation");
+    expect(audits[0]?.attempts[0]?.output).toBeNull();
+  });
+
+  it("uses randomized low-cost generation and enforces banter evidence grounding", async () => {
+    const request: BanterWriterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "banter_writer",
+      simulationMonth: "2026-10",
+      planLabel: "Pay down debt",
+      variationSeed: 91_337,
+      evidence: [{ id: "debt_change", label: "Debt change", value: "-$500.00" }],
+      recentLines: [],
+      recentEvidenceIds: [],
+      recentCharacterIds: [],
+    };
+    const output = {
+      characterId: "debtzilla",
+      tone: "roast",
+      message: "Excuse me, who authorized debt to start moving in the correct direction?",
+      citedEvidenceId: "debt_change",
+    } as const;
+    const { client, requests } = harness([completed(output)]);
+
+    await expect(client.generate(request)).resolves.toEqual(output);
+    expect(requests[0]).toMatchObject({
+      model: "gpt-5.6-luna",
+      reasoningEffort: "low",
+      maxOutputTokens: 256,
+      sampling: { temperature: 0.9, seed: 91_337 },
+      store: false,
+    });
+  });
+
+  it("removes a redundant cast prefix from generated banter", async () => {
+    const request: BanterWriterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "banter_writer",
+      simulationMonth: "2026-10",
+      planLabel: "Build cash",
+      variationSeed: 81,
+      evidence: [{ id: "cash_change", label: "Cash increased", value: "$500.00" }],
+      recentLines: [],
+      recentEvidenceIds: [],
+      recentCharacterIds: [],
+    };
+    const { client } = harness([completed({
+      characterId: "sprout",
+      tone: "cheer",
+      message: "Sprout: Cash finally brought its own growth chart.",
+      citedEvidenceId: "cash_change",
+    })]);
+
+    await expect(client.generate(request)).resolves.toMatchObject({
+      message: "Cash finally brought its own growth chart.",
+    });
+  });
+
+  it("treats speaker rotation as a creative preference rather than dropping copy", async () => {
+    const request: BanterWriterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "banter_writer",
+      simulationMonth: "2026-10",
+      planLabel: "Invest steadily",
+      variationSeed: 44,
+      evidence: [{ id: "cash_change", label: "Cash change", value: "+$500.00" }],
+      recentLines: ["A prior Sprout line."],
+      recentEvidenceIds: ["preparedness_change"],
+      recentCharacterIds: ["sprout"],
+    };
+    const repeated = {
+      characterId: "sprout",
+      tone: "cheer",
+      message: "Cash showed up wearing its responsible shoes.",
+      citedEvidenceId: "cash_change",
+    } as const;
+    const { client, requests } = harness([completed(repeated)]);
+
+    await expect(client.generate(request)).resolves.toEqual(repeated);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("drops an irrelevant local follow-up after a valid mapped interpretation", async () => {
+    const request: EventInterpreterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "event_interpreter",
+      event: {
+        templateId: "personal.lifestyle_upgrade",
+        headline: "A lifestyle upgrade is within reach",
+        situation: "A nicer lifestyle would permanently raise your cost base.",
+        choices: [{
+          id: "keep_current_lifestyle",
+          label: "Keep current spending",
+          consequence: "Avoid lifestyle inflation.",
+        }],
+      },
+      conversation: [{
+        role: "player",
+        content: "I refuse to inflate my long-term baseline burn.",
+      }],
+      playerTurn: 1,
+      maximumPlayerTurns: 3,
+    };
+    const modelOutput = {
+      status: "mapped",
+      choiceId: "keep_current_lifestyle",
+      confidencePpm: 950_000,
+      reasonCode: "choice_match",
+      followUpQuestion: "How can I help you keep spending stable?",
+    };
+    const { client, requests } = harness([completed(modelOutput)]);
+
+    await expect(client.generate(request)).resolves.toEqual({
+      ...modelOutput,
+      followUpQuestion: null,
+    });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("does not permit another follow-up after the final player turn", async () => {
+    const request: EventInterpreterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "event_interpreter",
+      event: {
+        templateId: "personal.industry_layoff",
+        headline: "The paycheck stopped",
+        situation: "Income is interrupted while expenses continue.",
+        choices: [{
+          id: "emergency_budget",
+          label: "Activate an emergency budget",
+          consequence: "Reduce ongoing expenses.",
+        }],
+      },
+      conversation: [
+        { role: "player", content: "I have a plan." },
+        { role: "sprout", content: "What action?" },
+        { role: "player", content: "Something cautious." },
+        { role: "sprout", content: "What would change?" },
+        { role: "player", content: "I am not sure." },
+      ],
+      playerTurn: 3,
+      maximumPlayerTurns: 3,
+    };
+    const invalid = {
+      status: "ambiguous",
+      choiceId: null,
+      confidencePpm: 300_000,
+      reasonCode: "multiple_choices",
+      followUpQuestion: "Could you explain again?",
+    };
+    const { client, requests } = harness([
+      completed(invalid),
+      completed(invalid, "resp_2"),
+    ]);
+
+    await expect(client.generate(request)).rejects.toMatchObject({
+      code: "AI_UNAVAILABLE",
+    });
+    expect(requests).toHaveLength(2);
   });
 
   it("rejects sensitive input before transport or audit", async () => {

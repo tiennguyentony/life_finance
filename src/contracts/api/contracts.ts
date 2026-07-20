@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  CHARACTER_BANTER_IDS,
+  CHARACTER_BANTER_TONES,
+} from "@/core/character-banter";
+
 const monthSchema = z.string().regex(/^[0-9]{4}-(0[1-9]|1[0-2])$/);
 const centsSchema = z.number().int().safe();
 const rateSchema = z.number().int().min(0).max(1_000_000);
@@ -480,6 +485,114 @@ export const taxSummaryResponseSchema = z
   })
   .strict();
 
+export const interpretEventRequestSchema = z
+  .object({
+    eventId: identifierSchema,
+    expectedRevision: z.number().int().min(0),
+    /** Explicit engine-owned choice selected from the optional hint menu. */
+    selectedChoiceId: identifierSchema.optional(),
+    conversation: z
+      .array(z
+        .object({
+          role: z.enum(["player", "sprout"]),
+          content: z.string().trim().min(1).max(500),
+        })
+        .strict())
+      .min(1)
+      .max(5),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    value.conversation.forEach((message, index) => {
+      const expectedRole = index % 2 === 0 ? "player" : "sprout";
+      if (message.role !== expectedRole) {
+        context.addIssue({
+          code: "custom",
+          message: "conversation must alternate player and Sprout messages",
+          path: ["conversation", index, "role"],
+        });
+      }
+    });
+    if (value.conversation.at(-1)?.role !== "player") {
+      context.addIssue({
+        code: "custom",
+        message: "conversation must end with the player's latest answer",
+        path: ["conversation"],
+      });
+    }
+    if (value.conversation.filter(({ role }) => role === "player").length > 3) {
+      context.addIssue({
+        code: "custom",
+        message: "conversation supports at most three player answers",
+        path: ["conversation"],
+      });
+    }
+  });
+
+export const interpretEventResponseSchema = z
+  .object({
+    version: z.literal("interactive-event-interpretation-v1"),
+    status: z.enum(["mapped", "rejected", "question"]),
+    source: z.enum([
+      "deterministic_fast_path",
+      "openai",
+      "hosted_oss",
+      "local_oss",
+      "deterministic_fallback",
+    ]),
+    choiceId: identifierSchema.nullable(),
+    confidencePpm: rateSchema,
+    latencyMs: z.number().int().min(0).max(30_000),
+    systemMessage: z.string().trim().min(1).max(500),
+    sproutReaction: z.string().trim().min(1).max(500),
+    education: z.string().trim().min(1).max(1_000),
+    playerTurn: z.number().int().min(1).max(3),
+    remainingPlayerTurns: z.number().int().min(0).max(2),
+  })
+  .strict();
+
+const characterBanterEvidenceSchema = z
+  .object({
+    id: identifierSchema,
+    label: z.string().trim().min(1).max(120),
+    value: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
+export const characterBanterRequestSchema = z
+  .object({
+    expectedRevision: z.number().int().min(0),
+    simulationMonth: monthSchema,
+    planLabel: z.string().trim().min(1).max(160),
+    variationSeed: z.number().int().min(0).max(2_147_483_647),
+    evidence: z.array(characterBanterEvidenceSchema).min(1).max(12),
+    recentLines: z.array(z.string().trim().min(1).max(240)).max(8),
+    recentEvidenceIds: z.array(identifierSchema).max(8).optional(),
+    recentCharacterIds: z.array(z.enum(CHARACTER_BANTER_IDS)).max(8).optional(),
+  })
+  .strict();
+
+export const characterBanterResponseSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      version: z.literal("character-banter-v1"),
+      status: z.literal("generated"),
+      source: z.enum(["openai", "hosted_oss", "local_oss"]),
+      characterId: z.enum(CHARACTER_BANTER_IDS),
+      tone: z.enum(CHARACTER_BANTER_TONES),
+      message: z.string().trim().min(1).max(240),
+      citedEvidenceId: identifierSchema,
+      latencyMs: z.number().int().min(0).max(30_000),
+    })
+    .strict(),
+  z
+    .object({
+      version: z.literal("character-banter-v1"),
+      status: z.literal("unavailable"),
+    })
+    .strict(),
+]);
+
 export type RunViewWire = z.infer<typeof runViewSchema>;
 export type CommandIntent = z.infer<typeof commandIntentSchema>;
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
@@ -489,3 +602,7 @@ export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type SavedRunWire = z.infer<typeof savedRunSchema>;
 export type SavedRunsResponse = z.infer<typeof savedRunsResponseSchema>;
 export type TaxSummaryResponse = z.infer<typeof taxSummaryResponseSchema>;
+export type InterpretEventRequest = z.infer<typeof interpretEventRequestSchema>;
+export type InterpretEventResponse = z.infer<typeof interpretEventResponseSchema>;
+export type CharacterBanterRequest = z.infer<typeof characterBanterRequestSchema>;
+export type CharacterBanterResponse = z.infer<typeof characterBanterResponseSchema>;

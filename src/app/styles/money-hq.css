@@ -195,6 +195,90 @@
   opacity: 0.55;
 }
 
+/* -------------------------------------------- occasional character chat -- */
+
+.hq-banter {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(100%, 38rem);
+  padding: 0.625rem 0.75rem;
+  border: 1.5px solid var(--hq-green-border);
+  border-radius: 8px 18px 18px;
+  background: var(--hq-card);
+  box-shadow: var(--hq-shadow-card);
+  animation: hq-banter-in 220ms ease-out both;
+}
+
+.hq-banter[data-tone="roast"] {
+  border-color: var(--hq-red-border);
+  background: var(--hq-red-soft);
+}
+
+.hq-banter[data-tone="warning"] {
+  border-color: var(--hq-gold-border);
+  background: var(--hq-gold-soft);
+}
+
+.hq-banter[data-tone="cheer"] {
+  background: var(--hq-green-soft);
+}
+
+.hq-banter-avatar {
+  display: block;
+  width: 58px;
+  height: 58px;
+  border: 2px solid rgb(23 51 44 / 12%);
+  border-radius: 999px;
+  background: var(--hq-card);
+  object-fit: contain;
+}
+
+.hq-banter-copy {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.hq-banter-copy strong {
+  font: 800 0.6875rem var(--hq-display);
+  color: var(--hq-ink);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hq-banter-copy p {
+  margin: 0;
+  color: var(--hq-body);
+  font: 700 0.875rem/1.4 var(--hq-body-font);
+}
+
+.hq-banter-close {
+  align-self: start;
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: rgb(23 51 44 / 8%);
+  color: var(--hq-muted);
+  font: 800 1rem/1 var(--hq-body-font);
+  cursor: pointer;
+}
+
+@keyframes hq-banter-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* ------------------------------------------------------------------ body -- */
 
 .hq-body {
@@ -1025,10 +1109,21 @@
   .hq-planbar {
     border-radius: 22px;
   }
+
+  .hq-banter {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+
+  .hq-banter-avatar {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hq-toast {
+  .hq-toast,
+  .hq-banter {
+    animation: none;
     transition: none;
   }
 
