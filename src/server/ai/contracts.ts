@@ -9,6 +9,7 @@ import {
   CHARACTER_BANTER_TONES,
 } from "../../core/character-banter";
 import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
+import { EVENT_RECOMMENDATION_PRIORITIES } from "./event-recommendation-policy";
 
 export const AI_CONTRACT_VERSION = 1 as const;
 export const AI_SCENARIO_DIRECTOR_CONTRACT_VERSION = 2 as const;
@@ -382,6 +383,17 @@ export const eventInterpreterRequestSchema = z
     contractVersion: z.literal(AI_CONTRACT_VERSION),
     ...privacyConsentFields,
     role: z.literal("event_interpreter"),
+    interactionMode: z.enum(["interpret", "recommend"]),
+    recommendationDirective: z
+      .object({
+        choiceId: safeIdentifier,
+        priority: z.enum(EVENT_RECOMMENDATION_PRIORITIES),
+        rationale: z.string().trim().min(1).max(500),
+        tradeoff: z.string().trim().min(1).max(500),
+        requiredEvidenceIds: z.array(safeIdentifier).min(1).max(4),
+      })
+      .strict()
+      .nullable(),
     event: z
       .object({
         templateId: safeIdentifier,
@@ -401,6 +413,7 @@ export const eventInterpreterRequestSchema = z
           .max(8),
       })
       .strict(),
+    evidence: z.array(aiEvidenceFactSchema).max(16),
     conversation: z
       .array(
         z
@@ -417,6 +430,49 @@ export const eventInterpreterRequestSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.interactionMode === "recommend" && value.evidence.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "recommend mode requires financial evidence",
+        path: ["evidence"],
+      });
+    }
+    if (value.interactionMode === "recommend" && value.recommendationDirective === null) {
+      context.addIssue({
+        code: "custom",
+        message: "recommend mode requires an engine-owned recommendation directive",
+        path: ["recommendationDirective"],
+      });
+    }
+    if (value.interactionMode === "interpret" && value.recommendationDirective !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "interpret mode cannot include a recommendation directive",
+        path: ["recommendationDirective"],
+      });
+    }
+    if (value.recommendationDirective !== null) {
+      const choiceIds = new Set(value.event.choices.map(({ id }) => id));
+      const evidenceIds = new Set(value.evidence.map(({ id }) => id));
+      if (!choiceIds.has(value.recommendationDirective.choiceId)) {
+        context.addIssue({
+          code: "custom",
+          message: "recommendation directive must reference a supplied choice",
+          path: ["recommendationDirective", "choiceId"],
+        });
+      }
+      if (
+        new Set(value.recommendationDirective.requiredEvidenceIds).size !==
+          value.recommendationDirective.requiredEvidenceIds.length ||
+        value.recommendationDirective.requiredEvidenceIds.some((id) => !evidenceIds.has(id))
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "recommendation directive evidence must be unique and supplied",
+          path: ["recommendationDirective", "requiredEvidenceIds"],
+        });
+      }
+    }
     if (value.conversation[0]?.role !== "player") {
       context.addIssue({
         code: "custom",
@@ -453,16 +509,22 @@ export const eventInterpreterRequestSchema = z
 
 export const eventInterpreterResponseSchema = z
   .object({
-    status: z.enum(["mapped", "ambiguous", "unsupported", "unsafe"]),
+    status: z.enum(["mapped", "ambiguous", "recommended", "unsupported", "unsafe"]),
     choiceId: safeIdentifier.nullable(),
+    recommendedChoiceId: safeIdentifier.nullable(),
     confidencePpm: ratePpm,
     reasonCode: z.enum([
       "choice_match",
+      "personalized_recommendation",
       "multiple_choices",
       "no_supported_choice",
       "unsafe_or_illegal",
     ]),
+    assistantMessage: z.string().trim().min(1).max(500),
     followUpQuestion: shortText.nullable(),
+    recommendationReason: z.string().trim().min(1).max(500).nullable(),
+    tradeoff: z.string().trim().min(1).max(500).nullable(),
+    citedEvidenceIds: z.array(safeIdentifier).max(4),
   })
   .strict();
 

@@ -8,10 +8,12 @@ import type {
 } from "@/contracts/api/contracts";
 import { LifeFinanceClient } from "@/lib/api-client/client";
 
-import { processInteractiveEventDecision } from "./interactive-event-controller";
+import {
+  commitInteractiveEventChoice,
+  processInteractiveEventDecision,
+} from "./interactive-event-controller";
 
 type PendingEvent = Extract<RunViewWire["pendingInteraction"], { kind: "event" }>;
-type PendingEventChoice = PendingEvent["choices"][number];
 
 type Props = Readonly<{
   run: RunViewWire;
@@ -22,6 +24,16 @@ type ConversationMessage = Readonly<{
   role: "player" | "sprout";
   content: string;
 }>;
+
+const DEFAULT_ADVICE_PROMPT =
+  "What would you recommend for my current financial situation, and why?";
+
+export function interactiveEventAdvicePrompt(statedConcern: string): string {
+  const normalized = statedConcern.trim();
+  return normalized.length === 0
+    ? DEFAULT_ADVICE_PROMPT
+    : `My priority or concern is: ${normalized.slice(0, 360)}. ${DEFAULT_ADVICE_PROMPT}`;
+}
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error && reason.message
@@ -38,17 +50,20 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
   const [committedRun, setCommittedRun] = useState<RunViewWire | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showHint, setShowHint] = useState(false);
 
   const mappedChoice = useMemo(() => {
-    if (interpretation?.status !== "mapped" || interpretation.choiceId === null) {
-      return null;
-    }
-    return event.choices.find(({ id }) => id === interpretation.choiceId) ?? null;
+    const choiceId = interpretation?.choiceId ??
+      interpretation?.recommendation?.choiceId ?? null;
+    return choiceId === null
+      ? null
+      : event.choices.find(({ id }) => id === choiceId) ?? null;
   }, [event.choices, interpretation]);
 
-  const interpret = async (selectedChoice?: PendingEventChoice) => {
-    const answer = selectedChoice?.label ?? playerText.trim();
+  const interpret = async (
+    interactionMode: "interpret" | "recommend" = "interpret",
+    suppliedAnswer?: string,
+  ) => {
+    const answer = suppliedAnswer ?? playerText.trim();
     if (busy || answer.length === 0) return;
     setBusy(true);
     setError(null);
@@ -62,7 +77,8 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
         run,
         nextConversation,
         `interactive.event.${crypto.randomUUID()}`,
-        selectedChoice?.id,
+        undefined,
+        interactionMode,
       );
       if (result.interpretation.status === "question") {
         setConversation([
@@ -71,7 +87,6 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
         ]);
         setPlayerText("");
         setInterpretation(null);
-        setShowHint(false);
       } else {
         setConversation(nextConversation);
         setInterpretation(result.interpretation);
@@ -89,7 +104,62 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
     setConversation([]);
     setError(null);
     setPlayerText("");
-    setShowHint(false);
+  };
+
+  const askForAdvice = () => {
+    void interpret(
+      "recommend",
+      interactiveEventAdvicePrompt(playerText),
+    );
+  };
+
+  const acceptProposedChoice = async () => {
+    const choiceId = interpretation?.recommendation?.choiceId ??
+      (interpretation?.status === "confirmation" ? interpretation.choiceId : null);
+    if (busy || choiceId === null || choiceId === undefined) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updatedRun = await commitInteractiveEventChoice(
+        new LifeFinanceClient(),
+        run,
+        choiceId,
+        `interactive.event.confirmation.${crypto.randomUUID()}`,
+      );
+      setCommittedRun(updatedRun);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueWithoutRecommendation = () => {
+    if (interpretation?.status !== "recommendation") return;
+    const usedPlayerTurns = conversation.filter(({ role }) => role === "player").length;
+    setConversation(usedPlayerTurns >= 3
+      ? []
+      : [...conversation, {
+          role: "sprout",
+          content: interpretation.sproutReaction,
+        }]);
+    setInterpretation(null);
+    setPlayerText("");
+    setError(null);
+  };
+
+  const correctInterpretation = () => {
+    if (interpretation?.status !== "confirmation") return;
+    const usedPlayerTurns = conversation.filter(({ role }) => role === "player").length;
+    setConversation(usedPlayerTurns >= 3
+      ? []
+      : [...conversation, {
+          role: "sprout",
+          content: interpretation.systemMessage,
+        }]);
+    setInterpretation(null);
+    setPlayerText("");
+    setError(null);
   };
 
   if (committedRun && interpretation) {
@@ -114,6 +184,84 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
         >
           Continue
         </button>
+      </section>
+    );
+  }
+
+  if (
+    interpretation?.status === "recommendation" &&
+    interpretation.recommendation !== null &&
+    mappedChoice !== null
+  ) {
+    return (
+      <section aria-live="polite" className="interactive-event-result">
+        <p className="interactive-event-system">{interpretation.systemMessage}</p>
+        <ConversationTranscript messages={conversation} />
+        <blockquote>
+          <strong>Sprout</strong>
+          <span>“{interpretation.sproutReaction}”</span>
+        </blockquote>
+        <aside>
+          <strong>Why it fits your situation</strong>
+          <p>{interpretation.recommendation.reason}</p>
+          <strong>Trade-off</strong>
+          <p>{interpretation.recommendation.tradeoff}</p>
+        </aside>
+        <p className="interactive-event-hint">
+          Sprout is advising, not deciding. Nothing changes until you confirm an action.
+        </p>
+        {error ? <p className="interactive-event-error">{error}</p> : null}
+        <div className="interactive-event-actions">
+          <button
+            className="interactive-event-primary"
+            disabled={busy}
+            onClick={() => void acceptProposedChoice()}
+            type="button"
+          >
+            {busy ? "Applying decision…" : `Choose ${mappedChoice.label}`}
+          </button>
+          <button
+            disabled={busy}
+            onClick={continueWithoutRecommendation}
+            type="button"
+          >
+            Make my own choice
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (
+    interpretation?.status === "confirmation" &&
+    interpretation.choiceId !== null &&
+    mappedChoice !== null
+  ) {
+    return (
+      <section aria-live="polite" className="interactive-event-result">
+        <p className="interactive-event-system">{interpretation.systemMessage}</p>
+        <ConversationTranscript messages={conversation} />
+        <blockquote>
+          <strong>Sprout understood</strong>
+          <span>“{interpretation.sproutReaction}”</span>
+        </blockquote>
+        <p className="interactive-event-hint">
+          Nothing has been applied yet. Confirm the action only if Sprout understood your full conversation correctly.
+        </p>
+        {error ? <p className="interactive-event-error">{error}</p> : null}
+        <div className="interactive-event-actions">
+          <button
+            className="interactive-event-primary"
+            disabled={busy}
+            onClick={() => void acceptProposedChoice()}
+            type="button"
+          >
+            {busy ? "Applying decision…" : `Confirm ${mappedChoice.label}`}
+          </button>
+          <button disabled={busy} onClick={correctInterpretation} type="button">
+            That is not what I meant
+          </button>
+        </div>
       </section>
     );
   }
@@ -148,13 +296,13 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
       className="interactive-event-form"
       onSubmit={(formEvent) => {
         formEvent.preventDefault();
-        void interpret();
+        void interpret("interpret");
       }}
     >
       <ConversationTranscript messages={conversation} />
       <label htmlFor={`event-answer-${event.eventId}`}>
         {conversation.length === 0
-          ? "What do you do?"
+          ? "How do you want to handle this event?"
           : `Your answer to Sprout — turn ${conversation.filter(({ role }) => role === "player").length + 1} of 3`}
       </label>
       <textarea
@@ -169,48 +317,38 @@ export function InteractiveEventDecision({ run, onCommitted }: Props) {
         rows={3}
         value={playerText}
       />
+      <fieldset className="interactive-event-directions">
+        <legend>What you can decide</legend>
+        <p>
+          Choose a supported direction to put it into the answer box, or describe your own approach in English.
+        </p>
+        <div>
+          {event.choices.filter(({ enabled }) => enabled).map((choice) => (
+            <button
+              aria-label={`Use ${choice.label} as my answer`}
+              disabled={busy}
+              key={choice.id}
+              onClick={() => setPlayerText(choice.label)}
+              type="button"
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
       <p className="interactive-event-hint">
-        A clear action can finish immediately. Sprout asks another question only when your intent is genuinely unclear.
+        A clear action can finish immediately. Ask Sprout when you want advice grounded in your current finances.
       </p>
       <div className="interactive-event-help-row">
         <button
-          aria-controls={`event-hint-${event.eventId}`}
-          aria-expanded={showHint}
           className="interactive-event-help-button"
           disabled={busy}
-          onClick={() => setShowHint((visible) => !visible)}
+          onClick={askForAdvice}
           type="button"
         >
-          {showHint ? "Hide hint" : "Need a hint?"}
+          {busy ? "Sprout is thinking…" : "Ask Sprout what fits my finances"}
         </button>
       </div>
-      {showHint ? (
-        <aside
-          className="interactive-event-writing-hint"
-          id={`event-hint-${event.eventId}`}
-        >
-          <strong>Choose a direction</strong>
-          <p>
-            Pick one of the available actions below, or use them as examples for your own answer.
-          </p>
-          <div className="interactive-event-suggestions">
-            {event.choices.filter(({ enabled }) => enabled).map((choice) => (
-              <button
-                disabled={busy}
-                key={choice.id}
-                onClick={() => void interpret(choice)}
-                type="button"
-              >
-                <strong>{choice.label}</strong>
-                {choice.description ? <span>{choice.description}</span> : null}
-              </button>
-            ))}
-          </div>
-          <small>
-            Selecting a suggestion applies it immediately. It does not call AI; exact financial effects appear after the decision is saved.
-          </small>
-        </aside>
-      ) : null}
       {error ? <p className="interactive-event-error">{error}</p> : null}
       <button
         className="interactive-event-primary"

@@ -3,7 +3,7 @@ import { canonicalJson } from "./canonical";
 import { getPersonalEventTemplateV2 } from "../data/personal-event-templates-v2";
 import { isAiContentSource } from "./ai-source";
 import { divideRoundHalfAwayFromZero, safeBigIntToNumber } from "./domain/integer";
-import { addMoney, moneyCents, subtractMoney } from "./domain/money";
+import { addMoney, moneyCents, ratePpm, subtractMoney } from "./domain/money";
 import { compareMonths, monthsBetween, simulationMonth } from "./domain/month";
 import type { StateInvariantViolation } from "./game-state";
 import type {
@@ -13,6 +13,7 @@ import type {
 } from "./game-state-v2";
 import {
   personalEventCashFlowIdV2,
+  personalEventDebtIdV2,
   personalEventEffectIdV2,
   type PersonalEventMagnitudeV2,
   type PersonalEventTemplateV2,
@@ -132,7 +133,7 @@ function canonicalScheduledCashFlows(
     if (effect.type === "required_obligation_delta" && amount > 0) {
       knownPlayerCost += BigInt(amount);
     } else if (
-      (effect.type === "temporary_expense" || effect.type === "recurring_expense") &&
+      (effect.type === "temporary_expense" || effect.type === "recurring_expense" || effect.type === "financed_expense") &&
       amount > 0
     ) {
       knownPlayerCost += BigInt(amount) * BigInt(effect.durationMonths);
@@ -183,6 +184,41 @@ function canonicalScheduledCashFlows(
     }
   }
   return flows;
+}
+
+function canonicalOriginatedDebts(
+  event: ResolvedEventEvidenceV2,
+  template: ReturnType<typeof getPersonalEventTemplateV2>,
+): readonly NonNullable<ResolvedEventEvidenceV2["originatedDebts"]>[number][] {
+  const response = template.responses.find(({ id }) => id === event.choiceId);
+  if (!response) throw new RangeError("unknown resolved response");
+  return response.effects.flatMap((effect, effectIndex) => {
+    if (effect.type !== "financed_expense") return [];
+    const installment = resolveEvidenceMagnitude(effect.magnitude, event.parameters);
+    if (installment <= 0) return [];
+    return [{
+      id: personalEventDebtIdV2(
+        event.commandId,
+        event.eventId,
+        response.id,
+        effectIndex,
+      ),
+      sourceEffectId: personalEventEffectIdV2(
+        template.id,
+        template.version,
+        response.id,
+        effectIndex,
+      ),
+      kind: "personal_loan" as const,
+      principalCents: moneyCents(safeBigIntToNumber(
+        BigInt(installment) * BigInt(effect.durationMonths),
+        "canonical event debt principal",
+      )),
+      annualInterestRatePpm: ratePpm(0),
+      minimumPaymentCents: moneyCents(installment),
+      termMonths: effect.durationMonths,
+    }];
+  });
 }
 
 function assertCanonicalLivingCostPlans(
@@ -568,6 +604,38 @@ export function validateEventAndCareerStateV2(
           `gameplay.eventLifecycle.history.${index}.scheduledCashFlows`,
           "event_scheduled_cash_flow_mismatch",
           "scheduled cash flows must exactly match the resolved template response and financial evidence",
+        ));
+      }
+      try {
+        const template = personalEventTemplateForValidationV2(
+          event.templateId,
+          event.templateVersion,
+          personalEventCatalog,
+        );
+        const expectedDebts = canonicalOriginatedDebts(event, template);
+        if (canonicalJson(event.originatedDebts ?? []) !== canonicalJson(expectedDebts)) {
+          throw new RangeError("originated debt evidence mismatch");
+        }
+        for (const originated of expectedDebts) {
+          const current = state.gameplay.debts.termDebts.find(
+            ({ id }) => id === originated.id,
+          );
+          if (
+            current === undefined ||
+            current.kind !== originated.kind ||
+            current.annualInterestRatePpm !== originated.annualInterestRatePpm ||
+            current.principalCents > originated.principalCents ||
+            current.minimumPaymentCents > originated.minimumPaymentCents ||
+            current.remainingTermMonths > originated.termMonths
+          ) {
+            throw new RangeError("originated debt is absent or exceeds its canonical terms");
+          }
+        }
+      } catch {
+        violations.push(violation(
+          `gameplay.eventLifecycle.history.${index}.originatedDebts`,
+          "event_originated_debt_mismatch",
+          "event debt must match its declared financing effect and current debt lifecycle",
         ));
       }
       try {

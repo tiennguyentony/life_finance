@@ -51,4 +51,28 @@ describe("Money HQ view", () => {
       ),
     );
   });
+
+  it("shows a debt badge and itemized term debt even without revolving use", () => {
+    const base = currentRunState();
+    const state = {
+      ...base,
+      finances: { ...base.finances, creditUsedCents: moneyCents(0) },
+      gameplay: {
+        ...base.gameplay,
+        debts: {
+          ...base.gameplay.debts,
+          revolvingCreditUsedCents: moneyCents(0),
+        },
+      },
+    };
+    const run = runViewSchema.parse(projectRunView(state));
+    const view = hqViewFromRun(run);
+
+    expect(view.revolvingUsedCents).toBe(0);
+    expect(view.termDebtCents).toBe(2_000_000);
+    expect(view.termDebts).toEqual([
+      expect.objectContaining({ kind: "student_loan", principalCents: 2_000_000 }),
+    ]);
+    expect(view.debtBadge).toBe(1);
+  });
 });

@@ -495,6 +495,7 @@ describe("current frontend HTTP API", () => {
       systemMessage: "I could not confidently match that answer.",
       sproutReaction: "Try one concrete action.",
       education: "Describe a spending, saving, debt, or insurance action.",
+      recommendation: null,
       playerTurn: 1,
       remainingPlayerTurns: 2,
     }));

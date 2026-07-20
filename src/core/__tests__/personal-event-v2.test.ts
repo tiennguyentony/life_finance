@@ -166,7 +166,7 @@ describe("declarative personal-event v2 catalog", () => {
     expect(Object.isFrozen(activePersonalEventTemplatesV2(replayCatalog))).toBe(true);
   });
 
-  it("keeps historical V2 meanings while active scheduling selects expanded V3 choices", () => {
+  it("keeps historical meanings while active financing choices create real debt", () => {
     expect(getPersonalEventTemplateV2("personal.medical_bill", 2).responses.map(({ id }) => id))
       .toEqual(["pay_uninsured", "use_insurance"]);
     expect(getPersonalEventTemplateV2("personal.medical_bill", 3).responses.map(({ id }) => id))
@@ -176,7 +176,13 @@ describe("declarative personal-event v2 catalog", () => {
         "medical_payment_plan",
         "pay_uninsured",
       ]);
-    expect(getActivePersonalEventTemplateV2("personal.medical_bill").version).toBe(3);
+    expect(getPersonalEventTemplateV2("personal.medical_bill", 3)
+      .responses.find(({ id }) => id === "medical_payment_plan")?.effects[0]?.type)
+      .toBe("recurring_expense");
+    expect(getActivePersonalEventTemplateV2("personal.medical_bill").version).toBe(4);
+    expect(getActivePersonalEventTemplateV2("personal.medical_bill")
+      .responses.find(({ id }) => id === "medical_payment_plan")?.effects[0]?.type)
+      .toBe("financed_expense");
     expect(getActivePersonalEventTemplateV2("personal.lifestyle_upgrade").responses)
       .toHaveLength(3);
     expect(getActivePersonalEventTemplateV2("personal.performance_bonus").responses)
@@ -186,7 +192,7 @@ describe("declarative personal-event v2 catalog", () => {
     expect(getPersonalEventTemplateV2("personal.transport_repair", 2).followUps[0])
       .toMatchObject({ templateVersion: 2 });
     expect(getActivePersonalEventTemplateV2("personal.transport_repair").followUps[0])
-      .toMatchObject({ templateVersion: 3 });
+      .toMatchObject({ templateVersion: 4 });
     expect(getActivePersonalEventTemplateV2("personal.transport_repair_followup").responses)
       .toHaveLength(3);
     expect(getActivePersonalEventTemplateV2("personal.transport_repair_followup").parameters)
@@ -195,6 +201,8 @@ describe("declarative personal-event v2 catalog", () => {
         minimum: 500_000,
         maximum: 1_350_000,
       })]);
+    expect(getActivePersonalEventTemplateV2("personal.raccoon_sanitation").followUps[0])
+      .toMatchObject({ templateVersion: 3 });
   });
 
   it("contains valid setbacks, traps, and at least two opportunities", () => {

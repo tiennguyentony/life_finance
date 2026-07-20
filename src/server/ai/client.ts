@@ -32,7 +32,7 @@ const ROLE_INSTRUCTIONS: Readonly<Record<AiRole, string>> = Object.freeze({
   explanation:
     "Give a concise, beginner-friendly explanation of the supplied financial concept using only supplied context and evidence. Cite only supplied evidence IDs. Never recompute financial values or invent personalized facts. Return only the required structured output.",
   event_interpreter:
-    "Conduct a bounded English conversation that maps the player's intent to at most one supplied event choice. Use the complete alternating conversation. Map immediately whenever a concrete action is semantically equivalent to one supplied choice; never demand that the player repeat the choice label or complete a fixed number of turns. The choices and consequences are engine-owned. Never reveal choice IDs, hidden alternatives, amounts, effects, rewards, or likely outcomes. Never invent an action or state mutation. If intent is genuinely not specific and playerTurn is below maximumPlayerTurns, return ambiguous with one short, neutral follow-up question about the player's own priority or concrete action. The question must start with What or How, and must not mention or paraphrase a supplied choice, present alternatives, use 'or'/'versus', compare paths, or list possible actions. On the final turn, return mapped only when confident; otherwise return unsupported or unsafe. Mark illegal or dangerous proposals unsafe. confidencePpm is parts per million: 800000 means 80% confidence. Return only the required structured output.",
+    "You are Sprout, a concise personal-finance decision coach inside a game. The deterministic engine owns every supplied choice, consequence, amount, state change, and recommendation directive; you may explain only those supplied facts and must never invent or apply an action. Read the complete alternating English conversation as one dialogue. Later player messages override earlier ideas when they correct, reject, or replace them. Resolve words such as 'that', 'it', 'the safer one', and 'yes' against the most recent Sprout message and the preceding player goal; never merge contradictory old and new intentions. In interpret mode, map immediately when the player's current intent is semantically equivalent to one supplied choice; do not require exact wording or a fixed number of turns. If the player asks what they should choose, return recommended instead of mapped so advice never becomes an automatic decision. In recommend mode, do not choose or rank options yourself: return exactly recommendationDirective.choiceId as recommendedChoiceId, name that supplied choice in assistantMessage, and use only the selected choice's visible consequence, the directive, and supplied evidence. Never mention a fee, penalty, interest, debt, coverage, income, wellbeing effect, amount, time period, or a change to preparedness, resilience, financial stability, or cash runway unless that exact claim is explicitly supplied. recommendationReason, tradeoff, and citedEvidenceIds are engine-owned: return the directive values exactly and in the supplied order. A recommendation is advisory and choiceId must stay null. For mapped answers, write a natural brief assistantMessage that restates the action you understood in the context of the latest player message; recommendation fields must be null. If intent is genuinely unclear and another turn remains, return ambiguous with one event-specific open follow-up question that helps distinguish the supplied choices. The follow-up may name or paraphrase supplied choice labels, but it must not invent a new action or reveal an unsupplied outcome. On the final turn, return mapped only when confident; otherwise return unsupported or unsafe. Mark illegal or dangerous proposals unsafe. confidencePpm is parts per million: 800000 means 80% confidence. Return only the required structured output.",
   banter_writer:
     "You write one fresh, funny English speech-bubble line for a personal-finance game. Reason from exactly one supplied evidence fact and cite its ID. Treat that fact's label and value as the complete truth: visibly refer to its named metric or exact value, and never infer a cause, purchase, habit, choice, or life event that is not stated. A cash increase is a larger cash pile, not evidence of spending; a cash decrease is not evidence of what was bought. Choose the cast member whose personality best fits: Debtzilla reacts to debt, Inflato to living-cost creep, Impulso to cash decreases, Bengo to investing, Buddi to preparedness or risk, Lucky Cat to taxes, and Sprout to cash or net-worth increases and mixed months. recentLines are forbidden prior copy, not factual evidence; never borrow facts or characters from them. recentEvidenceIds and recentCharacterIds are ordered histories. When another supplied fact supports a joke, avoid the latest evidence topic and prefer a different speaker; do not simply pick the largest dollar amount every month. Roast the financial result or situation, never the player's identity. Keep the message to one sentence, roughly 6–24 words, playful rather than cruel, and suitable for a general audience. The UI already displays the speaker, so never prefix the message with a character name. Write a punchline, not a hashtag, caption, or advice. Never tell the player what they should, must, or need to do, and never use consider, make sure, next time, remember to, try to, watch out, or 'don't let'. Do not calculate new numbers, mention being an AI, or repeat/paraphrase any recent line. Use variationSeed only as a creativity cue. Return only the required structured output.",
 });
@@ -109,6 +109,9 @@ function auditRecordForPersistence(record: AiAuditRecord): AiAuditRecord {
             (total, message) => total + message.content.length,
             0,
           ),
+          interactionMode: input.interactionMode,
+          recommendationDirective: input.recommendationDirective,
+          evidence: input.evidence,
           playerTurn: input.playerTurn,
           maximumPlayerTurns: input.maximumPlayerTurns,
         }),
@@ -194,6 +197,132 @@ function evidenceIds(request: AiRoleRequestMap[AiRole]): Set<string> {
 function assertSubset(values: readonly string[], allowed: ReadonlySet<string>, label: string): void {
   if (new Set(values).size !== values.length || values.some((value) => !allowed.has(value))) {
     throw new Error(`${label} must be unique and reference supplied identifiers`);
+  }
+}
+
+const RECOMMENDATION_CLAIM_FAMILIES = [
+  /\bfees?\b/iu,
+  /\blate fees?\b/iu,
+  /\bpenalt(?:y|ies)\b/iu,
+  /\binterest(?: rate| charges?)?\b/iu,
+  /\bcredit score\b/iu,
+  /\b(?:insurance|coverage)\b/iu,
+  /\b(?:debt|loan)\b/iu,
+  /\b(?:income|salary|paycheck)\b/iu,
+  /\b(?:happiness|wellbeing|well-being|burnout)\b/iu,
+  /\b(?:improv(?:e|es|ed|ing)|increase(?:s|d)?|strengthen(?:s|ed|ing)?|boost(?:s|ed|ing)?|raise(?:s|d|ing)?|protect(?:s|ed|ing)?|preserve(?:s|d|ing)?)\b.{0,60}\b(?:financial preparedness|financial stability|financial security|financial resilience|cash runway)\b/iu,
+  /\b(?:financial preparedness|financial stability|financial security|financial resilience|cash runway)\b.{0,40}\b(?:better|higher|stronger|improv(?:e|es|ed|ing)|increase(?:s|d)?|strengthen(?:s|ed|ing)?|boost(?:s|ed|ing)?)\b/iu,
+] as const;
+
+function normalizedTokens(value: string): ReadonlySet<string> {
+  const stopWords = new Set(["a", "an", "and", "for", "of", "over", "the", "to"]);
+  return new Set(
+    value
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, " ")
+      .split(" ")
+      .filter((token) => token.length >= 2 && !stopWords.has(token)),
+  );
+}
+
+function recommendationTokenVariants(value: string): ReadonlySet<string> {
+  const variants = new Set([value]);
+  if (value.endsWith("ing") && value.length > 5) {
+    const base = value.slice(0, -3);
+    variants.add(base);
+    variants.add(`${base}e`);
+  }
+  if (value.endsWith("ed") && value.length > 4) {
+    const base = value.slice(0, -2);
+    variants.add(base);
+    variants.add(`${base}e`);
+  }
+  if (value.endsWith("es") && value.length > 4) variants.add(value.slice(0, -2));
+  if (value.endsWith("s") && value.length > 3) variants.add(value.slice(0, -1));
+  return variants;
+}
+
+function sameRecommendationToken(left: string, right: string): boolean {
+  const leftVariants = recommendationTokenVariants(left);
+  const rightVariants = recommendationTokenVariants(right);
+  return [...leftVariants].some((variant) => rightVariants.has(variant));
+}
+
+function choiceMentionScore(choiceLabel: string, assistantMessage: string): number {
+  const assistantTokens = normalizedTokens(assistantMessage);
+  const choiceTokens = normalizedTokens(choiceLabel);
+  if (choiceTokens.size === 0) return 0;
+  const matches = [...choiceTokens].filter((choiceToken) =>
+    [...assistantTokens].some((assistantToken) =>
+      sameRecommendationToken(choiceToken, assistantToken)
+    )
+  ).length;
+  return matches / choiceTokens.size;
+}
+
+function canonicalNumber(value: string): string {
+  const unit = value.includes("%")
+    ? "%"
+    : /months?/iu.test(value)
+      ? "months"
+      : "number";
+  const amount = Number(
+    value.replace(/[$,%]|months?/giu, "").replace(/[-\s]+$/u, "").trim(),
+  );
+  return Number.isFinite(amount) ? `${amount}:${unit}` : value.toLowerCase();
+}
+
+function assertRecommendationMessageGrounded(
+  request: AiRoleRequestMap["event_interpreter"],
+  output: AiRoleResponseMap["event_interpreter"],
+): void {
+  const directive = request.recommendationDirective;
+  if (directive === null) throw new Error("recommend mode requires an engine directive");
+  const choice = request.event.choices.find(({ id }) => id === directive.choiceId);
+  if (choice === undefined) throw new Error("recommendation choice must be supplied");
+
+  const expectedMentionScore = choiceMentionScore(choice.label, output.assistantMessage);
+  const strongestOtherMentionScore = Math.max(
+    0,
+    ...request.event.choices
+      .filter(({ id }) => id !== choice.id)
+      .map(({ label }) => choiceMentionScore(label, output.assistantMessage)),
+  );
+  if (
+    expectedMentionScore < 0.6 ||
+    strongestOtherMentionScore > expectedMentionScore
+  ) {
+    throw new Error("recommendation message must name the engine-selected choice");
+  }
+
+  const effectGroundingText = [
+    request.event.headline,
+    request.event.situation,
+    choice.label,
+    choice.consequence,
+    directive.rationale,
+    directive.tradeoff,
+  ].join(" ");
+  for (const claim of RECOMMENDATION_CLAIM_FAMILIES) {
+    if (claim.test(output.assistantMessage) && !claim.test(effectGroundingText)) {
+      throw new Error("recommendation message contains an unsupported financial claim");
+    }
+  }
+
+  const numericGroundingText = [
+    effectGroundingText,
+    ...request.evidence.flatMap(({ label, value }) => [label, value]),
+  ].join(" ");
+  const suppliedNumbers = new Set(
+    (numericGroundingText.match(/[$]?\d[\d,.]*(?:%|[-\s]+months?)?/giu) ?? [])
+      .map(canonicalNumber),
+  );
+  const generatedNumbers = output.assistantMessage.match(
+    /[$]?\d[\d,.]*(?:%|[-\s]+months?)?/giu,
+  ) ?? [];
+  if (generatedNumbers.some((value) => !suppliedNumbers.has(canonicalNumber(value)))) {
+    throw new Error("recommendation message contains an unsupported number");
   }
 }
 
@@ -311,6 +440,8 @@ function validateRoleSemantics<R extends AiRole>(
   if (request.role === "event_interpreter") {
     const output = response as AiRoleResponseMap["event_interpreter"];
     const choiceIds = new Set(request.event.choices.map(({ id }) => id));
+    const suppliedEvidenceIds = new Set(request.evidence.map(({ id }) => id));
+    assertSubset(output.citedEvidenceIds, suppliedEvidenceIds, "event interpreter evidence");
     if (output.status === "mapped") {
       if (output.choiceId === null || !choiceIds.has(output.choiceId)) {
         throw new Error("event interpreter must map to a supplied choice");
@@ -321,8 +452,43 @@ function validateRoleSemantics<R extends AiRole>(
       if (output.followUpQuestion !== null) {
         throw new Error("mapped event interpretation cannot ask a follow-up");
       }
+      if (
+        output.recommendedChoiceId !== null ||
+        output.recommendationReason !== null ||
+        output.tradeoff !== null
+      ) {
+        throw new Error("mapped event interpretation cannot also recommend a choice");
+      }
     } else if (output.choiceId !== null) {
       throw new Error("unmapped event interpretation cannot select a choice");
+    }
+    if (output.status === "recommended") {
+      const directive = request.recommendationDirective;
+      if (
+        directive === null ||
+        output.recommendedChoiceId === null ||
+        !choiceIds.has(output.recommendedChoiceId) ||
+        output.recommendedChoiceId !== directive.choiceId ||
+        output.reasonCode !== "personalized_recommendation" ||
+        output.recommendationReason !== directive.rationale ||
+        output.tradeoff !== directive.tradeoff ||
+        output.citedEvidenceIds.length !== directive.requiredEvidenceIds.length ||
+        directive.requiredEvidenceIds.some(
+          (id, index) => output.citedEvidenceIds[index] !== id,
+        )
+      ) {
+        throw new Error("event recommendation must preserve the engine-owned directive");
+      }
+      assertRecommendationMessageGrounded(request, output);
+    } else if (
+      output.recommendedChoiceId !== null ||
+      output.recommendationReason !== null ||
+      output.tradeoff !== null
+    ) {
+      throw new Error("only a recommendation may contain recommendation details");
+    }
+    if (request.interactionMode === "recommend" && output.status !== "recommended") {
+      throw new Error("recommend mode requires a grounded recommendation");
     }
     if (
       output.status === "ambiguous" &&
@@ -363,16 +529,74 @@ function normalizeRoleResponse<R extends AiRole>(
 ): AiRoleResponseMap[R] {
   if (request.role === "banter_writer") {
     const output = response as AiRoleResponseMap["banter_writer"];
+    const banterRequest = request as AiRoleRequestMap["banter_writer"];
+    const cited = banterRequest.evidence.find(
+      ({ id }) => id === output.citedEvidenceId,
+    );
+    const groundedCharacter = (() => {
+      switch (output.citedEvidenceId) {
+        case "debt_change":
+        case "debt_interest":
+          return "debtzilla";
+        case "annual_living_cost_change":
+          return "inflato";
+        case "taxable_investment_change":
+          return "bengo";
+        case "risk_change":
+        case "preparedness_change":
+          return "buddi";
+        case "monthly_tax":
+          return "lucky_cat";
+        case "cash_change":
+          return cited?.label.toLowerCase().includes("decreased")
+            ? "impulso"
+            : "sprout";
+        case "net_worth_change":
+          return "sprout";
+        default:
+          return output.characterId;
+      }
+    })();
     return Object.freeze({
       ...output,
+      characterId: groundedCharacter,
       message: output.message.replace(
-        /^(?:sprout|debtzilla|inflato|impulso|bengo|buddi|lucky cat)\s*:\s*/iu,
+        /^(?:sprout|debtzilla|inflato|impulso|bengo|buddi|lucky cat)\s*[:,—-]\s*/iu,
         "",
       ),
     }) as AiRoleResponseMap[R];
   }
   if (request.role !== "event_interpreter") return response;
   const output = response as AiRoleResponseMap["event_interpreter"];
+  if (request.interactionMode === "recommend" && request.recommendationDirective !== null) {
+    return Object.freeze({
+      ...output,
+      status: "recommended",
+      choiceId: null,
+      recommendedChoiceId: output.recommendedChoiceId ?? output.choiceId,
+      reasonCode: "personalized_recommendation",
+      followUpQuestion: null,
+      recommendationReason: request.recommendationDirective.rationale,
+      tradeoff: request.recommendationDirective.tradeoff,
+      citedEvidenceIds: [...request.recommendationDirective.requiredEvidenceIds],
+    }) as AiRoleResponseMap[R];
+  }
+  const mappedChoiceId = output.choiceId ?? output.recommendedChoiceId;
+  if (
+    output.status === "mapped" &&
+    mappedChoiceId !== null
+  ) {
+    return Object.freeze({
+      ...output,
+      choiceId: mappedChoiceId,
+      recommendedChoiceId: null,
+      reasonCode: "choice_match",
+      followUpQuestion: null,
+      recommendationReason: null,
+      tradeoff: null,
+      citedEvidenceIds: [],
+    }) as unknown as AiRoleResponseMap[R];
+  }
   if (output.status === "ambiguous" || output.followUpQuestion === null) {
     return response;
   }
@@ -508,7 +732,7 @@ export class AiRoleClient {
               ? "medium"
               : "low",
           ...(role === "event_interpreter"
-            ? { maxOutputTokens: 160 }
+            ? { maxOutputTokens: 384 }
             : role === "banter_writer"
               ? {
                   // gpt-oss may spend part of this budget on its hidden

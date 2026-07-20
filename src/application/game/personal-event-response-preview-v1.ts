@@ -17,6 +17,12 @@ export type PersonalEventResponsePreviewV1 = Readonly<{
     durationMonths: number;
     totalCents: number;
   }>[];
+  financing?: readonly Readonly<{
+    principalCents: number;
+    monthlyPaymentCents: number;
+    termMonths: number;
+    annualInterestRatePpm: number;
+  }>[];
   annualLivingCostChangeCents: number;
   wellbeingChangesPpm: Readonly<{
     happiness: number;
@@ -51,6 +57,7 @@ export function projectPersonalEventResponsePreviewV1(
     status,
     immediateCashChangeCents: 0,
     recurringCashFlows: [],
+    financing: [],
     annualLivingCostChangeCents: 0,
     wellbeingChangesPpm: { happiness: 0, burnout: 0 },
     followUps: [],
@@ -95,6 +102,12 @@ export function projectPersonalEventResponsePreviewV1(
       durationMonths: number;
       totalCents: number;
     }> = [];
+    const financing = resolution.originatedDebts.map((debt) => ({
+      principalCents: debt.principalCents,
+      monthlyPaymentCents: debt.minimumPaymentCents,
+      termMonths: debt.termMonths,
+      annualInterestRatePpm: debt.annualInterestRatePpm,
+    }));
     for (const flow of resolution.scheduledCashFlows) {
       const direction = flow.kind === "temporary_income" ? "income" : "expense";
       if (flow.durationMonths === 1) {
@@ -150,13 +163,18 @@ export function projectPersonalEventResponsePreviewV1(
     });
     const parts: string[] = [];
     if (immediateCashChangeCents < 0) {
-      parts.push(`Pay ${money.format(-immediateCashChangeCents / 100)} now.`);
+      parts.push(`Schedules ${money.format(-immediateCashChangeCents / 100)} to be paid this month.`);
     } else if (immediateCashChangeCents > 0) {
-      parts.push(`Receive ${money.format(immediateCashChangeCents / 100)} now.`);
+      parts.push(`Schedules ${money.format(immediateCashChangeCents / 100)} to be received this month.`);
     }
     for (const flow of recurringCashFlows) {
       parts.push(
         `${flow.direction === "expense" ? "Pay" : "Receive"} ${money.format(flow.monthlyCents / 100)} per month for ${flow.durationMonths} months (${money.format(flow.totalCents / 100)} total).`,
+      );
+    }
+    for (const debt of financing) {
+      parts.push(
+        `Creates ${money.format(debt.principalCents / 100)} of installment debt with ${money.format(debt.monthlyPaymentCents / 100)} due per month for ${debt.termMonths} months.`,
       );
     }
     const annualLivingCostChangeCents =
@@ -185,6 +203,7 @@ export function projectPersonalEventResponsePreviewV1(
       status: "available",
       immediateCashChangeCents,
       recurringCashFlows,
+      financing,
       annualLivingCostChangeCents,
       wellbeingChangesPpm: { happiness, burnout },
       followUps,

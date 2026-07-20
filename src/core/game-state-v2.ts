@@ -159,6 +159,16 @@ export type ScheduledPersonalEventCashFlowV2 = Readonly<{
   durationMonths: number;
 }>;
 
+export type OriginatedPersonalEventDebtV2 = Readonly<{
+  id: string;
+  sourceEffectId: string;
+  kind: "personal_loan";
+  principalCents: MoneyCents;
+  annualInterestRatePpm: RatePpm;
+  minimumPaymentCents: MoneyCents;
+  termMonths: number;
+}>;
+
 export type ResolvedEventEvidenceV2 = Readonly<{
   commandId: string;
   resultingRevision: number;
@@ -186,6 +196,8 @@ export type ResolvedEventEvidenceV2 = Readonly<{
   followUpSourceEventId?: string;
   /** Immutable canonical evidence for cash flows scheduled by this resolved response. */
   scheduledCashFlows?: readonly ScheduledPersonalEventCashFlowV2[];
+  /** Immutable origination terms for installment debt created by this response. */
+  originatedDebts?: readonly OriginatedPersonalEventDebtV2[];
   /** Optional for replay compatibility with events resolved before the Financial Engine plan owner. */
   livingCostPlans?: readonly FinancialLivingCostPlanEvidenceV2[];
 }>;

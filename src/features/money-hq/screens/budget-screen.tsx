@@ -24,6 +24,8 @@ export function BudgetScreen({
   const debtMinimums =
     obligations.termDebtMinimumsCents +
     obligations.revolvingCreditMinimumCents;
+  const eventExpensesDue = obligations.eventExpensesDueCents;
+  const eventIncomeDue = obligations.eventIncomeDueCents;
   const otherRequired = obligations.otherRequiredCents;
   const total = Math.max(1, view.monthlyRequiredCents);
   const share = (part: number) => `${Math.round((part / total) * 100)}%`;
@@ -119,6 +121,18 @@ export function BudgetScreen({
                   {formatCents(otherRequired)}
                 </div>
               ) : null}
+              {eventExpensesDue > 0 ? (
+                <div
+                  style={{
+                    width: share(eventExpensesDue),
+                    background: "var(--hq-gold-deep)",
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {formatCents(eventExpensesDue)}
+                </div>
+              ) : null}
             </div>
 
             <div className="hq-chip-row">
@@ -136,13 +150,23 @@ export function BudgetScreen({
                 </span>
               ) : null}
               {otherRequired > 0 ? (
-                // Whatever required spending is left once living costs and the
-                // health premium are accounted for: debt minimums, other cover.
                 <span style={{ font: "700 0.6875rem var(--hq-body-font)", color: "var(--hq-red-bright)" }}>
-                  ● event and other obligations
+                  ● other recurring obligations
+                </span>
+              ) : null}
+              {eventExpensesDue > 0 ? (
+                <span style={{ font: "700 0.6875rem var(--hq-body-font)", color: "var(--hq-gold-deep)" }}>
+                  ● event costs due this month
                 </span>
               ) : null}
             </div>
+
+            {eventIncomeDue > 0 ? (
+              <p className="hq-note" data-tone="positive" style={{ marginTop: "0.75rem" }}>
+                This month also has {formatCents(eventIncomeDue)} of event income
+                scheduled before your expenses are funded.
+              </p>
+            ) : null}
 
             <p className="hq-note" style={{ marginTop: "0.75rem" }}>
               Lower required costs mean a smaller emergency fund <b>and</b> a

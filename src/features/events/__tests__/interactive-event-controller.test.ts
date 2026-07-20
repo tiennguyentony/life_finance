@@ -5,7 +5,10 @@ import type {
   RunViewWire,
 } from "@/contracts/api/contracts";
 
-import { processInteractiveEventDecision } from "../interactive-event-controller";
+import {
+  commitInteractiveEventChoice,
+  processInteractiveEventDecision,
+} from "../interactive-event-controller";
 
 function run(): RunViewWire {
   return {
@@ -26,18 +29,21 @@ function run(): RunViewWire {
 }
 
 function interpretation(
-  status: "mapped" | "rejected" | "question",
+  status: "mapped" | "rejected" | "question" | "confirmation",
 ): InterpretEventResponse {
   return {
     version: "interactive-event-interpretation-v1",
     status,
     source: "deterministic_fast_path",
-    choiceId: status === "mapped" ? "safe_choice" : null,
-    confidencePpm: status === "mapped" ? 990_000 : 0,
+    choiceId: status === "mapped" || status === "confirmation" ? "safe_choice" : null,
+    confidencePpm: status === "mapped" || status === "confirmation" ? 990_000 : 0,
     latencyMs: 1,
-    systemMessage: status === "mapped" ? "Valid action." : "Try again.",
+    systemMessage: status === "mapped" || status === "confirmation"
+      ? "Valid action."
+      : "Try again.",
     sproutReaction: "A reaction.",
     education: "A lesson.",
+    recommendation: null,
     playerTurn: 1,
     remainingPlayerTurns: 2,
   };
@@ -66,7 +72,7 @@ describe("interactive event controller", () => {
     expect(result.committedRun).toBe(ending);
   });
 
-  it.each(["rejected", "question"] as const)(
+  it.each(["rejected", "question", "confirmation"] as const)(
     "does not commit while interpretation is %s",
     async (status) => {
       const submitCommand = vi.fn();
@@ -79,6 +85,30 @@ describe("interactive event controller", () => {
       expect(result.committedRun).toBeNull();
     },
   );
+
+  it("does not commit an AI recommendation until the player confirms it", async () => {
+    const submitCommand = vi.fn();
+    const result = await processInteractiveEventDecision({
+      interpretEvent: async () => ({
+        ...interpretation("question"),
+        status: "recommendation",
+        source: "hosted_oss",
+        systemMessage: "Sprout recommends: Safe choice",
+        recommendation: {
+          choiceId: "safe_choice",
+          reason: "It protects the current cash runway.",
+          tradeoff: "It gives up some short-term convenience.",
+          citedEvidenceIds: ["cash_runway"],
+        },
+      }),
+      submitCommand,
+    }, run(), [{ role: "player", content: "What would you recommend?" }],
+    "command.not-used", undefined, "recommend");
+
+    expect(submitCommand).not.toHaveBeenCalled();
+    expect(result.interpretation.status).toBe("recommendation");
+    expect(result.committedRun).toBeNull();
+  });
 
   it("forwards an explicit hint choice and commits the server-confirmed mapping", async () => {
     const opening = run();
@@ -101,5 +131,43 @@ describe("interactive event controller", () => {
     }));
     expect(submitCommand).toHaveBeenCalledOnce();
     expect(result.committedRun).toBe(ending);
+  });
+
+  it("commits an explicitly accepted recommendation without asking AI again", async () => {
+    const opening = {
+      ...run(),
+      pendingInteraction: {
+        kind: "event" as const,
+        eventId: "event.test",
+        templateId: "personal.test",
+        choiceIds: ["safe_choice"],
+        choices: [{
+          id: "safe_choice",
+          label: "Safe choice",
+          description: "Protect cash.",
+          enabled: true,
+          preview: {},
+        }],
+        parameters: {},
+        headline: "A decision",
+        body: "What do you do?",
+      },
+    } as unknown as RunViewWire;
+    const ending = {
+      ...opening,
+      revision: 5,
+      pendingInteraction: { kind: "none" as const },
+    } as RunViewWire;
+    const submitCommand = vi.fn(async () => ({ run: ending }) as never);
+
+    await expect(commitInteractiveEventChoice(
+      { submitCommand },
+      opening,
+      "safe_choice",
+      "command.accept-advice",
+    )).resolves.toBe(ending);
+    expect(submitCommand).toHaveBeenCalledWith("run.test", expect.objectContaining({
+      payload: { eventId: "event.test", choiceId: "safe_choice" },
+    }));
   });
 });

@@ -5,6 +5,7 @@ import {
   calculateNetWorth,
 } from "@/core/game-state";
 import { allocateMoney } from "@/core/domain/money";
+import { compareMonths } from "@/core/domain/month";
 import { calculateTotalMinimumDebtPaymentV2 } from "@/core/debt-service-v2";
 import { projectFinancialGoal } from "@/core/financial-goals-v2";
 import { analyzeRiskV1 } from "@/core/risk-v1";
@@ -52,11 +53,23 @@ export type RunView = Readonly<{
       additionalInsurancePremiumsCents: number;
       termDebtMinimumsCents: number;
       revolvingCreditMinimumCents: number;
+      eventExpensesDueCents: number;
+      eventIncomeDueCents: number;
       otherRequiredCents: number;
       totalRequiredCashCents: number;
     }>;
     investableAssetsCents: number;
     netWorthCents: number;
+  }>;
+  debts: Readonly<{
+    termDebts: readonly Readonly<{
+      id: string;
+      kind: GameStateV2["gameplay"]["debts"]["termDebts"][number]["kind"];
+      principalCents: number;
+      annualInterestRatePpm: number;
+      minimumPaymentCents: number;
+      remainingTermMonths: number;
+    }>[];
   }>;
   income: Readonly<{
     annualGrossSalaryCents: number | null;
@@ -224,6 +237,18 @@ function projectMonthlyObligations(
   const revolvingCreditMinimumCents = planRevolvingCreditMonthV2(
     state.finances.creditUsedCents,
   ).scheduledPaymentCents;
+  const dueEventCashFlows = (state.gameplay.eventLifecycle.activeCashFlows ?? [])
+    .filter(({ startMonth }) => compareMonths(startMonth, state.currentMonth) <= 0);
+  const eventExpensesDueCents = dueEventCashFlows.reduce(
+    (total, flow) =>
+      flow.kind === "temporary_income" ? total : total + flow.amountCents,
+    0,
+  );
+  const eventIncomeDueCents = dueEventCashFlows.reduce(
+    (total, flow) =>
+      flow.kind === "temporary_income" ? total + flow.amountCents : total,
+    0,
+  );
   const knownStoredObligations =
     livingCostCents +
     healthPremiumCents +
@@ -240,9 +265,13 @@ function projectMonthlyObligations(
     additionalInsurancePremiumsCents,
     termDebtMinimumsCents,
     revolvingCreditMinimumCents,
+    eventExpensesDueCents,
+    eventIncomeDueCents,
     otherRequiredCents,
     totalRequiredCashCents:
-      state.finances.requiredObligationsCents + revolvingCreditMinimumCents,
+      state.finances.requiredObligationsCents +
+      revolvingCreditMinimumCents +
+      eventExpensesDueCents,
   });
 }
 
@@ -365,6 +394,13 @@ export function projectRunView(state: GameStateV2): RunView {
       monthlyObligations: projectMonthlyObligations(state),
       investableAssetsCents: calculateInvestableAssets(state.finances),
       netWorthCents: calculateNetWorth(state.finances),
+    }),
+    debts: Object.freeze({
+      termDebts: Object.freeze(
+        state.gameplay.debts.termDebts
+          .filter(({ principalCents }) => principalCents > 0)
+          .map((debt) => Object.freeze({ ...debt })),
+      ),
     }),
     income: Object.freeze({
       annualGrossSalaryCents: state.gameplay.employment.annualGrossSalaryCents,

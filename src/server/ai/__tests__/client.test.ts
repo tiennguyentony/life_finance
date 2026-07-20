@@ -347,6 +347,8 @@ describe("AiRoleClient", () => {
       privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "event_interpreter",
+      interactionMode: "interpret",
+      recommendationDirective: null,
       event: {
         templateId: "personal.industry_layoff",
         headline: "The paycheck stopped",
@@ -357,6 +359,7 @@ describe("AiRoleClient", () => {
           consequence: "Reduce ongoing expenses.",
         }],
       },
+      evidence: [{ id: "cash_runway", label: "Cash runway", value: "2.0 months" }],
       conversation: [{ role: "player", content: "I want to protect my runway." }],
       playerTurn: 1,
       maximumPlayerTurns: 3,
@@ -364,9 +367,14 @@ describe("AiRoleClient", () => {
     const output = {
       status: "ambiguous",
       choiceId: null,
+      recommendedChoiceId: null,
       confidencePpm: 400_000,
       reasonCode: "multiple_choices",
+      assistantMessage: "Let us make that goal concrete.",
       followUpQuestion: "What concrete action would you take first?",
+      recommendationReason: null,
+      tradeoff: null,
+      citedEvidenceIds: [],
     };
     const { client, requests, audits } = harness([completed(output)]);
 
@@ -374,16 +382,110 @@ describe("AiRoleClient", () => {
     expect(requests[0]).toMatchObject({
       model: "gpt-5.6-luna",
       reasoningEffort: "low",
-      maxOutputTokens: 160,
+      maxOutputTokens: 384,
       store: false,
     });
     expect(audits[0]?.prompt.input).toMatchObject({
       conversationMessageCount: 1,
       conversationCharacterCount: 28,
+      interactionMode: "interpret",
+      evidence: [{ id: "cash_runway" }],
       playerTurn: 1,
     });
     expect(audits[0]?.prompt.input).not.toHaveProperty("conversation");
     expect(audits[0]?.attempts[0]?.output).toBeNull();
+  });
+
+  it("accepts only a recommendation grounded in supplied choices and evidence", async () => {
+    const request: EventInterpreterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "event_interpreter",
+      interactionMode: "recommend",
+      recommendationDirective: {
+        choiceId: "emergency_budget",
+        priority: "protect_cash",
+        rationale: "Two months of cash provides little room during an income interruption.",
+        tradeoff: "This protects liquidity but requires immediate spending cuts.",
+        requiredEvidenceIds: ["cash_runway"],
+      },
+      event: {
+        templateId: "personal.industry_layoff",
+        headline: "The paycheck stopped",
+        situation: "Income is interrupted while expenses continue.",
+        choices: [{
+          id: "emergency_budget",
+          label: "Activate an emergency budget",
+          consequence: "Reduce ongoing expenses.",
+        }],
+      },
+      evidence: [{ id: "cash_runway", label: "Cash runway", value: "2.0 months" }],
+      conversation: [{ role: "player", content: "What would you recommend?" }],
+      playerTurn: 1,
+      maximumPlayerTurns: 3,
+    };
+    const valid = {
+      status: "recommended",
+      choiceId: null,
+      recommendedChoiceId: "emergency_budget",
+      confidencePpm: 920_000,
+      reasonCode: "personalized_recommendation",
+      assistantMessage: "I would activate the emergency budget while the cash runway is thin.",
+      followUpQuestion: null,
+      recommendationReason: "Two months of cash provides little room during an income interruption.",
+      tradeoff: "This protects liquidity but requires immediate spending cuts.",
+      citedEvidenceIds: ["cash_runway"],
+    } as const;
+    const validHarness = harness([completed(valid)]);
+
+    await expect(validHarness.client.generate(request)).resolves.toEqual(valid);
+
+    const localStatusQuirk = {
+      ...valid,
+      status: "mapped" as const,
+      recommendationReason: "The local model swapped recommendation fields.",
+      tradeoff: "The local model swapped recommendation fields.",
+    };
+    const localHarness = harness([completed(localStatusQuirk)]);
+    await expect(localHarness.client.generate(request)).resolves.toEqual(valid);
+
+    const invented = {
+      ...valid,
+      recommendedChoiceId: "invented_choice",
+      citedEvidenceIds: ["invented_evidence"],
+    };
+    const invalidHarness = harness([
+      completed(invented),
+      completed(invented, "resp_invalid_recommendation_2"),
+    ]);
+    await expect(invalidHarness.client.generate(request)).rejects.toMatchObject({
+      code: "AI_UNAVAILABLE",
+    });
+
+    const hallucinated = {
+      ...valid,
+      assistantMessage: "I would activate the emergency budget to avoid late fees and penalties.",
+    };
+    const hallucinationHarness = harness([
+      completed(hallucinated),
+      completed(hallucinated, "resp_hallucination_2"),
+    ]);
+    await expect(hallucinationHarness.client.generate(request)).rejects.toMatchObject({
+      code: "AI_UNAVAILABLE",
+    });
+
+    const inventedPreparednessEffect = {
+      ...valid,
+      assistantMessage: "I would activate the emergency budget to improve your financial preparedness.",
+    };
+    const preparednessHarness = harness([
+      completed(inventedPreparednessEffect),
+      completed(inventedPreparednessEffect, "resp_preparedness_hallucination_2"),
+    ]);
+    await expect(preparednessHarness.client.generate(request)).rejects.toMatchObject({
+      code: "AI_UNAVAILABLE",
+    });
   });
 
   it("uses randomized low-cost generation and enforces banter evidence grounding", async () => {
@@ -444,6 +546,33 @@ describe("AiRoleClient", () => {
     });
   });
 
+  it("removes any stray cast prefix and grounds the displayed speaker in cited evidence", async () => {
+    const request: BanterWriterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "banter_writer",
+      simulationMonth: "2026-10",
+      planLabel: "Stay steady",
+      variationSeed: 82,
+      evidence: [{ id: "monthly_tax", label: "Tax withheld this month", value: "$480.00" }],
+      recentLines: [],
+      recentEvidenceIds: [],
+      recentCharacterIds: [],
+    };
+    const { client } = harness([completed({
+      characterId: "sprout",
+      tone: "roast",
+      message: "Buddi, taxes took the scenic route through that paycheck.",
+      citedEvidenceId: "monthly_tax",
+    })]);
+
+    await expect(client.generate(request)).resolves.toMatchObject({
+      characterId: "lucky_cat",
+      message: "taxes took the scenic route through that paycheck.",
+    });
+  });
+
   it("treats speaker rotation as a creative preference rather than dropping copy", async () => {
     const request: BanterWriterRequest = {
       contractVersion: 1,
@@ -476,6 +605,8 @@ describe("AiRoleClient", () => {
       privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "event_interpreter",
+      interactionMode: "interpret",
+      recommendationDirective: null,
       event: {
         templateId: "personal.lifestyle_upgrade",
         headline: "A lifestyle upgrade is within reach",
@@ -486,6 +617,7 @@ describe("AiRoleClient", () => {
           consequence: "Avoid lifestyle inflation.",
         }],
       },
+      evidence: [{ id: "cash_runway", label: "Cash runway", value: "2.0 months" }],
       conversation: [{
         role: "player",
         content: "I refuse to inflate my long-term baseline burn.",
@@ -496,9 +628,14 @@ describe("AiRoleClient", () => {
     const modelOutput = {
       status: "mapped",
       choiceId: "keep_current_lifestyle",
+      recommendedChoiceId: null,
       confidencePpm: 950_000,
       reasonCode: "choice_match",
+      assistantMessage: "That keeps your baseline from creeping upward.",
       followUpQuestion: "How can I help you keep spending stable?",
+      recommendationReason: null,
+      tradeoff: null,
+      citedEvidenceIds: [],
     };
     const { client, requests } = harness([completed(modelOutput)]);
 
@@ -509,12 +646,69 @@ describe("AiRoleClient", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("normalizes a local model's recommendation-shaped fields into a safe mapped confirmation", async () => {
+    const request: EventInterpreterRequest = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "event_interpreter",
+      interactionMode: "interpret",
+      recommendationDirective: null,
+      event: {
+        templateId: "personal.transport_repair",
+        headline: "A repair is due",
+        situation: "The repair needs a payment decision.",
+        choices: [{
+          id: "payment_plan",
+          label: "Use a three-month payment plan",
+          consequence: "Spread the cost across three months.",
+        }],
+      },
+      evidence: [],
+      conversation: [
+        { role: "player", content: "I need help choosing." },
+        { role: "sprout", content: "I recommend the payment plan. Do you want that?" },
+        { role: "player", content: "Yes, do that." },
+      ],
+      playerTurn: 2,
+      maximumPlayerTurns: 3,
+    };
+    const localOutput = {
+      status: "mapped",
+      choiceId: null,
+      recommendedChoiceId: "payment_plan",
+      confidencePpm: 800_000,
+      reasonCode: "personalized_recommendation",
+      assistantMessage: "You decided to use the three-month payment plan.",
+      followUpQuestion: null,
+      recommendationReason: "It spreads the cost.",
+      tradeoff: "It costs more overall.",
+      citedEvidenceIds: ["invented_choice_consequence"],
+    };
+    const { client } = harness([completed(localOutput)]);
+
+    await expect(client.generate(request)).resolves.toEqual({
+      status: "mapped",
+      choiceId: "payment_plan",
+      recommendedChoiceId: null,
+      confidencePpm: 800_000,
+      reasonCode: "choice_match",
+      assistantMessage: "You decided to use the three-month payment plan.",
+      followUpQuestion: null,
+      recommendationReason: null,
+      tradeoff: null,
+      citedEvidenceIds: [],
+    });
+  });
+
   it("does not permit another follow-up after the final player turn", async () => {
     const request: EventInterpreterRequest = {
       contractVersion: 1,
       privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "event_interpreter",
+      interactionMode: "interpret",
+      recommendationDirective: null,
       event: {
         templateId: "personal.industry_layoff",
         headline: "The paycheck stopped",
@@ -525,6 +719,7 @@ describe("AiRoleClient", () => {
           consequence: "Reduce ongoing expenses.",
         }],
       },
+      evidence: [{ id: "cash_runway", label: "Cash runway", value: "2.0 months" }],
       conversation: [
         { role: "player", content: "I have a plan." },
         { role: "sprout", content: "What action?" },
@@ -538,9 +733,14 @@ describe("AiRoleClient", () => {
     const invalid = {
       status: "ambiguous",
       choiceId: null,
+      recommendedChoiceId: null,
       confidencePpm: 300_000,
       reasonCode: "multiple_choices",
+      assistantMessage: "The plan is still unclear.",
       followUpQuestion: "Could you explain again?",
+      recommendationReason: null,
+      tradeoff: null,
+      citedEvidenceIds: [],
     };
     const { client, requests } = harness([
       completed(invalid),

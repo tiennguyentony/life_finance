@@ -12,6 +12,7 @@ import {
   characterBanterResponseSchema,
   commandIntentSchema,
   interpretEventRequestSchema,
+  interpretEventResponseSchema,
   runViewSchema,
 } from "../contracts";
 import { CURRENT_OPENAPI_DOCUMENT } from "../openapi";
@@ -137,13 +138,62 @@ describe("frontend API contracts", () => {
     ).toBe(false);
   });
 
-  it("accepts an explicit engine-owned choice from the event hint menu", () => {
+  it("accepts a backward-compatible explicit engine-owned choice", () => {
     expect(interpretEventRequestSchema.parse({
       eventId: "event.medical.1",
       expectedRevision: 3,
       selectedChoiceId: "use_insurance",
       conversation: [{ role: "player", content: "Use health coverage" }],
     })).toMatchObject({ selectedChoiceId: "use_insurance" });
+  });
+
+  it("accepts advice mode without treating the recommendation as a decision", () => {
+    const adviceRequest = {
+      eventId: "event.medical.1",
+      expectedRevision: 3,
+      interactionMode: "recommend",
+      conversation: [{ role: "player", content: "What would you recommend?" }],
+    } as const;
+    expect(interpretEventRequestSchema.parse(adviceRequest)).toMatchObject({
+      interactionMode: "recommend",
+    });
+    expect(() => interpretEventRequestSchema.parse({
+      ...adviceRequest,
+      selectedChoiceId: "use_insurance",
+    })).toThrow();
+
+    const recommendation = {
+      version: "interactive-event-interpretation-v1",
+      status: "recommendation",
+      source: "hosted_oss",
+      choiceId: null,
+      confidencePpm: 910_000,
+      latencyMs: 120,
+      systemMessage: "Sprout recommends: Use health coverage",
+      sproutReaction: "Coverage is doing the job you already pay it to do.",
+      education: "Your active plan reduces the uncovered bill.",
+      recommendation: {
+        choiceId: "use_insurance",
+        reason: "Your active health plan applies to this bill.",
+        tradeoff: "You still pay the applicable deductible.",
+        citedEvidenceIds: ["health_coverage"],
+      },
+      playerTurn: 1,
+      remainingPlayerTurns: 2,
+    } as const;
+    expect(interpretEventResponseSchema.parse(recommendation).status).toBe("recommendation");
+    expect(() => interpretEventResponseSchema.parse({
+      ...recommendation,
+      recommendation: null,
+    })).toThrow();
+    expect(() => interpretEventResponseSchema.parse({
+      ...recommendation,
+      status: "confirmation",
+    })).toThrow();
+    expect(() => interpretEventResponseSchema.parse({
+      ...recommendation,
+      remainingPlayerTurns: 1,
+    })).toThrow();
   });
 
   it("bounds character-writer evidence and cast IDs", () => {

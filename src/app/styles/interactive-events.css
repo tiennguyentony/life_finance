@@ -28,7 +28,10 @@
   border-radius: 16px;
   background: var(--interactive-card);
   color: var(--interactive-ink);
-  font: 600 1rem/1.45 inherit;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .interactive-event-form textarea:focus-visible {
@@ -105,67 +108,62 @@
   border: 0;
   background: transparent;
   color: #28676d;
-  font: 900 0.8rem/1.3 inherit;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 900;
+  line-height: 1.3;
   text-decoration: underline;
   text-underline-offset: 0.2rem;
   cursor: pointer;
 }
 
-.interactive-event-writing-hint {
+.interactive-event-directions {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.55rem;
   margin: 0;
   padding: 0.75rem 0.85rem;
-  border: 2px dashed #2d7379;
-  border-radius: 14px;
-  background: #f1fbfc;
-  color: var(--interactive-ink);
-}
-
-.interactive-event-writing-hint p {
-  margin: 0;
-  line-height: 1.45;
-}
-
-.interactive-event-writing-hint small {
-  color: var(--interactive-body);
-  font-weight: 700;
-}
-
-.interactive-event-suggestions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  gap: 0.5rem;
-}
-
-.interactive-event-suggestions button {
-  display: grid;
-  gap: 0.2rem;
-  min-height: 3.75rem;
-  padding: 0.65rem 0.75rem;
   border: 1.5px solid var(--hq-green-border, #bfe4cd);
-  border-radius: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--interactive-green-soft) 55%, white);
+}
+
+.interactive-event-directions legend {
+  padding: 0 0.35rem;
+  color: var(--interactive-ink);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.interactive-event-directions p {
+  margin: 0;
+  color: var(--interactive-body);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.interactive-event-directions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.interactive-event-directions button {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.65rem;
+  border: 1.5px solid var(--interactive-ink);
+  border-radius: 999px;
   background: var(--interactive-card);
   color: var(--interactive-ink);
-  text-align: left;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.2;
   cursor: pointer;
 }
 
-.interactive-event-suggestions button:hover:not(:disabled) {
+.interactive-event-directions button:hover:not(:disabled) {
   border-color: var(--interactive-green);
   background: var(--interactive-green-soft);
-}
-
-.interactive-event-suggestions button strong {
-  font-size: 0.82rem;
-  line-height: 1.25;
-}
-
-.interactive-event-suggestions button span {
-  color: var(--interactive-body);
-  font-size: 0.72rem;
-  font-weight: 650;
-  line-height: 1.35;
 }
 
 .interactive-event-actions {
@@ -182,7 +180,10 @@
   border-radius: 999px;
   background: var(--interactive-card);
   color: var(--interactive-ink);
-  font: 800 0.78rem/1.2 inherit;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.2;
   cursor: pointer;
 }
 
@@ -199,6 +200,12 @@
 .interactive-event-result button:disabled {
   cursor: wait;
   opacity: 0.58;
+}
+
+.interactive-event-form button:focus-visible,
+.interactive-event-result button:focus-visible {
+  outline: 4px solid rgb(120 203 209 / 45%);
+  outline-offset: 2px;
 }
 
 .interactive-event-system {

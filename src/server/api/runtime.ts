@@ -150,9 +150,15 @@ export function getInteractiveEventService(): InteractiveEventService {
       const interactiveTimeoutMs = process.env.AI_PROVIDER === "ollama"
         ? 2_500
         : 1_500;
+      const recommendationTimeoutMs = process.env.AI_PROVIDER === "ollama"
+        ? 8_000
+        : 3_000;
       const client = new AiRoleClient(
         aiTransportFromEnvironment(process.env, {
-          timeoutMs: interactiveTimeoutMs,
+          // The service keeps ordinary interpretation on its shorter outer
+          // deadline. The transport must remain alive long enough for the
+          // explicitly requested, richer recommendation path.
+          timeoutMs: recommendationTimeoutMs,
           ollamaModel:
             process.env.AI_INTERACTIVE_OLLAMA_MODEL ??
             "qwen2.5:7b-instruct",
@@ -168,6 +174,7 @@ export function getInteractiveEventService(): InteractiveEventService {
           responseSource: () => client.responseSource(),
         },
         interactiveTimeoutMs,
+        recommendationTimeoutMs,
       );
     } catch {
       interactiveEventService = new InteractiveEventService(null);
@@ -179,12 +186,15 @@ export function getInteractiveEventService(): InteractiveEventService {
 export function getCharacterBanterService(): CharacterBanterService {
   if (!characterBanterService) {
     try {
-      const timeoutMs = process.env.AI_PROVIDER === "ollama" ? 5_000 : 2_000;
+      // The 7B local writer is usually warm in about a second, but needs a
+      // wider first-call window while Ollama loads it into memory. This work is
+      // asynchronous and never blocks the monthly command.
+      const timeoutMs = process.env.AI_PROVIDER === "ollama" ? 8_000 : 2_000;
       const transport = aiTransportFromEnvironment(process.env, {
         timeoutMs,
         ollamaModel:
           process.env.AI_BANTER_OLLAMA_MODEL ??
-          "gpt-oss:20b",
+          "qwen2.5:7b-instruct",
       });
       let developmentClient: AiRoleClient | undefined;
       characterBanterService = new CharacterBanterService((runId) => {
