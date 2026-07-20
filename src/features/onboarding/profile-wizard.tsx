@@ -120,7 +120,9 @@ export function ProfileWizard() {
           ))}
         </div>
 
-        <form onSubmit={(event) => { event.preventDefault(); handleContinue(); }}>
+        {/* noValidate: canContinue owns validation; native step rules were
+            blocking submits (e.g. default 60000 with min=1 step=1000). */}
+        <form noValidate onSubmit={(event) => { event.preventDefault(); handleContinue(); }}>
           {step === 0 ? (
             <fieldset className="wizard-fieldset" key="identity">
               <legend>When does Sprout start this financial life?</legend>
@@ -219,7 +221,8 @@ export function ProfileWizard() {
                 <input
                   autoFocus
                   inputMode="numeric"
-                  min={1}
+                  // min 0 keeps arbitrary amounts step-valid; app validation still requires > 0.
+                  min={0}
                   onChange={(event) =>
                     updateField("desiredAnnualSpendingDollars", event.target.value)
                   }

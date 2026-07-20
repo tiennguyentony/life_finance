@@ -90,9 +90,10 @@ export function getRunGateway(): CommandRunner {
 
 export function getRunReaderGateway(): RunReader {
   if (!runReaderGateway) {
-    const persistentReader = createRunReader(getRunRepository());
+    // Lazy: demo runs must stay readable without a database configured.
+    let persistentReader: RunReader | undefined;
     runReaderGateway = getLocalDemoRuntime().createRunReaderGateway(
-      () => persistentReader,
+      () => (persistentReader ??= createRunReader(getRunRepository())),
     );
   }
   return runReaderGateway;

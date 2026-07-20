@@ -148,11 +148,6 @@ export function HqEventDialog({ busy, onResolve, run }: Props) {
             );
           })}
         </div>
-
-        <p className="hq-note" style={{ marginTop: "0.75rem" }}>
-          Every figure here is the engine&rsquo;s own preview of the choice.
-          Whichever you pick lands in this month&rsquo;s report.
-        </p>
       </div>
     </dialog>
   );
