@@ -37,5 +37,15 @@ export const CURRENT_OPENAPI_DOCUMENT = Object.freeze({
         summary: "Submit a versionless command intent for the active run",
       },
     },
+    "/api/runs/{runId}/events/interpret": {
+      post: {
+        summary: "Interpret bounded player text for a pending event decision",
+      },
+    },
+    "/api/runs/{runId}/banter": {
+      post: {
+        summary: "Generate non-blocking grounded character banter",
+      },
+    },
   },
 } as const);
