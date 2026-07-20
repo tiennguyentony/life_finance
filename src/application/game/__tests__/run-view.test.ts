@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { moneyCents, ratePpm } from "@/core/domain/money";
 import { simulationMonth } from "@/core/domain/month";
 import { calculateNetWorth } from "@/core/game-state";
-import { queueScheduledDeclarativePersonalEventV2 } from "@/core/event-lifecycle-v2";
+import {
+  queueScheduledDeclarativePersonalEventV2,
+  resolveEventChoiceV2,
+} from "@/core/event-lifecycle-v2";
 import { UNRELATED_HAZARD_TARGET } from "@/core/events";
 import type { GameStateV2 } from "@/core/game-state-v2";
 import type { PersonalEventTemplateV2 } from "@/core/personal-event-v2";
@@ -48,10 +51,19 @@ describe("projectRunView", () => {
           additionalInsurancePremiumsCents: 1_800,
           termDebtMinimumsCents: 25_000,
           revolvingCreditMinimumCents: 6_120,
+          eventExpensesDueCents: 0,
+          eventIncomeDueCents: 0,
           otherRequiredCents: 0,
           totalRequiredCashCents:
             state.finances.requiredObligationsCents + 6_120,
         },
+      },
+      debts: {
+        termDebts: [expect.objectContaining({
+          kind: "student_loan",
+          principalCents: 2_000_000,
+          minimumPaymentCents: 25_000,
+        })],
       },
       income: { annualGrossSalaryCents: 12000000 },
       preparedness: {
@@ -123,7 +135,7 @@ describe("projectRunView", () => {
           id: "pay_uninsured",
           label: "Pay without coverage",
           enabled: true,
-          description: "Pay $4,250.00 now.",
+          description: "Schedules $4,250.00 to be paid this month.",
           preview: {
             status: "available",
             immediateCashChangeCents: -425_000,
@@ -156,7 +168,7 @@ describe("projectRunView", () => {
       choices: [{
         id: "claim_rebate",
         enabled: true,
-        description: "Receive $425.00 now.",
+        description: "Schedules $425.00 to be received this month.",
         preview: {
           status: "available",
           immediateCashChangeCents: 42_500,
@@ -197,12 +209,46 @@ describe("projectRunView", () => {
       choices: [{
         id: "pay_cost",
         enabled: true,
-        description: "Pay $850.00 now.",
+        description: "Schedules $850.00 to be paid this month.",
         preview: {
           status: "available",
           immediateCashChangeCents: -85_000,
         },
       }],
+    });
+  });
+
+  it("shows resolved event cash flows as due until the financial kernel applies them", () => {
+    const opening = currentRunState();
+    const template = getPersonalEventTemplateV2("personal.medical_bill");
+    const queued = queueScheduledDeclarativePersonalEventV2(opening, {
+      proposal: {
+        eventId: "event.medical.due",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { gross_bill_cents: 425_000 },
+      },
+      template,
+      targetedWeakness: UNRELATED_HAZARD_TARGET,
+    });
+    const resolved = resolveEventChoiceV2(queued, {
+      schemaVersion: 2,
+      id: "command.medical.due",
+      type: "resolve_event_choice",
+      expectedRevision: queued.revision,
+      effectiveMonth: queued.currentMonth,
+      payload: { eventId: "event.medical.due", choiceId: "pay_uninsured" },
+    });
+    const view = projectRunView(resolved);
+
+    expect(view.finances.cashCents).toBe(opening.finances.cashCents);
+    expect(view.finances.monthlyObligations).toMatchObject({
+      eventExpensesDueCents: 425_000,
+      eventIncomeDueCents: 0,
+      totalRequiredCashCents:
+        resolved.finances.requiredObligationsCents +
+        view.finances.monthlyObligations.revolvingCreditMinimumCents +
+        425_000,
     });
   });
 
@@ -431,7 +477,7 @@ describe("projectRunView", () => {
         {
           id: "receive_income",
           enabled: true,
-          description: "Receive $850.00 now.",
+          description: "Schedules $850.00 to be received this month.",
           preview: {
             status: "available",
             immediateCashChangeCents: 85_000,

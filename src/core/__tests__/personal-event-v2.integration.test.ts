@@ -35,7 +35,10 @@ import type {
 } from "../personal-event-v2";
 import { RUNTIME_BALANCE_CONTROLLER_V1_VERSION } from "../runtime-balance-policy-v2";
 import { createInitialRuntimeBalanceStateV2 } from "../runtime-balance-state-v2";
-import { getPersonalEventTemplateV2 } from "../../data/personal-event-templates-v2";
+import {
+  getActivePersonalEventTemplateV2,
+  getPersonalEventTemplateV2,
+} from "../../data/personal-event-templates-v2";
 import { getEventTemplate } from "../../data/event-templates";
 import { decodePersistedGameState } from "../persisted-game-state";
 
@@ -200,6 +203,86 @@ describe("declarative personal-event v2 integration", () => {
       { eventSchedulingPolicy: noEvents },
     );
     expect(afterSecondMonth.record.resolvedExpenseCents).toBe(0);
+  });
+
+  it("originates, exposes, services, and preserves event installment debt", () => {
+    const opening = state("personal-event-v2.financing");
+    const template = getActivePersonalEventTemplateV2("personal.medical_bill");
+    const queued = queueScheduledDeclarativePersonalEventV2(opening, {
+      proposal: {
+        eventId: "evt.2026-07.personal.medical_bill.financing",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { gross_bill_cents: 100_000 },
+      },
+      template,
+      targetedWeakness: "unrelated_hazard",
+    });
+    const resolved = resolveEventChoiceV2(queued, {
+      schemaVersion: 2,
+      id: "cmd.personal-event-v2.financing.resolve",
+      type: "resolve_event_choice",
+      expectedRevision: queued.revision,
+      effectiveMonth: queued.currentMonth,
+      payload: {
+        eventId: queued.gameplay.eventLifecycle.pending!.eventId,
+        choiceId: "medical_payment_plan",
+      },
+    });
+    const debt = resolved.gameplay.debts.termDebts.at(-1)!;
+
+    expect(debt).toMatchObject({
+      kind: "personal_loan",
+      principalCents: 120_000,
+      minimumPaymentCents: 30_000,
+      remainingTermMonths: 4,
+    });
+    expect(resolved.finances.cashCents).toBe(opening.finances.cashCents);
+    expect(resolved.finances.nonCreditLiabilitiesCents).toBe(
+      opening.finances.nonCreditLiabilitiesCents + 120_000,
+    );
+    expect(resolved.finances.requiredObligationsCents).toBe(
+      opening.finances.requiredObligationsCents + 30_000,
+    );
+    expect(resolved.gameplay.eventLifecycle.activeCashFlows).toEqual([]);
+    expect(resolved.gameplay.eventLifecycle.history.at(-1)?.originatedDebts)
+      .toEqual([expect.objectContaining({ id: debt.id, principalCents: 120_000 })]);
+    expect(sha256Canonical(decodePersistedGameState(
+      JSON.parse(JSON.stringify(resolved)) as unknown,
+    ))).toBe(sha256Canonical(resolved));
+
+    const noEvents = {
+      version: "fairness-v1" as const,
+      minimumChancePpm: 0,
+      maximumChancePpm: 0,
+    };
+    const next = processMonthlyTurnV2(
+      resolved,
+      monthCommand(resolved, "financing.one"),
+      { eventSchedulingPolicy: noEvents },
+    );
+    const paidDebt = next.state.gameplay.debts.termDebts.find(
+      ({ id }) => id === debt.id,
+    );
+    expect(next.record.debtService.lines).toContainEqual(expect.objectContaining({
+      debtId: debt.id,
+      scheduledPaymentCents: 30_000,
+      closingPrincipalCents: 90_000,
+      closingRemainingTermMonths: 3,
+    }));
+    expect(paidDebt).toMatchObject({
+      principalCents: 90_000,
+      minimumPaymentCents: 30_000,
+      remainingTermMonths: 3,
+    });
+    expect(next.state.finances.nonCreditLiabilitiesCents).toBe(
+      resolved.finances.nonCreditLiabilitiesCents - 30_000,
+    );
+    expect(next.state.finances.requiredObligationsCents).toBe(
+      resolved.finances.requiredObligationsCents +
+        next.record.monthlyObligationInflationIncreaseCents!,
+    );
+    expect(validateLedger(next.state.ledger)).toEqual([]);
   });
 
   it("bills a resolved lifestyle plan once per production month without a duplicate event charge", () => {

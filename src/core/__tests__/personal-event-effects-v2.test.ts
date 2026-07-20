@@ -4,13 +4,21 @@ import {
   US_2026_SCENARIO_CATALOG,
   US_2026_SCENARIO_CATALOG_VERSION,
 } from "../../data/scenario-catalog";
-import { getPersonalEventTemplateV2 } from "../../data/personal-event-templates-v2";
+import {
+  ACTIVE_PERSONAL_EVENT_TEMPLATES_V2,
+  getActivePersonalEventTemplateV2,
+  getPersonalEventTemplateV2,
+} from "../../data/personal-event-templates-v2";
 import { moneyCents, ratePpm } from "../domain/money";
 import { simulationMonth } from "../domain/month";
 import { adjudicateHealthClaim } from "../insurance-v2";
 import { createNativeGameStateV2 } from "../native-game-state-v2";
-import { resolvePersonalEventResponseV2 } from "../personal-event-effects-v2";
+import {
+  PersonalEventEffectV2Error,
+  resolvePersonalEventResponseV2,
+} from "../personal-event-effects-v2";
 import { resolveScenarioCatalogSelection } from "../scenario-catalog";
+import { validateLedger } from "../ledger";
 
 function state() {
   const resolvedScenario = resolveScenarioCatalogSelection(
@@ -81,6 +89,55 @@ describe("declarative personal-event v2 effects", () => {
         durationMonths: 4,
       }),
     ]);
+  });
+
+  it("originates an active payment plan as real term debt without changing cash", () => {
+    const opening = state();
+    const template = getActivePersonalEventTemplateV2("personal.medical_bill");
+    const resolved = resolvePersonalEventResponseV2(
+      opening,
+      template,
+      {
+        eventId: "evt.medical-plan.active",
+        templateId: template.id,
+        templateVersion: template.version,
+        parameters: { gross_bill_cents: 100_000 },
+      },
+      "medical_payment_plan",
+      "cmd.medical-plan.active",
+    );
+
+    expect(template.version).toBe(4);
+    expect(resolved.finances.cashCents).toBe(opening.finances.cashCents);
+    expect(resolved.finances.nonCreditLiabilitiesCents).toBe(
+      opening.finances.nonCreditLiabilitiesCents + 120_000,
+    );
+    expect(resolved.finances.requiredObligationsCents).toBe(
+      opening.finances.requiredObligationsCents + 30_000,
+    );
+    expect(resolved.scheduledCashFlows).toEqual([]);
+    expect(resolved.activeCashFlows).toEqual([]);
+    expect(resolved.playerCostCents).toBe(120_000);
+    expect(resolved.originatedDebts).toEqual([expect.objectContaining({
+      id: expect.stringMatching(/^debt\.event\.[0-9a-f]{32}$/),
+      sourceEffectId: "personal.medical_bill@4.medical_payment_plan.effect.0",
+      principalCents: 120_000,
+      minimumPaymentCents: 30_000,
+      termMonths: 4,
+      annualInterestRatePpm: 0,
+    })]);
+    expect(resolved.debts.termDebts.at(-1)).toEqual(expect.objectContaining({
+      id: resolved.originatedDebts[0]!.id,
+      principalCents: 120_000,
+      minimumPaymentCents: 30_000,
+      remainingTermMonths: 4,
+    }));
+    expect(resolved.ledger.transactions.at(-1)).toMatchObject({
+      commandId: "cmd.medical-plan.active",
+      reasonCode: "personal_event_financing_originated",
+      causalReference: { kind: "event", id: "evt.medical-plan.active" },
+    });
+    expect(validateLedger(resolved.ledger)).toEqual([]);
   });
 
   it("rejects a mitigation response when the declared coverage is unavailable", () => {
@@ -427,5 +484,70 @@ describe("declarative personal-event v2 effects", () => {
     expect(resolved.activeCashFlows.map(({ id }) => id)).toHaveLength(2);
     expect(new Set(resolved.activeCashFlows.map(({ id }) => id)).size).toBe(2);
     expect(resolved.activeCashFlows.every(({ id }) => id.length <= 64)).toBe(true);
+  });
+
+  it("executes every available production response into observable state or evidence", () => {
+    const opening = state();
+    let availableResponses = 0;
+    let unavailableMitigations = 0;
+
+    for (const [templateIndex, template] of ACTIVE_PERSONAL_EVENT_TEMPLATES_V2.entries()) {
+      const parameters = Object.fromEntries(template.parameters.map((parameter) => [
+        parameter.id,
+        Math.floor((parameter.minimum + parameter.maximum) / 2),
+      ]));
+      for (const [responseIndex, response] of template.responses.entries()) {
+        try {
+          const resolved = resolvePersonalEventResponseV2(
+            opening,
+            template,
+            {
+              eventId: `evt.catalog.${templateIndex}.${responseIndex}`,
+              templateId: template.id,
+              templateVersion: template.version,
+              parameters,
+            },
+            response.id,
+            `cmd.catalog.${templateIndex}.${responseIndex}`,
+          );
+          availableResponses += 1;
+          const changed =
+            resolved.finances.requiredObligationsCents !==
+              opening.finances.requiredObligationsCents ||
+            resolved.finances.annualLivingCostCents !==
+              opening.finances.annualLivingCostCents ||
+            resolved.finances.nonCreditLiabilitiesCents !==
+              opening.finances.nonCreditLiabilitiesCents ||
+            resolved.wellbeing.burnoutPpm !== opening.wellbeing.burnoutPpm ||
+            resolved.wellbeing.happinessPpm !== opening.wellbeing.happinessPpm ||
+            resolved.insurance !== opening.gameplay.insurance ||
+            resolved.activeCashFlows.length > 0 ||
+            resolved.originatedDebts.length > 0 ||
+            resolved.livingCostPlans.length > 0;
+          const explicitlyDeclaredNoOp = response.effects.every((effect) =>
+            effect.type !== "insurance_claim" &&
+            effect.magnitude.source === "fixed" &&
+            effect.magnitude.value === 0
+          );
+          expect(
+            changed || explicitlyDeclaredNoOp,
+            `${template.id}.${response.id} must apply an effect or declare an explicit zero no-op`,
+          ).toBe(true);
+          expect(validateLedger(resolved.ledger)).toEqual([]);
+        } catch (error) {
+          if (
+            error instanceof PersonalEventEffectV2Error &&
+            error.code === "MITIGATION_UNAVAILABLE"
+          ) {
+            unavailableMitigations += 1;
+            continue;
+          }
+          throw error;
+        }
+      }
+    }
+
+    expect(availableResponses).toBeGreaterThan(50);
+    expect(unavailableMitigations).toBeLessThan(10);
   });
 });

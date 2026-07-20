@@ -38,7 +38,7 @@ export function DebtScreen({
         <div>
           <h2 className="hq-screen-title">Debt Dungeon</h2>
           <p className="hq-screen-subtitle">
-            Revolving credit: handy in a pinch, hungry if it lingers.
+            See every installment, student, mortgage, and revolving balance in one place.
           </p>
         </div>
         <div className="hq-planbar-spacer" />
@@ -56,11 +56,59 @@ export function DebtScreen({
         <div className="hq-column">
           <HqCard
             aside={
+              <span className="hq-chip" data-tone={view.debtCents > 0 ? "negative" : "positive"}>
+                {formatCents(view.debtCents)} total debt
+              </span>
+            }
+            eyebrow="Term and installment debts"
+          >
+            {view.termDebts.length === 0 ? (
+              <p className="hq-note" data-tone="positive">
+                No active term debt. Event payment plans will appear here as soon as you confirm them.
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: "0.625rem" }}>
+                {view.termDebts.map((debt) => (
+                  <div
+                    key={debt.id}
+                    style={{
+                      display: "grid",
+                      gap: "0.25rem",
+                      gridTemplateColumns: "minmax(0, 1fr) auto",
+                      padding: "0.625rem 0.75rem",
+                      borderRadius: 12,
+                      background: "var(--hq-stage)",
+                    }}
+                  >
+                    <div>
+                      <div style={{ font: "800 0.8125rem var(--hq-display)", color: "var(--hq-ink)" }}>
+                        {termDebtLabel(debt)}
+                      </div>
+                      <div style={{ font: "600 0.6875rem var(--hq-body-font)", color: "var(--hq-muted)" }}>
+                        {formatPpmPercent(debt.annualInterestRatePpm, 1)} APR · {debt.remainingTermMonths} {debt.remainingTermMonths === 1 ? "month" : "months"} remaining
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ font: "800 0.875rem var(--hq-display)", color: "var(--hq-red)" }}>
+                        {formatCents(debt.principalCents)}
+                      </div>
+                      <div style={{ font: "600 0.6875rem var(--hq-body-font)", color: "var(--hq-muted)" }}>
+                        {formatCents(debt.minimumPaymentCents)}/mo minimum
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </HqCard>
+
+          <HqCard
+            aside={
               <span className="hq-chip" data-tone="negative">
                 {apr}% APR · scenario credit policy
               </span>
             }
-            eyebrow="Revolving balance"
+            eyebrow="Revolving credit balance"
           >
             <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
               <div className="hq-figure" data-tone="debt">
@@ -160,7 +208,7 @@ export function DebtScreen({
             </p>
           </HqCard>
 
-          <HqCard eyebrow={`Payoff race · ${formatCents(balance)} balance`}>
+          <HqCard eyebrow={`Revolving payoff race · ${formatCents(balance)} balance`}>
             {balance <= 0 ? (
               <p className="hq-note" data-tone="positive">
                 No revolving balance. Debtzilla has nothing to feed on.
@@ -210,6 +258,19 @@ export function DebtScreen({
     </div>
   );
 }
+
+function termDebtLabel(debt: HqViewTermDebt): string {
+  switch (debt.kind) {
+    case "mortgage": return "Mortgage";
+    case "student_loan": return "Student loan";
+    case "auto_loan": return "Auto loan";
+    case "personal_loan": return debt.id.startsWith("debt.event.")
+      ? "Event installment plan"
+      : "Personal loan";
+  }
+}
+
+type HqViewTermDebt = ScreenProps["view"]["termDebts"][number];
 
 type MiniStatProps = Readonly<{
   label: string;

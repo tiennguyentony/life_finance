@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { currentRunState } from "@/application/game/__tests__/run-state.fixture";
 import { projectRunView } from "@/application/game/run-view";
 import type { RunViewWire } from "@/contracts/api/contracts";
+import { interactiveEventAdvicePrompt } from "@/features/events/interactive-event-decision";
 
 import { boardMonthResult, boardViewFromRun } from "../board-model";
 import { BoardHud } from "../hud";
@@ -12,6 +13,16 @@ import { PlanningPanel } from "../planning-panel";
 import { plansForDestination } from "../plan-catalog";
 
 describe("board planning surfaces", () => {
+  it("keeps a typed priority inside the bounded advice request", () => {
+    expect(interactiveEventAdvicePrompt("  protect my cash  ")).toContain(
+      "My priority or concern is: protect my cash.",
+    );
+    expect(interactiveEventAdvicePrompt("")).toBe(
+      "What would you recommend for my current financial situation, and why?",
+    );
+    expect(interactiveEventAdvicePrompt("x".repeat(500)).length).toBeLessThanOrEqual(500);
+  });
+
   it("renders selectable plan previews with their certainty semantics", () => {
     const run = projectRunView(currentRunState());
     const markup = renderToStaticMarkup(
@@ -328,10 +339,14 @@ describe("board planning surfaces", () => {
       />,
     );
 
-    expect(markup).toContain("What do you do?");
+    expect(markup).toContain("How do you want to handle this event?");
     expect(markup).toContain("Type your own response in English");
     expect(markup).toContain("Make this decision");
-    expect(markup).toContain("Need a hint?");
+    expect(markup).toContain("What you can decide");
+    expect(markup).toContain("Finance it");
+    expect(markup).not.toContain("Use coverage");
+    expect(markup).toContain("Ask Sprout what fits my finances");
+    expect(markup).not.toContain("Need a hint?");
     expect(markup).not.toContain("Build your answer");
     expect(markup).not.toContain("Try “Finance it”");
     expect(markup).not.toContain("Try “Use coverage”");

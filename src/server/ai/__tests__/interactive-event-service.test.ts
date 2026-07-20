@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RunView } from "@/application/game/run-view";
 
+import type { EventInterpreterRequest } from "../contracts";
 import { InteractiveEventService } from "../interactive-event-service";
 
 const emptyPreview = Object.freeze({
@@ -24,6 +25,17 @@ function runWithEvent(
     runId: "run.interactive-test",
     revision: 7,
     currentMonth: "2026-09",
+    finances: {
+      cashCents: 600_000,
+      creditLimitCents: 1_000_000,
+      creditUsedCents: 200_000,
+      netWorthCents: 1_400_000,
+      monthlyObligations: { totalRequiredCashCents: 300_000 },
+    },
+    income: { annualGrossSalaryCents: null },
+    preparedness: { band: "exposed", scorePpm: 420_000 },
+    goal: { progressPpm: 80_000, targetCents: 90_000_000 },
+    benefits: null,
     pendingInteraction: {
       kind: "event",
       eventId: "event.interactive-test",
@@ -35,7 +47,11 @@ function runWithEvent(
           label: "Maintain current spending",
           description: "Keeping every commitment makes the full income gap payable.",
           enabled: true,
-          preview: emptyPreview,
+          preview: {
+            ...emptyPreview,
+            immediateCashChangeCents: -50_000,
+            summary: "Pay $500.00 now.",
+          },
         },
         {
           id: "emergency_budget",
@@ -77,6 +93,63 @@ function runWithChoices(
   } as unknown as RunView;
 }
 
+function runWithSocialCommitment(): RunView {
+  const run = runWithEvent("personal.social_commitment");
+  if (run.pendingInteraction.kind !== "event") throw new Error("test event missing");
+  return {
+    ...run,
+    pendingInteraction: {
+      ...run.pendingInteraction,
+      choiceIds: [
+        "pay_commitment_now",
+        "spread_commitment_cost",
+        "decline_commitment",
+      ],
+      choices: [
+        {
+          id: "pay_commitment_now",
+          label: "Pay for the commitment now",
+          description: "Pay $433.05 now. Happiness improves.",
+          enabled: true,
+          preview: {
+            ...emptyPreview,
+            immediateCashChangeCents: -43_305,
+            wellbeingChangesPpm: { happiness: 40_000, burnout: 0 },
+          },
+        },
+        {
+          id: "spread_commitment_cost",
+          label: "Spread the cost over three months",
+          description: "Pay $173.22 per month for three months. Happiness improves.",
+          enabled: true,
+          preview: {
+            ...emptyPreview,
+            recurringCashFlows: [{
+              direction: "expense",
+              monthlyCents: 17_322,
+              durationMonths: 3,
+              totalCents: 51_966,
+            }],
+            wellbeingChangesPpm: { happiness: 40_000, burnout: 0 },
+          },
+        },
+        {
+          id: "decline_commitment",
+          label: "Decline the commitment",
+          description: "Happiness declines.",
+          enabled: true,
+          preview: {
+            ...emptyPreview,
+            wellbeingChangesPpm: { happiness: -50_000, burnout: 0 },
+          },
+        },
+      ],
+      headline: "A meaningful social commitment strains the monthly plan",
+      body: "Paying, financing, and declining each protect a different part of your life.",
+    },
+  } as unknown as RunView;
+}
+
 const request = Object.freeze({
   eventId: "event.interactive-test",
   expectedRevision: 7,
@@ -85,6 +158,36 @@ const request = Object.freeze({
 
 function playerMessage(content: string) {
   return [{ role: "player" as const, content }];
+}
+
+function mappedModelResponse(choiceId: string, confidencePpm: number) {
+  return {
+    status: "mapped" as const,
+    choiceId,
+    recommendedChoiceId: null,
+    confidencePpm,
+    reasonCode: "choice_match" as const,
+    assistantMessage: "That action matches the plan you described.",
+    followUpQuestion: null,
+    recommendationReason: null,
+    tradeoff: null,
+    citedEvidenceIds: [],
+  };
+}
+
+function ambiguousModelResponse(followUpQuestion: string, confidencePpm: number) {
+  return {
+    status: "ambiguous" as const,
+    choiceId: null,
+    recommendedChoiceId: null,
+    confidencePpm,
+    reasonCode: "multiple_choices" as const,
+    assistantMessage: "I can help, but the action is not concrete yet.",
+    followUpQuestion,
+    recommendationReason: null,
+    tradeoff: null,
+    citedEvidenceIds: [],
+  };
 }
 
 describe("InteractiveEventService", () => {
@@ -221,15 +324,9 @@ describe("InteractiveEventService", () => {
     });
   });
 
-  it("uses the model only when deterministic wording cannot map the answer", async () => {
+  it("asks for confirmation when only the model can map the answer", async () => {
     const service = new InteractiveEventService({
-      generate: async () => ({
-        status: "mapped",
-        choiceId: "emergency_budget",
-        confidencePpm: 930_000,
-        reasonCode: "choice_match",
-        followUpQuestion: null,
-      }),
+      generate: async () => mappedModelResponse("emergency_budget", 930_000),
       responseSource: () => "hosted_oss",
     });
     const result = await service.interpret(runWithEvent(), {
@@ -238,22 +335,122 @@ describe("InteractiveEventService", () => {
     });
 
     expect(result).toMatchObject({
-      status: "mapped",
+      status: "confirmation",
       source: "hosted_oss",
       choiceId: "emergency_budget",
       confidencePpm: 930_000,
     });
   });
 
-  it("asks instead of auto-committing a medium-confidence local inference", async () => {
+  it("asks the model for grounded advice without selecting or applying the recommendation", async () => {
+    let receivedRequest: EventInterpreterRequest | null = null;
     const service = new InteractiveEventService({
-      generate: async () => ({
-        status: "mapped",
+      generate: async (generatedRequest) => {
+        receivedRequest = generatedRequest;
+        return {
+          status: "recommended",
+          choiceId: null,
+          recommendedChoiceId: "emergency_budget",
+          confidencePpm: 920_000,
+          reasonCode: "personalized_recommendation",
+          assistantMessage: "I would activate the emergency budget because two months of cash needs room to breathe.",
+          followUpQuestion: null,
+          recommendationReason: "Your cash runway is only 2.0 months while required bills continue without salary.",
+          tradeoff: "You preserve cash, but accept near-term spending cuts.",
+          citedEvidenceIds: ["cash_runway", "gross_income"],
+        };
+      },
+      responseSource: () => "hosted_oss",
+    });
+
+    const result = await service.interpret(runWithEvent(), {
+      ...request,
+      interactionMode: "recommend",
+      conversation: playerMessage("What would you recommend for me?"),
+    });
+
+    expect(receivedRequest).toMatchObject({
+      interactionMode: "recommend",
+      recommendationDirective: {
         choiceId: "emergency_budget",
-        confidencePpm: 800_000,
-        reasonCode: "choice_match",
-        followUpQuestion: null,
-      }),
+        priority: "protect_cash",
+        requiredEvidenceIds: ["recommendation_priority", "recommended_choice_outcome"],
+      },
+      evidence: expect.arrayContaining([
+        expect.objectContaining({ id: "cash_runway", value: "2.0 months" }),
+        expect.objectContaining({ id: "gross_income", value: "No current salary" }),
+      ]),
+    });
+    expect(result).toMatchObject({
+      status: "recommendation",
+      source: "hosted_oss",
+      choiceId: null,
+      recommendation: {
+        choiceId: "emergency_budget",
+        citedEvidenceIds: ["recommendation_priority", "recommended_choice_outcome"],
+      },
+    });
+    expect(result.sproutReaction).toContain("two months of cash");
+  });
+
+  it("preserves 'my cash' as a constraint throughout the reported three-turn conversation", async () => {
+    let receivedRequest: EventInterpreterRequest | null = null;
+    const service = new InteractiveEventService({
+      generate: async (generatedRequest) => {
+        receivedRequest = generatedRequest;
+        const directive = generatedRequest.recommendationDirective;
+        if (directive === null) throw new Error("recommendation directive missing");
+        return {
+          status: "recommended",
+          choiceId: null,
+          recommendedChoiceId: directive.choiceId,
+          confidencePpm: 940_000,
+          reasonCode: "personalized_recommendation",
+          assistantMessage: "I recommend declining the commitment to protect your available cash.",
+          followUpQuestion: null,
+          recommendationReason: directive.rationale,
+          tradeoff: directive.tradeoff,
+          citedEvidenceIds: [...directive.requiredEvidenceIds],
+        };
+      },
+      responseSource: () => "local_oss",
+    });
+
+    const result = await service.interpret(runWithSocialCommitment(), {
+      eventId: "event.interactive-test",
+      expectedRevision: 7,
+      interactionMode: "recommend",
+      conversation: [
+        { role: "player", content: "I wanto to?" },
+        { role: "sprout", content: "What single action would you take first, and what financial priority are you protecting?" },
+        { role: "player", content: "my cash" },
+        { role: "sprout", content: "Be specific: what will you do now to handle this situation?" },
+        { role: "player", content: "What would you recommend for my current financial situation, and why?" },
+      ],
+    });
+
+    expect(receivedRequest).toMatchObject({
+      recommendationDirective: {
+        choiceId: "decline_commitment",
+        priority: "protect_cash",
+      },
+    });
+    expect(result).toMatchObject({
+      status: "recommendation",
+      systemMessage: "Sprout recommends: Decline the commitment",
+      recommendation: {
+        choiceId: "decline_commitment",
+        tradeoff: "The deterministic preview shows that happiness declines.",
+      },
+    });
+    expect(`${result.education} ${result.recommendation?.tradeoff}`).not.toMatch(
+      /late fee|penalt|interest/iu,
+    );
+  });
+
+  it("offers confirmation instead of auto-committing a medium-confidence local inference", async () => {
+    const service = new InteractiveEventService({
+      generate: async () => mappedModelResponse("emergency_budget", 800_000),
       responseSource: () => "local_oss",
     });
     const result = await service.interpret(runWithEvent(), {
@@ -262,9 +459,9 @@ describe("InteractiveEventService", () => {
     });
 
     expect(result).toMatchObject({
-      status: "question",
+      status: "confirmation",
       source: "local_oss",
-      choiceId: null,
+      choiceId: "emergency_budget",
       confidencePpm: 800_000,
     });
   });
@@ -291,13 +488,7 @@ describe("InteractiveEventService", () => {
 
   it("rejects unsupported text after the third player turn", async () => {
     const service = new InteractiveEventService({
-      generate: async () => ({
-        status: "mapped",
-        choiceId: "maintain_lifestyle",
-        confidencePpm: 80_000,
-        reasonCode: "choice_match",
-        followUpQuestion: null,
-      }),
+      generate: async () => mappedModelResponse("maintain_lifestyle", 80_000),
     });
     const result = await service.interpret(runWithEvent(), {
       ...request,
@@ -318,27 +509,18 @@ describe("InteractiveEventService", () => {
     });
   });
 
-  it("continues an ambiguous conversation, then maps the combined intent", async () => {
+  it("continues an ambiguous conversation, then proposes the combined intent for confirmation", async () => {
     let requestCount = 0;
     const service = new InteractiveEventService({
       generate: async () => {
         requestCount += 1;
         if (requestCount === 1) {
-          return {
-            status: "ambiguous",
-            choiceId: null,
-            confidencePpm: 420_000,
-            reasonCode: "multiple_choices",
-            followUpQuestion: "What single action would best protect your finances?",
-          };
+          return ambiguousModelResponse(
+            "What single action would best protect your finances?",
+            420_000,
+          );
         }
-        return {
-          status: "mapped",
-          choiceId: "emergency_budget",
-          confidencePpm: 910_000,
-          reasonCode: "choice_match",
-          followUpQuestion: null,
-        };
+        return mappedModelResponse("emergency_budget", 910_000);
       },
       responseSource: () => "hosted_oss",
     });
@@ -364,22 +546,62 @@ describe("InteractiveEventService", () => {
       ],
     });
     expect(second).toMatchObject({
-      status: "mapped",
+      status: "confirmation",
       choiceId: "emergency_budget",
       playerTurn: 2,
       remainingPlayerTurns: 1,
     });
   });
 
+  it("preserves an event-specific model question that names supported directions", async () => {
+    const service = new InteractiveEventService({
+      generate: async () => ambiguousModelResponse(
+        "Which matters more here: maintaining current spending or activating an emergency budget?",
+        480_000,
+      ),
+      responseSource: () => "hosted_oss",
+    });
+
+    const result = await service.interpret(runWithEvent(), {
+      ...request,
+      conversation: playerMessage("I want to be careful."),
+    });
+
+    expect(result).toMatchObject({
+      status: "question",
+      source: "hosted_oss",
+      systemMessage: "Which matters more here: maintaining current spending or activating an emergency budget?",
+    });
+  });
+
+  it("lets the latest player correction override an earlier contradictory action", async () => {
+    const service = new InteractiveEventService(null);
+    const result = await service.interpret(runWithChoices([
+      { id: "medical_payment_plan", label: "Use a four-month payment plan" },
+      { id: "pay_uninsured", label: "Pay without coverage" },
+    ]), {
+      ...request,
+      conversation: [
+        { role: "player", content: "Use a four-month payment plan." },
+        { role: "sprout", content: "What should I lock in?" },
+        { role: "player", content: "Actually, pay without insurance instead." },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: "mapped",
+      source: "deterministic_fast_path",
+      choiceId: "pay_uninsured",
+      playerTurn: 2,
+    });
+  });
+
   it("replaces an AI-generated option menu with a neutral follow-up", async () => {
     const service = new InteractiveEventService({
-      generate: async () => ({
-        status: "ambiguous",
-        choiceId: null,
-        confidencePpm: 450_000,
-        reasonCode: "multiple_choices",
-        followUpQuestion: "Would you keep spending or activate the emergency budget?",
-      }),
+      generate: async () => ambiguousModelResponse(
+        "Would you keep spending or activate the emergency budget?",
+        450_000,
+      ),
     });
 
     const result = await service.interpret(runWithEvent(), {
@@ -396,13 +618,10 @@ describe("InteractiveEventService", () => {
 
   it("replaces a yes-or-no hint toward one hidden choice", async () => {
     const service = new InteractiveEventService({
-      generate: async () => ({
-        status: "ambiguous",
-        choiceId: null,
-        confidencePpm: 450_000,
-        reasonCode: "multiple_choices",
-        followUpQuestion: "Are you considering maintaining your current spending?",
-      }),
+      generate: async () => ambiguousModelResponse(
+        "Are you considering maintaining your current spending?",
+        450_000,
+      ),
     });
 
     const result = await service.interpret(runWithEvent(), {

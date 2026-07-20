@@ -120,9 +120,11 @@ function responseImpact(
       addRange(cash, multiply(magnitude, effect.durationMonths));
     } else if (
       effect.type === "temporary_expense" ||
-      effect.type === "recurring_expense"
+      effect.type === "recurring_expense" ||
+      effect.type === "financed_expense"
     ) {
       addRange(cash, negate(multiply(magnitude, effect.durationMonths)));
+      if (effect.type === "financed_expense") addRange(obligations, magnitude);
     } else if (effect.type === "insurance_claim") {
       addRange(cash, { minimum: -magnitude.maximum, maximum: 0 });
     } else if (effect.type === "required_obligation_delta") {

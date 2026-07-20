@@ -46,6 +46,14 @@ const eventResponsePreviewSchema = z
         totalCents: centsSchema.nonnegative(),
       })
       .strict()),
+    financing: z.array(z
+      .object({
+        principalCents: centsSchema.nonnegative(),
+        monthlyPaymentCents: centsSchema.nonnegative(),
+        termMonths: z.number().int().min(1).max(120),
+        annualInterestRatePpm: rateSchema,
+      })
+      .strict()).optional(),
     annualLivingCostChangeCents: centsSchema,
     wellbeingChangesPpm: z
       .object({ happiness: centsSchema, burnout: centsSchema })
@@ -240,12 +248,28 @@ export const runViewSchema = z
             additionalInsurancePremiumsCents: centsSchema.nonnegative(),
             termDebtMinimumsCents: centsSchema.nonnegative(),
             revolvingCreditMinimumCents: centsSchema.nonnegative(),
+            eventExpensesDueCents: centsSchema.nonnegative(),
+            eventIncomeDueCents: centsSchema.nonnegative(),
             otherRequiredCents: centsSchema.nonnegative(),
             totalRequiredCashCents: centsSchema.nonnegative(),
           })
           .strict(),
         investableAssetsCents: centsSchema,
         netWorthCents: centsSchema,
+      })
+      .strict(),
+    debts: z
+      .object({
+        termDebts: z.array(z
+          .object({
+            id: identifierSchema,
+            kind: z.enum(["mortgage", "student_loan", "auto_loan", "personal_loan"]),
+            principalCents: centsSchema.positive(),
+            annualInterestRatePpm: rateSchema,
+            minimumPaymentCents: centsSchema.positive(),
+            remainingTermMonths: z.number().int().min(1).max(1_200),
+          })
+          .strict()),
       })
       .strict(),
     income: z
@@ -489,7 +513,9 @@ export const interpretEventRequestSchema = z
   .object({
     eventId: identifierSchema,
     expectedRevision: z.number().int().min(0),
-    /** Explicit engine-owned choice selected from the optional hint menu. */
+    /** Ask the model for advice without applying any event choice. */
+    interactionMode: z.enum(["interpret", "recommend"]).optional(),
+    /** Backward-compatible explicit confirmation of an engine-owned choice. */
     selectedChoiceId: identifierSchema.optional(),
     conversation: z
       .array(z
@@ -527,12 +553,19 @@ export const interpretEventRequestSchema = z
         path: ["conversation"],
       });
     }
+    if (value.interactionMode === "recommend" && value.selectedChoiceId !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "recommend mode cannot also confirm an explicit choice",
+        path: ["selectedChoiceId"],
+      });
+    }
   });
 
 export const interpretEventResponseSchema = z
   .object({
     version: z.literal("interactive-event-interpretation-v1"),
-    status: z.enum(["mapped", "rejected", "question"]),
+    status: z.enum(["mapped", "rejected", "question", "confirmation", "recommendation"]),
     source: z.enum([
       "deterministic_fast_path",
       "openai",
@@ -546,10 +579,62 @@ export const interpretEventResponseSchema = z
     systemMessage: z.string().trim().min(1).max(500),
     sproutReaction: z.string().trim().min(1).max(500),
     education: z.string().trim().min(1).max(1_000),
+    recommendation: z
+      .object({
+        choiceId: identifierSchema,
+        reason: z.string().trim().min(1).max(500),
+        tradeoff: z.string().trim().min(1).max(500),
+        citedEvidenceIds: z.array(identifierSchema).min(1).max(4),
+      })
+      .strict()
+      .nullable(),
     playerTurn: z.number().int().min(1).max(3),
     remainingPlayerTurns: z.number().int().min(0).max(2),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const hasChoice = value.choiceId !== null;
+    const hasRecommendation = value.recommendation !== null;
+    if ((value.status === "mapped" || value.status === "confirmation") && !hasChoice) {
+      context.addIssue({
+        code: "custom",
+        message: `${value.status} requires one engine-owned choice`,
+        path: ["choiceId"],
+      });
+    }
+    if (
+      value.status !== "mapped" &&
+      value.status !== "confirmation" &&
+      hasChoice
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: `${value.status} cannot contain an applied or proposed choice`,
+        path: ["choiceId"],
+      });
+    }
+    if (value.status === "recommendation" && !hasRecommendation) {
+      context.addIssue({
+        code: "custom",
+        message: "recommendation status requires grounded recommendation details",
+        path: ["recommendation"],
+      });
+    }
+    if (value.status !== "recommendation" && hasRecommendation) {
+      context.addIssue({
+        code: "custom",
+        message: "only recommendation status may contain recommendation details",
+        path: ["recommendation"],
+      });
+    }
+    if (value.remainingPlayerTurns !== 3 - value.playerTurn) {
+      context.addIssue({
+        code: "custom",
+        message: "remainingPlayerTurns must match the bounded conversation budget",
+        path: ["remainingPlayerTurns"],
+      });
+    }
+  });
 
 const characterBanterEvidenceSchema = z
   .object({

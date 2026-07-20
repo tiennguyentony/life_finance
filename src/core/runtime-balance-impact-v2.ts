@@ -167,6 +167,31 @@ function responseImpact(
       );
     }
   }
+  const financedPrincipal = resolution.originatedDebts.reduce(
+    (total, debt) => safeAdd(
+      total,
+      debt.principalCents,
+      "runtime balance financed principal",
+    ),
+    0,
+  );
+  const financedFirstMonthPayment = resolution.originatedDebts.reduce(
+    (total, debt) => safeAdd(
+      total,
+      debt.minimumPaymentCents,
+      "runtime balance financed first-month payment",
+    ),
+    0,
+  );
+  temporaryCost = safeAdd(
+    temporaryCost,
+    financedPrincipal,
+    "runtime balance temporary financed cost",
+  );
+  temporaryCostDurationMonths = Math.max(
+    temporaryCostDurationMonths,
+    ...resolution.originatedDebts.map(({ termMonths }) => termMonths),
+  );
   const annualLivingCostIncrease =
     resolution.finances.annualLivingCostCents -
       state.finances.annualLivingCostCents;
@@ -183,7 +208,9 @@ function responseImpact(
     0,
   );
   const independentMonthlyObligationDelta =
-    monthlyObligationIncrease - livingCostMonthlyObligationDelta;
+    monthlyObligationIncrease -
+    livingCostMonthlyObligationDelta -
+    financedFirstMonthPayment;
   const projectedPlanCost = Math.max(
     0,
     safeAdd(
@@ -214,8 +241,19 @@ function responseImpact(
   );
   let negativeCashFlowDurationMonths = 0;
   for (let monthOffset = 0; monthOffset < IMPACT_HORIZON_MONTHS; monthOffset += 1) {
-    let eventExpense = firstMonthPlanCost;
+    let eventExpense = Math.max(
+      0,
+      firstMonthPlanCost - financedFirstMonthPayment,
+    );
     let eventIncome = 0;
+    for (const debt of resolution.originatedDebts) {
+      if (monthOffset >= debt.termMonths) continue;
+      eventExpense = safeAdd(
+        eventExpense,
+        debt.minimumPaymentCents,
+        "runtime balance monthly financed payment",
+      );
+    }
     for (const flow of resolution.scheduledCashFlows) {
       if (monthOffset >= flow.durationMonths) continue;
       if (flow.kind === "temporary_income") {

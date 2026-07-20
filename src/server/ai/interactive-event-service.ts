@@ -9,6 +9,10 @@ import {
   type EventInterpreterRequest,
   type EventInterpreterResponse,
 } from "./contracts";
+import {
+  buildEventRecommendationPolicy,
+  type EventRecommendationPolicy,
+} from "./event-recommendation-policy";
 
 export const INTERACTIVE_EVENT_INTERPRETER_VERSION =
   "interactive-event-interpretation-v1" as const;
@@ -16,6 +20,12 @@ export const INTERACTIVE_EVENT_INTERPRETER_VERSION =
 const DEFAULT_TIMEOUT_MS = 1_500;
 const MAX_LATENCY_MS = 30_000;
 const MAXIMUM_PLAYER_TURNS = 3;
+const USD = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
 const NEUTRAL_FOLLOW_UP = Object.freeze([
   "What single action would you take first, and what financial priority are you protecting?",
   "Be specific: what will you do now to handle this situation?",
@@ -147,6 +157,96 @@ function normalize(value: string): string {
     .trim();
 }
 
+function formatMoney(cents: number): string {
+  return USD.format(cents / 100);
+}
+
+function formatPercent(ppm: number): string {
+  return `${Math.round(ppm / 10_000)}%`;
+}
+
+function eventAdviceEvidence(run: RunView): EventInterpreterRequest["evidence"] {
+  const monthlyRequired = run.finances.monthlyObligations.totalRequiredCashCents;
+  const runwayTenths = monthlyRequired <= 0
+    ? 0
+    : Math.max(0, Math.floor((run.finances.cashCents * 10) / monthlyRequired));
+  const creditUsagePpm = run.finances.creditLimitCents <= 0
+    ? 0
+    : Math.min(
+        1_000_000,
+        Math.round(
+          (run.finances.creditUsedCents * 1_000_000) / run.finances.creditLimitCents,
+        ),
+      );
+  const healthCoverage = run.benefits?.healthPlan?.label ?? "No active health plan";
+  const additionalCoverage = run.benefits?.insuranceCoverages.length
+    ? run.benefits.insuranceCoverages.map(({ label }) => label).join(", ")
+    : "No additional insurance coverage";
+
+  return [
+    {
+      id: "cash_balance",
+      label: "Available cash",
+      value: formatMoney(run.finances.cashCents),
+    },
+    {
+      id: "monthly_required_cash",
+      label: "Required cash each month",
+      value: formatMoney(monthlyRequired),
+    },
+    {
+      id: "cash_runway",
+      label: "Cash runway",
+      value: monthlyRequired <= 0
+        ? "No required monthly cash"
+        : `${Math.floor(runwayTenths / 10)}.${runwayTenths % 10} months`,
+    },
+    {
+      id: "revolving_credit",
+      label: "Revolving credit",
+      value: `${formatMoney(run.finances.creditUsedCents)} used of ${formatMoney(run.finances.creditLimitCents)} (${formatPercent(creditUsagePpm)} used)`,
+    },
+    {
+      id: "net_worth",
+      label: "Net worth",
+      value: formatMoney(run.finances.netWorthCents),
+    },
+    {
+      id: "gross_income",
+      label: "Annual gross income",
+      value: run.income.annualGrossSalaryCents === null
+        ? "No current salary"
+        : formatMoney(run.income.annualGrossSalaryCents),
+    },
+    {
+      id: "preparedness",
+      label: "Financial preparedness",
+      value: `${run.preparedness.band} (${formatPercent(run.preparedness.scorePpm)})`,
+    },
+    {
+      id: "financial_independence",
+      label: "Financial-independence progress",
+      value: `${formatPercent(run.goal.progressPpm)} toward ${formatMoney(run.goal.targetCents)}`,
+    },
+    {
+      id: "health_coverage",
+      label: "Health coverage",
+      value: healthCoverage,
+    },
+    {
+      id: "additional_coverage",
+      label: "Additional insurance",
+      value: additionalCoverage,
+    },
+  ];
+}
+
+function asksForAdvice(value: string): boolean {
+  const text = normalize(value);
+  return /\b(?:recommend|recommendation|advise|advice|help me choose|best choice|best option|what should i|which should i|what would you do)\b/u
+    .test(text);
+}
+
 function tokens(value: string): ReadonlySet<string> {
   return new Set(
     normalize(value)
@@ -230,6 +330,7 @@ function unsafeResponse(
     systemMessage: "Rejected. Illegal actions are outside this financial simulation.",
     sproutReaction: "Prison housing is not an emergency fund.",
     education: "A resilient plan must be legal, repeatable, and under your control.",
+    recommendation: null,
     ...turnEvidence(playerTurn),
   }, startedAt);
 }
@@ -240,6 +341,9 @@ function questionResponse(
   confidencePpm: number,
   source: InterpretEventResponse["source"],
   startedAt: number,
+  coaching?: Readonly<{
+    assistantMessage: string;
+  }>,
 ): InterpretEventResponse {
   return fixedResponse({
     status: "question",
@@ -247,8 +351,10 @@ function questionResponse(
     choiceId: null,
     confidencePpm,
     systemMessage: question,
-    sproutReaction: "I need one more detail before this becomes a real decision.",
+    sproutReaction: coaching?.assistantMessage ??
+      "I need one more detail before this becomes a real decision.",
     education: "No financial consequence has been revealed or applied while Sprout is still clarifying your intent.",
+    recommendation: null,
     ...turnEvidence(playerTurn),
   }, startedAt);
 }
@@ -266,6 +372,7 @@ function rejectedResponse(
     systemMessage: "No supported financial decision was identified after three answers.",
     sproutReaction: "The idea is still a cloud. The ledger needs something with edges.",
     education: "Start again with one concrete action involving the expense, your coverage, or your spending plan.",
+    recommendation: null,
     ...turnEvidence(playerTurn),
   }, startedAt);
 }
@@ -291,52 +398,20 @@ function contextualFollowUp(playerTurn: number, latestPlayerText: string): strin
   return neutralFollowUp(playerTurn);
 }
 
-const QUESTION_STOP_WORDS = new Set([
-  "a", "an", "and", "are", "for", "how", "is", "of", "or", "the", "to",
-  "what", "will", "would", "you", "your",
-]);
-
-function questionTokens(value: string): ReadonlySet<string> {
-  return new Set(normalize(value).split(" ")
-    .map((token) => token
-      .replace(/ing$/u, "")
-      .replace(/ed$/u, "")
-      .replace(/s$/u, ""))
-    .filter((token) => token.length >= 3 && !QUESTION_STOP_WORDS.has(token)));
-}
-
-function mentionsChoiceDirection(event: PendingEvent, question: string): boolean {
-  const supplied = questionTokens(question);
-  return event.choices.some((choice) => {
-    const hidden = questionTokens(`${choice.id.replaceAll("_", " ")} ${choice.label}`);
-    let overlap = 0;
-    for (const token of hidden) {
-      if (supplied.has(token)) overlap += 1;
-    }
-    return overlap >= 2;
-  });
-}
-
 function safeFollowUpQuestion(
   candidate: string | null,
   playerTurn: number,
-  event: PendingEvent,
   latestPlayerText: string,
 ): string {
   const fallback = contextualFollowUp(playerTurn, latestPlayerText);
   if (candidate === null) return fallback;
   const normalized = normalize(candidate);
-  const presentsMenu = /\b(?:or|versus|vs)\b/u.test(normalized);
   const exposesAmount = /[$%0-9]/u.test(candidate);
-  const resemblesList = /[,;:].*[,;]/u.test(candidate);
   const isQuestion = candidate.trim().endsWith("?");
-  const isOpenQuestion = /^(?:what|how)\b/u.test(normalized);
-  return presentsMenu ||
-      exposesAmount ||
-      resemblesList ||
+  const isOpenQuestion = /^(?:what|how|which)\b/u.test(normalized);
+  return exposesAmount ||
       !isQuestion ||
-      !isOpenQuestion ||
-      mentionsChoiceDirection(event, candidate)
+      !isOpenQuestion
     ? fallback
     : candidate;
 }
@@ -359,6 +434,7 @@ function mappedResponse(
       systemMessage: "That option is not currently available. Try a different approach.",
       sproutReaction: "The plan needs one more draft.",
       education: "Available decisions depend on your current coverage, cash, debt, and event state.",
+      recommendation: null,
       ...turnEvidence(playerTurn),
     }, startedAt);
   }
@@ -375,14 +451,94 @@ function mappedResponse(
       : "Bold choice. Your cash balance has requested a private meeting.",
     education: choice.description ||
       "The simulation will apply the engine-owned consequence if you commit this decision.",
+    recommendation: null,
     ...turnEvidence(playerTurn),
   }, startedAt);
 }
 
-function minimumModelConfidence(
+function confirmationResponse(
+  event: PendingEvent,
+  generated: EventInterpreterResponse,
+  source: InterpretEventResponse["source"],
+  playerTurn: number,
+  startedAt: number,
+): InterpretEventResponse {
+  const choice = event.choices.find(
+    ({ id, enabled }) => enabled && id === generated.choiceId,
+  );
+  if (choice === undefined) {
+    return rejectedResponse(playerTurn, "deterministic_fallback", startedAt);
+  }
+  return fixedResponse({
+    status: "confirmation",
+    source,
+    choiceId: choice.id,
+    confidencePpm: generated.confidencePpm,
+    systemMessage: `I understood your answer as “${choice.label}.” Confirm it, or tell me what I misunderstood.`,
+    sproutReaction: generated.assistantMessage,
+    education: "No financial consequence has been applied. This confirmation protects your intent before the deterministic engine runs.",
+    recommendation: null,
+    ...turnEvidence(playerTurn),
+  }, startedAt);
+}
+
+function recommendationResponse(
+  event: PendingEvent,
+  generated: EventInterpreterResponse,
+  policy: EventRecommendationPolicy,
+  source: InterpretEventResponse["source"],
+  playerTurn: number,
+  startedAt: number,
+): InterpretEventResponse {
+  const choice = event.choices.find(
+    ({ id, enabled }) => enabled && id === generated.recommendedChoiceId,
+  );
+  if (
+    choice === undefined ||
+    choice.id !== policy.choiceId ||
+    generated.recommendedChoiceId !== policy.choiceId
+  ) {
+    return adviceUnavailableResponse(playerTurn, startedAt);
+  }
+  return fixedResponse({
+    status: "recommendation",
+    source,
+    choiceId: null,
+    confidencePpm: generated.confidencePpm,
+    systemMessage: `Sprout recommends: ${choice.label}`,
+    sproutReaction: generated.assistantMessage,
+    education: policy.rationale,
+    recommendation: Object.freeze({
+      choiceId: choice.id,
+      reason: policy.rationale,
+      tradeoff: policy.tradeoff,
+      citedEvidenceIds: [...policy.requiredEvidenceIds],
+    }),
+    ...turnEvidence(playerTurn),
+  }, startedAt);
+}
+
+function adviceUnavailableResponse(
+  playerTurn: number,
+  startedAt: number,
+): InterpretEventResponse {
+  return fixedResponse({
+    status: "rejected",
+    source: "deterministic_fallback",
+    choiceId: null,
+    confidencePpm: 0,
+    systemMessage: "Sprout could not generate grounded advice right now.",
+    sproutReaction: "I would rather admit the signal is down than invent a financial prophecy.",
+    education: "No choice was selected or applied. You can retry the advice or make your own decision.",
+    recommendation: null,
+    ...turnEvidence(playerTurn),
+  }, startedAt);
+}
+
+function minimumProposalConfidence(
   source: InterpretEventResponse["source"],
 ): number {
-  return source === "local_oss" ? 900_000 : 650_000;
+  return source === "local_oss" ? 600_000 : 550_000;
 }
 
 function timeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
@@ -402,6 +558,7 @@ export class InteractiveEventService {
   constructor(
     private readonly client: InteractiveEventAiClient | null,
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
+    private readonly recommendationTimeoutMs = timeoutMs,
   ) {}
 
   async interpret(
@@ -409,6 +566,7 @@ export class InteractiveEventService {
     request: Readonly<{
       eventId: string;
       expectedRevision: number;
+      interactionMode?: "interpret" | "recommend";
       selectedChoiceId?: string;
       conversation: readonly Readonly<{
         role: "player" | "sprout";
@@ -432,11 +590,11 @@ export class InteractiveEventService {
       content: redactSensitiveText(content).text.trim(),
     }));
     const playerTurn = conversation.filter(({ role }) => role === "player").length;
-    const playerText = conversation
-      .filter(({ role }) => role === "player")
-      .map(({ content }) => content)
-      .join(" ");
     const latestPlayerText = conversation.at(-1)?.content ?? "";
+    const interactionMode = request.interactionMode === "recommend" ||
+        asksForAdvice(latestPlayerText)
+      ? "recommend"
+      : "interpret";
     if (
       playerTurn < 1 ||
       playerTurn > MAXIMUM_PLAYER_TURNS ||
@@ -449,9 +607,9 @@ export class InteractiveEventService {
     ) {
       throw new InteractiveEventError("EVENT_MISMATCH", "the event conversation is invalid");
     }
-    // The hint menu exposes only IDs already projected by the authoritative
-    // pending event. Validate and map the selected ID here so a hint click
-    // never needs an LLM and can never invent an engine action.
+    // An explicit choice confirmation may contain only an ID already projected
+    // by the authoritative pending event. It never needs an LLM and can never
+    // invent an engine action.
     if (request.selectedChoiceId !== undefined) {
       return mappedResponse(
         event,
@@ -462,11 +620,13 @@ export class InteractiveEventService {
         startedAt,
       );
     }
-    if (UNSAFE_PATTERNS.some((pattern) => pattern.test(normalize(playerText)))) {
+    if (UNSAFE_PATTERNS.some((pattern) => pattern.test(normalize(latestPlayerText)))) {
       return unsafeResponse(playerTurn, startedAt);
     }
-    const fast = fastChoiceMatch(event, playerText);
-    if (fast) {
+    const fast = interactionMode === "interpret"
+      ? fastChoiceMatch(event, latestPlayerText)
+      : null;
+    if (fast !== null) {
       return mappedResponse(
         event,
         fast.choiceId,
@@ -477,15 +637,34 @@ export class InteractiveEventService {
       );
     }
     if (this.client === null) {
+      if (interactionMode === "recommend") {
+        return adviceUnavailableResponse(playerTurn, startedAt);
+      }
       return this.fallback(playerTurn, latestPlayerText, startedAt);
     }
 
     try {
+      const policy = interactionMode === "recommend"
+        ? buildEventRecommendationPolicy(run, event, conversation)
+        : null;
+      const evidence = policy === null
+        ? []
+        : [...eventAdviceEvidence(run), ...policy.evidence];
       const generated = await timeout(this.client.generate({
         contractVersion: AI_CONTRACT_VERSION,
         privacyNoticeVersion: AI_PRIVACY_NOTICE_VERSION,
         dataUseAccepted: true,
         role: "event_interpreter",
+        interactionMode,
+        recommendationDirective: policy === null
+          ? null
+          : {
+              choiceId: policy.choiceId,
+              priority: policy.priority,
+              rationale: policy.rationale,
+              tradeoff: policy.tradeoff,
+              requiredEvidenceIds: [...policy.requiredEvidenceIds],
+            },
         event: {
           templateId: event.templateId,
           headline: event.headline ?? "A financial decision is waiting",
@@ -498,21 +677,33 @@ export class InteractiveEventService {
               consequence: description || "Engine-owned event response",
             })),
         },
+        evidence,
         conversation,
         playerTurn,
         maximumPlayerTurns: MAXIMUM_PLAYER_TURNS,
-      }), this.timeoutMs);
+      }), interactionMode === "recommend"
+        ? this.recommendationTimeoutMs
+        : this.timeoutMs);
       const interpreted = eventInterpreterResponseSchema.parse(generated);
       const source = this.client.responseSource?.() ?? "openai";
+      if (interpreted.status === "recommended" && policy !== null) {
+        return recommendationResponse(
+          event,
+          interpreted,
+          policy,
+          source,
+          playerTurn,
+          startedAt,
+        );
+      }
       if (
         interpreted.status === "mapped" &&
         interpreted.choiceId !== null &&
-        interpreted.confidencePpm >= minimumModelConfidence(source)
+        interpreted.confidencePpm >= minimumProposalConfidence(source)
       ) {
-        return mappedResponse(
+        return confirmationResponse(
           event,
-          interpreted.choiceId,
-          interpreted.confidencePpm,
+          interpreted,
           source,
           playerTurn,
           startedAt,
@@ -527,16 +718,19 @@ export class InteractiveEventService {
           safeFollowUpQuestion(
             interpreted.followUpQuestion,
             playerTurn,
-            event,
             latestPlayerText,
           ),
           interpreted.confidencePpm,
           source,
           startedAt,
+          { assistantMessage: interpreted.assistantMessage },
         );
       }
       return rejectedResponse(playerTurn, source, startedAt);
     } catch {
+      if (interactionMode === "recommend") {
+        return adviceUnavailableResponse(playerTurn, startedAt);
+      }
       return this.fallback(playerTurn, latestPlayerText, startedAt);
     }
   }

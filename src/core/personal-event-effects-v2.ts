@@ -7,22 +7,25 @@ import {
   ratePpm,
   type MoneyCents,
 } from "./domain/money";
+import { reconcileFinancesWithLedger } from "./game-state";
 import type {
   ActivePersonalEventCashFlowV2,
   GameStateV2,
+  OriginatedPersonalEventDebtV2,
   ScheduledPersonalEventCashFlowV2,
 } from "./game-state-v2";
 import {
   adjudicateCoverageClaim,
   adjudicateHealthClaim,
 } from "./insurance-v2";
-import type { Ledger } from "./ledger";
+import { appendTransaction, type JournalPosting, type Ledger } from "./ledger";
 import type {
   PersonalEventMagnitudeV2,
   PersonalEventTemplateV2,
 } from "./personal-event-v2";
 import {
   personalEventCashFlowIdV2,
+  personalEventDebtIdV2,
   personalEventEffectIdV2,
   validatePersonalEventTemplateV2,
 } from "./personal-event-v2";
@@ -48,6 +51,7 @@ export class PersonalEventEffectV2Error extends Error {
 
 export type PersonalEventEffectResolutionV2 = Readonly<{
   finances: GameStateV2["finances"];
+  debts: GameStateV2["gameplay"]["debts"];
   wellbeing: GameStateV2["wellbeing"];
   insurance: GameStateV2["gameplay"]["insurance"];
   ledger: Ledger;
@@ -55,6 +59,7 @@ export type PersonalEventEffectResolutionV2 = Readonly<{
   insurerCostCents: MoneyCents;
   activeCashFlows: readonly ActivePersonalEventCashFlowV2[];
   scheduledCashFlows: readonly ScheduledPersonalEventCashFlowV2[];
+  originatedDebts: readonly OriginatedPersonalEventDebtV2[];
   livingCostPlans: readonly FinancialLivingCostPlanEvidenceV2[];
 }>;
 
@@ -70,6 +75,14 @@ function addPlayerCost(current: number, amount: number, durationMonths = 1): num
       "scheduled personal-event player cost exceeds safe integer cents",
     );
   }
+}
+
+function debit(accountId: string, amountCents: MoneyCents): JournalPosting {
+  return { accountId, debitCents: amountCents, creditCents: moneyCents(0) };
+}
+
+function credit(accountId: string, amountCents: MoneyCents): JournalPosting {
+  return { accountId, debitCents: moneyCents(0), creditCents: amountCents };
 }
 
 function resolveMagnitude(
@@ -178,13 +191,15 @@ export function resolvePersonalEventResponseV2(
   let burnout = state.wellbeing.burnoutPpm as number;
   let happiness = state.wellbeing.happinessPpm as number;
   let insurance = state.gameplay.insurance;
-  const ledger = state.ledger;
+  let ledger = state.ledger;
+  let debts = state.gameplay.debts;
   let playerCost = 0;
   let insurerCost = 0;
   const activeCashFlows: ActivePersonalEventCashFlowV2[] = [
     ...(state.gameplay.eventLifecycle.activeCashFlows ?? []),
   ];
   const scheduledCashFlows: ScheduledPersonalEventCashFlowV2[] = [];
+  const originatedDebts: OriginatedPersonalEventDebtV2[] = [];
   const livingCostPlans: FinancialLivingCostPlanEvidenceV2[] = [];
   const scheduleCashFlow = (
     effectIndex: number,
@@ -222,6 +237,7 @@ export function resolvePersonalEventResponseV2(
       "temporary_expense",
       "recurring_expense",
       "temporary_income",
+      "financed_expense",
     ].includes(effect.type)) {
       throw new PersonalEventEffectV2Error(
         "INVALID_RESPONSE",
@@ -267,7 +283,86 @@ export function resolvePersonalEventResponseV2(
       continue;
     }
     const amount = resolveMagnitude(effect.magnitude, proposal.parameters);
-    if (
+    if (effect.type === "financed_expense") {
+      if (
+        amount < 0 ||
+        !Number.isSafeInteger(effect.durationMonths) ||
+        effect.durationMonths < 1 ||
+        effect.durationMonths > 120
+      ) {
+        throw new PersonalEventEffectV2Error(
+          "EFFECT_OUT_OF_RANGE",
+          "event financing requires a non-negative installment and a term of 1 through 120 months",
+        );
+      }
+      if (amount === 0) continue;
+      let principal: number;
+      try {
+        principal = safeBigIntToNumber(
+          BigInt(amount) * BigInt(effect.durationMonths),
+          "personal event financed principal",
+        );
+      } catch {
+        throw new PersonalEventEffectV2Error(
+          "EFFECT_OUT_OF_RANGE",
+          "personal-event financed principal exceeds safe integer cents",
+        );
+      }
+      const debtId = personalEventDebtIdV2(
+        commandId,
+        proposal.eventId,
+        response.id,
+        effectIndex,
+      );
+      const sourceEffectId = personalEventEffectIdV2(
+        template.id,
+        template.version,
+        response.id,
+        effectIndex,
+      );
+      const principalCents = moneyCents(principal);
+      const minimumPaymentCents = moneyCents(amount);
+      const debt: OriginatedPersonalEventDebtV2 = {
+        id: debtId,
+        sourceEffectId,
+        kind: "personal_loan",
+        principalCents,
+        annualInterestRatePpm: ratePpm(0),
+        minimumPaymentCents,
+        termMonths: effect.durationMonths,
+      };
+      ledger = appendTransaction(ledger, {
+        id: `txn.${debtId}`,
+        commandId,
+        effectiveMonth: state.currentMonth,
+        reasonCode: "personal_event_financing_originated",
+        description: "Recognize an event installment plan as term debt",
+        sourceSystem: "personal_event_v2",
+        category: "event.financed_expense",
+        causalReference: { kind: "event", id: proposal.eventId },
+        postings: [
+          debit("expense.living", principalCents),
+          credit("liability.non_credit", principalCents),
+        ],
+      });
+      debts = {
+        ...debts,
+        termDebts: [
+          ...debts.termDebts,
+          {
+            id: debt.id,
+            kind: debt.kind,
+            principalCents: debt.principalCents,
+            annualInterestRatePpm: debt.annualInterestRatePpm,
+            minimumPaymentCents: debt.minimumPaymentCents,
+            remainingTermMonths: debt.termMonths,
+          },
+        ],
+      };
+      requiredObligations += amount;
+      playerCost = addPlayerCost(playerCost, amount, effect.durationMonths);
+      originatedDebts.push(debt);
+    } else if (
       effect.type === "temporary_expense" ||
       effect.type === "recurring_expense" ||
       effect.type === "temporary_income"
@@ -344,11 +439,12 @@ export function resolvePersonalEventResponseV2(
     );
   }
   return Object.freeze({
-    finances: Object.freeze({
+    finances: Object.freeze(reconcileFinancesWithLedger({
       ...state.finances,
       requiredObligationsCents: moneyCents(requiredObligations),
       annualLivingCostCents: moneyCents(annualLivingCost),
-    }),
+    }, ledger)),
+    debts: Object.freeze(debts),
     wellbeing: Object.freeze({
       burnoutPpm: ratePpm(Math.max(0, Math.min(1_000_000, burnout))),
       happinessPpm: ratePpm(Math.max(0, Math.min(1_000_000, happiness))),
@@ -359,6 +455,7 @@ export function resolvePersonalEventResponseV2(
     insurerCostCents: moneyCents(insurerCost),
     activeCashFlows: Object.freeze(activeCashFlows),
     scheduledCashFlows: Object.freeze(scheduledCashFlows),
+    originatedDebts: Object.freeze(originatedDebts),
     livingCostPlans: Object.freeze(livingCostPlans),
   });
 }

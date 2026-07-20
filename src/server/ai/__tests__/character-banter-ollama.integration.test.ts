@@ -15,7 +15,8 @@ describeOllama("local character banter integration", () => {
     const audits: AiAuditRecord[] = [];
     const client = new AiRoleClient(
       aiTransportFromEnvironment(process.env, {
-        timeoutMs: 10_000,
+        // Match the local runtime ceiling, including a bounded cold load.
+        timeoutMs: 8_000,
         ollamaModel: process.env.AI_BANTER_OLLAMA_MODEL ?? "qwen2.5:7b-instruct",
       }),
       { record: async (record) => { audits.push(record); } },

@@ -302,6 +302,7 @@ export function resolveEventChoiceV2(
       ledger: application.ledger,
       gameplay: {
         ...state.gameplay,
+        debts: application.debts,
         insurance: application.insurance,
         eventLifecycle: {
           ...state.gameplay.eventLifecycle,
@@ -334,6 +335,9 @@ export function resolveEventChoiceV2(
                 ? {}
                 : { followUpSourceEventId: pending.followUpSourceEventId }),
               scheduledCashFlows: application.scheduledCashFlows,
+              ...(application.originatedDebts.length === 0
+                ? {}
+                : { originatedDebts: application.originatedDebts }),
               ...(application.livingCostPlans.length === 0
                 ? {}
                 : { livingCostPlans: application.livingCostPlans }),

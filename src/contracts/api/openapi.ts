@@ -39,7 +39,7 @@ export const CURRENT_OPENAPI_DOCUMENT = Object.freeze({
     },
     "/api/runs/{runId}/events/interpret": {
       post: {
-        summary: "Interpret bounded player text for a pending event decision",
+        summary: "Interpret player text or recommend a grounded pending-event choice",
       },
     },
     "/api/runs/{runId}/banter": {

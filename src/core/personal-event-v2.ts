@@ -68,6 +68,16 @@ export type PersonalEventEffectV2 =
       type: "temporary_expense" | "recurring_expense" | "temporary_income";
       magnitude: PersonalEventMagnitudeV2;
       durationMonths: number;
+    }>
+  | Readonly<{
+      /**
+       * Creates a zero-interest installment debt whose total principal is the
+       * declared monthly installment multiplied by durationMonths. Any
+       * financing markup must therefore be encoded in the magnitude itself.
+       */
+      type: "financed_expense";
+      magnitude: PersonalEventMagnitudeV2;
+      durationMonths: number;
     }>;
 
 export type PersonalEventEligibilityV2 =
@@ -230,6 +240,20 @@ export function personalEventCashFlowIdV2(
 ): string {
   const payload = `${commandId.length}:${commandId}${eventId.length}:${eventId}${responseId.length}:${responseId}:${effectIndex}`;
   return `pef.${personalEventFlowDigest(payload, FNV_1A_64_OFFSET)}${personalEventFlowDigest(payload, FNV_1A_64_ALT_OFFSET)}`;
+}
+
+export function personalEventDebtIdV2(
+  commandId: string,
+  eventId: string,
+  responseId: string,
+  effectIndex: number,
+): string {
+  return `debt.event.${personalEventCashFlowIdV2(
+    commandId,
+    eventId,
+    responseId,
+    effectIndex,
+  ).slice(4)}`;
 }
 
 function violation(path: string, code: string, message: string): PersonalEventTemplateV2Violation {
@@ -435,6 +459,7 @@ export function validatePersonalEventTemplateV2(
     "temporary_expense",
     "recurring_expense",
     "temporary_income",
+    "financed_expense",
   ]);
   template.responses.forEach((response, responseIndex) => {
     if (!IDENTIFIER.test(response.id) || responseIds.has(response.id)) {
@@ -479,6 +504,7 @@ export function validatePersonalEventTemplateV2(
           effectType === "temporary_expense" ||
           effectType === "recurring_expense" ||
           effectType === "temporary_income" ||
+          effectType === "financed_expense" ||
           effectType === "insurance_claim") &&
         magnitudeRecord !== undefined &&
         ((magnitudeRecord.source === "fixed" && Number(magnitudeRecord.value) < 0) ||
@@ -494,10 +520,10 @@ export function validatePersonalEventTemplateV2(
         violations.push(violation(`${effectPath}.direction`, "invalid_cash_direction", "cash direction must add or subtract"));
       }
       if (
-        (effectType === "temporary_expense" || effectType === "recurring_expense" || effectType === "temporary_income") &&
+        (effectType === "temporary_expense" || effectType === "recurring_expense" || effectType === "temporary_income" || effectType === "financed_expense") &&
         (!Number.isSafeInteger(effectRecord.durationMonths) || Number(effectRecord.durationMonths) < 1 || Number(effectRecord.durationMonths) > 120)
       ) {
-        violations.push(violation(`${effectPath}.durationMonths`, "invalid_effect_duration", "bounded cash-flow duration must be 1 through 120 months"));
+        violations.push(violation(`${effectPath}.durationMonths`, "invalid_effect_duration", "bounded cash-flow or financing duration must be 1 through 120 months"));
       }
       if (effectType === "wellbeing_delta" && effectRecord.field !== "burnoutPpm" && effectRecord.field !== "happinessPpm") {
         violations.push(violation(`${effectPath}.field`, "invalid_wellbeing_field", "wellbeing effect must target burnout or happiness"));

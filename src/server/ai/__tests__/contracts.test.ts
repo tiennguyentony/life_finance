@@ -268,6 +268,8 @@ describe("AI role contracts", () => {
       privacyNoticeVersion: 2,
       dataUseAccepted: true,
       role: "event_interpreter",
+      interactionMode: "interpret",
+      recommendationDirective: null,
       event: {
         templateId: "personal.industry_layoff",
         headline: "The paycheck stopped",
@@ -278,6 +280,7 @@ describe("AI role contracts", () => {
           consequence: "Reduce expenses while income recovers.",
         }],
       },
+      evidence: [{ id: "cash_runway", label: "Cash runway", value: "2.0 months" }],
       conversation: [
         { role: "player", content: "I want to protect my cash." },
         { role: "sprout", content: "What concrete action will you take?" },
@@ -305,9 +308,14 @@ describe("AI role contracts", () => {
     expect(eventInterpreterResponseSchema.parse({
       status: "ambiguous",
       choiceId: null,
+      recommendedChoiceId: null,
       confidencePpm: 400_000,
       reasonCode: "multiple_choices",
+      assistantMessage: "Let us make the action concrete.",
       followUpQuestion: "What is the first concrete action you would take?",
+      recommendationReason: null,
+      tradeoff: null,
+      citedEvidenceIds: [],
     }).status).toBe("ambiguous");
     expect(() => eventInterpreterResponseSchema.parse({
       status: "mapped",

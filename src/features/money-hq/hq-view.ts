@@ -87,6 +87,8 @@ export type HqView = Readonly<{
   revolvingUsedCents: number;
   revolvingLimitCents: number;
   revolvingAvailableCents: number;
+  termDebtCents: number;
+  termDebts: RunViewWire["debts"]["termDebts"];
   monthlyRequiredCents: number;
   annualLivingCostCents: number;
   monthlyGrossSalaryCents: number | null;
@@ -133,6 +135,11 @@ export function hqViewFromRun(run: RunViewWire): HqView {
       0,
       run.finances.creditLimitCents - run.finances.creditUsedCents,
     ),
+    termDebtCents: run.debts.termDebts.reduce(
+      (total, debt) => total + debt.principalCents,
+      0,
+    ),
+    termDebts: run.debts.termDebts,
     monthlyRequiredCents,
     annualLivingCostCents: run.finances.annualLivingCostCents,
     monthlyGrossSalaryCents:
@@ -169,7 +176,7 @@ export function hqViewFromRun(run: RunViewWire): HqView {
       run.benefits?.retirementPlan.employerMatchTiers ?? null,
     ),
     hasPendingEvent: run.pendingInteraction.kind === "event",
-    debtBadge: run.finances.creditUsedCents > 0 ? 1 : 0,
+    debtBadge: debtCents > 0 ? 1 : 0,
     isComplete: run.status === "completed",
   });
 }
