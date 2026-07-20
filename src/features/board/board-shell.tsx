@@ -192,10 +192,9 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     planLabel = plan.label,
     monthlyExplanation: BoardMonthResult["monthlyExplanation"] = null,
   ) => {
+    const result = boardMonthResult(opening, ending, planLabel, monthlyExplanation);
     setRun(ending);
-    setMonthResult(
-      boardMonthResult(opening, ending, planLabel, monthlyExplanation),
-    );
+    setMonthResult(result);
     setSelectedDestinationId(null);
     setSelectedPlanId(null);
     setPlanningError(null);
@@ -434,28 +433,9 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
     setMonthResult(null);
   };
 
-  const handleResolveEvent = async (choiceId: string) => {
-    if (!run || busy || monthResult || run.pendingInteraction.kind !== "event") return;
-    setBusy(true);
-    try {
-      const response = await new LifeFinanceClient().submitCommand(run.runId, {
-        id: `board.event.${crypto.randomUUID()}`,
-        expectedRevision: run.revision,
-        effectiveMonth: run.currentMonth,
-        type: "resolve_event_choice",
-        payload: { eventId: run.pendingInteraction.eventId, choiceId },
-      });
-      setRun(response.run);
-      showToast(
-        mode === "strategy"
-          ? "Decision applied. Your board is ready for a new focus."
-          : "Decision applied. Your board is ready to travel again.",
-      );
-    } catch (reason) {
-      showToast(errorMessage(reason, "The decision could not be applied."));
-    } finally {
-      setBusy(false);
-    }
+  const handleEventCommitted = (committedRun: RunViewWire, reaction: string) => {
+    setRun(committedRun);
+    showToast(reaction);
   };
 
   const handleNewGame = () => {
@@ -577,7 +557,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
             summary={resultSummary}
           />
         }
-        onResolveEvent={(choiceId) => void handleResolveEvent(choiceId)}
+        onEventCommitted={handleEventCommitted}
         onNewGame={handleNewGame}
         onSavedGames={() => router.push("/saves")}
         onStub={(label) => showToast(`${label} opens in a later milestone.`)}
@@ -586,6 +566,7 @@ export function BoardShell({ mode = "strategy" }: BoardShellProps) {
         toastMessage={toast.message}
         toastVisible={toast.visible}
         view={view}
+        run={run}
       />
     </div>
   );

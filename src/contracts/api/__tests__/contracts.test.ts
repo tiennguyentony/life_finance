@@ -8,7 +8,10 @@ import { currentRunState } from "@/application/game/__tests__/run-state.fixture"
 
 import {
   apiErrorResponseSchema,
+  characterBanterRequestSchema,
+  characterBanterResponseSchema,
   commandIntentSchema,
+  interpretEventRequestSchema,
   runViewSchema,
 } from "../contracts";
 import { CURRENT_OPENAPI_DOCUMENT } from "../openapi";
@@ -132,6 +135,36 @@ describe("frontend API contracts", () => {
         error: { code: "CONFLICT", message: "reload" },
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts an explicit engine-owned choice from the event hint menu", () => {
+    expect(interpretEventRequestSchema.parse({
+      eventId: "event.medical.1",
+      expectedRevision: 3,
+      selectedChoiceId: "use_insurance",
+      conversation: [{ role: "player", content: "Use health coverage" }],
+    })).toMatchObject({ selectedChoiceId: "use_insurance" });
+  });
+
+  it("bounds character-writer evidence and cast IDs", () => {
+    expect(characterBanterRequestSchema.parse({
+      expectedRevision: 3,
+      simulationMonth: "2026-10",
+      planLabel: "Invest steadily",
+      variationSeed: 42,
+      evidence: [{ id: "cash_change", label: "Cash change", value: "+$25.00" }],
+      recentLines: [],
+    }).variationSeed).toBe(42);
+    expect(characterBanterResponseSchema.safeParse({
+      version: "character-banter-v1",
+      status: "generated",
+      source: "local_oss",
+      characterId: "unknown_cast_member",
+      tone: "roast",
+      message: "A valid-looking but untrusted line.",
+      citedEvidenceId: "cash_change",
+      latencyMs: 5,
+    }).success).toBe(false);
   });
 
   it("publishes only the unversioned browser API", () => {

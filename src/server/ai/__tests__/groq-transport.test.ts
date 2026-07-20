@@ -113,6 +113,24 @@ describe("Groq gpt-oss-120b transport", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
+  it("forwards creative sampling only when the caller requests it", async () => {
+    let body: Record<string, unknown> | undefined;
+    const transport = new GroqGptOssTransport({
+      apiKey: "gsk_test_key_that_is_long_enough",
+      fetchFunction: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return completion();
+      },
+    });
+
+    await transport.create({
+      ...request,
+      sampling: { temperature: 0.9, seed: 73 },
+    });
+
+    expect(body).toMatchObject({ temperature: 0.9, seed: 73 });
+  });
+
   it("sanitizes provider failures and bounds rate-limit waits", async () => {
     const transport = new GroqGptOssTransport({
       apiKey: "gsk_test_key_that_is_long_enough",

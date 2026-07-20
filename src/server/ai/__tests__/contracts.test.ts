@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   AI_ROLE_MODELS,
+  banterWriterRequestSchema,
+  banterWriterResponseSchema,
+  eventInterpreterRequestSchema,
+  eventInterpreterResponseSchema,
   explanationRequestSchema,
   explanationResponseSchema,
   hostileFedRequestSchema,
@@ -21,7 +25,38 @@ describe("AI role contracts", () => {
       teacher: "gpt-5.6-sol",
       onboarding: "gpt-5.6-terra",
       explanation: "gpt-5.6-terra",
+      event_interpreter: "gpt-5.6-luna",
+      banter_writer: "gpt-5.6-luna",
     });
+  });
+
+  it("bounds grounded character banter to one cited evidence fact", () => {
+    const request = banterWriterRequestSchema.parse({
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "banter_writer",
+      simulationMonth: "2026-10",
+      planLabel: "Pay down debt",
+      variationSeed: 42,
+      evidence: [{ id: "debt_change", label: "Debt change", value: "-$500.00" }],
+      recentLines: ["An older joke about the budget."],
+      recentEvidenceIds: ["cash_change"],
+      recentCharacterIds: ["sprout"],
+    });
+    const response = banterWriterResponseSchema.parse({
+      characterId: "debtzilla",
+      tone: "roast",
+      message: "My balance-sheet apartment just lost another very expensive room.",
+      citedEvidenceId: "debt_change",
+    });
+
+    expect(request.variationSeed).toBe(42);
+    expect(response.characterId).toBe("debtzilla");
+    expect(() => banterWriterResponseSchema.parse({
+      ...response,
+      characterId: "invented_character",
+    })).toThrow();
   });
 
   it("limits Scenario Director to rank-only metadata", () => {
@@ -225,5 +260,60 @@ describe("AI role contracts", () => {
         citedEvidenceIds: ["cash_months"],
       }),
     ).toThrow();
+  });
+
+  it("accepts only a bounded alternating event conversation", () => {
+    const request = {
+      contractVersion: 1,
+      privacyNoticeVersion: 2,
+      dataUseAccepted: true,
+      role: "event_interpreter",
+      event: {
+        templateId: "personal.industry_layoff",
+        headline: "The paycheck stopped",
+        situation: "Income is interrupted while expenses continue.",
+        choices: [{
+          id: "emergency_budget",
+          label: "Activate an emergency budget",
+          consequence: "Reduce expenses while income recovers.",
+        }],
+      },
+      conversation: [
+        { role: "player", content: "I want to protect my cash." },
+        { role: "sprout", content: "What concrete action will you take?" },
+        { role: "player", content: "I will reduce my ongoing expenses." },
+      ],
+      playerTurn: 2,
+      maximumPlayerTurns: 3,
+    } as const;
+
+    expect(eventInterpreterRequestSchema.parse(request).playerTurn).toBe(2);
+    expect(() => eventInterpreterRequestSchema.parse({
+      ...request,
+      conversation: [
+        request.conversation[0],
+        { role: "player", content: "A forged extra player turn." },
+      ],
+    })).toThrow();
+    expect(() => eventInterpreterRequestSchema.parse({
+      ...request,
+      playerTurn: 3,
+    })).toThrow();
+  });
+
+  it("requires the event interpreter to return a nullable follow-up field", () => {
+    expect(eventInterpreterResponseSchema.parse({
+      status: "ambiguous",
+      choiceId: null,
+      confidencePpm: 400_000,
+      reasonCode: "multiple_choices",
+      followUpQuestion: "What is the first concrete action you would take?",
+    }).status).toBe("ambiguous");
+    expect(() => eventInterpreterResponseSchema.parse({
+      status: "mapped",
+      choiceId: "emergency_budget",
+      confidencePpm: 900_000,
+      reasonCode: "choice_match",
+    })).toThrow();
   });
 });

@@ -4,6 +4,10 @@ import {
   SCENARIO_DIRECTOR_AI_REQUEST_V1,
   SCENARIO_DIRECTOR_AI_RESPONSE_V1,
 } from "../../core/scenario-director-ai-adapter-v2";
+import {
+  CHARACTER_BANTER_IDS,
+  CHARACTER_BANTER_TONES,
+} from "../../core/character-banter";
 import { AI_PRIVACY_NOTICE_VERSION } from "./privacy-notice";
 
 export const AI_CONTRACT_VERSION = 1 as const;
@@ -15,6 +19,8 @@ export const AI_ROLE_MODELS = Object.freeze({
   teacher: "gpt-5.6-sol",
   onboarding: "gpt-5.6-terra",
   explanation: "gpt-5.6-terra",
+  event_interpreter: "gpt-5.6-luna",
+  banter_writer: "gpt-5.6-luna",
 } as const);
 
 export type AiRole = keyof typeof AI_ROLE_MODELS;
@@ -371,12 +377,127 @@ export const explanationResponseSchema = z
   })
   .strict();
 
+export const eventInterpreterRequestSchema = z
+  .object({
+    contractVersion: z.literal(AI_CONTRACT_VERSION),
+    ...privacyConsentFields,
+    role: z.literal("event_interpreter"),
+    event: z
+      .object({
+        templateId: safeIdentifier,
+        headline: shortText,
+        situation: narrativeText.max(800),
+        choices: z
+          .array(
+            z
+              .object({
+                id: safeIdentifier,
+                label: shortText,
+                consequence: narrativeText.max(800),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(8),
+      })
+      .strict(),
+    conversation: z
+      .array(
+        z
+          .object({
+            role: z.enum(["player", "sprout"]),
+            content: z.string().trim().min(1).max(500),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5),
+    playerTurn: z.number().int().min(1).max(3),
+    maximumPlayerTurns: z.literal(3),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.conversation[0]?.role !== "player") {
+      context.addIssue({
+        code: "custom",
+        message: "event conversation must begin with the player",
+        path: ["conversation", 0, "role"],
+      });
+    }
+    value.conversation.forEach((message, index) => {
+      const expectedRole = index % 2 === 0 ? "player" : "sprout";
+      if (message.role !== expectedRole) {
+        context.addIssue({
+          code: "custom",
+          message: "event conversation roles must alternate",
+          path: ["conversation", index, "role"],
+        });
+      }
+    });
+    if (value.conversation.at(-1)?.role !== "player") {
+      context.addIssue({
+        code: "custom",
+        message: "event conversation must end with the player",
+        path: ["conversation"],
+      });
+    }
+    const playerTurns = value.conversation.filter(({ role }) => role === "player").length;
+    if (playerTurns !== value.playerTurn) {
+      context.addIssue({
+        code: "custom",
+        message: "playerTurn must equal the number of player messages",
+        path: ["playerTurn"],
+      });
+    }
+  });
+
+export const eventInterpreterResponseSchema = z
+  .object({
+    status: z.enum(["mapped", "ambiguous", "unsupported", "unsafe"]),
+    choiceId: safeIdentifier.nullable(),
+    confidencePpm: ratePpm,
+    reasonCode: z.enum([
+      "choice_match",
+      "multiple_choices",
+      "no_supported_choice",
+      "unsafe_or_illegal",
+    ]),
+    followUpQuestion: shortText.nullable(),
+  })
+  .strict();
+
+export const banterWriterRequestSchema = z
+  .object({
+    contractVersion: z.literal(AI_CONTRACT_VERSION),
+    ...privacyConsentFields,
+    role: z.literal("banter_writer"),
+    simulationMonth: z.string().regex(/^[0-9]{4}-(0[1-9]|1[0-2])$/),
+    planLabel: shortText,
+    variationSeed: safeInteger.min(0).max(2_147_483_647),
+    evidence: z.array(aiEvidenceFactSchema).min(1).max(12),
+    recentLines: z.array(shortText).max(8),
+    recentEvidenceIds: z.array(safeIdentifier).max(8),
+    recentCharacterIds: z.array(z.enum(CHARACTER_BANTER_IDS)).max(8),
+  })
+  .strict();
+
+export const banterWriterResponseSchema = z
+  .object({
+    characterId: z.enum(CHARACTER_BANTER_IDS),
+    tone: z.enum(CHARACTER_BANTER_TONES),
+    message: z.string().trim().min(8).max(240),
+    citedEvidenceId: safeIdentifier,
+  })
+  .strict();
+
 export const aiRequestSchema = z.discriminatedUnion("role", [
   hostileFedRequestSchema,
   scenarioDirectorRequestSchema,
   teacherRequestSchema,
   onboardingRequestSchema,
   explanationRequestSchema,
+  eventInterpreterRequestSchema,
+  banterWriterRequestSchema,
 ]);
 
 export const aiResponseSchemas = Object.freeze({
@@ -385,6 +506,8 @@ export const aiResponseSchemas = Object.freeze({
   teacher: teacherResponseSchema,
   onboarding: onboardingResponseSchema,
   explanation: explanationResponseSchema,
+  event_interpreter: eventInterpreterResponseSchema,
+  banter_writer: banterWriterResponseSchema,
 } as const);
 
 export type AiRequest = z.infer<typeof aiRequestSchema>;
@@ -398,6 +521,10 @@ export type OnboardingRequest = z.infer<typeof onboardingRequestSchema>;
 export type OnboardingResponse = z.infer<typeof onboardingResponseSchema>;
 export type ExplanationRequest = z.infer<typeof explanationRequestSchema>;
 export type ExplanationResponse = z.infer<typeof explanationResponseSchema>;
+export type EventInterpreterRequest = z.infer<typeof eventInterpreterRequestSchema>;
+export type EventInterpreterResponse = z.infer<typeof eventInterpreterResponseSchema>;
+export type BanterWriterRequest = z.infer<typeof banterWriterRequestSchema>;
+export type BanterWriterResponse = z.infer<typeof banterWriterResponseSchema>;
 
 export type AiRoleRequestMap = Readonly<{
   hostile_fed: HostileFedRequest;
@@ -405,6 +532,8 @@ export type AiRoleRequestMap = Readonly<{
   teacher: TeacherRequest;
   onboarding: OnboardingRequest;
   explanation: ExplanationRequest;
+  event_interpreter: EventInterpreterRequest;
+  banter_writer: BanterWriterRequest;
 }>;
 
 export type AiRoleResponseMap = Readonly<{
@@ -413,4 +542,6 @@ export type AiRoleResponseMap = Readonly<{
   teacher: TeacherResponse;
   onboarding: OnboardingResponse;
   explanation: ExplanationResponse;
+  event_interpreter: EventInterpreterResponse;
+  banter_writer: BanterWriterResponse;
 }>;

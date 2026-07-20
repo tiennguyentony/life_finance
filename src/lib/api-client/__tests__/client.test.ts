@@ -125,6 +125,40 @@ describe("LifeFinanceClient", () => {
     });
   });
 
+  it("requests optional character copy through the active run endpoint", async () => {
+    let request: { input: string; init?: RequestInit } | null = null;
+    const client = new LifeFinanceClient(async (input, init) => {
+      request = { input: String(input), init };
+      return Response.json({
+        version: "character-banter-v1",
+        status: "generated",
+        source: "local_oss",
+        characterId: "bengo",
+        tone: "cheer",
+        message: "Your money got a job and already requested fewer meetings.",
+        citedEvidenceId: "taxable_investment_change",
+        latencyMs: 20,
+      });
+    });
+
+    await expect(client.generateCharacterBanter("run.current", {
+      expectedRevision: 3,
+      simulationMonth: "2026-10",
+      planLabel: "Invest steadily",
+      variationSeed: 7,
+      evidence: [{
+        id: "taxable_investment_change",
+        label: "Taxable investment change",
+        value: "+$500.00",
+      }],
+      recentLines: [],
+    })).resolves.toMatchObject({ status: "generated", characterId: "bengo" });
+    expect(request).toMatchObject({
+      input: "/api/runs/run.current/banter",
+      init: { method: "POST", credentials: "same-origin" },
+    });
+  });
+
   it("restores and validates the current same-origin session", async () => {
     const run = projectRunView(currentRunState());
     const calls: Array<{ input: string; init?: RequestInit }> = [];

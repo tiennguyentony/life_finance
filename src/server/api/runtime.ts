@@ -1,7 +1,13 @@
 import { OnboardingAiServiceV1 } from "../ai/onboarding-service-v1";
+import { InteractiveEventService } from "../ai/interactive-event-service";
+import { CharacterBanterService } from "../ai/character-banter-service";
 import type { CommandRunner, RunReader } from "../../application/game/use-cases";
 import { AiRoleClient } from "../ai/client";
-import { aiTransportFromEnvironment, getAiRoleClient } from "../ai/runtime";
+import {
+  aiTransportFromEnvironment,
+  getAiAuditRepository,
+  getAiRoleClient,
+} from "../ai/runtime";
 import {
   GameplayDirectorService,
   gameplayDirectorConfigFromEnvironment,
@@ -26,6 +32,8 @@ let runRepository: RunRepository | undefined;
 let gameplayDirector: GameplayDirector | null | undefined;
 let taxSummaryReader: TaxSummaryReader | undefined;
 let demoTaxSummaryReader: TaxSummaryReader | undefined;
+let interactiveEventService: InteractiveEventService | undefined;
+let characterBanterService: CharacterBanterService | undefined;
 
 function getGameplayDirector(): GameplayDirector | null {
   if (gameplayDirector !== undefined) return gameplayDirector;
@@ -134,4 +142,77 @@ export function getOnboardingAiService(): OnboardingAiServiceV1 {
     }
   }
   return onboardingAiService;
+}
+
+export function getInteractiveEventService(): InteractiveEventService {
+  if (!interactiveEventService) {
+    try {
+      const interactiveTimeoutMs = process.env.AI_PROVIDER === "ollama"
+        ? 2_500
+        : 1_500;
+      const client = new AiRoleClient(
+        aiTransportFromEnvironment(process.env, {
+          timeoutMs: interactiveTimeoutMs,
+          ollamaModel:
+            process.env.AI_INTERACTIVE_OLLAMA_MODEL ??
+            "qwen2.5:7b-instruct",
+        }),
+        process.env.NODE_ENV === "development"
+          ? { record: async () => undefined }
+          : getAiAuditRepository(null),
+        { maxTransportRetries: 0, maxSchemaRetries: 0 },
+      );
+      interactiveEventService = new InteractiveEventService(
+        {
+          generate: (request) => client.generate<"event_interpreter">(request),
+          responseSource: () => client.responseSource(),
+        },
+        interactiveTimeoutMs,
+      );
+    } catch {
+      interactiveEventService = new InteractiveEventService(null);
+    }
+  }
+  return interactiveEventService;
+}
+
+export function getCharacterBanterService(): CharacterBanterService {
+  if (!characterBanterService) {
+    try {
+      const timeoutMs = process.env.AI_PROVIDER === "ollama" ? 5_000 : 2_000;
+      const transport = aiTransportFromEnvironment(process.env, {
+        timeoutMs,
+        ollamaModel:
+          process.env.AI_BANTER_OLLAMA_MODEL ??
+          "gpt-oss:20b",
+      });
+      let developmentClient: AiRoleClient | undefined;
+      characterBanterService = new CharacterBanterService((runId) => {
+        if (process.env.NODE_ENV === "development") {
+          developmentClient ??= new AiRoleClient(
+            transport,
+            { record: async () => undefined },
+            { maxTransportRetries: 0, maxSchemaRetries: 1 },
+          );
+          return {
+            generate: (request) =>
+              developmentClient!.generate<"banter_writer">(request),
+            responseSource: () => developmentClient!.responseSource(),
+          };
+        }
+        const client = new AiRoleClient(
+          transport,
+          getAiAuditRepository(runId),
+          { maxTransportRetries: 0, maxSchemaRetries: 1 },
+        );
+        return {
+          generate: (request) => client.generate<"banter_writer">(request),
+          responseSource: () => client.responseSource(),
+        };
+      });
+    } catch {
+      characterBanterService = new CharacterBanterService(() => null);
+    }
+  }
+  return characterBanterService;
 }

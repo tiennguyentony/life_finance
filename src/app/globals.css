@@ -5,6 +5,7 @@
 @import "./styles/board.css";
 @import "./styles/money-hq.css";
 @import "./styles/landing.css";
+@import "./styles/interactive-events.css";
 
 .auth-screen {
   display: grid;

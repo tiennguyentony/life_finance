@@ -105,6 +105,25 @@ describe("Ollama gpt-oss transport", () => {
     }
   });
 
+  it("forwards bounded creative sampling for character copy", async () => {
+    let body: Record<string, unknown> | undefined;
+    const transport = new OllamaGptOssTransport({
+      fetchFunction: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return completedResponse();
+      },
+    });
+
+    await transport.create({
+      ...request,
+      sampling: { temperature: 0.9, seed: 73 },
+    });
+
+    expect(body).toMatchObject({
+      options: { temperature: 0.9, seed: 73 },
+    });
+  });
+
   it("rejects non-success and oversized responses without exposing provider bodies", async () => {
     const rejected = new OllamaGptOssTransport({
       fetchFunction: async () =>

@@ -16,6 +16,8 @@ import {
   handleGetSession,
   handleGetTaxSummary,
   handleGetRun,
+  handleGenerateCharacterBanter,
+  handleInterpretEvent,
   handleListAccountRuns,
   handleParseOnboarding,
   handleReviewOnboarding,
@@ -478,6 +480,110 @@ describe("current frontend HTTP API", () => {
     await expect(response.json()).resolves.toMatchObject({
       run: { runId: "run.current" },
       result: { idempotentReplay: false },
+    });
+  });
+
+  it("authorizes and validates a same-origin free-text event interpretation", async () => {
+    const state = currentRunState();
+    const interpret = vi.fn(async () => ({
+      version: "interactive-event-interpretation-v1" as const,
+      status: "question" as const,
+      source: "deterministic_fallback" as const,
+      choiceId: null,
+      confidencePpm: 0,
+      latencyMs: 2,
+      systemMessage: "I could not confidently match that answer.",
+      sproutReaction: "Try one concrete action.",
+      education: "Describe a spending, saving, debt, or insurance action.",
+      playerTurn: 1,
+      remainingPlayerTurns: 2,
+    }));
+    const response = await handleInterpretEvent(
+      new Request(`https://game.test/api/runs/${SESSION.runId}/events/interpret`, {
+        method: "POST",
+        headers: {
+          Cookie: COOKIE,
+          Origin: "https://game.test",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          eventId: "event.waiting",
+          expectedRevision: 0,
+          conversation: [{
+            role: "player",
+            content: "I will reduce my expenses.",
+          }],
+        }),
+      }),
+      SESSION.runId,
+      { getRun: async () => ({ state, stateChecksum: "a".repeat(64) }) },
+      { interpret },
+      () => "request.event.interpret",
+    );
+
+    expect(response.status).toBe(200);
+    expect(interpret).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run.current", revision: 0 }),
+      expect.objectContaining({
+        conversation: [{
+          role: "player",
+          content: "I will reduce my expenses.",
+        }],
+      }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      status: "question",
+      source: "deterministic_fallback",
+    });
+  });
+
+  it("authorizes bounded character banter evidence without changing the run", async () => {
+    const state = currentRunState();
+    const generate = vi.fn(async () => ({
+      version: "character-banter-v1" as const,
+      status: "generated" as const,
+      source: "local_oss" as const,
+      characterId: "impulso" as const,
+      tone: "roast" as const,
+      message: "Cash left so quickly it forgot to wave goodbye.",
+      citedEvidenceId: "cash_change",
+      latencyMs: 12,
+    }));
+    const response = await handleGenerateCharacterBanter(
+      new Request(`https://game.test/api/runs/${SESSION.runId}/banter`, {
+        method: "POST",
+        headers: {
+          Cookie: COOKIE,
+          Origin: "https://game.test",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          expectedRevision: 0,
+          simulationMonth: "2026-07",
+          planLabel: "Stay steady",
+          variationSeed: 42,
+          evidence: [{
+            id: "cash_change",
+            label: "Cash change",
+            value: "-$250.00",
+          }],
+          recentLines: [],
+        }),
+      }),
+      SESSION.runId,
+      { getRun: async () => ({ state, stateChecksum: "a".repeat(64) }) },
+      { generate },
+      () => "request.banter",
+    );
+
+    expect(response.status).toBe(200);
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run.current", revision: 0 }),
+      expect.objectContaining({ variationSeed: 42 }),
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      status: "generated",
+      characterId: "impulso",
     });
   });
 

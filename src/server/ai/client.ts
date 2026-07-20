@@ -31,6 +31,10 @@ const ROLE_INSTRUCTIONS: Readonly<Record<AiRole, string>> = Object.freeze({
     "Extract only facts explicitly stated by the learner. Preserve monetary values exactly as source strings and label explicitly stated monthly/annual periods and gross/take-home basis; never calculate, normalize, infer, or convert money. Use only supplied location and career IDs. Use null and missingFields when uncertain, and ask one concise clarification question when needed. Return only the required structured output.",
   explanation:
     "Give a concise, beginner-friendly explanation of the supplied financial concept using only supplied context and evidence. Cite only supplied evidence IDs. Never recompute financial values or invent personalized facts. Return only the required structured output.",
+  event_interpreter:
+    "Conduct a bounded English conversation that maps the player's intent to at most one supplied event choice. Use the complete alternating conversation. Map immediately whenever a concrete action is semantically equivalent to one supplied choice; never demand that the player repeat the choice label or complete a fixed number of turns. The choices and consequences are engine-owned. Never reveal choice IDs, hidden alternatives, amounts, effects, rewards, or likely outcomes. Never invent an action or state mutation. If intent is genuinely not specific and playerTurn is below maximumPlayerTurns, return ambiguous with one short, neutral follow-up question about the player's own priority or concrete action. The question must start with What or How, and must not mention or paraphrase a supplied choice, present alternatives, use 'or'/'versus', compare paths, or list possible actions. On the final turn, return mapped only when confident; otherwise return unsupported or unsafe. Mark illegal or dangerous proposals unsafe. confidencePpm is parts per million: 800000 means 80% confidence. Return only the required structured output.",
+  banter_writer:
+    "You write one fresh, funny English speech-bubble line for a personal-finance game. Reason from exactly one supplied evidence fact and cite its ID. Treat that fact's label and value as the complete truth: visibly refer to its named metric or exact value, and never infer a cause, purchase, habit, choice, or life event that is not stated. A cash increase is a larger cash pile, not evidence of spending; a cash decrease is not evidence of what was bought. Choose the cast member whose personality best fits: Debtzilla reacts to debt, Inflato to living-cost creep, Impulso to cash decreases, Bengo to investing, Buddi to preparedness or risk, Lucky Cat to taxes, and Sprout to cash or net-worth increases and mixed months. recentLines are forbidden prior copy, not factual evidence; never borrow facts or characters from them. recentEvidenceIds and recentCharacterIds are ordered histories. When another supplied fact supports a joke, avoid the latest evidence topic and prefer a different speaker; do not simply pick the largest dollar amount every month. Roast the financial result or situation, never the player's identity. Keep the message to one sentence, roughly 6–24 words, playful rather than cruel, and suitable for a general audience. The UI already displays the speaker, so never prefix the message with a character name. Write a punchline, not a hashtag, caption, or advice. Never tell the player what they should, must, or need to do, and never use consider, make sure, next time, remember to, try to, watch out, or 'don't let'. Do not calculate new numbers, mention being an AI, or repeat/paraphrase any recent line. Use variationSeed only as a creativity cue. Return only the required structured output.",
 });
 
 export type AiTransportRequest = Readonly<{
@@ -38,6 +42,11 @@ export type AiTransportRequest = Readonly<{
   input: readonly Readonly<{ role: "developer" | "user"; content: string }>[];
   textFormat: unknown;
   reasoningEffort: "low" | "medium";
+  maxOutputTokens?: number;
+  sampling?: Readonly<{
+    temperature: number;
+    seed: number;
+  }>;
   store: false;
 }>;
 
@@ -80,6 +89,35 @@ export interface AiAuditRecorder {
 }
 
 function auditRecordForPersistence(record: AiAuditRecord): AiAuditRecord {
+  if (record.role === "event_interpreter") {
+    const input = record.prompt.input as AiRoleRequestMap["event_interpreter"];
+    return Object.freeze({
+      ...record,
+      prompt: Object.freeze({
+        instructions: record.prompt.instructions,
+        input: Object.freeze({
+          contractVersion: input.contractVersion,
+          privacyNoticeVersion: input.privacyNoticeVersion,
+          dataUseAccepted: input.dataUseAccepted,
+          role: input.role,
+          event: input.event,
+          conversationHash: createHash("sha256")
+            .update(JSON.stringify(input.conversation), "utf8")
+            .digest("hex"),
+          conversationMessageCount: input.conversation.length,
+          conversationCharacterCount: input.conversation.reduce(
+            (total, message) => total + message.content.length,
+            0,
+          ),
+          playerTurn: input.playerTurn,
+          maximumPlayerTurns: input.maximumPlayerTurns,
+        }),
+      }),
+      attempts: Object.freeze(
+        record.attempts.map((attempt) => Object.freeze({ ...attempt, output: null })),
+      ),
+    });
+  }
   if (record.role !== "onboarding") return record;
   const input = record.prompt.input as Readonly<{
     contractVersion: number;
@@ -143,7 +181,11 @@ function evidenceIds(request: AiRoleRequestMap[AiRole]): Set<string> {
   if (request.role === "hostile_fed") {
     return new Set(request.weaknesses.flatMap((weakness) => weakness.evidence.map(({ id }) => id)));
   }
-  if (request.role === "teacher" || request.role === "explanation") {
+  if (
+    request.role === "teacher" ||
+    request.role === "explanation" ||
+    request.role === "banter_writer"
+  ) {
     return new Set(request.evidence.map(({ id }) => id));
   }
   return new Set();
@@ -266,8 +308,78 @@ function validateRoleSemantics<R extends AiRole>(
     return;
   }
 
+  if (request.role === "event_interpreter") {
+    const output = response as AiRoleResponseMap["event_interpreter"];
+    const choiceIds = new Set(request.event.choices.map(({ id }) => id));
+    if (output.status === "mapped") {
+      if (output.choiceId === null || !choiceIds.has(output.choiceId)) {
+        throw new Error("event interpreter must map to a supplied choice");
+      }
+      if (output.reasonCode !== "choice_match") {
+        throw new Error("mapped event interpretation requires choice_match");
+      }
+      if (output.followUpQuestion !== null) {
+        throw new Error("mapped event interpretation cannot ask a follow-up");
+      }
+    } else if (output.choiceId !== null) {
+      throw new Error("unmapped event interpretation cannot select a choice");
+    }
+    if (
+      output.status === "ambiguous" &&
+      (output.followUpQuestion === null || request.playerTurn >= request.maximumPlayerTurns)
+    ) {
+      throw new Error("ambiguous event interpretation requires an available follow-up turn");
+    }
+    if (output.status !== "ambiguous" && output.followUpQuestion !== null) {
+      throw new Error("only ambiguous event interpretation may ask a follow-up");
+    }
+    return;
+  }
+
+  if (request.role === "banter_writer") {
+    const output = response as AiRoleResponseMap["banter_writer"];
+    if (!evidenceIds(request).has(output.citedEvidenceId)) {
+      throw new Error("banter must cite one supplied evidence fact");
+    }
+    if (/[\r\n]/u.test(output.message)) {
+      throw new Error("banter must be a single line");
+    }
+    if (/#/u.test(output.message)) {
+      throw new Error("banter must not include hashtags");
+    }
+    if (/\b(?:(?:you|the player)\s+(?:should|must|need to)|consider|make sure|next time|remember to|try to|watch out|do not|don['’]t let)\b/iu.test(output.message)) {
+      throw new Error("banter must be a punchline rather than advice");
+    }
+    return;
+  }
+
   const output = response as AiRoleResponseMap["explanation"];
   assertSubset(output.citedEvidenceIds, evidenceIds(request), "explanation evidence");
+}
+
+function normalizeRoleResponse<R extends AiRole>(
+  request: AiRoleRequestMap[R],
+  response: AiRoleResponseMap[R],
+): AiRoleResponseMap[R] {
+  if (request.role === "banter_writer") {
+    const output = response as AiRoleResponseMap["banter_writer"];
+    return Object.freeze({
+      ...output,
+      message: output.message.replace(
+        /^(?:sprout|debtzilla|inflato|impulso|bengo|buddi|lucky cat)\s*:\s*/iu,
+        "",
+      ),
+    }) as AiRoleResponseMap[R];
+  }
+  if (request.role !== "event_interpreter") return response;
+  const output = response as AiRoleResponseMap["event_interpreter"];
+  if (output.status === "ambiguous" || output.followUpQuestion === null) {
+    return response;
+  }
+  return Object.freeze({
+    ...output,
+    followUpQuestion: null,
+  }) as AiRoleResponseMap[R];
 }
 
 function errorStatus(error: unknown): number | undefined {
@@ -321,6 +433,9 @@ export class OpenAiResponsesTransport implements AiResponsesTransport {
       input: [...request.input],
       text: { format: request.textFormat as ReturnType<typeof zodTextFormat> },
       reasoning: { effort: request.reasoningEffort },
+      ...(request.maxOutputTokens === undefined
+        ? {}
+        : { max_output_tokens: request.maxOutputTokens }),
       store: request.store,
     });
     return {
@@ -339,6 +454,8 @@ export class AiRoleClient {
     private readonly options: Readonly<{
       delay?: (milliseconds: number) => Promise<void>;
       invocationId?: () => string;
+      maxTransportRetries?: number;
+      maxSchemaRetries?: number;
     }> = {},
   ) {}
 
@@ -390,6 +507,22 @@ export class AiRoleClient {
             role === "teacher"
               ? "medium"
               : "low",
+          ...(role === "event_interpreter"
+            ? { maxOutputTokens: 160 }
+            : role === "banter_writer"
+              ? {
+                  // gpt-oss may spend part of this budget on its hidden
+                  // low-effort reasoning before emitting the short JSON.
+                  maxOutputTokens: 256,
+                  sampling: {
+                    temperature: 0.9,
+                    // A semantic repair must not deterministically replay the
+                    // same invalid local-model answer.
+                    seed: ((parsedRequest.data as AiRoleRequestMap["banter_writer"])
+                      .variationSeed + attemptNumber - 1) % 2_147_483_648,
+                  },
+                }
+              : {}),
           store: false,
         });
       } catch (error) {
@@ -400,7 +533,10 @@ export class AiRoleClient {
           output: null,
           errorCode: safeTransportErrorCode(error),
         });
-        if (isRetryableTransportError(error) && transportRetries < MAX_TRANSPORT_RETRIES) {
+        if (
+          isRetryableTransportError(error) &&
+          transportRetries < (this.options.maxTransportRetries ?? MAX_TRANSPORT_RETRIES)
+        ) {
           transportRetries += 1;
           await (this.options.delay ?? defaultDelay)(200 * 2 ** (transportRetries - 1));
           continue;
@@ -416,7 +552,8 @@ export class AiRoleClient {
           throw new Error("response exceeds output limit");
         }
         const decoded: unknown = JSON.parse(transportResult.outputText);
-        const value = schema.parse(decoded);
+        const parsedValue = schema.parse(decoded);
+        const value = schema.parse(normalizeRoleResponse(request, parsedValue));
         validateRoleSemantics(request, value);
         attempts.push({
           attempt: attemptNumber,
@@ -434,7 +571,7 @@ export class AiRoleClient {
           output: transportResult.output,
           errorCode: "invalid_structured_output",
         });
-        if (schemaRetries < MAX_SCHEMA_RETRIES) {
+        if (schemaRetries < (this.options.maxSchemaRetries ?? MAX_SCHEMA_RETRIES)) {
           schemaRetries += 1;
           continue;
         }

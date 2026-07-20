@@ -9,6 +9,8 @@ import {
 } from "./board-model";
 import type { BoardMode } from "./board-scene";
 import { useModalDialog } from "./use-modal-dialog";
+import { InteractiveEventDecision } from "@/features/events/interactive-event-decision";
+import type { RunViewWire } from "@/contracts/api/contracts";
 
 type BoardHudProps = Readonly<{
   actionLabel: string;
@@ -20,8 +22,9 @@ type BoardHudProps = Readonly<{
   monthResultDialog: ReactNode;
   planningPanel: ReactNode;
   view: BoardView;
+  run: RunViewWire;
   onTakeAction: () => void;
-  onResolveEvent: (choiceId: string) => void;
+  onEventCommitted: (run: RunViewWire, reaction: string) => void;
   onNewGame: () => void;
   onSavedGames: () => void;
   /** Placeholder handler for panels that have no screen yet. */
@@ -37,15 +40,6 @@ function PanelBadge({ count }: Readonly<{ count: number }>) {
   return <span className="board-badge">{count > 9 ? "9+" : count}</span>;
 }
 
-function formatPreviewMoney(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
-}
-
 export function BoardHud({
   actionLabel,
   actionHint,
@@ -56,8 +50,9 @@ export function BoardHud({
   monthResultDialog,
   planningPanel,
   view,
+  run,
   onTakeAction,
-  onResolveEvent,
+  onEventCommitted,
   onNewGame,
   onSavedGames,
   onStub,
@@ -215,37 +210,11 @@ export function BoardHud({
           {eventAmount !== undefined ? (
             <p className="board-event-amount">Amount {formatBoardMoney(eventAmount / 100)}</p>
           ) : null}
-          <div>
-            {view.pendingEvent.choices.map((choice) => (
-              <button
-                disabled={busy || !choice.enabled}
-                key={choice.id}
-                onClick={() => onResolveEvent(choice.id)}
-                type="button"
-              >
-                <strong>{choice.label}</strong>
-                <span>{choice.description}</span>
-                {choice.preview.immediateCashChangeCents !== 0 ? (
-                  <small>
-                    {choice.preview.immediateCashChangeCents < 0 ? "Due now" : "Receive now"}: {formatPreviewMoney(Math.abs(choice.preview.immediateCashChangeCents))}
-                  </small>
-                ) : null}
-                {choice.preview.recurringCashFlows.map((flow, index) => (
-                  <small key={`${choice.id}.flow.${index}`}>
-                    {flow.direction === "expense" ? "Pay" : "Receive"} {formatPreviewMoney(flow.monthlyCents)} per month for {flow.durationMonths} months ({formatPreviewMoney(flow.totalCents)} total)
-                  </small>
-                ))}
-                {choice.preview.followUps.map((followUp) => (
-                  <small key={`${followUp.templateId}@${followUp.templateVersion}`}>
-                    {followUp.templateId} in {followUp.delayMonths} months
-                  </small>
-                ))}
-                {choice.preview.unavailableReason ? (
-                  <small>{choice.preview.unavailableReason}</small>
-                ) : null}
-              </button>
-            ))}
-          </div>
+          <InteractiveEventDecision
+            key={view.pendingEvent.eventId}
+            onCommitted={onEventCommitted}
+            run={run}
+          />
         </dialog>
       ) : null}
 
