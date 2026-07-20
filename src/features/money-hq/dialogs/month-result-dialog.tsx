@@ -3,7 +3,12 @@
 import type { BoardMonthResult } from "@/features/board/board-model";
 import { useModalDialog } from "@/features/board/use-modal-dialog";
 
-import { HqLedger, type LedgerEntry } from "../hq-ui";
+import {
+  HqDeltaGrid,
+  HqFlowBars,
+  type DeltaTile,
+  type FlowBar,
+} from "../hq-ui";
 import { formatMonthLabel, formatSignedCents } from "../hq-view";
 
 type Props = Readonly<{
@@ -19,172 +24,113 @@ function pointsDelta(ppm: number): string {
   return formatted;
 }
 
+function deltaTone(value: number, goodWhenNegative = false): DeltaTile["tone"] {
+  if (value === 0) return "neutral";
+  const good = goodWhenNegative ? value < 0 : value > 0;
+  return good ? "positive" : "negative";
+}
+
 export function HqMonthResultDialog({ onDismiss, result }: Props) {
   const dialogRef = useModalDialog(true, { restoreFocus: !result.hasPendingEvent });
   const explanation = result.monthlyExplanation;
   const taxBreakdown = explanation?.taxBreakdown ?? null;
 
-  const outcomes: readonly LedgerEntry[] = [
+  const tiles: readonly DeltaTile[] = [
     {
       label: "Cash",
       value: formatSignedCents(result.cashChangeCents),
-      tone: result.cashChangeCents >= 0 ? "positive" : "negative",
+      tone: deltaTone(result.cashChangeCents),
     },
     {
       label: "Net worth",
       value: formatSignedCents(result.netWorthChangeCents),
-      tone: result.netWorthChangeCents >= 0 ? "positive" : "negative",
+      tone: deltaTone(result.netWorthChangeCents),
     },
     {
       label: "Debt",
       value: formatSignedCents(result.debtChangeCents),
-      tone: result.debtChangeCents <= 0 ? "positive" : "negative",
+      tone: deltaTone(result.debtChangeCents, true),
     },
     {
       label: "Goal progress",
       value: pointsDelta(result.goalProgressChangePpm),
-      tone: result.goalProgressChangePpm >= 0 ? "positive" : "negative",
+      tone: deltaTone(result.goalProgressChangePpm),
     },
     {
       label: "Risk",
-      value: `${pointsDelta(result.riskSeverityChangePpm)}${
-        result.riskSeverityChangePpm < 0 ? " (lower)" : ""
-      }`,
-      tone: result.riskSeverityChangePpm <= 0 ? "positive" : "negative",
+      value: pointsDelta(result.riskSeverityChangePpm),
+      tone: deltaTone(result.riskSeverityChangePpm, true),
     },
     {
       label: "Preparedness",
       value: pointsDelta(result.preparednessScoreChangePpm),
-      tone: result.preparednessScoreChangePpm >= 0 ? "positive" : "negative",
+      tone: deltaTone(result.preparednessScoreChangePpm),
     },
     ...(result.taxableInvestmentsChangeCents === 0
       ? []
       : [{
-          label: "Taxable investments",
+          label: "Taxable funds",
           value: formatSignedCents(result.taxableInvestmentsChangeCents),
-          tone: result.taxableInvestmentsChangeCents >= 0 ? "positive" as const : "negative" as const,
+          tone: deltaTone(result.taxableInvestmentsChangeCents),
+        }]),
+  ];
+
+  // Monthly cash items only; annual-rate shifts render as chips further down.
+  const flows: readonly FlowBar[] = explanation === null
+    ? []
+    : [
+        { label: "Paycheck (gross)", cents: explanation.grossIncomeCents },
+        { label: "Taxes withheld", cents: -explanation.totalTaxCents },
+        { label: "Bills and essentials", cents: -explanation.requiredCashCents },
+        ...(explanation.resolvedIncomeCents === 0
+          ? []
+          : [{ label: "Event income", cents: explanation.resolvedIncomeCents }]),
+        ...(explanation.resolvedExpenseCents === 0
+          ? []
+          : [{ label: "Event costs", cents: -explanation.resolvedExpenseCents }]),
+        ...(explanation.insurancePlayerCostCents === 0
+          ? []
+          : [{
+              label: "Insurance claim",
+              cents: -explanation.insurancePlayerCostCents,
+            }]),
+        { label: "Debt interest", cents: -explanation.debtInterestCents },
+        { label: "Debt payments", cents: -explanation.debtPaymentCents },
+        { label: "Market movement", cents: explanation.marketValueChangeCents },
+      ];
+
+  const ongoingChips: readonly { label: string; tone: "positive" | "negative" }[] = [
+    ...(explanation === null || explanation.annualInflationIncreaseCents === 0
+      ? []
+      : [{
+          label: `Inflation ${formatSignedCents(explanation.annualInflationIncreaseCents)}/yr on living costs`,
+          tone: "negative" as const,
         }]),
     ...(result.annualLivingCostChangeCents === 0
       ? []
       : [{
-          label: "Annual living cost",
-          value: `${formatSignedCents(result.annualLivingCostChangeCents)}/yr`,
-          tone: result.annualLivingCostChangeCents <= 0 ? "positive" as const : "negative" as const,
+          label: `Living costs ${formatSignedCents(result.annualLivingCostChangeCents)}/yr`,
+          tone: result.annualLivingCostChangeCents <= 0
+            ? ("positive" as const)
+            : ("negative" as const),
         }]),
     ...(result.requiredObligationsChangeCents === 0
       ? []
       : [{
-          label: "Required monthly obligations",
-          value: `${formatSignedCents(result.requiredObligationsChangeCents)}/mo`,
-          tone: result.requiredObligationsChangeCents <= 0 ? "positive" as const : "negative" as const,
+          label: `Monthly bills ${formatSignedCents(result.requiredObligationsChangeCents)}/mo`,
+          tone: result.requiredObligationsChangeCents <= 0
+            ? ("positive" as const)
+            : ("negative" as const),
         }]),
     ...(result.annualGrossSalaryChangeCents === 0
       ? []
       : [{
-          label: "Annual gross salary",
-          value: `${formatSignedCents(result.annualGrossSalaryChangeCents)}/yr`,
-          tone: result.annualGrossSalaryChangeCents >= 0 ? "positive" as const : "negative" as const,
+          label: `Salary ${formatSignedCents(result.annualGrossSalaryChangeCents)}/yr`,
+          tone: result.annualGrossSalaryChangeCents >= 0
+            ? ("positive" as const)
+            : ("negative" as const),
         }]),
   ];
-
-  // Every line below is a field the engine returned for the processed month.
-  const ledger: readonly LedgerEntry[] = explanation === null
-    ? []
-    : [
-        {
-          label: "Gross employment income",
-          value: formatSignedCents(explanation.grossIncomeCents),
-          tone: "positive",
-        },
-        ...(taxBreakdown === null
-          ? [{
-              label: "Taxes and withholding",
-              value: formatSignedCents(-explanation.totalTaxCents),
-              tone: "negative" as const,
-              total: true,
-            }]
-          : [
-              {
-                label: "Federal income tax",
-                value: formatSignedCents(-taxBreakdown.monthlyFederalIncomeTaxCents),
-                tone: "negative" as const,
-              },
-              {
-                label: "State income tax",
-                value: formatSignedCents(-taxBreakdown.monthlyStateIncomeTaxCents),
-                tone: taxBreakdown.monthlyStateIncomeTaxCents === 0 ? "neutral" as const : "negative" as const,
-              },
-              {
-                label: "Social Security + Medicare",
-                value: formatSignedCents(-taxBreakdown.monthlyEmployeePayrollTaxCents),
-                tone: "negative" as const,
-              },
-              ...(taxBreakdown.monthlySelfEmploymentTaxCents === 0
-                ? []
-                : [{
-                    label: "Self-employment tax",
-                    value: formatSignedCents(-taxBreakdown.monthlySelfEmploymentTaxCents),
-                    tone: "negative" as const,
-                  }]),
-              {
-                label: "Total taxes and withholding",
-                value: formatSignedCents(-explanation.totalTaxCents),
-                tone: "negative" as const,
-                total: true,
-              },
-            ]),
-        {
-          label: "After-tax cash income",
-          value: formatSignedCents(explanation.afterTaxCashIncomeCents),
-          tone: "positive",
-        },
-        {
-          label: "Required cash paid",
-          value: formatSignedCents(-explanation.requiredCashCents),
-          tone: "negative",
-        },
-        ...(explanation.resolvedIncomeCents === 0
-          ? []
-          : [{
-              label: "Event and other income",
-              value: formatSignedCents(explanation.resolvedIncomeCents),
-              tone: "positive" as const,
-            }]),
-        ...(explanation.resolvedExpenseCents === 0
-          ? []
-          : [{
-              label: "Event and other expenses",
-              value: formatSignedCents(-explanation.resolvedExpenseCents),
-              tone: "negative" as const,
-            }]),
-        ...(explanation.insurancePlayerCostCents === 0
-          ? []
-          : [{
-              label: "Insurance claim cost",
-              value: formatSignedCents(-explanation.insurancePlayerCostCents),
-              tone: "negative" as const,
-            }]),
-        {
-          label: "Debt interest included",
-          value: formatSignedCents(-explanation.debtInterestCents),
-          tone: "negative",
-        },
-        {
-          label: "Debt payments included",
-          value: formatSignedCents(-explanation.debtPaymentCents),
-          tone: "negative",
-        },
-        {
-          label: "Market movement",
-          value: formatSignedCents(explanation.marketValueChangeCents),
-          tone: explanation.marketValueChangeCents >= 0 ? "positive" : "negative",
-        },
-        {
-          label: "Inflation added to annual costs",
-          value: `${formatSignedCents(explanation.annualInflationIncreaseCents)}/yr`,
-          tone: "negative",
-        },
-      ];
 
   return (
     <dialog className="hq-dialog" ref={dialogRef}>
@@ -198,28 +144,59 @@ export function HqMonthResultDialog({ onDismiss, result }: Props) {
           <h3 className="hq-eyebrow" style={{ margin: "0 0 0.5rem" }}>
             What changed
           </h3>
-          <HqLedger entries={outcomes} />
+          <HqDeltaGrid tiles={tiles} />
         </section>
 
         <section className="hq-card" style={{ marginTop: "0.75rem" }}>
           <h3 className="hq-eyebrow" style={{ margin: "0 0 0.5rem" }}>
-            Why the numbers changed
+            Money in, money out
           </h3>
           {explanation === null ? (
             <p className="hq-unavailable">
-              This month advanced through a recovery path that does not return a
-              per-line breakdown. The balances above are still authoritative.
+              This month advanced through a recovery path without a per-line
+              breakdown. The tiles above are still authoritative.
             </p>
           ) : (
             <>
-              <HqLedger entries={ledger} />
-              <p className="hq-note" style={{ marginTop: "0.625rem" }}>
-                Read it like a paycheck: income − taxes − bills − debt = what is
-                left for future you. Every line is calculated by the engine.
-              </p>
+              <HqFlowBars bars={flows} />
+              {taxBreakdown === null ? null : (
+                <div className="hq-chip-row" style={{ marginTop: "0.625rem" }}>
+                  <span className="hq-chip">
+                    Federal {formatSignedCents(-taxBreakdown.monthlyFederalIncomeTaxCents)}
+                  </span>
+                  <span className="hq-chip">
+                    State {formatSignedCents(-taxBreakdown.monthlyStateIncomeTaxCents)}
+                  </span>
+                  <span className="hq-chip">
+                    Social Security + Medicare{" "}
+                    {formatSignedCents(-taxBreakdown.monthlyEmployeePayrollTaxCents)}
+                  </span>
+                  {taxBreakdown.monthlySelfEmploymentTaxCents === 0 ? null : (
+                    <span className="hq-chip">
+                      Self-employment{" "}
+                      {formatSignedCents(-taxBreakdown.monthlySelfEmploymentTaxCents)}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
         </section>
+
+        {ongoingChips.length > 0 ? (
+          <section className="hq-card" style={{ marginTop: "0.75rem" }}>
+            <h3 className="hq-eyebrow" style={{ margin: "0 0 0.5rem" }}>
+              Now recurring
+            </h3>
+            <div className="hq-chip-row">
+              {ongoingChips.map((chip) => (
+                <span className="hq-chip" data-tone={chip.tone} key={chip.label}>
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {result.completedProgramIds.length > 0 ? (
           <p className="hq-note" data-tone="positive" style={{ marginTop: "0.75rem" }}>

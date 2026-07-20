@@ -541,6 +541,175 @@
   color: var(--hq-faint);
 }
 
+/* ------------------------------------------------------------ asset mix -- */
+
+.hq-mix {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0.5rem;
+}
+
+.hq-mix-track {
+  display: flex;
+  overflow: hidden;
+  height: 14px;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--hq-stage);
+}
+
+.hq-mix-track[data-kind="debt"] {
+  height: 8px;
+}
+
+.hq-mix-seg {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  min-width: 4px;
+}
+
+.hq-mix-seg[data-part="cash"],
+.hq-mix-dot[data-part="cash"] {
+  background: var(--hq-green);
+}
+
+.hq-mix-seg[data-part="retirement"],
+.hq-mix-dot[data-part="retirement"] {
+  background: var(--hq-blue-bright);
+}
+
+.hq-mix-seg[data-part="taxable"],
+.hq-mix-dot[data-part="taxable"] {
+  background: var(--hq-purple);
+}
+
+.hq-mix-seg[data-part="debt"],
+.hq-mix-dot[data-part="debt"] {
+  background: var(--hq-red-bright);
+}
+
+.hq-mix-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 0.3125rem;
+  border-radius: 999px;
+  vertical-align: baseline;
+}
+
+/* ---------------------------------------------- month deltas and flows -- */
+
+.hq-delta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.5rem;
+}
+
+.hq-delta-tile {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.5625rem 0.6875rem;
+  border-radius: 14px;
+  background: var(--hq-stage);
+}
+
+.hq-delta-tile[data-tone="positive"] {
+  background: var(--hq-green-soft);
+}
+
+.hq-delta-tile[data-tone="negative"] {
+  background: var(--hq-red-soft);
+}
+
+.hq-delta-label {
+  font: 700 0.625rem var(--hq-body-font);
+  color: var(--hq-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hq-delta-value {
+  font: 800 1.0625rem var(--hq-display);
+  color: var(--hq-ink);
+}
+
+.hq-delta-tile[data-tone="positive"] .hq-delta-value {
+  color: var(--hq-green-deep);
+}
+
+.hq-delta-tile[data-tone="negative"] .hq-delta-value {
+  color: var(--hq-red);
+}
+
+.hq-flow {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.hq-flow-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) 1fr minmax(5.5rem, auto);
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.hq-flow-row[data-total="true"] {
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1.5px dashed var(--hq-line-strong);
+}
+
+.hq-flow-label {
+  font: 700 0.71875rem var(--hq-body-font);
+  color: var(--hq-muted);
+}
+
+.hq-flow-row[data-total="true"] .hq-flow-label {
+  color: var(--hq-ink);
+}
+
+.hq-flow-track {
+  display: block;
+  overflow: hidden;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--hq-stage);
+}
+
+.hq-flow-bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--hq-green);
+}
+
+.hq-flow-bar[data-tone="negative"] {
+  background: var(--hq-red-bright);
+}
+
+.hq-flow-bar[data-tone="neutral"] {
+  background: var(--hq-faint);
+}
+
+.hq-flow-value {
+  font: 800 0.75rem var(--hq-body-font);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hq-flow-value[data-tone="positive"] {
+  color: var(--hq-green-deep);
+}
+
+.hq-flow-value[data-tone="negative"] {
+  color: var(--hq-red);
+}
+
+.hq-flow-value[data-tone="neutral"] {
+  color: var(--hq-faint);
+}
+
 /* ---------------------------------------------------------- plan choice -- */
 
 .hq-choices {
