@@ -1,7 +1,7 @@
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu;
 const SSN_PATTERN = /\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/gu;
 const LABELED_ACCOUNT_PATTERN =
-  /\b((?:bank|checking|savings|brokerage|retirement|credit(?: card)?|account|routing)\s*(?:account\s*)?(?:number|no\.?|#)?\s*[:=-]?\s*)([A-Z0-9][A-Z0-9 -]{5,30}[A-Z0-9])\b/giu;
+  /\b((?:bank|checking|savings|brokerage|retirement|credit(?: card)?|account|routing)\s*(?:account\s*)?(?:number|no\.?|#)?\s*[:=-]?\s*)((?=[A-Z0-9-]{6,32}\b)(?=[A-Z0-9-]*\d)[A-Z0-9-]{6,32}|(?:\d[ -]?){5,18}\d)\b/giu;
 const LONG_DIGIT_IDENTIFIER_PATTERN = /\b(?:\d[ -]?){12,19}\b/gu;
 
 export const PRIVACY_REDACTIONS = Object.freeze({

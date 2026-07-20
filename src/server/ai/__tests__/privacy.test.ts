@@ -31,6 +31,15 @@ describe("AI prompt privacy", () => {
     expect(report.counts).toEqual({ email: 0, accountNumber: 0, governmentId: 0, name: 0 });
   });
 
+  it("does not mistake ordinary bank-related prose for an account number", () => {
+    const line = "Your piggy bank finally got a spa day, and the bank account is growing.";
+    const report = redactSensitiveText(line);
+
+    expect(report.text).toBe(line);
+    expect(report.counts.accountNumber).toBe(0);
+    expect(() => assertNoKnownSensitiveData({ recentLines: [line] })).not.toThrow();
+  });
+
   it("redacts names case-insensitively without replacing substrings", () => {
     const report = redactSensitiveText("Ann said ANN saves annually.", ["Ann"]);
     expect(report.text).toBe("[REDACTED_NAME] said [REDACTED_NAME] saves annually.");
