@@ -63,17 +63,42 @@ describe("Money HQ month result", () => {
       <HqMonthResultDialog onDismiss={() => undefined} result={RESULT} />,
     );
 
-    expect(markup).toContain("Taxable investments");
-    expect(markup).toContain("Annual living cost");
-    expect(markup).toContain("Required monthly obligations");
-    expect(markup).toContain("Annual gross salary");
-    expect(markup).toContain("Event and other income");
-    expect(markup).toContain("Event and other expenses");
-    expect(markup).toContain("Insurance claim cost");
-    expect(markup).toContain("Federal income tax");
-    expect(markup).toContain("State income tax");
+    // Delta tiles.
+    expect(markup).toContain("Taxable funds");
+    expect(markup).toContain("Goal progress");
+    expect(markup).toContain("Preparedness");
+
+    // Monthly flow bars.
+    expect(markup).toContain("Paycheck (gross)");
+    expect(markup).toContain("Taxes withheld");
+    expect(markup).toContain("Bills and essentials");
+    expect(markup).toContain("Event income");
+    expect(markup).toContain("Event costs");
+    expect(markup).toContain("Insurance claim");
+    expect(markup).toContain("Debt interest");
+    expect(markup).toContain("Debt payments");
+    expect(markup).toContain("Market movement");
+
+    // Tax detail chips.
+    expect(markup).toContain("Federal");
+    expect(markup).toContain("State");
     expect(markup).toContain("Social Security + Medicare");
-    expect(markup).toContain("Total taxes and withholding");
-    expect(markup).not.toContain(">Insurance cost<");
+
+    // Annual-rate shifts land in the recurring chips.
+    expect(markup).toContain("Inflation");
+    expect(markup).toContain("Living costs");
+    expect(markup).toContain("Monthly bills");
+    expect(markup).toContain("Salary");
+  });
+
+  it("draws flow bars scaled against the largest monthly amount", () => {
+    const markup = renderToStaticMarkup(
+      <HqMonthResultDialog onDismiss={() => undefined} result={RESULT} />,
+    );
+
+    // Gross income is the largest flow, so its bar spans the full track.
+    expect(markup).toContain("width:100%");
+    // Every flow renders a bar.
+    expect(markup.match(/hq-flow-bar/g)?.length).toBe(9);
   });
 });

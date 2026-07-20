@@ -22,8 +22,7 @@ export function TrendChart({ trail, series = "netWorthCents" }: Props) {
   if (trail.length < 2) {
     return (
       <p className="hq-unavailable">
-        The trend appears once you have played a second month. It is drawn from
-        the balances the engine reported for each month you play here.
+        Play a second month and the trend line appears here.
       </p>
     );
   }
