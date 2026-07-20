@@ -99,24 +99,12 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
         <div className="hq-column">
           <HqCard eyebrow="Net worth">
             <div className="hq-figure">{formatCents(view.netWorthCents)}</div>
-            <div className="hq-chip-row">
-              <span className="hq-chip">Cash {formatCents(view.cashCents)}</span>
-              <span className="hq-chip">
-                Retirement {formatCents(run.finances.retirementCents)}
-              </span>
-              <span className="hq-chip">
-                Taxable funds {formatCents(run.finances.taxableInvestmentsCents)}
-              </span>
-              {view.debtCents > 0 ? (
-                <span className="hq-chip" data-tone="negative">
-                  Debt −{formatCents(view.debtCents)}
-                </span>
-              ) : (
-                <span className="hq-chip" data-tone="positive">
-                  Debt free
-                </span>
-              )}
-            </div>
+            <AssetMixBar
+              cashCents={view.cashCents}
+              debtCents={view.debtCents}
+              retirementCents={run.finances.retirementCents}
+              taxableCents={run.finances.taxableInvestmentsCents}
+            />
             <TrendChart trail={trail} />
           </HqCard>
 
@@ -249,19 +237,19 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
                   font: "600 0.78125rem var(--hq-body-font)",
                   color: "var(--hq-body)",
                   lineHeight: 1.5,
+                  margin: 0,
                 }}
               >
                 {lesson.shortDefinition}
               </p>
-              <p
-                style={{
-                  font: "700 0.75rem var(--hq-body-font)",
-                  color: "var(--hq-green-deep)",
-                  margin: 0,
-                }}
+              <button
+                className="hq-topbar-action"
+                onClick={() => onSelectTab("glossary")}
+                style={{ marginTop: "0.25rem", padding: "0.25rem 0.75rem" }}
+                type="button"
               >
-                Why it matters: {lesson.whyItMatters}
-              </p>
+                Full story in the field guide
+              </button>
             </HqCard>
           ) : null}
         </div>
@@ -285,6 +273,74 @@ function lessonIdFor(weakestKey: string): string {
     default:
       return "compounding";
   }
+}
+
+type AssetMixProps = Readonly<{
+  cashCents: number;
+  retirementCents: number;
+  taxableCents: number;
+  debtCents: number;
+}>;
+
+/** One stacked bar showing where the money sits, with debt on its own track. */
+function AssetMixBar({ cashCents, retirementCents, taxableCents, debtCents }: AssetMixProps) {
+  const segments = [
+    { key: "cash", label: "Cash", cents: cashCents },
+    { key: "retirement", label: "Retirement", cents: retirementCents },
+    { key: "taxable", label: "Taxable funds", cents: taxableCents },
+  ] as const;
+  const totalAssets = segments.reduce(
+    (sum, segment) => sum + Math.max(0, segment.cents),
+    0,
+  );
+
+  return (
+    <div className="hq-mix">
+      {totalAssets > 0 ? (
+        <div aria-hidden="true" className="hq-mix-track">
+          {segments
+            .filter((segment) => segment.cents > 0)
+            .map((segment) => (
+              <i
+                className="hq-mix-seg"
+                data-part={segment.key}
+                key={segment.key}
+                style={{ width: `${(segment.cents / totalAssets) * 100}%` }}
+              />
+            ))}
+        </div>
+      ) : null}
+      {debtCents > 0 && totalAssets > 0 ? (
+        <div aria-hidden="true" className="hq-mix-track" data-kind="debt">
+          <i
+            className="hq-mix-seg"
+            data-part="debt"
+            style={{
+              width: `${Math.min(100, (debtCents / totalAssets) * 100)}%`,
+            }}
+          />
+        </div>
+      ) : null}
+      <div className="hq-chip-row">
+        {segments.map((segment) => (
+          <span className="hq-chip" key={segment.key}>
+            <i className="hq-mix-dot" data-part={segment.key} />
+            {segment.label} {formatCents(segment.cents)}
+          </span>
+        ))}
+        {debtCents > 0 ? (
+          <span className="hq-chip" data-tone="negative">
+            <i className="hq-mix-dot" data-part="debt" />
+            Debt -{formatCents(debtCents)}
+          </span>
+        ) : (
+          <span className="hq-chip" data-tone="positive">
+            Debt free
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 type GlanceProps = Readonly<{

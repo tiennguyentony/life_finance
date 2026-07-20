@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 
 import type { BoardPlan } from "@/features/board/plan-catalog";
 
+import { formatSignedCents } from "./hq-view";
+
 type CardProps = Readonly<{
   accent?: "green" | "gold";
   children: ReactNode;
@@ -127,6 +129,71 @@ export function HqMeter({ label, valueLabel, percent, tone }: MeterProps) {
  */
 export function HqUnavailable({ children }: Readonly<{ children: ReactNode }>) {
   return <p className="hq-unavailable">{children}</p>;
+}
+
+export type DeltaTile = Readonly<{
+  label: string;
+  value: string;
+  tone: "positive" | "negative" | "neutral";
+}>;
+
+/** Compact tone-tinted tiles for month-over-month deltas. */
+export function HqDeltaGrid({ tiles }: Readonly<{ tiles: readonly DeltaTile[] }>) {
+  return (
+    <div className="hq-delta-grid">
+      {tiles.map((tile) => (
+        <div className="hq-delta-tile" data-tone={tile.tone} key={tile.label}>
+          <span className="hq-delta-label">{tile.label}</span>
+          <b className="hq-delta-value">{tile.value}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export type FlowBar = Readonly<{
+  label: string;
+  cents: number;
+  /** Overrides the sign-derived tone, e.g. neutral for a zero line. */
+  tone?: "positive" | "negative" | "neutral";
+  total?: boolean;
+}>;
+
+/**
+ * Horizontal money-in/money-out bars. Widths share one scale so the eye can
+ * compare magnitudes; every value still comes straight from the engine.
+ */
+export function HqFlowBars({ bars }: Readonly<{ bars: readonly FlowBar[] }>) {
+  const maxAbs = Math.max(...bars.map((bar) => Math.abs(bar.cents)), 1);
+  return (
+    <div className="hq-flow">
+      {bars.map((bar) => {
+        const tone =
+          bar.tone ??
+          (bar.cents === 0
+            ? ("neutral" as const)
+            : bar.cents > 0
+              ? ("positive" as const)
+              : ("negative" as const));
+        const width = Math.max(2, (Math.abs(bar.cents) / maxAbs) * 100);
+        return (
+          <div
+            className="hq-flow-row"
+            data-total={bar.total ? "true" : undefined}
+            key={bar.label}
+          >
+            <span className="hq-flow-label">{bar.label}</span>
+            <span aria-hidden="true" className="hq-flow-track">
+              <i className="hq-flow-bar" data-tone={tone} style={{ width: `${width}%` }} />
+            </span>
+            <b className="hq-flow-value" data-tone={tone}>
+              {formatSignedCents(bar.cents)}
+            </b>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 type ChoiceListProps = Readonly<{
