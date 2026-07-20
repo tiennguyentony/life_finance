@@ -170,6 +170,8 @@ describe("frontend API contracts", () => {
   it("publishes only the unversioned browser API", () => {
     const paths = Object.keys(CURRENT_OPENAPI_DOCUMENT.paths);
     expect(paths).toContain("/api/runs/{runId}/commands");
+    expect(paths).toContain("/api/runs/{runId}/events/interpret");
+    expect(paths).toContain("/api/runs/{runId}/banter");
     expect(paths.some((path) => /\/api\/v[0-9]+\//.test(path))).toBe(false);
   });
 });
