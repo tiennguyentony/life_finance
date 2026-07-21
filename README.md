@@ -15,6 +15,8 @@
 </p>
 
 <p>
+  <a href="https://www.youtube.com/watch?v=TNPiencmCJc"><strong>Watch the demo</strong></a>
+  &nbsp;-&nbsp;
   <!-- TODO: paste the production URL -->
   <a href="#"><strong>Live demo</strong></a>
   &nbsp;-&nbsp;
@@ -27,8 +29,10 @@
   <a href="#roadmap"><strong>Roadmap</strong></a>
 </p>
 
-<!-- TODO: swap this for a 10-15s demo GIF once /board is captured (see UI tour below); a still is a placeholder, not the goal -->
-<img src="docs/media/ui-landing.jpg" alt="Life Finance landing page" width="720" />
+<a href="https://www.youtube.com/watch?v=TNPiencmCJc">
+  <img src="https://img.youtube.com/vi/TNPiencmCJc/sddefault.jpg" alt="Watch the Life Finance demo: Same world. Same bad luck. Different preparation." width="640" />
+</a>
+<p><em>Same world. Same bad luck. Different preparation. -- click to watch on YouTube.</em></p>
 
 </div>
 
@@ -106,10 +110,7 @@ That safety boundary is the whole point: the engine stays in control no matter w
 </tr>
 </table>
 
-<!-- TODO: demo GIF goes here. This is the single highest-impact thing on the page.
-     Capture a 10-15 second clip of a month turn plus an AI free-text event answer,
-     save it to docs/media/demo.gif, then add it above:
-     <img src="docs/media/demo.gif" alt="Life Finance gameplay demo" width="720" /> -->
+For the `/board` gameplay screen itself, month turns, and the AI event dialogue in motion, see the [demo video](https://www.youtube.com/watch?v=TNPiencmCJc).
 
 ## Built with
 
