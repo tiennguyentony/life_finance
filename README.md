@@ -27,12 +27,8 @@
   <a href="#roadmap"><strong>Roadmap</strong></a>
 </p>
 
-<!--
-  TODO: demo GIF goes here. This is the single highest-impact thing on the page.
-  Capture a 10-15 second clip of a month turn plus an AI free-text event answer,
-  save it to docs/media/demo.gif, then replace this comment with:
-  <img src="docs/media/demo.gif" alt="Life Finance gameplay demo" width="720" />
--->
+<!-- TODO: swap this for a 10-15s demo GIF once /board is captured (see UI tour below); a still is a placeholder, not the goal -->
+<img src="docs/media/ui-landing.jpg" alt="Life Finance landing page" width="720" />
 
 </div>
 
@@ -43,6 +39,7 @@
 - [About](#about)
 - [Why this is interesting](#why-this-is-interesting)
 - [Features](#features)
+- [UI tour](#ui-tour)
 - [Built with](#built-with)
 - [Getting started](#getting-started)
 - [Architecture](#architecture)
@@ -80,6 +77,39 @@ That safety boundary is the whole point: the engine stays in control no matter w
 - **Talk to the game in plain English.** Free-text event answers are interpreted by the AI into engine-owned choices, with a confidence gate that falls back to buttons when it is unsure.
 - **A living cast.** Characters (including villains like Debtzilla, Inflato, and Impulso) react to your run with banter that is grounded in your actual numbers and cannot invent amounts.
 - **Instant demo, zero setup.** One command, no database, no keys. Real HTTP, cookies, and the real engine; state lives in memory.
+
+## UI tour
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+<img src="docs/media/ui-landing.jpg" alt="Landing page: Learn money by living the choices" />
+
+**Landing.** The pitch, the goal (financial independence), and one click into a run.
+
+</td>
+<td width="33%" valign="top">
+
+<img src="docs/media/ui-persona-select.jpg" alt="Persona picker: choose your financial fighter" />
+
+**Choose your life.** Pick a starting persona, each with a real salary, cash buffer, and difficulty.
+
+</td>
+<td width="33%" valign="top">
+
+<img src="docs/media/ui-character-cast.jpg" alt="Character cast: Debtzilla, Mr. Layoff, Sneaky, Impulso, Inflato, Bear Market, Lucky Cat, Promotion" />
+
+**The cast.** The life events that show up each month, personified. Debtzilla, Inflato, and Impulso are the antagonists Nemesis Mode will put behind the wheel.
+
+</td>
+</tr>
+</table>
+
+<!-- TODO: demo GIF goes here. This is the single highest-impact thing on the page.
+     Capture a 10-15 second clip of a month turn plus an AI free-text event answer,
+     save it to docs/media/demo.gif, then add it above:
+     <img src="docs/media/demo.gif" alt="Life Finance gameplay demo" width="720" /> -->
 
 ## Built with
 
