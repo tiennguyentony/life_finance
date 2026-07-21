@@ -1,0 +1,16 @@
+{
+  "projectId": "57c3bc0f-4856-4a48-9479-af49240ac01d",
+  "shape": "package",
+  "pkg": "life-finance",
+  "globalName": "LifeFinance",
+  "entry": ".design-sync/ds-entry.ts",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": ".design-sync/.cache/ds-styles.css",
+  "componentSrcMap": {
+    "Sprout": "src/components/sprout.tsx",
+    "LoadingState": "src/components/async-state.tsx",
+    "EmptyState": "src/components/async-state.tsx",
+    "ErrorState": "src/components/async-state.tsx"
+  }
+}

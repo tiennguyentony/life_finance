@@ -49,3 +49,11 @@ ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+
+# Local-only /demo recording scenes: film props, not product. The playable
+# demo the product ships (src/server/demo, src/app/api/demo, /hq) is tracked.
+src/app/demo/
+src/features/demo/
+src/app/styles/demo-scenes.css
+src/app/styles/loading-transition.css
+public/assets/demo/
