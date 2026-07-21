@@ -93,7 +93,7 @@ export const HQ_TABS: readonly HqTab[] = Object.freeze([
   }),
   Object.freeze({
     id: "glossary" as const,
-    label: "Glossary",
+    label: "Guide",
     hint: "19 concepts",
     characterSrc: `${CHARACTERS}/froggy/froggy-notebook.png`,
     characterName: "Froggy",

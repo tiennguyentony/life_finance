@@ -1,156 +1,103 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type { RunViewWire } from "@/contracts/api/contracts";
 
-import {
-  demonstratedConceptIds,
-  groupedConcepts,
-  EDUCATION_CONCEPTS,
-} from "../hq-concepts";
+import { demonstratedConceptIds, EDUCATION_CONCEPTS } from "../hq-concepts";
 import { hqTab } from "../hq-tabs";
-import { HqCard, HqSpeech } from "../hq-ui";
+import { HqScreenHead } from "../hq-ui";
 
 type Props = Readonly<{ run: RunViewWire }>;
 
 export function GlossaryScreen({ run }: Props) {
   const froggy = hqTab("glossary");
-  const [query, setQuery] = useState("");
   const demonstrated = useMemo(() => demonstratedConceptIds(run), [run]);
-  const groups = useMemo(() => groupedConcepts(), []);
-  const needle = query.trim().toLowerCase();
-
-  const filtered = groups
-    .map(({ group, concepts }) => ({
-      group,
-      concepts: concepts.filter(
-        (concept) =>
-          needle === "" ||
-          concept.title.toLowerCase().includes(needle) ||
-          concept.shortDefinition.toLowerCase().includes(needle),
-      ),
-    }))
-    .filter(({ concepts }) => concepts.length > 0);
+  const total = EDUCATION_CONCEPTS.length;
+  const learned = demonstrated.size;
+  const remaining = total - learned;
 
   return (
     <div className="hq-screen">
-      <div className="hq-screen-head">
-        <div>
-          <h2 className="hq-screen-title">Froggy&rsquo;s Field Guide</h2>
-          <p className="hq-screen-subtitle">
-            Every concept the game teaches. Ones your own run has put to work are
-            marked.
-          </p>
-        </div>
-        <div className="hq-planbar-spacer" />
-        <HqSpeech characterName={froggy.characterName} characterSrc={froggy.characterSrc}>
-          {demonstrated.size} of {EDUCATION_CONCEPTS.length} showing up in your
-          numbers so far. Ribbit.
-        </HqSpeech>
-      </div>
-
-      <HqCard>
-        <label className="hq-eyebrow" htmlFor="hq-glossary-search">
-          Search concepts
-        </label>
-        <input
-          className="hq-topbar-action"
-          id="hq-glossary-search"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search concepts…"
-          style={{
-            display: "block",
-            width: "min(24rem, 100%)",
-            marginTop: "0.375rem",
-            border: "2px solid var(--hq-line-strong)",
-            cursor: "text",
-          }}
-          type="search"
-          value={query}
-        />
-      </HqCard>
-
-      {filtered.length === 0 ? (
-        <p className="hq-empty">No concept matches “{query}”.</p>
-      ) : (
-        filtered.map(({ group, concepts }) => (
-          <section key={group.id}>
-            <h3 className="hq-eyebrow" style={{ margin: "0 0 0.5rem" }}>
-              {group.label}
-            </h3>
+      <HqScreenHead
+        characterName={froggy.characterName}
+        characterSrc={froggy.characterSrc}
+        line={
+          remaining === 0
+            ? "Ribbit. Every concept spotted!"
+            : `Ribbit. ${remaining} to go.`
+        }
+        lineTone="positive"
+        title="Field Guide"
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <b style={{ font: "800 1.25rem var(--hq-display)" }}>
+            {learned}
+            <span style={{ color: "var(--hq-faint)" }}>/{total}</span>
+          </b>
+          <div className="hq-meter" style={{ width: 120 }}>
             <div
+              className="hq-meter-fill"
+              style={{ width: `${total > 0 ? (learned / total) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+      </HqScreenHead>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "0.625rem",
+          gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 14rem), 1fr))",
+        }}
+      >
+        {EDUCATION_CONCEPTS.map((concept) => {
+          const seen = demonstrated.has(concept.id);
+          return (
+            <article
+              className="hq-card"
+              key={concept.id}
               style={{
-                display: "grid",
-                gap: "0.625rem",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+                borderRadius: 18,
+                padding: "0.75rem 0.875rem",
+                border: `2px solid ${seen ? "var(--hq-green-border)" : "transparent"}`,
               }}
             >
-              {concepts.map((concept) => {
-                const learned = demonstrated.has(concept.id);
-                return (
-                  <article
-                    className="hq-card"
-                    key={concept.id}
-                    style={
-                      learned
-                        ? { border: "2px solid var(--hq-green-border)" }
-                        : undefined
-                    }
+              <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                <b style={{ font: "800 0.84375rem var(--hq-display)" }}>
+                  {concept.title}
+                </b>
+                <div className="hq-planbar-spacer" />
+                {seen ? (
+                  <span
+                    style={{
+                      font: "800 0.75rem var(--hq-body-font)",
+                      color: "var(--hq-green-deep)",
+                    }}
+                    title="Demonstrated in your run"
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        marginBottom: "0.25rem",
-                      }}
-                    >
-                      <h4 style={{ margin: 0, font: "800 0.9375rem var(--hq-display)" }}>
-                        {concept.title}
-                      </h4>
-                      <div className="hq-planbar-spacer" />
-                      {learned ? (
-                        <span className="hq-chip" data-tone="positive">
-                          ✓ in your run
-                        </span>
-                      ) : null}
-                    </div>
-                    <p
-                      style={{
-                        font: "600 0.75rem var(--hq-body-font)",
-                        color: "var(--hq-body)",
-                        lineHeight: 1.5,
-                        margin: "0 0 0.375rem",
-                      }}
-                    >
-                      {concept.shortDefinition}
-                    </p>
-                    <p
-                      style={{
-                        font: "600 0.71875rem var(--hq-body-font)",
-                        color: "var(--hq-muted)",
-                        margin: "0 0 0.25rem",
-                      }}
-                    >
-                      <b>Why it matters:</b> {concept.whyItMatters}
-                    </p>
-                    <p
-                      style={{
-                        font: "600 0.71875rem var(--hq-body-font)",
-                        color: "var(--hq-muted)",
-                        margin: 0,
-                      }}
-                    >
-                      <b>Trade-off:</b> {concept.decisionTradeoff}
-                    </p>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        ))
-      )}
+                    ✓<span className="sr-only"> demonstrated in your run</span>
+                  </span>
+                ) : null}
+              </div>
+              <p
+                style={{
+                  margin: "0.25rem 0 0",
+                  font: "600 0.71875rem/1.45 var(--hq-body-font)",
+                  color: "var(--hq-muted)",
+                }}
+              >
+                {concept.shortDefinition}
+              </p>
+            </article>
+          );
+        })}
+      </div>
+
+      <p className="hq-note" style={{ margin: 0 }}>
+        A ✓ means your own run&rsquo;s numbers have put the idea to work — not
+        just that you read about it.
+      </p>
     </div>
   );
 }

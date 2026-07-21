@@ -30,6 +30,98 @@ export function HqCard({ accent, aside, children, eyebrow, style }: CardProps) {
   );
 }
 
+type ScreenHeadProps = Readonly<{
+  characterSrc?: string;
+  characterName?: string;
+  title: string;
+  /** One short mascot line rendered as a chip next to the title. */
+  line?: string;
+  lineTone?: "positive" | "negative" | "caution";
+  /** Right-aligned extras (chips, totals). */
+  children?: ReactNode;
+}>;
+
+/** The redesign's compact screen header: mascot · title · one-line chip. */
+export function HqScreenHead({
+  characterSrc,
+  characterName,
+  title,
+  line,
+  lineTone,
+  children,
+}: ScreenHeadProps) {
+  return (
+    <div className="hq-screen-head" style={{ gap: "0.625rem" }}>
+      {characterSrc ? (
+        <Image
+          alt={characterName ?? ""}
+          height={54}
+          src={characterSrc}
+          style={{ objectFit: "contain" }}
+          unoptimized
+          width={54}
+        />
+      ) : null}
+      <h2 className="hq-screen-title">{title}</h2>
+      {line ? (
+        <span className="hq-chip" data-tone={lineTone} style={{ fontSize: "0.75rem" }}>
+          {line}
+        </span>
+      ) : null}
+      <div className="hq-planbar-spacer" />
+      {children}
+    </div>
+  );
+}
+
+type MiniTileProps = Readonly<{
+  label: string;
+  value: string;
+  valueTone?: "positive" | "negative";
+  caption?: string;
+}>;
+
+const MINI_TILE_COLOR: Readonly<Record<string, string>> = {
+  positive: "var(--hq-green-deep)",
+  negative: "var(--hq-red)",
+};
+
+/** Small stage-tinted stat tile used across the redesigned screens. */
+export function HqMiniTile({ label, value, valueTone, caption }: MiniTileProps) {
+  return (
+    <div className="hq-mini-tile">
+      <div className="hq-eyebrow">{label}</div>
+      <div
+        className="hq-mini-tile-value"
+        style={valueTone ? { color: MINI_TILE_COLOR[valueTone] } : undefined}
+      >
+        {value}
+      </div>
+      {caption ? (
+        <div style={{ font: "600 0.625rem var(--hq-body-font)", color: "var(--hq-muted)" }}>
+          {caption}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type BannerProps = Readonly<{
+  label: string;
+  value: string;
+  tone?: "positive" | "negative" | "gold";
+}>;
+
+/** Emphasis row like "LEFT OVER $110" or "FAST LANE SAVES $340". */
+export function HqBanner({ label, value, tone }: BannerProps) {
+  return (
+    <div className="hq-banner" data-tone={tone}>
+      <span className="hq-banner-label">{label}</span>
+      <b className="hq-banner-value">{value}</b>
+    </div>
+  );
+}
+
 type SpeechProps = Readonly<{
   characterSrc: string;
   characterName: string;

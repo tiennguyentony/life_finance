@@ -1,18 +1,13 @@
 "use client";
 
 import { hqTab } from "../hq-tabs";
-import { HqCard, HqChoiceList, HqSpeech } from "../hq-ui";
-import { projectCareerPrograms } from "../hq-derivations";
-import { formatCents } from "../hq-view";
+import { HqScreenHead } from "../hq-ui";
+import {
+  projectCareerPrograms,
+  type CareerProgramProjection,
+} from "../hq-derivations";
+import { formatCents, formatCompactCents } from "../hq-view";
 import type { ScreenProps } from "./screen-props";
-
-const RULES: readonly Readonly<{ mark: string; text: string }>[] = Object.freeze([
-  { mark: "✓", text: "Upskilling requires active employment" },
-  { mark: "✓", text: "Cash upfront — no financing here" },
-  { mark: "✓", text: "The same program cannot be started twice at once" },
-  { mark: "✓", text: "Different programs may run in parallel if you can fund them" },
-  { mark: "✓", text: "The catalog raise lands when the program completes" },
-]);
 
 export function CareerScreen({
   busy,
@@ -24,139 +19,141 @@ export function CareerScreen({
 }: ScreenProps) {
   const layoff = hqTab("career");
   const projections = projectCareerPrograms();
+  const maxPayback = Math.max(
+    ...projections.map(({ paybackMonths }) => paybackMonths),
+    1,
+  );
+
+  // Board plan ids are "startup.<name>", program ids "upskill.<name>".
+  const projectionForPlan = (planId: string): CareerProgramProjection | null =>
+    projections.find(
+      ({ program }) =>
+        planId === `startup.${program.id.replace("upskill.", "")}`,
+    ) ?? null;
 
   return (
     <div className="hq-screen">
-      <div className="hq-screen-head">
-        <div>
-          <h2 className="hq-screen-title">Career Campus</h2>
-          <p className="hq-screen-subtitle">
-            Your salary is your biggest money machine — upgrades cost cash now
-            and pay every month after.
-          </p>
-        </div>
-        <div className="hq-planbar-spacer" />
-        <HqSpeech
-          characterName={layoff.characterName}
-          characterSrc={layoff.characterSrc}
-          tone="hostile"
-        >
-          Stale skills are my favourite snack. Keep learning and I&rsquo;ll have
-          to bother someone else…
-        </HqSpeech>
-      </div>
+      <HqScreenHead
+        characterName={layoff.characterName}
+        characterSrc={layoff.characterSrc}
+        line="Stale skills are my snack."
+        lineTone="negative"
+        title="Career"
+      >
+        {run.income.annualGrossSalaryCents === null ? (
+          <span className="hq-chip" data-tone="negative">
+            no active salary
+          </span>
+        ) : (
+          <span className="hq-chip">
+            salary {formatCents(run.income.annualGrossSalaryCents)}/yr
+          </span>
+        )}
+      </HqScreenHead>
 
-      <div className="hq-columns">
-        <div className="hq-column">
-          <h3 className="hq-eyebrow" style={{ margin: "0.125rem 0 -0.25rem" }}>
-            Choose one program
-          </h3>
-          <HqChoiceList
-            disabled={busy}
-            onSelect={onSelectPlan}
-            plans={plans}
-            selectedPlanId={selectedPlanId}
-          />
-
-          <HqCard eyebrow="What each program is worth">
-            <div style={{ display: "grid", gap: "0.5rem" }}>
-              {projections.map(({ program, paybackMonths, tenYearUpsideCents }) => (
-                <div
-                  key={program.id}
-                  style={{
-                    display: "grid",
-                    gap: "0.25rem",
-                    padding: "0.625rem 0.75rem",
-                    borderRadius: 12,
-                    background: "var(--hq-stage)",
-                  }}
-                >
-                  <div style={{ font: "800 0.84375rem var(--hq-display)" }}>
-                    {program.id.replace("upskill.", "").replace(/^./, (c) => c.toUpperCase())}
-                  </div>
-                  <div
+      <div className="hq-grid-3">
+        {plans.map((plan) => {
+          const projection = projectionForPlan(plan.id);
+          const blocked = plan.disabledReason !== null;
+          const selected = plan.id === selectedPlanId;
+          return (
+            <button
+              aria-pressed={selected}
+              className="hq-choice"
+              disabled={busy || blocked}
+              key={plan.id}
+              onClick={() => onSelectPlan(plan.id)}
+              style={{ borderRadius: 22, gap: "0.375rem" }}
+              type="button"
+            >
+              {selected ? <span className="hq-choice-flag">Selected</span> : null}
+              {blocked ? (
+                <span className="hq-choice-flag" data-tone="blocked">
+                  Unavailable
+                </span>
+              ) : null}
+              <span className="hq-choice-title" style={{ fontSize: "1.125rem" }}>
+                {plan.label}
+              </span>
+              {projection ? (
+                <>
+                  <span style={{ font: "800 1.875rem var(--hq-display)", color: "var(--hq-ink)" }}>
+                    {formatCents(projection.program.costCents)}
+                  </span>
+                  <span className="hq-chip" data-tone="positive" style={{ alignSelf: "start" }}>
+                    +{formatCents(projection.program.annualSalaryIncreaseCents)}/yr on completion
+                  </span>
+                  <span
                     style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "0.75rem",
-                      font: "700 0.6875rem var(--hq-body-font)",
+                      display: "block",
+                      marginTop: "0.25rem",
+                      font: "800 0.6875rem var(--hq-body-font)",
                       color: "var(--hq-muted)",
                     }}
                   >
-                    <span>{formatCents(program.costCents)} upfront</span>
-                    <span>{program.durationMonths} months</span>
-                    <span>
-                      +{formatCents(program.annualSalaryIncreaseCents)}/yr on completion
+                    PAYS FOR ITSELF IN
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span
+                      style={{
+                        flex: 1,
+                        height: 10,
+                        borderRadius: 999,
+                        background: "var(--hq-stage)",
+                        overflow: "hidden",
+                        display: "block",
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "block",
+                          width: `${Math.min(100, (projection.paybackMonths / maxPayback) * 100)}%`,
+                          height: "100%",
+                          background: "var(--hq-green)",
+                          borderRadius: 999,
+                        }}
+                      />
                     </span>
-                    <span style={{ color: "var(--hq-green-deep)" }}>
-                      pays for itself in ~{paybackMonths} months
-                    </span>
-                    <span style={{ color: "var(--hq-green-deep)" }}>
-                      10-yr upside +{formatCents(tenYearUpsideCents)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="hq-note" style={{ marginTop: "0.625rem" }}>
-              Payback and upside are arithmetic, not a market forecast. The
-              engine applies the listed raise on completion; the ten-year
-              figure assumes that salary then remains unchanged for ten years.
-            </p>
-          </HqCard>
-        </div>
-
-        <div className="hq-column">
-          <HqCard eyebrow="The rules of campus">
-            <div style={{ display: "grid", gap: "0.375rem" }}>
-              {RULES.map((rule) => (
-                <div
-                  key={rule.text}
-                  style={{
-                    display: "flex",
-                    gap: "0.5rem",
-                    font: "700 0.78125rem var(--hq-body-font)",
-                    color: "var(--hq-muted)",
-                  }}
-                >
-                  <span style={{ color: "var(--hq-green-deep)" }}>{rule.mark}</span>
-                  <span>{rule.text}</span>
-                </div>
-              ))}
-            </div>
-            {run.career.pendingProgramIds.length > 0 ? (
-              <p className="hq-note" data-tone="caution" style={{ marginTop: "0.625rem" }}>
-                In progress:{" "}
-                {run.career.pendingProgramIds
-                  .map((id) => id.replace("upskill.", ""))
-                  .join(", ")}
-                . The salary bump lands in a month result when it completes.
-              </p>
-            ) : null}
-          </HqCard>
-
-          <HqCard accent="green" style={{ flex: 1 }}>
-            <h3 style={{ margin: 0, font: "800 1rem var(--hq-display)" }}>
-              Why bother? Compounding, again.
-            </h3>
-            <p
-              style={{
-                font: "600 0.78125rem var(--hq-body-font)",
-                color: "var(--hq-body)",
-                lineHeight: 1.5,
-              }}
-            >
-              A raise repeats in each later paycheck while employment and that
-              salary remain active. Early-career salary growth can out-earn an
-              investment you can afford right now.
-            </p>
-            <p className="hq-note" data-tone="positive" style={{ margin: 0 }}>
-              You hold {formatCents(view.cashCents)} in cash today. Programs are
-              paid upfront, so check your Safety buffer before committing.
-            </p>
-          </HqCard>
-        </div>
+                    <b style={{ font: "800 0.8125rem var(--hq-display)" }}>
+                      {projection.paybackMonths} mo
+                    </b>
+                  </span>
+                  <span className="hq-chip" style={{ alignSelf: "start", marginTop: "0.25rem" }}>
+                    {projection.program.durationMonths} months ·{" "}
+                    10-yr +{formatCompactCents(projection.tenYearUpsideCents)}
+                  </span>
+                </>
+              ) : (
+                <span className="hq-choice-body">{plan.description}</span>
+              )}
+              {blocked ? (
+                <span className="hq-note" data-tone="negative" style={{ marginTop: "0.375rem" }}>
+                  {plan.disabledReason}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
+
+      <div className="hq-chip-row" style={{ marginTop: 0 }}>
+        <span className="hq-chip">cash upfront</span>
+        <span className="hq-chip">needs a job</span>
+        <span className="hq-chip">raise lands on completion</span>
+        <span className="hq-chip" data-tone="caution">
+          you hold {formatCents(view.cashCents)}
+        </span>
+      </div>
+
+      {run.career.pendingProgramIds.length > 0 ? (
+        <p className="hq-note" data-tone="caution" style={{ margin: 0 }}>
+          In progress:{" "}
+          {run.career.pendingProgramIds
+            .map((id) => id.replace("upskill.", ""))
+            .join(", ")}
+          . The salary bump lands in a month result when it completes.
+        </p>
+      ) : null}
     </div>
   );
 }

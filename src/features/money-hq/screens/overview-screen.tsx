@@ -3,18 +3,19 @@
 import Image from "next/image";
 
 import type { RunViewWire } from "@/contracts/api/contracts";
-import { EDUCATION_CONCEPTS } from "@/features/money-hq/hq-concepts";
 
-import { HqCard, HqMeter } from "../hq-ui";
+import { HqRing } from "../hq-chrome";
+import { HqBanner, HqCard } from "../hq-ui";
 import type { TrailPoint } from "../run-trail";
 import { TrendChart } from "../trend-chart";
 import { hqTab, type HqTabId } from "../hq-tabs";
 import {
   formatCents,
-  formatMonths,
   formatPpmPercent,
+  formatShortMonthLabel,
   type HqView,
 } from "../hq-view";
+import type { TaxLoadState } from "./tax-screen";
 
 const BAND_COPY: Readonly<Record<RunViewWire["preparedness"]["band"], string>> = {
   critical: "Critical",
@@ -23,13 +24,29 @@ const BAND_COPY: Readonly<Record<RunViewWire["preparedness"]["band"], string>> =
   resilient: "Resilient",
 };
 
+const BAND_RING_COLOR: Readonly<Record<RunViewWire["preparedness"]["band"], string>> = {
+  critical: "var(--hq-red-bright)",
+  exposed: "#f2b64c",
+  stable: "var(--hq-green)",
+  resilient: "var(--hq-green)",
+};
+
+const BAND_CHIP_TONE: Readonly<
+  Record<RunViewWire["preparedness"]["band"], "positive" | "caution" | "negative">
+> = {
+  critical: "negative",
+  exposed: "caution",
+  stable: "positive",
+  resilient: "positive",
+};
+
 /** Keyed by the preparedness component field names the wire reports. */
 const WEAKEST_COPY: Readonly<Record<string, string>> = {
-  liquidityPpm: "emergency fund",
-  cashFlowPpm: "monthly cash flow",
-  debtPpm: "debt load",
-  insurancePpm: "insurance cover",
-  diversificationPpm: "investment mix",
+  liquidityPpm: "Emergency fund",
+  cashFlowPpm: "Cash flow",
+  debtPpm: "Debt",
+  insurancePpm: "Insurance",
+  diversificationPpm: "Investment mix",
 };
 
 const WEAKEST_TAB: Readonly<Record<string, HqTabId>> = {
@@ -56,38 +73,42 @@ type Props = Readonly<{
   view: HqView;
   trail: readonly TrailPoint[];
   onSelectTab: (tab: HqTabId) => void;
+  /**
+   * The same lazy tax load the Tax tab uses; the flow card needs modeled
+   * take-home. Optional so scripted scenes without a tax API still render.
+   */
+  taxLoadState?: TaxLoadState;
 }>;
 
-export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
+export function OverviewScreen({ run, view, trail, onSelectTab, taxLoadState }: Props) {
   const penny = hqTab("overview");
-  const bengo = hqTab("invest");
   const weakest = weakestComponent(run.preparedness.components);
-  const weakestLabel = WEAKEST_COPY[weakest.key] ?? "preparedness";
+  const weakestLabel = WEAKEST_COPY[weakest.key] ?? "Preparedness";
   const weakestTab = WEAKEST_TAB[weakest.key] ?? "safety";
-  // The lesson rotates with the run's own weakest area rather than a fixed pick.
-  const lesson =
-    EDUCATION_CONCEPTS.find(({ id }) => id === lessonIdFor(weakest.key)) ??
-    EDUCATION_CONCEPTS[0];
+
+  const first = trail[0] ?? null;
+  const latest = trail.at(-1) ?? null;
+  const runChange =
+    first && latest && trail.length >= 2
+      ? latest.netWorthCents - first.netWorthCents
+      : null;
+
+  const line = view.hasPendingEvent
+    ? "A decision is waiting — resolve it first."
+    : `Month ${view.monthNumber} — pick your move →`;
 
   return (
     <div className="hq-screen">
-      <div className="hq-screen-head">
+      <div className="hq-mascot-row">
         <Image
           alt={penny.characterName}
-          className="hq-character"
-          height={88}
+          height={60}
           src={penny.characterSrc}
+          style={{ width: 60, height: 60, objectFit: "contain" }}
           unoptimized
-          width={88}
+          width={60}
         />
-        <p className="hq-speech">
-          Welcome back, Sprout! It&rsquo;s {view.shortMonthLabel} — month{" "}
-          {view.monthNumber}.{" "}
-          {view.hasPendingEvent
-            ? "A decision is waiting before you can plan again."
-            : "Pick a tab to shape this month's plan."}
-        </p>
-        <div className="hq-planbar-spacer" />
+        <span className="hq-line-pill">{line}</span>
         {view.hasPendingEvent ? (
           <span className="hq-chip" data-tone="negative">
             1 decision waiting
@@ -95,184 +116,212 @@ export function OverviewScreen({ run, view, trail, onSelectTab }: Props) {
         ) : null}
       </div>
 
-      <div className="hq-columns">
-        <div className="hq-column">
-          <HqCard eyebrow="Net worth">
-            <div className="hq-figure">{formatCents(view.netWorthCents)}</div>
-            <AssetMixBar
-              cashCents={view.cashCents}
-              debtCents={view.debtCents}
-              retirementCents={run.finances.retirementCents}
-              taxableCents={run.finances.taxableInvestmentsCents}
+      <div className="hq-grid-overview">
+        <HqCard
+          aside={
+            runChange !== null && first ? (
+              <span
+                className="hq-chip"
+                data-tone={runChange >= 0 ? "positive" : "negative"}
+              >
+                {runChange >= 0 ? "▲" : "▼"} {formatCents(Math.abs(runChange))}{" "}
+                since {formatShortMonthLabel(first.month)}
+              </span>
+            ) : null
+          }
+          eyebrow="Net worth"
+        >
+          <div
+            className="hq-figure"
+            style={{ fontSize: "3.375rem", margin: "0.375rem 0 0.25rem" }}
+          >
+            {formatCents(view.netWorthCents)}
+          </div>
+          <TrendChart trail={trail} withSummary={false} />
+          <AssetMixBar
+            cashCents={view.cashCents}
+            debtCents={view.debtCents}
+            retirementCents={run.finances.retirementCents}
+            taxableCents={run.finances.taxableInvestmentsCents}
+          />
+        </HqCard>
+
+        <FlowCard taxLoadState={taxLoadState} view={view} />
+
+        <HqCard eyebrow="Safety" style={{ display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              margin: "0.625rem 0 0.125rem",
+            }}
+          >
+            <HqRing
+              color={BAND_RING_COLOR[view.preparednessBand]}
+              label={formatPpmPercent(view.preparednessPpm)}
+              percent={view.preparednessPpm / 10_000}
+              size={92}
             />
-            <TrendChart trail={trail} />
-          </HqCard>
-
-          <HqCard eyebrow="This month at a glance">
-            <div
-              style={{
-                display: "grid",
-                gap: "0.625rem",
-                gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))",
-              }}
-            >
-              <GlanceTile
-                caption="before tax"
-                label="Gross pay"
-                tone="positive"
-                value={
-                  view.monthlyGrossSalaryCents === null
-                    ? "No salary"
-                    : formatCents(view.monthlyGrossSalaryCents)
-                }
-              />
-              <GlanceTile
-                caption="rent, food, insurance, debt minimums"
-                label="Required each month"
-                tone="neutral"
-                value={`−${formatCents(view.monthlyRequiredCents)}`}
-              />
-              <GlanceTile
-                caption="rate illustration; actual shown after month close"
-                label="Requested allocation"
-                tone="blue"
-                value={`≈${formatCents(
-                  view.buckets.lockedMonthlyCents -
-                    view.buckets.employerMatchMonthlyCents +
-                    view.buckets.taxableMonthlyCents +
-                    view.buckets.extraDebtMonthlyCents,
-                )}`}
-              />
-              <GlanceTile
-                caption="free money, on top of your pay"
-                label="Employer match"
-                tone="gold"
-                value={`≈+${formatCents(view.buckets.employerMatchMonthlyCents)}`}
-              />
-            </div>
-          </HqCard>
-        </div>
-
-        <div className="hq-column">
-          <HqCard eyebrow="Quest · financial independence">
-            <div className="hq-figure" style={{ fontSize: "1.375rem" }}>
-              {formatCents(view.goalCurrentCents)}{" "}
-              <span className="hq-figure-unit">
-                of {formatCents(view.goalTargetCents)}
+            <div style={{ display: "grid", gap: "0.375rem", justifyItems: "start" }}>
+              <span
+                className="hq-chip"
+                data-tone={BAND_CHIP_TONE[view.preparednessBand]}
+                style={{ fontSize: "0.75rem" }}
+              >
+                {BAND_COPY[view.preparednessBand]}
+              </span>
+              <span className="hq-chip" style={{ fontSize: "0.75rem" }}>
+                Risk {formatPpmPercent(view.riskPpm)}
               </span>
             </div>
-            <div className="hq-meter" data-size="lg">
-              <div
-                className="hq-meter-fill"
-                data-tone="goal"
-                style={{
-                  width: `${Math.max(1, Math.min(100, view.goalProgressPpm / 10_000))}%`,
-                }}
-              />
-            </div>
-            <p className="hq-nav-hint" style={{ marginTop: "0.375rem" }}>
-              {formatPpmPercent(view.goalProgressPpm, 1)} there · target is{" "}
-              {(1_000_000 / run.goal.safeWithdrawalRatePpm).toFixed(0)}× your
-              chosen annual spending
-            </p>
-          </HqCard>
-
-          <HqCard eyebrow="How safe is Sprout?">
-            <HqMeter
-              label="Preparedness"
-              percent={view.preparednessPpm / 10_000}
-              tone="positive"
-              valueLabel={`${formatPpmPercent(view.preparednessPpm)} · ${
-                BAND_COPY[view.preparednessBand]
-              }`}
-            />
-            <HqMeter
-              label="Risk exposure"
-              percent={view.riskPpm / 10_000}
-              tone="caution"
-              valueLabel={formatPpmPercent(view.riskPpm)}
-            />
-            <p className="hq-note" data-tone="caution">
-              Weakest spot: <b>{weakestLabel}</b>
-              {/* The runway figure only explains a liquidity weakness. */}
-              {view.emergencyFundMonths !== null && weakest.key === "liquidityPpm"
-                ? ` — you hold ${formatMonths(view.emergencyFundMonths)} of required spending.`
-                : "."}{" "}
-              <button
-                className="hq-topbar-action"
-                onClick={() => onSelectTab(weakestTab)}
-                style={{ padding: "0.125rem 0.5rem", boxShadow: "none" }}
-                type="button"
-              >
-                Visit {hqTab(weakestTab).label} →
-              </button>
-            </p>
-          </HqCard>
-
-          {lesson ? (
-            <HqCard accent="green">
-              <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-                <Image
-                  alt=""
-                  height={56}
-                  src={bengo.characterSrc}
-                  style={{ objectFit: "contain" }}
-                  unoptimized
-                  width={56}
-                />
-                <div>
-                  <div
-                    className="hq-eyebrow"
-                    style={{ color: "var(--hq-green-deep)" }}
-                  >
-                    Lesson of the month
-                  </div>
-                  <div style={{ font: "800 1.0625rem var(--hq-display)" }}>
-                    {lesson.title}
-                  </div>
-                </div>
-              </div>
-              <p
-                style={{
-                  font: "600 0.78125rem var(--hq-body-font)",
-                  color: "var(--hq-body)",
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
-                {lesson.shortDefinition}
-              </p>
-              <button
-                className="hq-topbar-action"
-                onClick={() => onSelectTab("glossary")}
-                style={{ marginTop: "0.25rem", padding: "0.25rem 0.75rem" }}
-                type="button"
-              >
-                Full story in the field guide
-              </button>
-            </HqCard>
-          ) : null}
-        </div>
+          </div>
+          <div style={{ marginTop: "auto", paddingTop: "0.625rem" }}>
+            <button
+              className="hq-topbar-action"
+              onClick={() => onSelectTab(weakestTab)}
+              style={{
+                width: "100%",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                textAlign: "left",
+                border: "2px solid var(--hq-gold-border)",
+                background: "var(--hq-gold-soft)",
+                color: "var(--hq-gold-ink)",
+              }}
+              type="button"
+            >
+              <span>Weak spot: {weakestLabel}</span>
+              <b>Fix →</b>
+            </button>
+          </div>
+        </HqCard>
       </div>
     </div>
   );
 }
 
-function lessonIdFor(weakestKey: string): string {
-  switch (weakestKey) {
-    case "liquidityPpm":
-      return "emergency_fund";
-    case "cashFlowPpm":
-      return "lifestyle_creep";
-    case "debtPpm":
-      return "dti";
-    case "insurancePpm":
-      return "deductible";
-    case "diversificationPpm":
-      return "diversification";
-    default:
-      return "compounding";
+type FlowCardProps = Readonly<{
+  view: HqView;
+  taxLoadState: TaxLoadState | undefined;
+}>;
+
+/**
+ * One month of money in motion. "In" is the tax engine's modeled take-home;
+ * bills and the requested allocation are the same figures Budget and Invest
+ * show, so the leftover line is honest arithmetic, not a new estimate.
+ */
+function FlowCard({ view, taxLoadState }: FlowCardProps) {
+  const takeHomeCents =
+    taxLoadState?.status === "ready"
+      ? taxLoadState.summary.paycheckEstimate.afterTaxCashIncomeCents
+      : null;
+  const billsCents = view.monthlyRequiredCents;
+  const futureCents =
+    view.buckets.lockedMonthlyCents -
+    view.buckets.employerMatchMonthlyCents +
+    view.buckets.taxableMonthlyCents +
+    view.buckets.extraDebtMonthlyCents;
+  const matchCents = view.buckets.employerMatchMonthlyCents;
+  const scale = Math.max(takeHomeCents ?? 0, billsCents, futureCents, 1);
+  const leftoverCents =
+    takeHomeCents === null ? null : takeHomeCents - billsCents - futureCents;
+
+  if (view.monthlyGrossSalaryCents === null) {
+    return (
+      <HqCard eyebrow={`${view.shortMonthLabel} flow`}>
+        <p className="hq-unavailable" style={{ marginTop: "0.625rem" }}>
+          No employment income this month, so there is no paycheck to split.
+          Bills of {formatCents(billsCents)} still come due.
+        </p>
+      </HqCard>
+    );
   }
+
+  return (
+    <HqCard eyebrow={`${view.shortMonthLabel} flow`}>
+      <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>
+        <FlowRow
+          amount={takeHomeCents === null ? "estimating…" : formatCents(takeHomeCents)}
+          color="var(--hq-green)"
+          label="In"
+          valueColor="var(--hq-green-deep)"
+          width={takeHomeCents === null ? 0 : (takeHomeCents / scale) * 100}
+        />
+        <FlowRow
+          amount={`−${formatCents(billsCents)}`}
+          color="var(--hq-red-light)"
+          label="Bills"
+          valueColor="var(--hq-red)"
+          width={(billsCents / scale) * 100}
+        />
+        <FlowRow
+          amount={`−${formatCents(futureCents)}`}
+          color="var(--hq-blue-bright)"
+          label="Future"
+          valueColor="var(--hq-blue)"
+          width={(futureCents / scale) * 100}
+        />
+      </div>
+      <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.875rem" }}>
+        {leftoverCents !== null ? (
+          <HqBanner
+            label={leftoverCents >= 0 ? "LEFT OVER" : "SHORT"}
+            tone={leftoverCents >= 0 ? "positive" : "negative"}
+            value={formatCents(Math.abs(leftoverCents))}
+          />
+        ) : (
+          <p className="hq-unavailable" style={{ margin: 0 }}>
+            {taxLoadState?.status === "error"
+              ? "The take-home estimate could not be loaded."
+              : "Estimating take-home with the tax engine…"}
+          </p>
+        )}
+        {matchCents > 0 ? (
+          <HqBanner
+            label="⚡ FREE MATCH"
+            tone="gold"
+            value={`+${formatCents(matchCents)}`}
+          />
+        ) : null}
+      </div>
+    </HqCard>
+  );
+}
+
+type FlowRowProps = Readonly<{
+  label: string;
+  amount: string;
+  width: number;
+  color: string;
+  valueColor: string;
+}>;
+
+function FlowRow({ label, amount, width, color, valueColor }: FlowRowProps) {
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          font: "800 0.8125rem var(--hq-body-font)",
+        }}
+      >
+        <span style={{ color: "var(--hq-muted)" }}>{label}</span>
+        <b style={{ color: valueColor }}>{amount}</b>
+      </div>
+      <div className="hq-meter" data-size="lg" style={{ marginTop: 3 }}>
+        <div
+          className="hq-meter-fill"
+          style={{
+            width: `${Math.max(0, Math.min(100, width))}%`,
+            background: color,
+          }}
+        />
+      </div>
+    </div>
+  );
 }
 
 type AssetMixProps = Readonly<{
@@ -282,12 +331,12 @@ type AssetMixProps = Readonly<{
   debtCents: number;
 }>;
 
-/** One stacked bar showing where the money sits, with debt on its own track. */
+/** One stacked bar showing where the money sits, with debt as its own chip. */
 function AssetMixBar({ cashCents, retirementCents, taxableCents, debtCents }: AssetMixProps) {
   const segments = [
-    { key: "cash", label: "Cash", cents: cashCents },
-    { key: "retirement", label: "Retirement", cents: retirementCents },
-    { key: "taxable", label: "Taxable funds", cents: taxableCents },
+    { key: "cash", cents: cashCents },
+    { key: "retirement", cents: retirementCents },
+    { key: "taxable", cents: taxableCents },
   ] as const;
   const totalAssets = segments.reduce(
     (sum, segment) => sum + Math.max(0, segment.cents),
@@ -295,7 +344,7 @@ function AssetMixBar({ cashCents, retirementCents, taxableCents, debtCents }: As
   );
 
   return (
-    <div className="hq-mix">
+    <div className="hq-mix" style={{ marginTop: "0.5rem" }}>
       {totalAssets > 0 ? (
         <div aria-hidden="true" className="hq-mix-track">
           {segments
@@ -310,70 +359,22 @@ function AssetMixBar({ cashCents, retirementCents, taxableCents, debtCents }: As
             ))}
         </div>
       ) : null}
-      {debtCents > 0 && totalAssets > 0 ? (
-        <div aria-hidden="true" className="hq-mix-track" data-kind="debt">
-          <i
-            className="hq-mix-seg"
-            data-part="debt"
-            style={{
-              width: `${Math.min(100, (debtCents / totalAssets) * 100)}%`,
-            }}
-          />
-        </div>
-      ) : null}
-      <div className="hq-chip-row">
+      <div className="hq-chip-row" style={{ marginTop: "0.25rem" }}>
         {segments.map((segment) => (
           <span className="hq-chip" key={segment.key}>
             <i className="hq-mix-dot" data-part={segment.key} />
-            {segment.label} {formatCents(segment.cents)}
+            {formatCents(segment.cents)}
           </span>
         ))}
         {debtCents > 0 ? (
           <span className="hq-chip" data-tone="negative">
-            <i className="hq-mix-dot" data-part="debt" />
-            Debt -{formatCents(debtCents)}
+            <i className="hq-mix-dot" data-part="debt" />−{formatCents(debtCents)}
           </span>
         ) : (
           <span className="hq-chip" data-tone="positive">
             Debt free
           </span>
         )}
-      </div>
-    </div>
-  );
-}
-
-type GlanceProps = Readonly<{
-  label: string;
-  value: string;
-  caption: string;
-  tone: "positive" | "neutral" | "blue" | "gold";
-}>;
-
-const GLANCE_BACKGROUND: Readonly<Record<GlanceProps["tone"], string>> = {
-  positive: "var(--hq-green-soft)",
-  neutral: "var(--hq-stage)",
-  blue: "var(--hq-blue-soft)",
-  gold: "var(--hq-gold-wash)",
-};
-
-function GlanceTile({ label, value, caption, tone }: GlanceProps) {
-  return (
-    <div
-      style={{
-        padding: "0.625rem 0.75rem",
-        borderRadius: 14,
-        background: GLANCE_BACKGROUND[tone],
-      }}
-    >
-      <div style={{ font: "700 0.65625rem var(--hq-body-font)", color: "var(--hq-muted)" }}>
-        {label}
-      </div>
-      <div style={{ font: "800 1.25rem var(--hq-display)", color: "var(--hq-ink)" }}>
-        {value}
-      </div>
-      <div style={{ font: "600 0.625rem var(--hq-body-font)", color: "var(--hq-muted)" }}>
-        {caption}
       </div>
     </div>
   );

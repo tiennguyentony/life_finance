@@ -47,6 +47,18 @@ export function formatPpmPercent(ppm: number, fractionDigits = 0): string {
   return `${(ppm / 10_000).toFixed(fractionDigits)}%`;
 }
 
+const compactMoney = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/** Short money for tight spots, e.g. "$780K" for the FI target. */
+export function formatCompactCents(cents: number): string {
+  return compactMoney.format(Math.round(cents) / 100);
+}
+
 export function formatMonths(months: number): string {
   const rounded = Math.round(months * 10) / 10;
   return `${rounded} ${rounded === 1 ? "month" : "months"}`;
@@ -69,6 +81,15 @@ export function formatShortMonthLabel(month: string): string {
     month: "long",
     timeZone: "UTC",
   }).format(parsed);
+}
+
+/** Three-letter month for the identity pill, e.g. "NOV". */
+export function formatTinyMonthLabel(month: string): string {
+  const parsed = new Date(`${month}-01T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return month;
+  return new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+    .format(parsed)
+    .toUpperCase();
 }
 
 export type MoneyTone = "positive" | "negative" | "neutral";
@@ -94,6 +115,8 @@ export type HqView = Readonly<{
   monthlyGrossSalaryCents: number | null;
   monthLabel: string;
   shortMonthLabel: string;
+  /** The raw "YYYY-MM" month the run is in. */
+  monthKey: string;
   /** 1-based month index within the run. */
   monthNumber: number;
   goalCurrentCents: number;
@@ -148,6 +171,7 @@ export function hqViewFromRun(run: RunViewWire): HqView {
         : annualToMonthlyCents(run.income.annualGrossSalaryCents),
     monthLabel: formatMonthLabel(run.currentMonth),
     shortMonthLabel: formatShortMonthLabel(run.currentMonth),
+    monthKey: run.currentMonth,
     monthNumber: monthIndex(run.startMonth, run.currentMonth),
     // This is net of liabilities and is the exact numerator the backend goal
     // projection used for progressPpm.

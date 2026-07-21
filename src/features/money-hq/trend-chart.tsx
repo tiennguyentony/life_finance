@@ -7,6 +7,8 @@ type Props = Readonly<{
   trail: readonly TrailPoint[];
   /** Which recorded series to draw. */
   series?: "netWorthCents" | "cashCents";
+  /** Hide the chips when the host card already summarises the change. */
+  withSummary?: boolean;
 }>;
 
 const WIDTH = 560;
@@ -18,7 +20,11 @@ const PADDING_BOTTOM = 8;
  * Draws the recorded balance trail. Points come from real month responses, so
  * the caption says what the line is rather than implying a server-side history.
  */
-export function TrendChart({ trail, series = "netWorthCents" }: Props) {
+export function TrendChart({
+  trail,
+  series = "netWorthCents",
+  withSummary = true,
+}: Props) {
   if (trail.length < 2) {
     return (
       <p className="hq-unavailable">
@@ -76,13 +82,15 @@ export function TrendChart({ trail, series = "netWorthCents" }: Props) {
           r={5}
         />
       </svg>
-      <div className="hq-chip-row">
-        <span className="hq-chip" data-tone={rising ? "positive" : "negative"}>
-          {rising ? "▲" : "▼"} {formatCents(Math.abs(change))} since{" "}
-          {formatShortMonthLabel(first.month)}
-        </span>
-        <span className="hq-chip">{trail.length} months recorded</span>
-      </div>
+      {withSummary ? (
+        <div className="hq-chip-row">
+          <span className="hq-chip" data-tone={rising ? "positive" : "negative"}>
+            {rising ? "▲" : "▼"} {formatCents(Math.abs(change))} since{" "}
+            {formatShortMonthLabel(first.month)}
+          </span>
+          <span className="hq-chip">{trail.length} months recorded</span>
+        </div>
+      ) : null}
     </>
   );
 }

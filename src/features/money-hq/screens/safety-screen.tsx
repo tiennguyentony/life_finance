@@ -1,15 +1,23 @@
 "use client";
 
-import { getEducationConcept } from "../hq-concepts";
 import { hqTab } from "../hq-tabs";
-import { HqCard, HqChoiceList, HqSpeech, HqUnavailable } from "../hq-ui";
+import {
+  HqBanner,
+  HqCard,
+  HqChoiceList,
+  HqMiniTile,
+  HqScreenHead,
+  HqUnavailable,
+} from "../hq-ui";
 import {
   emergencyFundTargetCents,
   worstCaseHealthYearCents,
 } from "../hq-derivations";
-import { formatCents, formatMonths, formatPpmPercent } from "../hq-view";
-import { ConceptBody } from "./budget-screen";
+import { formatCents, formatPpmPercent } from "../hq-view";
 import type { ScreenProps } from "./screen-props";
+
+/** The runway meter always draws on a six-month scale, like the design. */
+const RUNWAY_SCALE_MONTHS = 6;
 
 export function SafetyScreen({
   busy,
@@ -20,10 +28,10 @@ export function SafetyScreen({
   view,
 }: ScreenProps) {
   const buddi = hqTab("safety");
-  const liquidity = getEducationConcept("liquidity");
   const health = run.benefits?.healthPlan ?? null;
   const coverages = run.benefits?.insuranceCoverages ?? [];
   const monthsHeld = view.emergencyFundMonths;
+  const targetMonths = view.emergencyTargetMonths;
   const worstCase =
     health === null
       ? null
@@ -31,205 +39,188 @@ export function SafetyScreen({
           health.annualOutOfPocketMaximumCents,
           health.monthlyPremiumCents,
         );
+  const markerMonths = targetMonths ?? 3;
 
   return (
     <div className="hq-screen">
-      <div className="hq-screen-head">
-        <div>
-          <h2 className="hq-screen-title">Safety Shelter</h2>
-          <p className="hq-screen-subtitle">
-            Boring? Maybe. But this page decides whether a bad month becomes a
-            bad year.
-          </p>
-        </div>
-        <div className="hq-planbar-spacer" />
-        <HqSpeech
-          characterName={buddi.characterName}
-          characterSrc={buddi.characterSrc}
-        >
-          When a big bill shows up, I&rsquo;m what catches you. Let&rsquo;s lock
-          in a target you can live with.
-        </HqSpeech>
-      </div>
+      <HqScreenHead
+        characterName={buddi.characterName}
+        characterSrc={buddi.characterSrc}
+        line="I catch you when it drops."
+        lineTone="positive"
+        title="Safety"
+      />
 
       <div className="hq-columns">
-        <div className="hq-column">
-          <HqCard eyebrow="Emergency fund · months of required spending">
-            <div className="hq-figure">
-              {monthsHeld === null ? "—" : formatMonths(monthsHeld)}
-              <span className="hq-figure-unit">
-                {" "}
-                held ({formatCents(view.cashCents)} cash)
-              </span>
-            </div>
+        <HqCard eyebrow="Emergency runway">
+          {monthsHeld === null ? (
+            <HqUnavailable>
+              With no required monthly spending recorded, a buffer measured in
+              months cannot be calculated.
+            </HqUnavailable>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "0.625rem" }}>
+                <div
+                  className="hq-figure"
+                  style={{ fontSize: "3.125rem", margin: "0.125rem 0" }}
+                >
+                  {(Math.round(monthsHeld * 10) / 10).toFixed(1)}
+                  <span className="hq-figure-unit"> mo</span>
+                </div>
+                {targetMonths !== null ? (
+                  <span
+                    className="hq-chip"
+                    data-tone={monthsHeld >= targetMonths ? "positive" : "caution"}
+                  >
+                    target {targetMonths} mo{monthsHeld >= targetMonths ? " ✓" : ""}
+                  </span>
+                ) : (
+                  <span className="hq-chip" data-tone="caution">
+                    no target locked in
+                  </span>
+                )}
+              </div>
 
-            {monthsHeld === null ? (
-              <HqUnavailable>
-                With no required monthly spending recorded, a buffer measured in
-                months cannot be calculated.
-              </HqUnavailable>
-            ) : (
-              <>
+              <div style={{ position: "relative", marginTop: "0.5rem" }}>
                 <div className="hq-meter" data-size="lg">
                   <div
                     className="hq-meter-fill"
-                    data-tone={monthsHeld >= 6 ? undefined : "caution"}
-                    style={{ width: `${Math.min(100, (monthsHeld / 6) * 100)}%` }}
+                    data-tone={
+                      monthsHeld >= markerMonths ? undefined : "caution"
+                    }
+                    style={{
+                      width: `${Math.min(100, (monthsHeld / RUNWAY_SCALE_MONTHS) * 100)}%`,
+                    }}
                   />
                 </div>
-                <div className="hq-chip-row">
-                  <span className="hq-chip">
-                    3 mo ·{" "}
-                    {formatCents(emergencyFundTargetCents(view.monthlyRequiredCents, 3))}
-                  </span>
-                  <span className="hq-chip">
-                    6 mo ·{" "}
-                    {formatCents(emergencyFundTargetCents(view.monthlyRequiredCents, 6))}
-                  </span>
-                  <span className="hq-chip">
-                    required {formatCents(view.monthlyRequiredCents)}/mo
-                  </span>
-                  {view.emergencyTargetMonths !== null ? (
-                    <span className="hq-chip" data-tone="positive">
-                      target set: {view.emergencyTargetMonths} months
-                    </span>
-                  ) : (
-                    <span className="hq-chip" data-tone="caution">
-                      no target locked in
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
-
-            <p className="hq-note" style={{ marginTop: "0.75rem" }}>
-              Setting the target changes your <b>recurring strategy</b>, not
-              today&rsquo;s cash — the engine routes future spare dollars to the
-              buffer before extra investing.
-            </p>
-          </HqCard>
-
-          <h3 className="hq-eyebrow" style={{ margin: "0.125rem 0 -0.25rem" }}>
-            Choose one move this month
-          </h3>
-          <HqChoiceList
-            disabled={busy}
-            onSelect={onSelectPlan}
-            plans={plans}
-            selectedPlanId={selectedPlanId}
-          />
-        </div>
-
-        <div className="hq-column">
-          <HqCard eyebrow="Your insurance">
-            {run.benefits === null ? (
-              <HqUnavailable>
-                This run has no benefits snapshot, so its plan details are
-                unknown. Runs started on the current engine record them.
-              </HqUnavailable>
-            ) : (
-              <>
-                {health ? (
-                  <>
-                    <div style={{ font: "800 0.9375rem var(--hq-display)" }}>
-                      {health.label}
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        gap: "0.5rem",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(8rem, 1fr))",
-                        marginTop: "0.5rem",
-                      }}
-                    >
-                      <PlanStat
-                        caption="the cost of being covered"
-                        label="Premium"
-                        value={`${formatCents(health.monthlyPremiumCents)}/mo`}
-                      />
-                      <PlanStat
-                        caption="you pay this before help kicks in"
-                        label="Deductible"
-                        value={formatCents(health.annualDeductibleCents)}
-                      />
-                      <PlanStat
-                        caption="your worst-case year"
-                        label="Out-of-pocket max"
-                        value={formatCents(health.annualOutOfPocketMaximumCents)}
-                      />
-                      <PlanStat
-                        caption="your share after the deductible"
-                        label="Coinsurance"
-                        value={formatPpmPercent(health.coinsurancePpm)}
-                      />
-                    </div>
-                    {worstCase !== null ? (
-                      <p className="hq-note" style={{ marginTop: "0.625rem" }}>
-                        A low premium is not a cheap plan. Your worst modelled
-                        year is <b>{formatCents(worstCase)}</b> — the
-                        out-of-pocket maximum plus a year of premiums.
-                        {monthsHeld !== null &&
-                        view.cashCents >= worstCase
-                          ? " Your cash covers it today. That is the point."
-                          : " Your cash does not cover it today."}
-                      </p>
-                    ) : null}
-                  </>
-                ) : (
-                  <HqUnavailable>
-                    No health plan is selected in this scenario.
-                  </HqUnavailable>
-                )}
-
-                <div className="hq-chip-row">
-                  {coverages.length === 0 ? (
-                    <span className="hq-chip" data-tone="caution">
-                      no additional coverage
-                    </span>
-                  ) : (
-                    coverages.map((coverage) => (
-                      <span className="hq-chip" data-tone="positive" key={coverage.id}>
-                        ✓ {coverage.label} · {formatCents(coverage.monthlyPremiumCents)}/mo
-                      </span>
-                    ))
-                  )}
-                </div>
-              </>
-            )}
-          </HqCard>
-
-          {liquidity ? (
-            <HqCard accent="gold" style={{ flex: 1 }}>
-              <h3 style={{ margin: 0, font: "800 1rem var(--hq-display)" }}>
-                Why liquidity beats &ldquo;rich on paper&rdquo;
-              </h3>
-              <div style={{ marginTop: "0.5rem" }}>
-                <ConceptBody concept={liquidity} />
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    left: `${Math.min(100, (markerMonths / RUNWAY_SCALE_MONTHS) * 100)}%`,
+                    top: -3,
+                    width: 2,
+                    height: 18,
+                    background: "var(--hq-ink)",
+                    opacity: 0.35,
+                  }}
+                />
               </div>
-            </HqCard>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  font: "800 0.625rem var(--hq-body-font)",
+                  color: "var(--hq-soft)",
+                  marginTop: 3,
+                }}
+              >
+                <span>0</span>
+                <span>
+                  3 MO · {formatCents(emergencyFundTargetCents(view.monthlyRequiredCents, 3))}
+                </span>
+                <span>
+                  6 MO · {formatCents(emergencyFundTargetCents(view.monthlyRequiredCents, 6))}
+                </span>
+              </div>
 
-type PlanStatProps = Readonly<{
-  label: string;
-  value: string;
-  caption: string;
-}>;
+              {worstCase !== null ? (
+                <div style={{ marginTop: "0.75rem" }}>
+                  <HqBanner
+                    label={`WORST HEALTH YEAR ${formatCents(worstCase)} — CASH ${formatCents(view.cashCents)}`}
+                    tone={view.cashCents >= worstCase ? "positive" : "negative"}
+                    value={view.cashCents >= worstCase ? "Covered ✓" : "Not covered"}
+                  />
+                </div>
+              ) : null}
 
-function PlanStat({ label, value, caption }: PlanStatProps) {
-  return (
-    <div style={{ padding: "0.5rem 0.75rem", borderRadius: 12, background: "var(--hq-stage)" }}>
-      <div style={{ font: "700 0.625rem var(--hq-body-font)", color: "var(--hq-soft)" }}>
-        {label}
+              <p className="hq-note" style={{ marginTop: "0.75rem" }}>
+                Setting the target changes your <b>recurring strategy</b>, not
+                today&rsquo;s cash — the engine routes future spare dollars to
+                the buffer before extra investing.
+              </p>
+            </>
+          )}
+        </HqCard>
+
+        <HqCard
+          aside={
+            coverages.length > 0 ? (
+              <span className="hq-chip" data-tone="positive">
+                ✓ {coverages[0]!.label} {formatCents(coverages[0]!.monthlyPremiumCents)}/mo
+              </span>
+            ) : (
+              <span className="hq-chip" data-tone="caution">
+                no additional coverage
+              </span>
+            )
+          }
+          eyebrow={health ? health.label : "Your insurance"}
+        >
+          {run.benefits === null ? (
+            <HqUnavailable>
+              This run has no benefits snapshot, so its plan details are
+              unknown. Runs started on the current engine record them.
+            </HqUnavailable>
+          ) : health ? (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "0.5rem",
+                  marginTop: "0.625rem",
+                }}
+              >
+                <HqMiniTile
+                  caption="the cost of being covered"
+                  label="Premium"
+                  value={`${formatCents(health.monthlyPremiumCents)}/mo`}
+                />
+                <HqMiniTile
+                  caption="you pay this before help kicks in"
+                  label="Deductible"
+                  value={formatCents(health.annualDeductibleCents)}
+                />
+                <HqMiniTile
+                  caption="your worst-case year"
+                  label="OOP max"
+                  value={formatCents(health.annualOutOfPocketMaximumCents)}
+                />
+                <HqMiniTile
+                  caption="your share after the deductible"
+                  label="Coinsurance"
+                  value={formatPpmPercent(health.coinsurancePpm)}
+                />
+              </div>
+              {coverages.length > 1 ? (
+                <div className="hq-chip-row">
+                  {coverages.slice(1).map((coverage) => (
+                    <span className="hq-chip" data-tone="positive" key={coverage.id}>
+                      ✓ {coverage.label} · {formatCents(coverage.monthlyPremiumCents)}/mo
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <HqUnavailable>
+              No health plan is selected in this scenario.
+            </HqUnavailable>
+          )}
+        </HqCard>
       </div>
-      <div style={{ font: "800 1rem var(--hq-display)" }}>{value}</div>
-      <div style={{ font: "600 0.625rem var(--hq-body-font)", color: "var(--hq-muted)" }}>
-        {caption}
-      </div>
+
+      <h3 className="hq-eyebrow" style={{ margin: "0.125rem 0 -0.25rem" }}>
+        Choose one move this month
+      </h3>
+      <HqChoiceList
+        disabled={busy}
+        onSelect={onSelectPlan}
+        plans={plans}
+        selectedPlanId={selectedPlanId}
+      />
     </div>
   );
 }

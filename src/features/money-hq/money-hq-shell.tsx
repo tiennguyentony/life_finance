@@ -24,7 +24,12 @@ import { LifeFinanceClient } from "@/lib/api-client/client";
 import { HqCharacterBanter } from "./character-banter";
 import { HqEventDialog } from "./dialogs/event-dialog";
 import { HqMonthResultDialog } from "./dialogs/month-result-dialog";
-import { HqPlanBar, HqSidebar, HqTopbar } from "./hq-chrome";
+import {
+  HqPlanBar,
+  HqSidebar,
+  HqTopbar,
+  monthDeltaFromTrail,
+} from "./hq-chrome";
 import { HQ_TABS, hqTab, type HqTabId } from "./hq-tabs";
 import { hqViewFromRun } from "./hq-view";
 import {
@@ -41,7 +46,7 @@ import { CheckpointScreen } from "./screens/checkpoint-screen";
 import { DebriefScreen } from "./screens/debrief-screen";
 import { DebtScreen } from "./screens/debt-screen";
 import { GlossaryScreen } from "./screens/glossary-screen";
-import { InvestScreen, type InvestLayout } from "./screens/invest-screen";
+import { InvestScreen } from "./screens/invest-screen";
 import { OverviewScreen } from "./screens/overview-screen";
 import { SafetyScreen } from "./screens/safety-screen";
 import { TaxScreen, type TaxLoadState } from "./screens/tax-screen";
@@ -74,7 +79,6 @@ export function MoneyHqShell() {
   >({});
   // Null means "no edits yet", so the dials follow the engine until touched.
   const [investDraft, setInvestDraft] = useState<InvestDraft | null>(null);
-  const [investLayout, setInvestLayout] = useState<InvestLayout>("buckets");
   const [report, setReport] = useState<HqReport>(null);
   const [taxLoadState, setTaxLoadState] = useState<TaxLoadState>({
     status: "idle",
@@ -129,10 +133,11 @@ export function MoneyHqShell() {
     };
   }, [router, recordRun]);
 
-  // Tax is intentionally lazy: opening Money HQ stays fast, while the Tax tab
-  // always uses the current authoritative run revision and server tax engine.
+  // The tax estimate stays lazy and non-blocking, but both the Tax tab and the
+  // Overview flow card read it, so either tab triggers the load. It always uses
+  // the current authoritative run revision and server tax engine.
   useEffect(() => {
-    if (activeTab !== "tax" || run === null) return;
+    if ((activeTab !== "tax" && activeTab !== "overview") || run === null) return;
     let active = true;
     Promise.resolve()
       .then(() => {
@@ -354,6 +359,7 @@ export function MoneyHqShell() {
         <div className="hq-stage">
           <HqTopbar
             busy={turn.busy}
+            monthDeltaCents={monthDeltaFromTrail(trail)}
             onNewGame={handleNewGame}
             onSavedGames={() => router.push("/saves")}
             view={view}
@@ -387,9 +393,7 @@ export function MoneyHqShell() {
                 activeTab={activeTab}
                 busy={turn.busy}
                 investDraft={effectiveInvestDraft}
-                investLayout={investLayout}
                 onAdjustInvest={handleAdjustInvest}
-                onInvestLayout={setInvestLayout}
                 onSelectPlan={handleSelectPlan}
                 onSelectTab={setActiveTab}
                 plans={tabPlans}
@@ -471,9 +475,7 @@ type ScreenProps = Readonly<{
   activeTab: HqTabId;
   busy: boolean;
   investDraft: InvestDraft;
-  investLayout: InvestLayout;
   onAdjustInvest: (key: EditableRate, deltaPpm: number, maxPpm: number) => void;
-  onInvestLayout: (layout: InvestLayout) => void;
   onSelectPlan: (planId: string) => void;
   onSelectTab: (tab: HqTabId) => void;
   onRetryTax: () => void;
@@ -489,9 +491,7 @@ function HqScreen({
   activeTab,
   busy,
   investDraft,
-  investLayout,
   onAdjustInvest,
-  onInvestLayout,
   onSelectPlan,
   onSelectTab,
   onRetryTax,
@@ -510,6 +510,7 @@ function HqScreen({
         <OverviewScreen
           onSelectTab={onSelectTab}
           run={run}
+          taxLoadState={taxLoadState}
           trail={trail}
           view={view}
         />
@@ -531,9 +532,7 @@ function HqScreen({
         <InvestScreen
           busy={busy}
           draft={investDraft}
-          layout={investLayout}
           onAdjust={onAdjustInvest}
-          onLayout={onInvestLayout}
           run={run}
         />
       );
